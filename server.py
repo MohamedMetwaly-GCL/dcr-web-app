@@ -2,7 +2,7 @@
 server.py - DCR Web Application
 Render + Supabase Production  |  Local SQLite fallback
 """
-import json, os, sys, uuid, csv, io, re, base64, datetime, socket
+import json, os, sys, uuid, csv, io, re, base64, datetime, socket, hashlib, secrets
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
@@ -17,6 +17,54 @@ PORT      = int(os.environ.get("PORT", 5000))
 IS_RENDER = bool(os.environ.get("RENDER", ""))
 STATIC_DIR   = Path(__file__).parent / "static"
 TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+
+# ── Session store (in-memory, resets on restart — fine for Render) ──────
+_SESSIONS = {}   # token → {role, username, expires}
+SESSION_TTL = 8 * 3600   # 8 hours
+
+def _new_session(username, role):
+    token = secrets.token_hex(32)
+    _SESSIONS[token] = {
+        'username': username,
+        'role': role,
+        'expires': datetime.datetime.now().timestamp() + SESSION_TTL
+    }
+    return token
+
+def _get_session(req_headers):
+    cookie = req_headers.get('Cookie', '')
+    for part in cookie.split(';'):
+        part = part.strip()
+        if part.startswith('dcr_token='):
+            token = part[len('dcr_token='):]
+            s = _SESSIONS.get(token)
+            if s and s['expires'] > datetime.datetime.now().timestamp():
+                return s
+    return None
+
+def _hash_pw(pw):
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+def _get_users():
+    """Load users from DB settings."""
+    raw = db.get_setting('users_json', '')
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except:
+        return {}
+
+def _save_users(users):
+    db.save_setting('users_json', json.dumps(users))
+
+def _ensure_default_admin():
+    """Create default admin if no users exist."""
+    users = _get_users()
+    if not users:
+        users['admin'] = {'role': 'admin', 'pw': _hash_pw('admin123')}
+        _save_users(users)
 
 
 def get_local_ip():
@@ -96,13 +144,33 @@ class DCRHandler(BaseHTTPRequestHandler):
         if path.startswith('/static/'):
             self.send_file(STATIC_DIR / path[8:]); return
 
-        # ── Ping endpoint — keeps Render alive via UptimeRobot ──
+        # ── Ping endpoint ──
         if path == '/ping':
             self.send_json({"status": "ok", "time": datetime.datetime.now().isoformat()}); return
 
-        # Main app
+        # ── Login page (public) ──
+        if path == '/login':
+            self.send_html(build_login_page()); return
+
+        # ── Auth check for all other routes ──
+        session = _get_session(self.headers)
+        if not session:
+            if path.startswith('/api/'):
+                self.send_json({'error': 'Unauthorized'}, 401); return
+            self.send_response(302)
+            self.send_header('Location', '/login'); self.end_headers(); return
+
+        # ── Dashboard ──
+        if path == '/dashboard':
+            self.send_html(build_dashboard_page(session)); return
+
+        # ── Home = Dashboard ──
         if path in ('', '/'):
-            self.send_html(build_main_page()); return
+            self.send_html(build_dashboard_page(session)); return
+
+        # ── Register App ──
+        if path == '/app':
+            self.send_html(build_main_page(session)); return
 
         # API routes
         if path == '/api/project':
@@ -142,6 +210,13 @@ class DCRHandler(BaseHTTPRequestHandler):
             records = db.get_records(dt_id)
             self.send_json({'next': get_next_doc_no(prefix, records)}); return
 
+        if path == '/api/users/list':
+            session2 = _get_session(self.headers)
+            if not session2 or session2['role'] != 'admin':
+                self.send_json({'error':'Forbidden'}, 403); return
+            users = _get_users()
+            self.send_json([{{'username':k,'role':v['role']}} for k,v in users.items()]); return
+
         if path == '/api/counts':
             counts = {dt['id']: db.get_record_count(dt['id']) for dt in db.get_doc_types()}
             self.send_json(counts); return
@@ -175,6 +250,80 @@ class DCRHandler(BaseHTTPRequestHandler):
             data = json.loads(body) if body else {}
         except Exception:
             data = {}
+
+        # ── Login (public) ──
+        if path == '/api/login':
+            users = _get_users()
+            uname = data.get('username','').strip().lower()
+            pw    = data.get('password','')
+            user  = users.get(uname)
+            if user and user['pw'] == _hash_pw(pw):
+                token = _new_session(uname, user['role'])
+                self.send_response(200)
+                self.send_header('Content-Type','application/json')
+                self.send_header('Set-Cookie',
+                    f'dcr_token={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}')
+                body_out = json.dumps({'ok':True,'role':user['role'],'username':uname}).encode()
+                self.send_header('Content-Length', len(body_out))
+                self.end_headers(); self.wfile.write(body_out)
+            else:
+                self.send_json({'ok':False,'error':'Invalid username or password'}, 401)
+            return
+
+        # ── Logout ──
+        if path == '/api/logout':
+            cookie = self.headers.get('Cookie','')
+            for part in cookie.split(';'):
+                part = part.strip()
+                if part.startswith('dcr_token='):
+                    _SESSIONS.pop(part[len('dcr_token='):], None)
+            self.send_response(302)
+            self.send_header('Set-Cookie','dcr_token=; Path=/; Max-Age=0')
+            self.send_header('Location','/login'); self.end_headers(); return
+
+        # ── Auth check for all POST ──
+        session = _get_session(self.headers)
+        if not session:
+            self.send_json({'error':'Unauthorized'}, 401); return
+
+        # ── User management (admin only) ──
+        if path == '/api/users':
+            if session['role'] != 'admin':
+                self.send_json({'error':'Forbidden'}, 403); return
+            action = data.get('action')
+            users  = _get_users()
+            if action == 'list':
+                self.send_json([{'username':k,'role':v['role']} for k,v in users.items()]); return
+            if action == 'add':
+                uname = data.get('username','').strip().lower()
+                role  = data.get('role','viewer')
+                pw    = data.get('password','')
+                if not uname or not pw:
+                    self.send_json({'ok':False,'error':'Username and password required'},400); return
+                users[uname] = {'role':role,'pw':_hash_pw(pw)}
+                _save_users(users)
+                self.send_json({'ok':True}); return
+            if action == 'delete':
+                uname = data.get('username','')
+                if uname == 'admin':
+                    self.send_json({'ok':False,'error':'Cannot delete admin'},400); return
+                users.pop(uname, None); _save_users(users)
+                self.send_json({'ok':True}); return
+            if action == 'change_password':
+                uname = data.get('username','').strip().lower()
+                pw    = data.get('password','')
+                if uname in users and pw:
+                    users[uname]['pw'] = _hash_pw(pw); _save_users(users)
+                    self.send_json({'ok':True}); return
+                self.send_json({'ok':False,'error':'User not found'},400); return
+            self.send_json({'ok':False,'error':'Unknown action'},400); return
+
+        # ── Viewer can't write ──
+        if session['role'] == 'viewer' and path not in ('/api/project',):
+            # Viewers can't add/edit/delete records or settings
+            if any(path.startswith(p) for p in ['/api/records/','/api/delete_','/api/columns/',
+                                                  '/api/dropdown_lists/','/api/logo','/api/doc_types']):
+                self.send_json({'error':'Read-only access — contact Admin'}, 403); return
 
         if path == '/api/project':
             db.save_project(data)
@@ -312,9 +461,347 @@ class DCRHandler(BaseHTTPRequestHandler):
 
 
 # ============================================================
+# LOGIN PAGE
+# ============================================================
+def build_login_page(error=''):
+    return f"""<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DCR — Login</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#0f2640 0%,#1a3a5c 60%,#2563a8 100%);min-height:100vh;display:flex;align-items:center;justify-content:center}}
+.card{{background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.4);width:100%;max-width:400px;overflow:hidden}}
+.card-hdr{{background:linear-gradient(135deg,#1a3a5c,#2563a8);padding:32px 32px 24px;text-align:center}}
+.card-hdr .logo{{font-size:40px;margin-bottom:8px}}
+.card-hdr h1{{color:#fff;font-size:20px;font-weight:700;letter-spacing:.3px}}
+.card-hdr p{{color:rgba(255,255,255,.65);font-size:12px;margin-top:4px}}
+.card-body{{padding:28px 32px 32px}}
+.field{{margin-bottom:16px}}
+.field label{{display:block;font-size:11px;font-weight:700;color:#6b7a94;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}}
+.field input{{width:100%;padding:11px 14px;border:1.5px solid #dde3ed;border-radius:8px;font-family:inherit;font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s}}
+.field input:focus{{border-color:#2563a8;box-shadow:0 0 0 3px rgba(37,99,168,.12)}}
+.err{{background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:9px 12px;border-radius:6px;font-size:12px;margin-bottom:14px;display:{'block' if error else 'none'}}}
+.btn-login{{width:100%;padding:13px;background:linear-gradient(135deg,#1a3a5c,#2563a8);color:#fff;border:none;border-radius:8px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.3px}}
+.btn-login:hover{{transform:translateY(-1px);box-shadow:0 4px 16px rgba(26,58,92,.4)}}
+.btn-login:active{{transform:none}}
+.hint{{text-align:center;color:#9ca3af;font-size:11px;margin-top:16px}}
+@media(max-width:440px){{.card{{border-radius:0;min-height:100vh}}.card-body{{padding:24px 24px 28px}}}}
+</style></head><body>
+<div class="card">
+  <div class="card-hdr">
+    <div class="logo">📋</div>
+    <h1>Document Control Register</h1>
+    <p>Sign in to continue</p>
+  </div>
+  <div class="card-body">
+    <div class="err" id="err">{error}</div>
+    <div class="field"><label>Username</label>
+      <input id="uname" type="text" placeholder="Enter username" autocomplete="username" autofocus>
+    </div>
+    <div class="field"><label>Password</label>
+      <input id="pw" type="password" placeholder="Enter password" autocomplete="current-password">
+    </div>
+    <button class="btn-login" onclick="doLogin()">Sign In →</button>
+    <p class="hint">Default: admin / admin123</p>
+  </div>
+</div>
+<script>
+document.getElementById('pw').addEventListener('keydown', e => {{ if(e.key==='Enter') doLogin(); }});
+document.getElementById('uname').addEventListener('keydown', e => {{ if(e.key==='Enter') document.getElementById('pw').focus(); }});
+async function doLogin() {{
+  const uname = document.getElementById('uname').value.trim();
+  const pw    = document.getElementById('pw').value;
+  const err   = document.getElementById('err');
+  err.style.display='none';
+  if(!uname||!pw){{ err.textContent='Please enter username and password'; err.style.display='block'; return; }}
+  try {{
+    const r = await fetch('/api/login',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{username:uname,password:pw}})}});
+    const d = await r.json();
+    if(d.ok) {{ window.location='/'; }}
+    else {{ err.textContent = d.error||'Invalid credentials'; err.style.display='block'; }}
+  }} catch(e) {{ err.textContent='Connection error'; err.style.display='block'; }}
+}}
+</script></body></html>"""
+
+
+# ============================================================
+# DASHBOARD PAGE
+# ============================================================
+def build_dashboard_page(session=None):
+    proj    = db.get_project()
+    dtypes  = db.get_doc_types()
+    _uname  = (session or {{}}).get('username','?')
+    _role   = (session or {{}}).get('role','viewer')
+    _rbg    = "rgba(240,165,0,.35)" if _role=="admin" else "rgba(255,255,255,.18)"
+
+    # Build stats
+    stats = []
+    total_all = approved_all = pending_all = overdue_all = 0
+    for dt in dtypes:
+        records  = db.get_records(dt['id'])
+        total    = len([r for r in records if extract_rev(r.get('docNo',''))==0])
+        approved = len([r for r in records if 'approved' in str(r.get('status','')).lower() or r.get('status','').startswith('A')])
+        pending  = len([r for r in records if r.get('status','') in ('Under Review','Pending','')])
+        ov       = len([r for r in records if is_overdue(r.get('issuedDate'), r.get('docNo'), r.get('actualReplyDate'))])
+        # Average duration
+        durs = [compute_duration(r.get('issuedDate'), r.get('actualReplyDate'))
+                for r in records if r.get('actualReplyDate')]
+        avg_dur  = round(sum(d for d in durs if d is not None) / len(durs), 1) if durs else 0
+        pct      = round(approved/total*100) if total else 0
+        stats.append({'id':dt['id'],'name':dt['name'],'code':dt['code'],'total':total,'approved':approved,'pending':pending,'overdue':ov,'avg_dur':avg_dur,'pct':pct})
+        total_all += total; approved_all += approved
+        pending_all += pending; overdue_all += ov
+
+    pct_all = round(approved_all/total_all*100) if total_all else 0
+    stats_json = json.dumps(stats)
+
+    return f"""<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DCR — Dashboard</title>
+<style>
+:root{{--primary:#1a3a5c;--primary-lt:#2563a8;--accent:#f0a500;--bg:#f0f4f8;--white:#fff;--border:#dde3ed;--text:#1e2a3a;--muted:#6b7a94;--success:#16a34a;--danger:#ef4444;--warning:#f59e0b;--radius:8px}}
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;min-height:100vh}}
+#topbar{{background:var(--primary);color:#fff;height:46px;display:flex;align-items:center;padding:0 16px;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.25)}}
+#topbar .spacer{{flex:1}}
+.tb-btn{{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;text-decoration:none;display:inline-block}}
+.tb-btn:hover{{background:rgba(255,255,255,.25)}}
+.dash-wrap{{max-width:1400px;margin:0 auto;padding:20px 16px}}
+h2{{font-size:20px;font-weight:700;color:var(--primary);margin-bottom:4px}}
+.sub{{color:var(--muted);font-size:12px;margin-bottom:20px}}
+
+/* KPI cards */
+.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}}
+.kpi{{background:var(--white);border-radius:var(--radius);padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid var(--primary);transition:transform .15s,box-shadow .15s}}
+.kpi:hover{{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.1)}}
+.kpi.green{{border-left-color:var(--success)}}
+.kpi.orange{{border-left-color:var(--warning)}}
+.kpi.red{{border-left-color:var(--danger)}}
+.kpi.accent{{border-left-color:var(--accent)}}
+.kpi-val{{font-size:32px;font-weight:800;line-height:1.1;color:var(--primary)}}
+.kpi.green .kpi-val{{color:var(--success)}}
+.kpi.orange .kpi-val{{color:var(--warning)}}
+.kpi.red .kpi-val{{color:var(--danger)}}
+.kpi.accent .kpi-val{{color:#b45309}}
+.kpi-lbl{{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-top:4px}}
+.kpi-sub{{font-size:10px;color:var(--muted);margin-top:2px}}
+
+/* Progress bar */
+.prog-wrap{{background:#eef1f7;border-radius:99px;height:6px;margin-top:6px;overflow:hidden}}
+.prog-bar{{height:100%;border-radius:99px;background:var(--success);transition:width .6s ease}}
+
+/* Charts section */
+.section-title{{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid var(--primary);text-transform:uppercase;letter-spacing:.4px}}
+.charts-grid{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}}
+.chart-card{{background:var(--white);border-radius:var(--radius);padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07)}}
+canvas{{max-height:260px}}
+
+/* Table */
+.tbl-card{{background:var(--white);border-radius:var(--radius);padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow-x:auto}}
+table{{width:100%;border-collapse:collapse;font-size:12px}}
+th{{background:var(--primary);color:#fff;padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap}}
+td{{padding:7px 10px;border-bottom:1px solid #edf0f5;vertical-align:middle}}
+tr:nth-child(even) td{{background:#fafbfd}}
+tr:hover td{{background:#eff6ff}}
+.badge{{display:inline-block;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700}}
+.badge.green{{background:#dcfce7;color:#166534}}
+.badge.orange{{background:#fed7aa;color:#7c2d12}}
+.badge.red{{background:#fee2e2;color:#7f1d1d}}
+.pct-cell{{min-width:120px}}
+.pct-bar{{height:8px;background:#eef1f7;border-radius:4px;overflow:hidden;margin-top:3px}}
+.pct-fill{{height:100%;border-radius:4px;background:var(--success)}}
+
+@media(max-width:768px){{
+  .charts-grid{{grid-template-columns:1fr}}
+  .kpi-grid{{grid-template-columns:1fr 1fr}}
+  .dash-wrap{{padding:12px 10px}}
+}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head><body>
+
+<div id="topbar">
+  <span style="font-size:20px">📊</span>
+  <span style="font-weight:700;font-size:14px">Dashboard</span>
+  <div class="spacer"></div>
+  <a href="/app" class="tb-btn">📋 Register</a>
+  <span style="color:rgba(255,255,255,.45);padding:0 6px">|</span>
+  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {_uname} <span style="background:{_rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{_role.upper()}</span></span>
+  <form action="/api/logout" method="post" style="display:inline;margin:0">
+    <button type="submit" class="tb-btn" style="padding:4px 10px;font-size:11px">⏻</button>
+  </form>
+</div>
+
+<div class="dash-wrap">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+    <div>
+      <h2 style="font-size:22px">📋 {proj.get('name','')}</h2>
+      <p class="sub" style="margin-bottom:0">
+        <b>Code:</b> {proj.get('code','')} &nbsp;·&nbsp;
+        <b>Client:</b> {proj.get('client','')} &nbsp;·&nbsp;
+        <b>Consultant:</b> {proj.get('mainConsultant','')} &nbsp;·&nbsp;
+        <b>Contractor:</b> {proj.get('contractor','')}
+      </p>
+    </div>
+    <div style="background:#fff;border-radius:8px;padding:12px 18px;box-shadow:0 1px 4px rgba(0,0,0,.07);text-align:center;min-width:140px">
+      <div style="font-size:28px;font-weight:800;color:#16a34a">{pct_all}%</div>
+      <div style="font-size:10px;color:#6b7a94;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Overall Completion</div>
+      <div style="background:#eef1f7;border-radius:99px;height:6px;margin-top:6px;overflow:hidden">
+        <div style="height:100%;border-radius:99px;background:#16a34a;width:{pct_all}%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI CARDS -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-val">{total_all}</div>
+      <div class="kpi-lbl">Total Documents</div>
+      <div class="kpi-sub">All document types</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-val">{approved_all}</div>
+      <div class="kpi-lbl">Approved</div>
+      <div class="prog-wrap"><div class="prog-bar" style="width:{pct_all}%"></div></div>
+      <div class="kpi-sub">{pct_all}% completion</div>
+    </div>
+    <div class="kpi orange">
+      <div class="kpi-val">{pending_all}</div>
+      <div class="kpi-lbl">Under Review / Pending</div>
+      <div class="kpi-sub">Awaiting response</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-val">{overdue_all}</div>
+      <div class="kpi-lbl">Overdue</div>
+      <div class="kpi-sub">Past expected reply date</div>
+    </div>
+    <div class="kpi accent">
+      <div class="kpi-val">{len(dtypes)}</div>
+      <div class="kpi-lbl">Document Types</div>
+      <div class="kpi-sub">Active registers</div>
+    </div>
+  </div>
+
+  <!-- QUICK ACCESS CARDS -->
+  <div class="section-title" style="margin-bottom:12px">🗂 Document Registers — Click to Open</div>
+  <div id="quick-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:24px"></div>
+
+  <!-- CHARTS -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="section-title">Documents by Type</div>
+      <canvas id="chartByType"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="section-title">Status Breakdown</div>
+      <canvas id="chartStatus"></canvas>
+    </div>
+  </div>
+
+  <!-- DETAIL TABLE -->
+  <div class="tbl-card">
+    <div class="section-title">Register Summary by Document Type</div>
+    <table>
+      <thead><tr>
+        <th>Document Type</th><th>Code</th><th>Total</th>
+        <th>Approved</th><th>Under Review</th><th>Overdue</th>
+        <th>Avg Duration (days)</th><th>Completion</th>
+      </tr></thead>
+      <tbody id="stats-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const STATS = {stats_json};
+
+// Quick access cards
+const qGrid = document.getElementById('quick-cards');
+STATS.filter(s=>s.total>0).forEach(s=>{{
+  const card = document.createElement('a');
+  card.href = '/app?tab='+s.id;
+  card.style.cssText='text-decoration:none;background:#fff;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:3px solid #1a3a5c;display:block;transition:all .15s;cursor:pointer';
+  card.onmouseover=function(){{this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 14px rgba(0,0,0,.12)'}};
+  card.onmouseout=function(){{this.style.transform='';this.style.boxShadow='0 1px 4px rgba(0,0,0,.07)'}};
+  const pctColor = s.pct>=80?'#16a34a':s.pct>=50?'#f59e0b':'#ef4444';
+  card.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-size:11px;font-weight:700;color:#1a3a5c">${{s.code}}</span>
+      ${{s.overdue>0?`<span style="background:#fee2e2;color:#dc2626;border-radius:10px;padding:1px 7px;font-size:9px;font-weight:700">⚠ ${{s.overdue}}</span>`:''}}
+    </div>
+    <div style="font-size:11px;color:#6b7a94;margin-bottom:8px;line-height:1.3">${{s.name}}</div>
+    <div style="font-size:20px;font-weight:800;color:#1a3a5c;line-height:1">${{s.total}}</div>
+    <div style="font-size:9px;color:#6b7a94;margin-bottom:6px">documents</div>
+    <div style="background:#eef1f7;border-radius:99px;height:4px;overflow:hidden">
+      <div style="height:100%;border-radius:99px;background:${{pctColor}};width:${{s.pct}}%;transition:width .6s ease"></div>
+    </div>
+    <div style="font-size:9px;color:${{pctColor}};font-weight:700;margin-top:3px">${{s.pct}}% complete</div>`;
+  qGrid.appendChild(card);
+}});
+
+// Populate table
+const tbody = document.getElementById('stats-tbody');
+STATS.forEach(s => {{
+  const tr = document.createElement('tr');
+  const pctColor = s.pct>=80?'green':s.pct>=50?'orange':'red';
+  tr.innerHTML = `
+    <td><a href="/app" style="color:var(--primary);text-decoration:none;font-weight:600">${{s.name}}</a></td>
+    <td><b>${{s.code}}</b></td>
+    <td><b>${{s.total}}</b></td>
+    <td><span class="badge green">${{s.approved}}</span></td>
+    <td><span class="badge orange">${{s.pending}}</span></td>
+    <td>${{s.overdue>0?`<span class="badge red">${{s.overdue}}</span>`:'—'}}</td>
+    <td>${{s.avg_dur||'—'}}</td>
+    <td class="pct-cell">
+      <div style="font-size:11px;font-weight:700;color:var(--${{pctColor==='green'?'success':pctColor==='orange'?'warning':'danger'}})">${{s.pct}}%</div>
+      <div class="pct-bar"><div class="pct-fill" style="width:${{s.pct}}%;background:var(--${{pctColor==='green'?'success':pctColor==='orange'?'warning':'danger'}})"></div></div>
+    </td>`;
+  tbody.appendChild(tr);
+}});
+
+// Chart 1 — Bar chart by type
+const labels = STATS.map(s=>s.code);
+new Chart(document.getElementById('chartByType'), {{
+  type:'bar',
+  data:{{
+    labels,
+    datasets:[
+      {{label:'Approved',data:STATS.map(s=>s.approved),backgroundColor:'#16a34a'}},
+      {{label:'Pending',data:STATS.map(s=>s.pending),backgroundColor:'#f59e0b'}},
+      {{label:'Overdue',data:STATS.map(s=>s.overdue),backgroundColor:'#ef4444'}},
+    ]
+  }},
+  options:{{responsive:true,plugins:{{legend:{{position:'bottom'}}}},scales:{{x:{{stacked:false}},y:{{beginAtZero:true}}}}}}
+}});
+
+// Chart 2 — Doughnut status breakdown
+const totalAll={total_all}, approvedAll={approved_all}, pendingAll={pending_all}, overdueAll={overdue_all};
+const otherAll = Math.max(0, totalAll - approvedAll - pendingAll - overdueAll);
+new Chart(document.getElementById('chartStatus'), {{
+  type:'doughnut',
+  data:{{
+    labels:['Approved','Under Review / Pending','Overdue','Other'],
+    datasets:[{{
+      data:[approvedAll, pendingAll, overdueAll, otherAll],
+      backgroundColor:['#16a34a','#f59e0b','#ef4444','#9ca3af'],
+      borderWidth:2, borderColor:'#fff'
+    }}]
+  }},
+  options:{{responsive:true,plugins:{{legend:{{position:'bottom'}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.label}}: ${{ctx.parsed}} (${{totalAll?Math.round(ctx.parsed/totalAll*100):0}}%)`}}}}}}}}
+}});
+</script>
+</body></html>"""
+
+
+
+# ============================================================
 # BUILD MAIN HTML PAGE
 # ============================================================
-def build_main_page():
+def build_main_page(session=None):
+    _uname = (session or {}).get("username","?")
+    _role  = (session or {}).get("role","viewer")
+    _rbg   = "rgba(240,165,0,.35)" if _role=="admin" else "rgba(255,255,255,.18)"
+    _role_upper = _role.upper()
     proj = db.get_project()
     doc_types = db.get_doc_types()
     all_lists = db.get_all_dropdown_lists()
@@ -329,7 +816,7 @@ def build_main_page():
     )
 
     proj_fields_html = ''.join(
-        f'<div class="pf"><span class="pf-lbl">{lbl}</span><span class="pf-val" id="pf-{key}">{proj.get(key,"—")}</span></div>'
+        f'<div class="pf"><span class="pf-lbl">{lbl}</span><span class="pf-val" id="pf-{key}" data-key="{key}">{proj.get(key,"—")}</span></div>'
         for key, lbl in [('code','Code'),('name','Project Name'),('client','Client'),
                           ('mainConsultant','Consultant'),('mepConsultant','MEP'),
                           ('contractor','Contractor'),('startDate','Start'),('endDate','End'),
@@ -413,6 +900,7 @@ tr.rev-row td{{color:var(--muted)}}
 tr.alt td{{background:#fafbfd}}
 .sr-cell{{text-align:center;color:var(--muted);font-size:10px;width:36px}}
 .actions-cell{{white-space:nowrap;width:70px}}
+.viewer-hide{{display:none!important}}
 .act-btn{{padding:2px 7px;border:1px solid var(--border);background:#fff;border-radius:3px;cursor:pointer;font-size:11px}}
 .act-btn:hover{{background:var(--primary);color:#fff;border-color:var(--primary)}}
 .act-btn.del:hover{{background:var(--danger);border-color:var(--danger)}}
@@ -490,6 +978,57 @@ tr.alt td{{background:#fafbfd}}
 /* Empty state */
 .empty{{text-align:center;padding:60px 20px;color:var(--muted)}}
 .empty .ico{{font-size:48px;margin-bottom:12px}}
+
+/* ── Column resize handle ─────────────────────────────────── */
+.col-resizer{{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:1}}
+.col-resizer:hover,.col-resizer.resizing{{background:var(--accent)}}
+th{{position:relative}}
+
+/* ── Improved table ──────────────────────────────────────── */
+td{{padding:6px 8px;border-bottom:1px solid #edf0f5;border-right:1px solid #f3f4f6;vertical-align:middle}}
+tr:hover td{{background:rgba(37,99,168,.04)}}
+.status-badge{{display:inline-block;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700}}
+
+/* ── Mobile responsive ────────────────────────────────────── */
+@media(max-width:768px){{
+  #topbar .app-title{{font-size:12px}}
+  #projbar{{overflow-x:auto;flex-wrap:nowrap;padding:4px 8px}}
+  .pf{{padding:0 6px;min-width:80px}}
+  #tabs-bar{{padding:0 4px}}
+  .tab-btn{{padding:7px 8px;font-size:10px}}
+  #toolbar{{padding:4px 6px;gap:4px}}
+  .tool-btn{{padding:4px 8px;font-size:10px}}
+  #search-box{{min-width:120px}}
+  table{{font-size:11px}}
+  td,th{{padding:4px 5px}}
+  .modal{{width:97%;max-height:95vh}}
+  .form-grid{{grid-template-columns:1fr}}
+  #statusbar{{font-size:9px;gap:8px;padding:2px 8px}}
+}}
+
+/* ── Landscape mobile fix ─────────────────────────────────── */
+@media(max-height:500px) and (orientation:landscape){{
+  #topbar{{height:36px}}
+  #projbar{{max-height:32px;overflow:hidden}}
+  .modal{{max-height:98vh}}
+  .modal-body{{max-height:calc(98vh - 120px)}}
+  body{{font-size:11px}}
+  td,th{{padding:3px 5px}}
+}}
+
+/* ── Better buttons ────────────────────────────────────────── */
+.btn-primary{{background:var(--primary);color:#fff;transition:all .15s}}
+.btn-primary:hover{{background:var(--primary-lt);transform:translateY(-1px);box-shadow:0 2px 8px rgba(26,58,92,.3)}}
+.tool-btn{{transition:all .15s}}
+.act-btn{{border-radius:4px;padding:3px 8px;font-size:11px;transition:all .12s}}
+
+/* ── Improved filter row ───────────────────────────────────── */
+.filter-row th{{background:#eef1f7;padding:2px 4px;cursor:default;position:sticky;top:35px;z-index:9}}
+.filter-row input,.filter-row select{{
+  width:100%;padding:3px 6px;border:1px solid var(--border);
+  border-radius:3px;font-size:10px;font-family:inherit;background:#fff;
+  outline:none;transition:border-color .15s}}
+.filter-row input:focus,.filter-row select:focus{{border-color:var(--primary-lt)}}
 </style>
 </head>
 <body>
@@ -500,7 +1039,14 @@ tr.alt td{{background:#fafbfd}}
   <span class="app-title">Document Control Register</span>
   <div class="spacer"></div>
   <button class="tb-btn" onclick="openSettings()">⚙ Settings</button>
+  {'<button class="tb-btn" onclick="openUserMgmt()" style="background:rgba(240,165,0,.2)">👥 Users</button>' if _role=='admin' else ''}
   <button class="tb-btn" onclick="openProjectModal()">🏗 Project</button>
+  <a href="/" style="text-decoration:none"><button class="tb-btn" style="background:rgba(240,165,0,.25);border-color:rgba(240,165,0,.5)">📊 Dashboard</button></a>
+  <span style="color:rgba(255,255,255,.45);padding:0 6px">|</span>
+  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {_uname} <span style="background:{_rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{_role_upper}</span></span>
+  <form action="/api/logout" method="post" style="display:inline;margin:0">
+    <button type="submit" class="tb-btn" style="padding:4px 10px;font-size:11px">⏻ Logout</button>
+  </form>
 </div>
 
 <!-- PROJECT BAR -->
@@ -517,7 +1063,7 @@ tr.alt td{{background:#fafbfd}}
 
 <!-- TOOLBAR -->
 <div id="toolbar">
-  <button class="tool-btn" onclick="openAddRecord()">➕ Add Document</button>
+  {'' if _role=='viewer' else '<button class="tool-btn" onclick="openAddRecord()">➕ Add Document</button>'}
   <button class="tool-btn green" onclick="doExport()">📥 Export Excel</button>
   <button class="tool-btn teal" onclick="openImport()">📤 Import CSV</button>
   <button class="tool-btn purple" onclick="manageColumns()">⚙ Columns</button>
@@ -548,6 +1094,34 @@ tr.alt td{{background:#fafbfd}}
 </div>
 
 <div id="toast"></div>
+
+<!-- USER MANAGEMENT MODAL -->
+<div class="overlay hidden" id="user-modal">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-hdr"><span>👥 User Management</span>
+      <button class="modal-close" onclick="closeModal('user-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="user-list-wrap"></div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="section-title">Add New User</div>
+        <div class="form-grid" style="margin-top:8px">
+          <div class="form-group"><label>Username</label><input id="nu-name" placeholder="e.g. engineer1"></div>
+          <div class="form-group"><label>Role</label>
+            <select id="nu-role"><option value="viewer">Viewer (read-only)</option><option value="admin">Admin</option></select>
+          </div>
+          <div class="form-group"><label>Password</label><input id="nu-pw" type="password" placeholder="Password"></div>
+          <div class="form-group" style="padding-top:18px">
+            <button class="btn btn-primary btn-sm" onclick="addUser()">+ Add User</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('user-modal')">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- ADD/EDIT RECORD MODAL -->
 <div class="overlay hidden" id="rec-modal">
@@ -701,6 +1275,9 @@ let state = {{
 // INIT
 // ============================================================
 async function init() {{
+  // Auto-switch to tab from URL param
+  const urlParams = new URLSearchParams(window.location.search);
+  const tabParam  = urlParams.get('tab');
   await loadDocTypes();
   await loadLists();
   updateClock();
@@ -726,7 +1303,8 @@ async function loadDocTypes() {{
     const el = document.getElementById('cnt-'+dt.id);
     if(el) el.textContent = counts[dt.id]||0;
   }});
-  if(!state.activeTab && types.length) switchTab(types[0].id);
+  const targetTab = tabParam || (types.length ? types[0].id : null);
+  if(targetTab) switchTab(targetTab);
 }}
 
 async function loadLists() {{
@@ -804,6 +1382,7 @@ async function loadRecords() {{
   if(cnt) cnt.textContent = data.count;
 
   buildTableHead();
+  requestAnimationFrame(initColResize);
   renderRows();
 }}
 
@@ -933,9 +1512,11 @@ function renderRows() {{
     // Actions
     const tdAct = document.createElement('td');
     tdAct.className = 'actions-cell';
-    tdAct.innerHTML = `
-      <button class="act-btn" onclick="editRecord('${{row._id}}')">✏</button>
-      <button class="act-btn del" onclick="deleteRecord('${{row._id}}')">🗑</button>`;
+    if(ROLE === 'admin') {{
+      tdAct.innerHTML = `<button class="act-btn" onclick="editRecord('${{row._id}}')">✏</button> <button class="act-btn del" onclick="deleteRecord('${{row._id}}')">🗑</button>`;
+    }} else {{
+      tdAct.innerHTML = '<span style="color:var(--muted);font-size:10px">—</span>';
+    }}
     tr.appendChild(tdAct);
     body.appendChild(tr);
     if(!row._isRev) sr++;
@@ -953,6 +1534,40 @@ function sortBy(key) {{
   state.sortCol = key;
   buildTableHead();
   renderRows();
+}}
+
+
+// ── Column resize ─────────────────────────────────────────────
+function initColResize() {{
+  document.querySelectorAll('#reg-table thead th[data-key]').forEach(th => {{
+    th.querySelector('.col-resizer')?.remove();
+    const rz = document.createElement('div');
+    rz.className = 'col-resizer';
+    th.appendChild(rz);
+    let startX, startW;
+    rz.addEventListener('mousedown', e => {{
+      e.stopPropagation(); e.preventDefault();
+      startX = e.clientX; startW = th.offsetWidth;
+      rz.classList.add('resizing');
+      const onMove = ev => {{
+        const newW = Math.max(50, startW + ev.clientX - startX);
+        th.style.minWidth = newW+'px'; th.style.width = newW+'px';
+      }};
+      const onUp = () => {{
+        rz.classList.remove('resizing');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        const saved = JSON.parse(localStorage.getItem('dcr_col_widths')||'{{}}');
+        saved[state.activeTab+'_'+th.dataset.key] = th.offsetWidth;
+        localStorage.setItem('dcr_col_widths', JSON.stringify(saved));
+      }};
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }});
+    const saved = JSON.parse(localStorage.getItem('dcr_col_widths')||'{{}}');
+    const sw = saved[state.activeTab+'_'+th.dataset.key];
+    if(sw) {{ th.style.minWidth=sw+'px'; th.style.width=sw+'px'; }}
+  }});
 }}
 
 function applySearch() {{ loadRecords(); }}
@@ -1156,31 +1771,57 @@ async function openProjectModal() {{
   try {{ extra = JSON.parse(proj.extraFields||'[]'); }} catch(e){{}}
 
   const body = document.getElementById('proj-modal-body');
-  body.innerHTML = '';
+  body.innerHTML = '';  // clear once, then only use appendChild
+
+  // Fields grid
   const grid = document.createElement('div');
   grid.className = 'form-grid';
-
   PROJ_FIELDS.forEach(([key,lbl])=>{{
     const grp=document.createElement('div'); grp.className='form-group';
-    grp.innerHTML=`<label>${{lbl}}</label><input id="pf-${{key}}" value="${{proj[key]||''}}">`;
+    const label=document.createElement('label'); label.textContent=lbl;
+    const inp=document.createElement('input'); inp.id='pf-'+key; inp.value=proj[key]||'';
+    inp.style.cssText='padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:12px;outline:none;width:100%';
+    grp.appendChild(label); grp.appendChild(inp);
     grid.appendChild(grp);
   }});
   body.appendChild(grid);
-  body.innerHTML += '<div class="section-title" style="margin-top:16px">Additional Fields</div>';
 
+  // Extra fields title
+  const secTitle = document.createElement('div');
+  secTitle.className='section-title'; secTitle.style.marginTop='16px';
+  secTitle.textContent='Additional Fields';
+  body.appendChild(secTitle);
+
+  // Extra fields container
   const extraDiv = document.createElement('div');
   extraDiv.id='extra-fields';
   extra.forEach((ef,i)=>{{
-    const row=document.createElement('div');
-    row.style.cssText='display:flex;gap:6px;margin-bottom:6px;align-items:center';
-    row.innerHTML=`<span style="font-size:11px;font-weight:600;min-width:100px">${{ef.label}}</span>
-      <input id="ef-${{i}}" value="${{ef.value||''}}" style="flex:1;padding:6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:12px">
-      <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>`;
-    extraDiv.appendChild(row);
+    extraDiv.appendChild(_makeExtraRow(ef.label, ef.value||'', i));
   }});
   body.appendChild(extraDiv);
-  body.innerHTML += `<button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="addExtraField()">+ Add Field</button>`;
+
+  // Add field button
+  const addBtn = document.createElement('button');
+  addBtn.className='btn btn-secondary btn-sm'; addBtn.style.marginTop='6px';
+  addBtn.textContent='+ Add Field'; addBtn.onclick=addExtraField;
+  body.appendChild(addBtn);
+
   openModal('proj-modal');
+}}
+
+function _makeExtraRow(lbl, val, i) {{
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;gap:6px;margin-bottom:6px;align-items:center';
+  const span=document.createElement('span');
+  span.style.cssText='font-size:11px;font-weight:600;min-width:100px'; span.textContent=lbl;
+  const inp=document.createElement('input');
+  inp.id='ef-'+i; inp.value=val;
+  inp.style.cssText='flex:1;padding:6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:12px';
+  const btn=document.createElement('button');
+  btn.className='btn btn-danger btn-sm'; btn.textContent='✕';
+  btn.onclick=function(){{this.parentElement.remove()}};
+  row.appendChild(span); row.appendChild(inp); row.appendChild(btn);
+  return row;
 }}
 
 function addExtraField() {{
@@ -1200,19 +1841,28 @@ async function saveProject() {{
   PROJ_FIELDS.forEach(([key])=>{{ const el=document.getElementById('pf-'+key); if(el) data[key]=el.value.trim(); }});
   const extra = [];
   document.querySelectorAll('#extra-fields > div').forEach((row,i)=>{{
-    const lbl=row.querySelector('span')?.textContent;
+    const lbl=row.querySelector('span')?.textContent?.trim();
     const val=row.querySelector('input')?.value||'';
     if(lbl) extra.push({{label:lbl,value:val}});
   }});
   data.extraFields = JSON.stringify(extra);
-  await api('/api/project',{{method:'POST',body:JSON.stringify(data)}});
-  // Refresh project bar
+  try {{
+    await api('/api/project',{{method:'POST',body:JSON.stringify(data)}});
+    closeModal('proj-modal');
+    toast('Project saved ✔','success');
+    // Refresh project bar without full reload
+    await refreshProjBar();
+  }} catch(e) {{
+    toast('Error saving: '+e.message,'error');
+  }}
+}}
+
+async function refreshProjBar() {{
+  const proj = await api('/api/project');
   PROJ_FIELDS.forEach(([key])=>{{
-    const el=document.getElementById('pf-'+key);
-    if(el) {{const pfEl=document.getElementById('pf-'+key+'_bar')||document.querySelector(`#projbar .pf-val[data-key="${{key}}"]`); }}
+    const el = document.querySelector(`#projbar .pf-val[data-key="${{key}}"]`);
+    if(el) el.textContent = proj[key]||'—';
   }});
-  // Simple: reload projbar
-  location.reload();
 }}
 
 // ============================================================
@@ -1378,6 +2028,56 @@ function toast(msg, type='info') {{
   clearTimeout(t._t); t._t=setTimeout(()=>t.className='',3200);
 }}
 
+// ============================================================
+// USER MANAGEMENT
+// ============================================================
+async function openUserMgmt() {{
+  const users = await api('/api/users/list');
+  const wrap = document.getElementById('user-list-wrap');
+  if(!users || users.error) {{ toast('Admin only','error'); return; }}
+  wrap.innerHTML = '<div class="section-title" style="margin-bottom:8px">Current Users</div>';
+  const ul = document.createElement('div');
+  ul.style.cssText='display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px';
+  users.forEach(u=>{{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg);border-radius:4px;font-size:12px';
+    const roleColor = u.role==='admin'?'#f59e0b':'#6b7a94';
+    row.innerHTML=`
+      <span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
+      <span style="background:${{u.role==='admin'?'#fef3c7':'#f0f4f8'}};color:${{roleColor}};border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700">${{u.role.toUpperCase()}}</span>
+      ${{u.username!=='admin'?`<button onclick="changeUserPw('${{u.username}}')" style="padding:3px 8px;border:1px solid var(--border);background:#fff;border-radius:4px;cursor:pointer;font-size:10px">🔑 Change PW</button>
+      <button onclick="delUser('${{u.username}}',this)" style="padding:3px 8px;border:1px solid #fca5a5;background:#fff;border-radius:4px;cursor:pointer;font-size:10px;color:#dc2626">✕ Delete</button>`:'<span style="color:var(--muted);font-size:10px">(protected)</span>'}}`;
+    ul.appendChild(row);
+  }});
+  wrap.appendChild(ul);
+  openModal('user-modal');
+}}
+
+async function addUser() {{
+  const name = document.getElementById('nu-name').value.trim().toLowerCase();
+  const role = document.getElementById('nu-role').value;
+  const pw   = document.getElementById('nu-pw').value;
+  if(!name||!pw){{ toast('Username and password required','error'); return; }}
+  const r = await api('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw}})}});
+  if(r.ok){{ toast('User added ✔','success'); document.getElementById('nu-name').value=''; document.getElementById('nu-pw').value=''; openUserMgmt(); }}
+  else toast(r.error||'Error','error');
+}}
+
+async function delUser(uname, btn) {{
+  if(!confirm('Delete user: '+uname+'?')) return;
+  const r = await api('/api/users',{{method:'POST',body:JSON.stringify({{action:'delete',username:uname}})}});
+  if(r.ok){{ toast('User deleted','warning'); openUserMgmt(); }}
+  else toast(r.error||'Error','error');
+}}
+
+async function changeUserPw(uname) {{
+  const pw = prompt('New password for '+uname+':');
+  if(!pw) return;
+  const r = await api('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:uname,password:pw}})}});
+  if(r.ok) toast('Password changed ✔','success');
+  else toast(r.error||'Error','error');
+}}
+
 // Start
 init();
 </script>
@@ -1392,6 +2092,7 @@ if __name__ == '__main__':
     import threading, webbrowser
 
     db.init_db()
+    _ensure_default_admin()
     local_ip = get_local_ip()
 
     if IS_RENDER:
