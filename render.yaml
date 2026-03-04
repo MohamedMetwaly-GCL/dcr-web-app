@@ -1,12 +1,12 @@
 services:
   - type: web
     name: dcr-web-app
-    runtime: python
+    env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python server.py
+    startCommand: python app.py
     healthCheckPath: /ping
     envVars:
-      - key: DATABASE_URL
-        sync: false          # حطها يدوياً من Supabase → Project Settings → Database → Connection string (URI)
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: RENDER
-        value: "true"
+        value: true
