@@ -1,21 +1,18 @@
 """
-database.py
-Supabase (PostgreSQL) في Production على Render
-SQLite fallback للتطوير المحلي
+database.py - DCR v6
+Supabase PostgreSQL (Production) + SQLite (Local Dev)
+New: sessions in DB, multi-project, user-project assignments
 """
-import json, os, uuid, datetime
+import json, os, uuid, datetime, hashlib, secrets
 
-# ── بيئة التشغيل ──────────────────────────────────────────────────────────
-DATABASE_URL = os.environ.get("DATABASE_URL", "")   # Render بيحقنها تلقائياً
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_POSTGRES  = bool(DATABASE_URL)
 
-# ── SQLite (local dev) ────────────────────────────────────────────────────
 if not USE_POSTGRES:
     import sqlite3
     from pathlib import Path
     _DB = Path(__file__).parent.parent / "DCR_Database.db"
 
-# ── PostgreSQL (Supabase) ─────────────────────────────────────────────────
 if USE_POSTGRES:
     import psycopg2
     from psycopg2.extras import RealDictCursor
@@ -34,61 +31,48 @@ if USE_POSTGRES:
     def _reset_pool():
         global _pool
         try:
-            if _pool:
-                _pool.closeall()
-        except Exception:
-            pass
+            if _pool: _pool.closeall()
+        except Exception: pass
         _pool = None
 
     class _PGConn:
         def __init__(self):
-            # Retry once on connection failure (handles Supabase idle disconnects)
             for attempt in range(2):
                 try:
                     self.conn = _get_pool().getconn()
-                    # Set autocommit BEFORE any query to avoid transaction conflict
                     self.conn.autocommit = True
-                    # Test connection is alive
                     self.conn.cursor().execute("SELECT 1")
-                    # Now disable autocommit for normal transaction use
                     self.conn.autocommit = False
                     break
-                except Exception as e:
-                    try:
-                        _get_pool().putconn(self.conn)
-                    except Exception:
-                        pass
-                    if attempt == 0:
-                        _reset_pool()  # force new pool
-                    else:
-                        raise
+                except Exception:
+                    try: _get_pool().putconn(self.conn)
+                    except Exception: pass
+                    if attempt == 0: _reset_pool()
+                    else: raise
 
         def __enter__(self):
             return self.conn.cursor(cursor_factory=RealDictCursor)
 
         def __exit__(self, exc, *_):
             if exc:
-                try:
-                    self.conn.rollback()
-                except Exception:
-                    pass
+                try: self.conn.rollback()
+                except Exception: pass
             else:
                 self.conn.commit()
-            try:
-                _get_pool().putconn(self.conn)
-            except Exception:
-                pass
+            try: _get_pool().putconn(self.conn)
+            except Exception: pass
 
 
-# ── Unified query helpers ─────────────────────────────────────────────────
+# ── Query helpers ─────────────────────────────────────────────
+def _pg_sql(sql):
+    return sql.replace("?", "%s")
+
 def _q(sql, params=(), one=False):
     if USE_POSTGRES:
-        sql = _pg_sql(sql)
         with _PGConn() as cur:
-            cur.execute(sql, params)
+            cur.execute(_pg_sql(sql), params)
             rows = cur.fetchone() if one else cur.fetchall()
-        if one:
-            return dict(rows) if rows else None
+        if one: return dict(rows) if rows else None
         return [dict(r) for r in rows] if rows else []
     else:
         conn = sqlite3.connect(str(_DB), check_same_thread=False)
@@ -97,112 +81,195 @@ def _q(sql, params=(), one=False):
         try:
             cur = conn.execute(sql, params)
             rows = cur.fetchone() if one else cur.fetchall()
-            if one:
-                return dict(rows) if rows else None
+            if one: return dict(rows) if rows else None
             return [dict(r) for r in rows] if rows else []
-        finally:
-            conn.close()
-
+        finally: conn.close()
 
 def _exe(sql, params=()):
     if USE_POSTGRES:
-        sql = _pg_sql(sql)
         with _PGConn() as cur:
-            cur.execute(sql, params)
+            cur.execute(_pg_sql(sql), params)
     else:
         conn = sqlite3.connect(str(_DB), check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
         try:
             conn.execute(sql, params)
             conn.commit()
-        finally:
-            conn.close()
+        finally: conn.close()
 
 
-def _exe_many(sql, param_list):
-    if USE_POSTGRES:
-        sql = _pg_sql(sql)
-        with _PGConn() as cur:
-            cur.executemany(sql, param_list)
-    else:
-        conn = sqlite3.connect(str(_DB), check_same_thread=False)
-        try:
-            conn.executemany(sql, param_list)
-            conn.commit()
-        finally:
-            conn.close()
-
-
-def _pg_sql(sql):
-    """Convert SQLite ? placeholders to PostgreSQL %s"""
-    return sql.replace("?", "%s")
-
-
-# ── Schema ────────────────────────────────────────────────────────────────
+# ── Schema ────────────────────────────────────────────────────
 _SCHEMA_PG = """
-CREATE TABLE IF NOT EXISTS project (
-    key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    pw_hash  TEXT NOT NULL,
+    role     TEXT NOT NULL DEFAULT 'viewer',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    username   TEXT NOT NULL,
+    role       TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    code       TEXT NOT NULL,
+    data       TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_projects (
+    username   TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    can_edit   INTEGER DEFAULT 1,
+    PRIMARY KEY (username, project_id)
+);
 
 CREATE TABLE IF NOT EXISTS logos (
-    company_key TEXT PRIMARY KEY, image_data TEXT);
+    project_id  TEXT NOT NULL,
+    logo_key    TEXT NOT NULL,
+    image_data  TEXT,
+    PRIMARY KEY (project_id, logo_key)
+);
 
 CREATE TABLE IF NOT EXISTS doc_types (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL,
-    code TEXT NOT NULL, sort_order INTEGER DEFAULT 0);
+    id         TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    code       TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    PRIMARY KEY (id, project_id)
+);
 
 CREATE TABLE IF NOT EXISTS columns_config (
-    id SERIAL PRIMARY KEY,
+    id          SERIAL PRIMARY KEY,
+    project_id  TEXT NOT NULL,
     doc_type_id TEXT NOT NULL,
-    col_key TEXT NOT NULL,
-    label TEXT NOT NULL,
-    col_type TEXT NOT NULL,
-    list_name TEXT,
-    visible INTEGER DEFAULT 1,
-    sort_order INTEGER DEFAULT 0,
-    width INTEGER DEFAULT 120,
-    UNIQUE(doc_type_id, col_key));
+    col_key     TEXT NOT NULL,
+    label       TEXT NOT NULL,
+    col_type    TEXT NOT NULL,
+    list_name   TEXT,
+    visible     INTEGER DEFAULT 1,
+    sort_order  INTEGER DEFAULT 0,
+    width       INTEGER DEFAULT 120,
+    UNIQUE(project_id, doc_type_id, col_key)
+);
 
 CREATE TABLE IF NOT EXISTS records (
-    id TEXT PRIMARY KEY,
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL,
     doc_type_id TEXT NOT NULL,
-    data TEXT NOT NULL,
-    created_at TEXT DEFAULT (to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')),
-    updated_at TEXT DEFAULT (to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')));
-
-CREATE INDEX IF NOT EXISTS idx_records_dt ON records(doc_type_id);
+    data        TEXT NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_records_proj_dt ON records(project_id, doc_type_id);
 
 CREATE TABLE IF NOT EXISTS dropdown_lists (
-    id SERIAL PRIMARY KEY,
-    list_name TEXT NOT NULL,
+    id         SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    list_name  TEXT NOT NULL,
     item_value TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
-    UNIQUE(list_name, item_value));
+    UNIQUE(project_id, list_name, item_value)
+);
 
 CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY, value TEXT);
+    project_id TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value      TEXT,
+    PRIMARY KEY (project_id, key)
+);
 """
 
 _SCHEMA_SQLITE = """
-CREATE TABLE IF NOT EXISTS project (key TEXT PRIMARY KEY, value TEXT);
-CREATE TABLE IF NOT EXISTS logos (company_key TEXT PRIMARY KEY, image_data TEXT);
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY, pw_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'viewer', created_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY, username TEXT NOT NULL, role TEXT NOT NULL,
+    expires_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')));
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL,
+    data TEXT NOT NULL DEFAULT '{}', created_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS user_projects (
+    username TEXT NOT NULL, project_id TEXT NOT NULL, can_edit INTEGER DEFAULT 1,
+    PRIMARY KEY (username, project_id));
+CREATE TABLE IF NOT EXISTS logos (
+    project_id TEXT NOT NULL, logo_key TEXT NOT NULL, image_data TEXT,
+    PRIMARY KEY (project_id, logo_key));
 CREATE TABLE IF NOT EXISTS doc_types (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL, sort_order INTEGER DEFAULT 0);
+    id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL,
+    code TEXT NOT NULL, sort_order INTEGER DEFAULT 0,
+    PRIMARY KEY (id, project_id));
 CREATE TABLE IF NOT EXISTS columns_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    doc_type_id TEXT NOT NULL, col_key TEXT NOT NULL, label TEXT NOT NULL,
-    col_type TEXT NOT NULL, list_name TEXT, visible INTEGER DEFAULT 1,
-    sort_order INTEGER DEFAULT 0, width INTEGER DEFAULT 120,
-    UNIQUE(doc_type_id, col_key));
+    project_id TEXT NOT NULL, doc_type_id TEXT NOT NULL,
+    col_key TEXT NOT NULL, label TEXT NOT NULL, col_type TEXT NOT NULL,
+    list_name TEXT, visible INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0,
+    width INTEGER DEFAULT 120,
+    UNIQUE(project_id, doc_type_id, col_key));
 CREATE TABLE IF NOT EXISTS records (
-    id TEXT PRIMARY KEY, doc_type_id TEXT NOT NULL, data TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')));
-CREATE INDEX IF NOT EXISTS idx_records_dt ON records(doc_type_id);
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_type_id TEXT NOT NULL,
+    data TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')));
+CREATE INDEX IF NOT EXISTS idx_records_proj_dt ON records(project_id, doc_type_id);
 CREATE TABLE IF NOT EXISTS dropdown_lists (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, list_name TEXT NOT NULL,
-    item_value TEXT NOT NULL, sort_order INTEGER DEFAULT 0,
-    UNIQUE(list_name, item_value));
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
+    list_name TEXT NOT NULL, item_value TEXT NOT NULL, sort_order INTEGER DEFAULT 0,
+    UNIQUE(project_id, list_name, item_value));
+CREATE TABLE IF NOT EXISTS settings (
+    project_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT,
+    PRIMARY KEY (project_id, key));
 """
+
+DEFAULT_DOC_TYPES = [
+    ("DS","Document Submittal",0), ("SD","Shop Drawing Submittal",1),
+    ("MS","Material Submittal",2), ("IR","Inspection Request",3),
+    ("MIR","Material Inspection Request",4), ("RFI","Request for Information",5),
+    ("WN","Work Notification",6), ("QS","Quantity Surveyor",7),
+    ("ABD","As Built Drawing",8), ("CVI","Confirmation of Verbal Instruction",9),
+    ("PCQ","Potential Change Questionnaire",10), ("SI","Site Instructions",11),
+    ("EI","Engineer's Instruction",12), ("SVP","Safety Violation with Penalty",13),
+    ("NOC","Notice of Change",14), ("NCR","Non-Conformance Report",15),
+    ("MOM","Minutes of Meetings",16), ("IOM","Internal Office Memo",17),
+    ("PR","Requisition",18), ("LTR","Letters",19),
+]
+
+DEFAULT_COLS = [
+    ("docNo","Document No.","docno",None,0,160),
+    ("discipline","Discipline","dropdown","discipline",1,110),
+    ("trade","Sub-Trade","dropdown","trade",2,120),
+    ("title","Title","text",None,3,200),
+    ("floor","Floor","dropdown","floor",4,120),
+    ("itemRef","Item Ref./DWG No.","text",None,5,150),
+    ("issuedDate","Issued Date","date",None,6,100),
+    ("expectedReplyDate","Expected Reply","auto_date",None,7,100),
+    ("actualReplyDate","Actual Reply","date",None,8,100),
+    ("status","Status","dropdown","status",9,160),
+    ("duration","Duration (days)","auto_num",None,10,90),
+    ("remarks","Remarks","text",None,11,180),
+    ("fileLocation","File Location","link",None,12,100),
+]
+
+DEFAULT_LISTS = {
+    "discipline": ["Electrical","Mechanical","Civil","Structural","Architecture","General","Others"],
+    "trade": ["Lighting","Power","Light Current","Fire Alarm","Low Voltage","Medium Voltage",
+              "Control","HVAC","Plumbing","Fire Fighting","General","Others"],
+    "floor": ["Basement Floor 1","Basement Floor 2","Ground Floor","First Floor","Second Floor",
+              "Third Floor","Fourth Floor","Roof Floor","Upper Roof"],
+    "status": ["A - Approved","B - Approved As Noted","B,C - Approved & Resubmit",
+               "C - Revise & Resubmit","D - Review not Required","Under Review",
+               "Cancelled","Open","Closed","Replied","Pending"],
+}
 
 
 def init_db():
@@ -210,285 +277,452 @@ def init_db():
         with _PGConn() as cur:
             for stmt in _SCHEMA_PG.strip().split(";"):
                 stmt = stmt.strip()
-                if stmt:
-                    cur.execute(stmt)
+                if stmt: cur.execute(stmt)
     else:
         from pathlib import Path
         _DB.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(_DB), check_same_thread=False)
         conn.executescript(_SCHEMA_SQLITE)
-        conn.commit()
-        conn.close()
-    _seed_if_empty()
+        conn.commit(); conn.close()
+
+    _migrate_old_data()
+    _ensure_super_admin()
 
 
-def _seed_if_empty():
-    # Only seed if doc_types is empty
-    if _q("SELECT COUNT(*) as c FROM doc_types", one=True).get("c", 0) > 0:
-        return
+def _migrate_old_data():
+    """Migrate v5 single-project data → v6 multi-project schema."""
+    # Check if old tables exist and new projects table is empty
+    try:
+        old_proj_rows = _q("SELECT key, value FROM project") if _table_exists("project") else []
+        if not old_proj_rows:
+            return
+        existing_projects = _q("SELECT id FROM projects")
+        if existing_projects:
+            return  # Already migrated
 
-    # Project
-    proj = {
-        "code": "24CP01", "name": "EKH New Office Building (H24A)",
-        "startDate": "2025-03-16", "endDate": "2026-12-31",
-        "client": "EKH", "landlord": "Misr Italia", "pmo": "PMO",
-        "mainConsultant": "SCAS", "mepConsultant": "Style Design",
-        "contractor": "GCL", "extraFields": "[]",
-    }
-    for k, v in proj.items():
-        _exe("INSERT INTO project(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING", (k, v))
+        print("[DCR] Migrating v5 data to v6 schema...")
+        old_proj = {r["key"]: r["value"] for r in old_proj_rows}
+        proj_id  = old_proj.get("code", "P001").upper()
+        proj_name = old_proj.get("name", "Migrated Project")
+        proj_code = old_proj.get("code", "P001")
 
-    # Doc types
-    dts = [
-        ("DS","Document Submittal","DS",0), ("SD","Shop Drawing Submittal","SD",1),
-        ("MS","Material Submittal","MS",2), ("IR","Inspection Request","IR",3),
-        ("MIR","Material Inspection Request","MIR",4), ("RFI","Request for Information","RFI",5),
-        ("WN","Work Notification","WN",6), ("QS","Quantity Surveyor","QS",7),
-        ("ABD","As Built Drawing","ABD",8), ("CVI","Confirmation of Verbal Instruction","CVI",9),
-        ("PCQ","Potential Change Questionnaire","PCQ",10), ("SI","Site Instructions","SI",11),
-        ("EI","Engineer's Instruction","EI",12), ("SVP","Safety Violation with Penalty","SVP",13),
-        ("NOC","Notice of Change","NOC",14), ("NCR","Non-Conformance Report","NCR",15),
-        ("MOM","Minutes of Meetings","MOM",16), ("IOM","Internal Office Memo","IOM",17),
-        ("PR","Requisition","PR",18), ("LTR","Letters","LTR",19),
-    ]
-    for dt in dts:
-        _exe("INSERT INTO doc_types(id,name,code,sort_order) VALUES(?,?,?,?) ON CONFLICT DO NOTHING", dt)
-
-    # Dropdown lists
-    lists = {
-        "discipline": ["Electrical","Mechanical","Civil","Structural","Architecture","General","Others"],
-        "trade": ["Lighting","Power","Light Current","Fire Alarm","Low Voltage","Medium Voltage",
-                  "Control","HVAC","Plumbing","Fire Fighting","General","Others"],
-        "floor": ["Basement Floor 1","Basement Floor 2","Ground Floor","First Floor","Second Floor",
-                  "Third Floor","Fourth Floor","Roof Floor","Upper Roof"],
-        "status": ["A - Approved","B - Approved As Noted","B,C - Approved & Resubmit",
-                   "C - Revise & Resubmit","D - Review not Required","Under Review",
-                   "Cancelled","Open","Closed","Replied","Pending"],
-    }
-    for ln, items in lists.items():
-        for i, item in enumerate(items):
-            _exe("INSERT INTO dropdown_lists(list_name,item_value,sort_order) VALUES(?,?,?) ON CONFLICT DO NOTHING",
-                 (ln, item, i))
-
-    # Default columns for all doc types
-    DEFAULT_COLS = [
-        ("docNo","Document No.","docno",None,0,160),
-        ("discipline","Discipline","dropdown","discipline",1,110),
-        ("trade","Sub-Trade","dropdown","trade",2,120),
-        ("title","Title","text",None,3,200),
-        ("floor","Floor","dropdown","floor",4,120),
-        ("itemRef","Item Ref./DWG No.","text",None,5,150),
-        ("issuedDate","Issued Date","date",None,6,100),
-        ("expectedReplyDate","Expected Reply","auto_date",None,7,100),
-        ("actualReplyDate","Actual Reply","date",None,8,100),
-        ("status","Status","dropdown","status",9,160),
-        ("duration","Duration (days)","auto_num",None,10,90),
-        ("remarks","Remarks","text",None,11,180),
-        ("fileLocation","File Location","link",None,12,100),
-    ]
-    for (dt_id, *_) in dts:
-        for col in DEFAULT_COLS:
-            _exe("""INSERT INTO columns_config
-                (doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
-                VALUES(?,?,?,?,?,1,?,?) ON CONFLICT DO NOTHING""",
-                (dt_id, col[0], col[1], col[2], col[3], col[4], col[5]))
-
-
-# ── ON CONFLICT syntax fix for Postgres ──────────────────────────────────
-# psycopg2 doesn't like "ON CONFLICT DO NOTHING" without column spec in some cases
-# We handle this by wrapping inserts in try/except for seeds
-
-
-# ── Project ───────────────────────────────────────────────────────────────
-def get_project():
-    rows = _q("SELECT key, value FROM project")
-    return {r["key"]: r["value"] for r in rows}
-
-
-def save_project(data: dict):
-    for k, v in data.items():
+        # Create project
+        proj_data = json.dumps({k: v for k, v in old_proj.items()})
         if USE_POSTGRES:
-            _exe("""INSERT INTO project(key,value) VALUES(?,?)
-                    ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value""", (k, str(v)))
+            _exe("INSERT INTO projects(id,name,code,data) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+                 (proj_id, proj_name, proj_code, proj_data))
         else:
-            _exe("INSERT OR REPLACE INTO project(key,value) VALUES(?,?)", (k, str(v)))
+            _exe("INSERT OR IGNORE INTO projects(id,name,code,data) VALUES(?,?,?,?)",
+                 (proj_id, proj_name, proj_code, proj_data))
+
+        # Migrate doc_types
+        old_dts = _q("SELECT * FROM doc_types") if _table_exists("doc_types") else []
+        for dt in old_dts:
+            if USE_POSTGRES:
+                _exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
+                     (dt["id"], proj_id, dt["name"], dt["code"], dt.get("sort_order",0)))
+            else:
+                _exe("INSERT OR IGNORE INTO doc_types(id,project_id,name,code,sort_order) VALUES(?,?,?,?,?)",
+                     (dt["id"], proj_id, dt["name"], dt["code"], dt.get("sort_order",0)))
+
+        # Migrate columns_config
+        old_cols = _q("SELECT * FROM columns_config") if _table_exists("columns_config") else []
+        for c in old_cols:
+            if USE_POSTGRES:
+                _exe("""INSERT INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+                    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING""",
+                    (proj_id, c["doc_type_id"], c["col_key"], c["label"], c["col_type"],
+                     c.get("list_name"), c.get("visible",1), c.get("sort_order",0), c.get("width",120)))
+            else:
+                _exe("""INSERT OR IGNORE INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+                    VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (proj_id, c["doc_type_id"], c["col_key"], c["label"], c["col_type"],
+                     c.get("list_name"), c.get("visible",1), c.get("sort_order",0), c.get("width",120)))
+
+        # Migrate records
+        old_recs = _q("SELECT * FROM records") if _table_exists("records") else []
+        for r in old_recs:
+            if USE_POSTGRES:
+                _exe("""INSERT INTO records(id,project_id,doc_type_id,data,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING""",
+                    (r["id"], proj_id, r["doc_type_id"], r["data"],
+                     r.get("created_at",""), r.get("updated_at","")))
+            else:
+                _exe("""INSERT OR IGNORE INTO records(id,project_id,doc_type_id,data,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?)""",
+                    (r["id"], proj_id, r["doc_type_id"], r["data"],
+                     r.get("created_at",""), r.get("updated_at","")))
+
+        # Migrate dropdown_lists
+        old_lists = _q("SELECT * FROM dropdown_lists") if _table_exists("dropdown_lists") else []
+        for item in old_lists:
+            if USE_POSTGRES:
+                _exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+                     (proj_id, item["list_name"], item["item_value"], item.get("sort_order",0)))
+            else:
+                _exe("INSERT OR IGNORE INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(?,?,?,?)",
+                     (proj_id, item["list_name"], item["item_value"], item.get("sort_order",0)))
+
+        # Migrate logos
+        old_logos = _q("SELECT * FROM logos") if _table_exists("logos") else []
+        for logo in old_logos:
+            key = logo.get("company_key") or logo.get("logo_key","")
+            if USE_POSTGRES:
+                _exe("INSERT INTO logos(project_id,logo_key,image_data) VALUES(?,?,?) ON CONFLICT DO NOTHING",
+                     (proj_id, key, logo.get("image_data","")))
+            else:
+                _exe("INSERT OR IGNORE INTO logos(project_id,logo_key,image_data) VALUES(?,?,?)",
+                     (proj_id, key, logo.get("image_data","")))
+
+        # Migrate users/settings
+        old_settings = _q("SELECT * FROM settings") if _table_exists("settings") else []
+        for s in old_settings:
+            if s["key"] == "users_json":
+                try:
+                    users = json.loads(s["value"] or "{}")
+                    for uname, udata in users.items():
+                        if USE_POSTGRES:
+                            _exe("INSERT INTO users(username,pw_hash,role) VALUES(?,?,?) ON CONFLICT DO NOTHING",
+                                 (uname, udata.get("pw",""), udata.get("role","viewer")))
+                            _exe("INSERT INTO user_projects(username,project_id,can_edit) VALUES(?,?,1) ON CONFLICT DO NOTHING",
+                                 (uname, proj_id))
+                        else:
+                            _exe("INSERT OR IGNORE INTO users(username,pw_hash,role) VALUES(?,?,?)",
+                                 (uname, udata.get("pw",""), udata.get("role","viewer")))
+                            _exe("INSERT OR IGNORE INTO user_projects(username,project_id,can_edit) VALUES(?,?,1)",
+                                 (uname, proj_id))
+                except Exception as e:
+                    print(f"[DCR] Warning migrating users: {e}")
+
+        print(f"[DCR] Migration complete → project '{proj_id}' with {len(old_recs)} records")
+    except Exception as e:
+        print(f"[DCR] Migration skipped: {e}")
 
 
-# ── Logos ─────────────────────────────────────────────────────────────────
-def get_logo(key):
-    r = _q("SELECT image_data FROM logos WHERE company_key=?", (key,), one=True)
-    return r["image_data"] if r else None
-
-
-def save_logo(key, data):
-    if USE_POSTGRES:
-        _exe("""INSERT INTO logos(company_key,image_data) VALUES(?,?)
-                ON CONFLICT(company_key) DO UPDATE SET image_data=EXCLUDED.image_data""", (key, data))
-    else:
-        _exe("INSERT OR REPLACE INTO logos(company_key,image_data) VALUES(?,?)", (key, data))
-
-
-# ── Doc Types ─────────────────────────────────────────────────────────────
-def get_doc_types():
-    return _q("SELECT * FROM doc_types ORDER BY sort_order, id")
-
-
-def add_doc_type(id_, name, code):
-    r = _q("SELECT MAX(sort_order) as m FROM doc_types", one=True)
-    order = (r["m"] or 0) + 1 if r else 0
+def _table_exists(name):
     try:
         if USE_POSTGRES:
-            _exe("INSERT INTO doc_types(id,name,code,sort_order) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
-                 (id_, name, code, order))
+            r = _q("SELECT to_regclass(%s) as t", (name,), one=True)
+            return r and r.get("t") is not None
         else:
-            _exe("INSERT OR IGNORE INTO doc_types(id,name,code,sort_order) VALUES(?,?,?,?)",
-                 (id_, name, code, order))
-        # Seed default columns
-        DEFAULT_COLS = [
-            ("docNo","Document No.","docno",None,0,160),
-            ("discipline","Discipline","dropdown","discipline",1,110),
-            ("trade","Sub-Trade","dropdown","trade",2,120),
-            ("title","Title","text",None,3,200),
-            ("floor","Floor","dropdown","floor",4,120),
-            ("itemRef","Item Ref./DWG No.","text",None,5,150),
-            ("issuedDate","Issued Date","date",None,6,100),
-            ("expectedReplyDate","Expected Reply","auto_date",None,7,100),
-            ("actualReplyDate","Actual Reply","date",None,8,100),
-            ("status","Status","dropdown","status",9,160),
-            ("duration","Duration (days)","auto_num",None,10,90),
-            ("remarks","Remarks","text",None,11,180),
-            ("fileLocation","File Location","link",None,12,100),
-        ]
+            r = _q("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,), one=True)
+            return bool(r)
+    except: return False
+
+
+def _ensure_super_admin():
+    """Create default super admin if no users exist."""
+    r = _q("SELECT COUNT(*) as c FROM users", one=True)
+    if r and r.get("c", 0) == 0:
+        pw = _hash_pw("admin123")
+        if USE_POSTGRES:
+            _exe("INSERT INTO users(username,pw_hash,role) VALUES(?,?,?) ON CONFLICT DO NOTHING",
+                 ("admin", pw, "superadmin"))
+        else:
+            _exe("INSERT OR IGNORE INTO users(username,pw_hash,role) VALUES(?,?,?)",
+                 ("admin", pw, "superadmin"))
+
+
+def _hash_pw(pw):
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+
+# ── Sessions (stored in DB — survive restarts) ─────────────────
+SESSION_TTL = 8 * 3600  # 8 hours
+
+def create_session(username, role):
+    token = secrets.token_hex(32)
+    expires = (datetime.datetime.utcnow() + datetime.timedelta(seconds=SESSION_TTL)).isoformat()
+    if USE_POSTGRES:
+        _exe("INSERT INTO sessions(token,username,role,expires_at) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+             (token, username, role, expires))
+    else:
+        _exe("INSERT OR IGNORE INTO sessions(token,username,role,expires_at) VALUES(?,?,?,?)",
+             (token, username, role, expires))
+    return token
+
+def get_session(token):
+    if not token: return None
+    now = datetime.datetime.utcnow().isoformat()
+    r = _q("SELECT username, role FROM sessions WHERE token=? AND expires_at > ?",
+           (token, now), one=True)
+    return r if r else None
+
+def delete_session(token):
+    _exe("DELETE FROM sessions WHERE token=?", (token,))
+
+def cleanup_sessions():
+    now = datetime.datetime.utcnow().isoformat()
+    _exe("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+
+
+# ── Users ─────────────────────────────────────────────────────
+def get_user(username):
+    return _q("SELECT * FROM users WHERE username=?", (username,), one=True)
+
+def get_all_users():
+    return _q("SELECT username, role FROM users ORDER BY username")
+
+def add_user(username, pw, role="viewer"):
+    if USE_POSTGRES:
+        _exe("INSERT INTO users(username,pw_hash,role) VALUES(?,?,?) ON CONFLICT DO NOTHING",
+             (username, _hash_pw(pw), role))
+    else:
+        _exe("INSERT OR IGNORE INTO users(username,pw_hash,role) VALUES(?,?,?)",
+             (username, _hash_pw(pw), role))
+
+def delete_user(username):
+    _exe("DELETE FROM users WHERE username=?", (username,))
+    _exe("DELETE FROM user_projects WHERE username=?", (username,))
+    _exe("DELETE FROM sessions WHERE username=?", (username,))
+
+def change_password(username, new_pw):
+    _exe("UPDATE users SET pw_hash=? WHERE username=?", (_hash_pw(new_pw), username))
+
+def verify_password(username, pw):
+    u = get_user(username)
+    return u and u["pw_hash"] == _hash_pw(pw)
+
+
+# ── User ↔ Project assignments ────────────────────────────────
+def get_user_projects(username):
+    """Projects a user can edit."""
+    return [r["project_id"] for r in
+            _q("SELECT project_id FROM user_projects WHERE username=?", (username,))]
+
+def assign_user_project(username, project_id, can_edit=1):
+    if USE_POSTGRES:
+        _exe("INSERT INTO user_projects(username,project_id,can_edit) VALUES(?,?,?) ON CONFLICT DO NOTHING",
+             (username, project_id, can_edit))
+    else:
+        _exe("INSERT OR IGNORE INTO user_projects(username,project_id,can_edit) VALUES(?,?,?)",
+             (username, project_id, can_edit))
+
+def remove_user_project(username, project_id):
+    _exe("DELETE FROM user_projects WHERE username=? AND project_id=?", (username, project_id))
+
+def get_project_users(project_id):
+    return _q("SELECT username FROM user_projects WHERE project_id=?", (project_id,))
+
+
+# ── Projects ──────────────────────────────────────────────────
+def get_all_projects():
+    return _q("SELECT * FROM projects ORDER BY created_at")
+
+def get_project(project_id):
+    r = _q("SELECT * FROM projects WHERE id=?", (project_id,), one=True)
+    if not r: return {}
+    try:
+        data = json.loads(r.get("data") or "{}")
+    except: data = {}
+    data["id"]   = r["id"]
+    data["name"] = r["name"]
+    data["code"] = r["code"]
+    return data
+
+def save_project(project_id, data: dict):
+    name = data.get("name", project_id)
+    code = data.get("code", project_id)
+    jdata = json.dumps({k: v for k, v in data.items() if k not in ("id","name","code")})
+    if USE_POSTGRES:
+        _exe("""INSERT INTO projects(id,name,code,data) VALUES(?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data""",
+             (project_id, name, code, jdata))
+    else:
+        _exe("INSERT OR REPLACE INTO projects(id,name,code,data) VALUES(?,?,?,?)",
+             (project_id, name, code, jdata))
+
+def create_project(project_id, name, code, creator_username=None):
+    if USE_POSTGRES:
+        _exe("INSERT INTO projects(id,name,code,data) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+             (project_id, name, code, "{}"))
+    else:
+        _exe("INSERT OR IGNORE INTO projects(id,name,code,data) VALUES(?,?,?,?)",
+             (project_id, name, code, "{}"))
+    # Seed default doc types, columns, dropdown lists
+    _seed_project(project_id)
+    # Assign creator
+    if creator_username:
+        assign_user_project(creator_username, project_id)
+
+def delete_project(project_id):
+    for tbl in ("projects","doc_types","columns_config","records",
+                "dropdown_lists","logos","settings","user_projects"):
+        _exe(f"DELETE FROM {tbl} WHERE project_id=?", (project_id,))
+
+def _seed_project(project_id):
+    for (code, name, order) in DEFAULT_DOC_TYPES:
+        if USE_POSTGRES:
+            _exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
+                 (code, project_id, name, code, order))
+        else:
+            _exe("INSERT OR IGNORE INTO doc_types(id,project_id,name,code,sort_order) VALUES(?,?,?,?,?)",
+                 (code, project_id, name, code, order))
         for col in DEFAULT_COLS:
             if USE_POSTGRES:
-                _exe("""INSERT INTO columns_config(doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
-                    VALUES(?,?,?,?,?,1,?,?) ON CONFLICT DO NOTHING""",
-                    (id_, col[0], col[1], col[2], col[3], col[4], col[5]))
+                _exe("""INSERT INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+                    VALUES(?,?,?,?,?,?,1,?,?) ON CONFLICT DO NOTHING""",
+                    (project_id, code, col[0], col[1], col[2], col[3], col[4], col[5]))
             else:
-                _exe("""INSERT OR IGNORE INTO columns_config(doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
-                    VALUES(?,?,?,?,?,1,?,?)""",
-                    (id_, col[0], col[1], col[2], col[3], col[4], col[5]))
-    except Exception as e:
-        print(f"add_doc_type error: {e}")
+                _exe("""INSERT OR IGNORE INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+                    VALUES(?,?,?,?,?,?,1,?,?)""",
+                    (project_id, code, col[0], col[1], col[2], col[3], col[4], col[5]))
+    for ln, items in DEFAULT_LISTS.items():
+        for i, item in enumerate(items):
+            if USE_POSTGRES:
+                _exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+                     (project_id, ln, item, i))
+            else:
+                _exe("INSERT OR IGNORE INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(?,?,?,?)",
+                     (project_id, ln, item, i))
 
 
-def rename_doc_type(id_, new_name):
-    _exe("UPDATE doc_types SET name=? WHERE id=?", (new_name, id_))
+# ── Logos ─────────────────────────────────────────────────────
+def get_logo(project_id, key):
+    r = _q("SELECT image_data FROM logos WHERE project_id=? AND logo_key=?", (project_id, key), one=True)
+    return r["image_data"] if r else None
+
+def save_logo(project_id, key, data):
+    if USE_POSTGRES:
+        _exe("""INSERT INTO logos(project_id,logo_key,image_data) VALUES(?,?,?)
+                ON CONFLICT(project_id,logo_key) DO UPDATE SET image_data=EXCLUDED.image_data""",
+             (project_id, key, data))
+    else:
+        _exe("INSERT OR REPLACE INTO logos(project_id,logo_key,image_data) VALUES(?,?,?)",
+             (project_id, key, data))
 
 
-def delete_doc_type(id_):
-    _exe("DELETE FROM doc_types WHERE id=?", (id_,))
-    _exe("DELETE FROM records WHERE doc_type_id=?", (id_,))
-    _exe("DELETE FROM columns_config WHERE doc_type_id=?", (id_,))
+# ── Doc Types ─────────────────────────────────────────────────
+def get_doc_types(project_id):
+    return _q("SELECT * FROM doc_types WHERE project_id=? ORDER BY sort_order, id", (project_id,))
+
+def add_doc_type(project_id, id_, name, code):
+    r = _q("SELECT MAX(sort_order) as m FROM doc_types WHERE project_id=?", (project_id,), one=True)
+    order = (r["m"] or 0) + 1 if r else 0
+    if USE_POSTGRES:
+        _exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
+             (id_, project_id, name, code, order))
+    else:
+        _exe("INSERT OR IGNORE INTO doc_types(id,project_id,name,code,sort_order) VALUES(?,?,?,?,?)",
+             (id_, project_id, name, code, order))
+    for col in DEFAULT_COLS:
+        if USE_POSTGRES:
+            _exe("""INSERT INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+                VALUES(?,?,?,?,?,?,1,?,?) ON CONFLICT DO NOTHING""",
+                (project_id, id_, col[0], col[1], col[2], col[3], col[4], col[5]))
+        else:
+            _exe("""INSERT OR IGNORE INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+                VALUES(?,?,?,?,?,?,1,?,?)""",
+                (project_id, id_, col[0], col[1], col[2], col[3], col[4], col[5]))
+
+def delete_doc_type(project_id, id_):
+    _exe("DELETE FROM doc_types WHERE id=? AND project_id=?", (id_, project_id))
+    _exe("DELETE FROM records WHERE doc_type_id=? AND project_id=?", (id_, project_id))
+    _exe("DELETE FROM columns_config WHERE doc_type_id=? AND project_id=?", (id_, project_id))
 
 
-# ── Columns ───────────────────────────────────────────────────────────────
-def get_columns(dt_id, visible_only=False):
-    sql = "SELECT * FROM columns_config WHERE doc_type_id=?"
+# ── Columns ───────────────────────────────────────────────────
+def get_columns(project_id, dt_id, visible_only=False):
+    sql = "SELECT * FROM columns_config WHERE project_id=? AND doc_type_id=?"
+    params = [project_id, dt_id]
     if visible_only:
         sql += " AND visible=1"
     sql += " ORDER BY sort_order"
-    return _q(sql, (dt_id,))
+    return _q(sql, params)
 
-
-def add_column(dt_id, col_key, label, col_type, list_name=None):
-    r = _q("SELECT MAX(sort_order) as m FROM columns_config WHERE doc_type_id=?", (dt_id,), one=True)
+def add_column(project_id, dt_id, col_key, label, col_type, list_name=None):
+    r = _q("SELECT MAX(sort_order) as m FROM columns_config WHERE project_id=? AND doc_type_id=?",
+           (project_id, dt_id), one=True)
     order = (r["m"] or 0) + 1 if r else 0
     if USE_POSTGRES:
-        _exe("""INSERT INTO columns_config(doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
-            VALUES(?,?,?,?,?,1,?,120) ON CONFLICT DO NOTHING""",
-            (dt_id, col_key, label, col_type, list_name, order))
+        _exe("""INSERT INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+            VALUES(?,?,?,?,?,?,1,?,120) ON CONFLICT DO NOTHING""",
+            (project_id, dt_id, col_key, label, col_type, list_name, order))
     else:
-        _exe("""INSERT OR IGNORE INTO columns_config(doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
-            VALUES(?,?,?,?,?,1,?,120)""",
-            (dt_id, col_key, label, col_type, list_name, order))
-
+        _exe("""INSERT OR IGNORE INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+            VALUES(?,?,?,?,?,?,1,?,120)""",
+            (project_id, dt_id, col_key, label, col_type, list_name, order))
 
 def update_col_visibility(col_id, visible):
     _exe("UPDATE columns_config SET visible=? WHERE id=?", (1 if visible else 0, col_id))
-
 
 def delete_column(col_id):
     _exe("DELETE FROM columns_config WHERE id=?", (col_id,))
 
 
-# ── Records ───────────────────────────────────────────────────────────────
-def get_records(dt_id, search="", filters=None):
-    rows = _q("SELECT * FROM records WHERE doc_type_id=? ORDER BY created_at", (dt_id,))
+# ── Records ───────────────────────────────────────────────────
+def get_records(project_id, dt_id, search=""):
+    rows = _q("SELECT * FROM records WHERE project_id=? AND doc_type_id=? ORDER BY created_at",
+              (project_id, dt_id))
     result = []
     for row in rows:
-        data = json.loads(row["data"])
+        try: data = json.loads(row["data"])
+        except: data = {}
         data["_id"]      = row["id"]
-        data["_created"] = row["created_at"]
+        data["_created"] = str(row.get("created_at",""))
         result.append(data)
     if search:
         sq = search.lower()
         result = [r for r in result if any(sq in str(v).lower() for v in r.values())]
-    if filters:
-        for k, v in filters.items():
-            if v:
-                result = [r for r in result if v.lower() in str(r.get(k, "")).lower()]
     return result
 
-
-def get_record_count(dt_id):
-    r = _q("SELECT COUNT(*) as c FROM records WHERE doc_type_id=?", (dt_id,), one=True)
+def get_record_count(project_id, dt_id):
+    r = _q("SELECT COUNT(*) as c FROM records WHERE project_id=? AND doc_type_id=?",
+           (project_id, dt_id), one=True)
     return r["c"] if r else 0
 
-
-def save_record(dt_id, rec_id, data: dict):
-    now  = datetime.datetime.now().isoformat()
+def save_record(project_id, dt_id, rec_id, data: dict):
+    now   = datetime.datetime.utcnow().isoformat()
     clean = {k: v for k, v in data.items() if not k.startswith("_")}
     jdata = json.dumps(clean, ensure_ascii=False)
     if USE_POSTGRES:
-        _exe("""INSERT INTO records(id,doc_type_id,data,updated_at) VALUES(?,?,?,?)
+        _exe("""INSERT INTO records(id,project_id,doc_type_id,data,updated_at) VALUES(?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data, updated_at=EXCLUDED.updated_at""",
-             (rec_id, dt_id, jdata, now))
+             (rec_id, project_id, dt_id, jdata, now))
     else:
-        _exe("INSERT OR REPLACE INTO records(id,doc_type_id,data,updated_at) VALUES(?,?,?,?)",
-             (rec_id, dt_id, jdata, now))
-
+        _exe("INSERT OR REPLACE INTO records(id,project_id,doc_type_id,data,updated_at) VALUES(?,?,?,?,?)",
+             (rec_id, project_id, dt_id, jdata, now))
 
 def delete_record(rec_id):
     _exe("DELETE FROM records WHERE id=?", (rec_id,))
 
 
-# ── Dropdown Lists ────────────────────────────────────────────────────────
-def get_dropdown_list(name):
-    return [r["item_value"] for r in
-            _q("SELECT item_value FROM dropdown_lists WHERE list_name=? ORDER BY sort_order", (name,))]
-
-
-def get_all_dropdown_lists():
+# ── Dropdown Lists ────────────────────────────────────────────
+def get_all_dropdown_lists(project_id):
     names = [r["list_name"] for r in
-             _q("SELECT DISTINCT list_name FROM dropdown_lists ORDER BY list_name")]
-    return {n: get_dropdown_list(n) for n in names}
+             _q("SELECT DISTINCT list_name FROM dropdown_lists WHERE project_id=? ORDER BY list_name",
+                (project_id,))]
+    return {n: [r["item_value"] for r in
+                _q("SELECT item_value FROM dropdown_lists WHERE project_id=? AND list_name=? ORDER BY sort_order",
+                   (project_id, n))]
+            for n in names}
 
-
-def add_dropdown_item(list_name, item):
-    r = _q("SELECT MAX(sort_order) as m FROM dropdown_lists WHERE list_name=?", (list_name,), one=True)
+def add_dropdown_item(project_id, list_name, item):
+    r = _q("SELECT MAX(sort_order) as m FROM dropdown_lists WHERE project_id=? AND list_name=?",
+           (project_id, list_name), one=True)
     order = (r["m"] or 0) + 1 if r else 0
     if USE_POSTGRES:
-        _exe("INSERT INTO dropdown_lists(list_name,item_value,sort_order) VALUES(?,?,?) ON CONFLICT DO NOTHING",
-             (list_name, item, order))
+        _exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+             (project_id, list_name, item, order))
     else:
-        _exe("INSERT OR IGNORE INTO dropdown_lists(list_name,item_value,sort_order) VALUES(?,?,?)",
-             (list_name, item, order))
+        _exe("INSERT OR IGNORE INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(?,?,?,?)",
+             (project_id, list_name, item, order))
+
+def remove_dropdown_item(project_id, list_name, item):
+    _exe("DELETE FROM dropdown_lists WHERE project_id=? AND list_name=? AND item_value=?",
+         (project_id, list_name, item))
 
 
-def remove_dropdown_item(list_name, item):
-    _exe("DELETE FROM dropdown_lists WHERE list_name=? AND item_value=?", (list_name, item))
-
-
-# ── Settings ──────────────────────────────────────────────────────────────
-def get_setting(key, default=None):
-    r = _q("SELECT value FROM settings WHERE key=?", (key,), one=True)
+# ── Settings ──────────────────────────────────────────────────
+def get_setting(project_id, key, default=None):
+    r = _q("SELECT value FROM settings WHERE project_id=? AND key=?", (project_id, key), one=True)
     return r["value"] if r else default
 
-
-def save_setting(key, value):
+def save_setting(project_id, key, value):
     if USE_POSTGRES:
-        _exe("""INSERT INTO settings(key,value) VALUES(?,?)
-                ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value""", (key, str(value)))
+        _exe("""INSERT INTO settings(project_id,key,value) VALUES(?,?,?)
+                ON CONFLICT(project_id,key) DO UPDATE SET value=EXCLUDED.value""",
+             (project_id, key, str(value)))
     else:
-        _exe("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key, str(value)))
+        _exe("INSERT OR REPLACE INTO settings(project_id,key,value) VALUES(?,?,?)",
+             (project_id, key, str(value)))
