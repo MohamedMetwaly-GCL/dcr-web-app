@@ -46,11 +46,18 @@ if USE_POSTGRES:
             for attempt in range(2):
                 try:
                     self.conn = _get_pool().getconn()
+                    # Set autocommit BEFORE any query to avoid transaction conflict
+                    self.conn.autocommit = True
                     # Test connection is alive
                     self.conn.cursor().execute("SELECT 1")
+                    # Now disable autocommit for normal transaction use
                     self.conn.autocommit = False
                     break
                 except Exception as e:
+                    try:
+                        _get_pool().putconn(self.conn)
+                    except Exception:
+                        pass
                     if attempt == 0:
                         _reset_pool()  # force new pool
                     else:
