@@ -274,7 +274,9 @@ DEFAULT_LISTS = {
 
 def init_db():
     if USE_POSTGRES:
-        # Each statement in its own transaction to avoid cascade failures
+        # Step 1: Upgrade existing v5 tables BEFORE creating new schema
+        _upgrade_v5_tables()
+        # Step 2: Create new tables (IF NOT EXISTS — safe to run always)
         stmts = [s.strip() for s in _SCHEMA_PG.strip().split(";") if s.strip()]
         for stmt in stmts:
             try:
@@ -283,7 +285,7 @@ def init_db():
             except Exception as e:
                 msg = str(e).lower()
                 if "already exists" in msg or "duplicate" in msg:
-                    pass  # Ignore — table/index already there
+                    pass
                 else:
                     print(f"[DCR] Schema warning ({stmt[:40]}): {e}")
     else:
@@ -295,6 +297,35 @@ def init_db():
 
     _migrate_old_data()
     _ensure_super_admin()
+
+
+def _upgrade_v5_tables():
+    """Add missing columns to v5 tables so they work with v6 queries."""
+    upgrades = [
+        # doc_types: add project_id if missing
+        "ALTER TABLE doc_types ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
+        # records: add project_id if missing
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
+        # columns_config: add project_id if missing
+        "ALTER TABLE columns_config ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
+        # dropdown_lists: add project_id if missing
+        "ALTER TABLE dropdown_lists ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
+        # logos: rename company_key → logo_key if needed (handled separately)
+        "ALTER TABLE logos ADD COLUMN IF NOT EXISTS logo_key TEXT DEFAULT ''",
+        "ALTER TABLE logos ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
+        # settings: add project_id if missing
+        "ALTER TABLE settings ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
+    ]
+    for sql in upgrades:
+        try:
+            with _PGConn() as cur:
+                cur.execute(sql)
+        except Exception as e:
+            msg = str(e).lower()
+            if "already exists" in msg or "does not exist" in msg or "duplicate" in msg:
+                pass  # Column already there or table doesn't exist yet
+            else:
+                print(f"[DCR] Upgrade note: {e}")
 
 
 def _migrate_old_data():
