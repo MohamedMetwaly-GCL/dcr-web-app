@@ -300,45 +300,55 @@ def init_db():
 
 
 def _upgrade_v5_tables():
-    """Add missing columns to v5 tables so they work with v6 queries."""
-    upgrades = [
-        # doc_types: add project_id if missing
-        "ALTER TABLE doc_types ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
-        # records: add project_id if missing
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
-        # columns_config: add project_id if missing
-        "ALTER TABLE columns_config ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
-        # dropdown_lists: add project_id if missing
-        "ALTER TABLE dropdown_lists ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
-        # logos: rename company_key → logo_key if needed (handled separately)
-        "ALTER TABLE logos ADD COLUMN IF NOT EXISTS logo_key TEXT DEFAULT ''",
-        "ALTER TABLE logos ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
-        # settings: add project_id if missing
-        "ALTER TABLE settings ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''",
-    ]
-    for sql in upgrades:
+    """
+    Rename v5 tables to _v5_backup_* so v6 schema can be created fresh.
+    Migration will copy data from backup tables.
+    Only runs if v5 tables detected (no project_id column).
+    """
+    v5_tables = ["project", "doc_types", "records", "columns_config",
+                 "dropdown_lists", "logos", "settings"]
+
+    # Check if v5 migration needed: old 'project' table exists
+    try:
+        r = _q("SELECT to_regclass(%s) as t", ("project",), one=True)
+        has_old_project = r and r.get("t") is not None
+    except Exception:
+        has_old_project = False
+
+    if not has_old_project:
+        return  # Fresh install or already migrated
+
+    # Check if new projects table already has data
+    try:
+        r = _q("SELECT COUNT(*) as c FROM projects", one=True)
+        if r and r.get("c", 0) > 0:
+            return  # Already migrated
+    except Exception:
+        pass  # projects table might not exist yet — continue
+
+    print("[DCR] Backing up v5 tables for migration...")
+    for tbl in v5_tables:
         try:
-            with _PGConn() as cur:
-                cur.execute(sql)
+            r = _q("SELECT to_regclass(%s) as t", (tbl,), one=True)
+            if r and r.get("t"):
+                with _PGConn() as cur:
+                    cur.execute(f"ALTER TABLE {tbl} RENAME TO _v5_{tbl}")
+                print(f"[DCR] Renamed {tbl} → _v5_{tbl}")
         except Exception as e:
-            msg = str(e).lower()
-            if "already exists" in msg or "does not exist" in msg or "duplicate" in msg:
-                pass  # Column already there or table doesn't exist yet
-            else:
-                print(f"[DCR] Upgrade note: {e}")
+            print(f"[DCR] Note renaming {tbl}: {e}")
 
 
 def _migrate_old_data():
     """Migrate v5 single-project data → v6 multi-project schema.
-    Uses raw SQL with explicit column names to avoid schema conflicts."""
+    Reads from _v5_* backup tables created by _upgrade_v5_tables."""
     if not USE_POSTGRES:
         return  # SQLite: fresh install only
 
     try:
-        # Check old 'project' table exists (v5 schema marker)
-        r = _q("SELECT to_regclass(%s) as t", ("project",), one=True)
+        # Check backup table exists (set by _upgrade_v5_tables)
+        r = _q("SELECT to_regclass(%s) as t", ("_v5_project",), one=True)
         if not r or not r.get("t"):
-            return  # No v5 data
+            return  # No v5 backup — fresh install
 
         # Check if already migrated
         existing = _q("SELECT COUNT(*) as c FROM projects", one=True)
@@ -348,7 +358,7 @@ def _migrate_old_data():
         print("[DCR] Starting v5 → v6 migration...")
 
         # Read old project data
-        old_proj_rows = _q("SELECT key, value FROM project")
+        old_proj_rows = _q("SELECT key, value FROM _v5_project")
         if not old_proj_rows:
             return
         old_proj = {r["key"]: r["value"] for r in old_proj_rows}
@@ -362,10 +372,10 @@ def _migrate_old_data():
 
         # Migrate doc_types (old schema: id, name, code, sort_order — no project_id)
         try:
-            rows = _q("SELECT id, name, code, sort_order FROM doc_types WHERE project_id IS NULL OR project_id = ''")
+            rows = _q("SELECT id, name, code, sort_order FROM _v5_doc_types")
         except Exception:
             try:
-                rows = _q("SELECT id, name, code, sort_order FROM doc_types")
+                rows = _q("SELECT id, name, code, sort_order FROM _v5_doc_types")
             except Exception:
                 rows = []
         migrated_dt_ids = set()
@@ -377,10 +387,10 @@ def _migrate_old_data():
 
         # Migrate columns_config (old schema: id, doc_type_id, col_key, label, col_type, list_name, visible, sort_order, width)
         try:
-            cols = _q("SELECT id, doc_type_id, col_key, label, col_type, list_name, visible, sort_order, width FROM columns_config WHERE project_id IS NULL OR project_id = ''")
+            cols = _q("SELECT id, doc_type_id, col_key, label, col_type, list_name, visible, sort_order, width FROM _v5_columns_config")
         except Exception:
             try:
-                cols = _q("SELECT id, doc_type_id, col_key, label, col_type, list_name, visible, sort_order, width FROM columns_config")
+                cols = _q("SELECT id, doc_type_id, col_key, label, col_type, list_name, visible, sort_order, width FROM _v5_columns_config")
             except Exception:
                 cols = []
         for c in cols:
@@ -391,10 +401,10 @@ def _migrate_old_data():
 
         # Migrate records (old schema: id, doc_type_id, data, created_at, updated_at)
         try:
-            recs = _q("SELECT id, doc_type_id, data, created_at, updated_at FROM records WHERE project_id IS NULL OR project_id = ''")
+            recs = _q("SELECT id, doc_type_id, data, created_at, updated_at FROM _v5_records")
         except Exception:
             try:
-                recs = _q("SELECT id, doc_type_id, data, created_at, updated_at FROM records")
+                recs = _q("SELECT id, doc_type_id, data, created_at, updated_at FROM _v5_records")
             except Exception:
                 recs = []
         for r in recs:
@@ -405,10 +415,10 @@ def _migrate_old_data():
 
         # Migrate dropdown_lists (old schema: id, list_name, item_value, sort_order)
         try:
-            lists = _q("SELECT list_name, item_value, sort_order FROM dropdown_lists WHERE project_id IS NULL OR project_id = ''")
+            lists = _q("SELECT list_name, item_value, sort_order FROM _v5_dropdown_lists")
         except Exception:
             try:
-                lists = _q("SELECT list_name, item_value, sort_order FROM dropdown_lists")
+                lists = _q("SELECT list_name, item_value, sort_order FROM _v5_dropdown_lists")
             except Exception:
                 lists = []
         for item in lists:
@@ -417,7 +427,7 @@ def _migrate_old_data():
 
         # Migrate logos (old schema had company_key or logo_key)
         try:
-            logos = _q("SELECT company_key, image_data FROM logos")
+            logos = _q("SELECT company_key, image_data FROM _v5_logos")
             for logo in logos:
                 _exe("INSERT INTO logos(project_id,logo_key,image_data) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
                      (proj_id, logo.get("company_key",""), logo.get("image_data","")))
@@ -426,7 +436,7 @@ def _migrate_old_data():
 
         # Migrate users from settings table
         try:
-            s = _q("SELECT value FROM settings WHERE key=%s", ("users_json",), one=True)
+            s = _q("SELECT value FROM _v5_settings WHERE key=%s", ("users_json",), one=True)
             if s and s.get("value"):
                 users = json.loads(s["value"])
                 for uname, udata in users.items():
