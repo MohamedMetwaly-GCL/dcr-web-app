@@ -152,13 +152,10 @@ class DCRHandler(BaseHTTPRequestHandler):
         if path == '/login':
             self.send_html(build_login_page()); return
 
-        # ── Auth check for all other routes ──
+        # ── Auth check: no session → public viewer mode ──
         session = _get_session(self.headers)
         if not session:
-            if path.startswith('/api/'):
-                self.send_json({'error': 'Unauthorized'}, 401); return
-            self.send_response(302)
-            self.send_header('Location', '/login'); self.end_headers(); return
+            session = {'username': 'guest', 'role': 'viewer'}
 
         # ── Dashboard ──
         if path == '/dashboard':
@@ -211,11 +208,10 @@ class DCRHandler(BaseHTTPRequestHandler):
             self.send_json({'next': get_next_doc_no(prefix, records)}); return
 
         if path == '/api/users/list':
-            session2 = _get_session(self.headers)
-            if not session2 or session2['role'] != 'admin':
+            if session.get('role') != 'admin':
                 self.send_json({'error':'Forbidden'}, 403); return
             users = _get_users()
-            self.send_json([{{'username':k,'role':v['role']}} for k,v in users.items()]); return
+            self.send_json([{'username':k,'role':v['role']} for k,v in users.items()]); return
 
         if path == '/api/counts':
             counts = {dt['id']: db.get_record_count(dt['id']) for dt in db.get_doc_types()}
@@ -284,7 +280,7 @@ class DCRHandler(BaseHTTPRequestHandler):
         # ── Auth check for all POST ──
         session = _get_session(self.headers)
         if not session:
-            self.send_json({'error':'Unauthorized'}, 401); return
+            session = {'username': 'guest', 'role': 'viewer'}
 
         # ── User management (admin only) ──
         if path == '/api/users':
@@ -319,11 +315,12 @@ class DCRHandler(BaseHTTPRequestHandler):
             self.send_json({'ok':False,'error':'Unknown action'},400); return
 
         # ── Viewer can't write ──
-        if session['role'] == 'viewer' and path not in ('/api/project',):
-            # Viewers can't add/edit/delete records or settings
-            if any(path.startswith(p) for p in ['/api/records/','/api/delete_','/api/columns/',
-                                                  '/api/dropdown_lists/','/api/logo','/api/doc_types']):
-                self.send_json({'error':'Read-only access — contact Admin'}, 403); return
+        WRITE_PATHS = ['/api/records/','/api/delete_','/api/columns/',
+                       '/api/dropdown_lists/','/api/logo','/api/doc_types',
+                       '/api/project','/api/import_csv','/api/import_xlsx']
+        if session['role'] == 'viewer':
+            if any(path.startswith(p) for p in WRITE_PATHS):
+                self.send_json({'error':'LOGIN_REQUIRED'}, 403); return
 
         if path == '/api/project':
             db.save_project(data)
@@ -388,55 +385,219 @@ class DCRHandler(BaseHTTPRequestHandler):
         if path == '/api/import_csv':
             self._handle_import(data.get('dt_id',''), data.get('csv_text','')); return
 
+        if path == '/api/import_xlsx':
+            self._handle_import_xlsx(data.get('dt_id',''), data.get('file_b64','')); return
+
         self.send_response(404); self.end_headers()
 
     def _handle_export(self, dt_id):
-        dt = next((d for d in db.get_doc_types() if d['id'] == dt_id), None)
-        cols = [c for c in db.get_columns(dt_id) if c['visible']]
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        dt      = next((d for d in db.get_doc_types() if d['id'] == dt_id), None)
+        cols    = [c for c in db.get_columns(dt_id) if c['visible']]
         records = db.get_records(dt_id)
-        proj = db.get_project()
+        proj    = db.get_project()
 
-        out = io.StringIO()
-        w = csv.writer(out)
-        w.writerow(['Document Control Register'])
-        w.writerow(['Project Code:', proj.get('code','')])
-        w.writerow(['Project Name:', proj.get('name','')])
-        w.writerow(['Client:', proj.get('client','')])
-        w.writerow(['Main Consultant:', proj.get('mainConsultant','')])
-        w.writerow(['Contractor:', proj.get('contractor','')])
-        w.writerow(['Document Type:', dt['name'] if dt else dt_id])
-        w.writerow(['Export Date:', datetime.datetime.now().strftime('%d/%b/%Y %H:%M')])
-        w.writerow(['Total Records:', str(len(records))])
-        w.writerow([])
-        w.writerow(['Sr.'] + [c['label'] for c in cols])
+        PRIMARY   = "1A3A5C"
+        PRIMARY_L = "2563A8"
+        ACCENT    = "F0A500"
+        WHITE     = "FFFFFF"
+        LIGHT_BG  = "EEF1F7"
+        ALT_ROW   = "F8FAFC"
+        OVERDUE   = "FFF0F0"
+        REV_CLR   = "9CA3AF"
+        SUCCESS   = "BBF7D0"; SUCCESS_FG = "166534"
+        WARNING   = "FEF9C3"; WARNING_FG = "713F12"
+        DANGER    = "FECACA"; DANGER_FG  = "7F1D1D"
+        ORANGE    = "FED7AA"; ORANGE_FG  = "9A3412"
+        BLUE      = "BFDBFE"; BLUE_FG    = "1E3A8A"
+        PURPLE    = "E9D5FF"; PURPLE_FG  = "5B21B6"
+        PINK      = "FCE7F3"; PINK_FG    = "831843"
 
+        STATUS_MAP = {
+            "A - Approved":              (SUCCESS, SUCCESS_FG),
+            "B - Approved As Noted":     (PINK, PINK_FG),
+            "B,C - Approved & Resubmit": (ORANGE, ORANGE_FG),
+            "C - Revise & Resubmit":     (DANGER, DANGER_FG),
+            "D - Review not Required":   (DANGER, DANGER_FG),
+            "Under Review":              (WARNING, WARNING_FG),
+            "Cancelled":                 (DANGER, DANGER_FG),
+            "Open":                      (ORANGE, ORANGE_FG),
+            "Closed":                    (BLUE, BLUE_FG),
+            "Replied":                   (SUCCESS, SUCCESS_FG),
+            "Pending":                   (PURPLE, PURPLE_FG),
+        }
+
+        def fill(hex_color):
+            return PatternFill("solid", fgColor=hex_color)
+        def bdr(color="DDE3ED"):
+            s = Side(style="thin", color=color)
+            return Border(left=s, right=s, top=s, bottom=s)
+        def bdr_bot(color="DDE3ED"):
+            return Border(bottom=Side(style="thin", color=color))
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = dt_id
+        ws.sheet_view.showGridLines = False
+
+        # ── Title banner ───────────────────────────────────────
+        ws.merge_cells("A1:P1")
+        c = ws["A1"]
+        c.value     = f"DOCUMENT CONTROL REGISTER  —  {(dt['name'] if dt else dt_id).upper()}"
+        c.font      = Font(bold=True, color=WHITE, size=13, name="Arial")
+        c.fill      = fill(PRIMARY)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 36
+
+        # ── Project info strip ─────────────────────────────────
+        info = [
+            ("Project:", proj.get("name","")),
+            ("Code:", proj.get("code","")),
+            ("Client:", proj.get("client","")),
+            ("Consultant:", proj.get("mainConsultant","")),
+            ("Contractor:", proj.get("contractor","")),
+            ("Exported:", datetime.datetime.now().strftime("%d/%b/%Y %H:%M")),
+        ]
+        ws.merge_cells("A2:P2")
+        info_str = "   |   ".join(f"{k} {v}" for k,v in info if v)
+        c2 = ws["A2"]
+        c2.value     = info_str
+        c2.font      = Font(color=WHITE, size=9, name="Arial")
+        c2.fill      = fill(PRIMARY_L)
+        c2.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[2].height = 18
+
+        ws.row_dimensions[3].height = 6
+
+        # ── Column headers ─────────────────────────────────────
+        header_row = 4
+        all_cols   = [{"col_key":"_sr","label":"Sr.","width":6}] +                      [{"col_key":c["col_key"],"label":c["label"],"width":max(10,len(c["label"])+4)} for c in cols]
+
+        col_widths = {
+            "_sr":18,"docNo":22,"discipline":15,"trade":15,"title":38,
+            "floor":16,"itemRef":16,"issuedDate":13,"expectedReplyDate":15,
+            "actualReplyDate":13,"status":24,"duration":12,"remarks":28,"fileLocation":18,
+        }
+        for ci, col in enumerate(all_cols, 1):
+            from openpyxl.utils import get_column_letter
+            col_ltr = get_column_letter(ci)
+            ws.column_dimensions[col_ltr].width = col_widths.get(col["col_key"], col.get("width",14))
+            c = ws.cell(row=header_row, column=ci, value=col["label"])
+            c.font      = Font(bold=True, color=WHITE, size=10, name="Arial")
+            c.fill      = fill(PRIMARY)
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            c.border    = Border(
+                left=Side(style="thin", color="334D6E"),
+                right=Side(style="thin", color="334D6E"),
+                top=Side(style="thin", color="334D6E"),
+                bottom=Side(style="thin", color="334D6E"),
+            )
+        ws.row_dimensions[header_row].height = 24
+
+        # ── Data rows ──────────────────────────────────────────
         sr = 1
-        for row in records:
-            is_rev = extract_rev(row.get('docNo','')) > 0
-            vals = ['' if is_rev else str(sr)]
-            for col in cols:
-                key = col['col_key']
-                if key == 'expectedReplyDate':
-                    vals.append(format_date(compute_expected_reply(row.get('issuedDate'), row.get('docNo'))))
-                elif key == 'duration':
-                    v = compute_duration(row.get('issuedDate'), row.get('actualReplyDate'))
-                    vals.append(str(v) if v is not None else '')
-                elif key in ('issuedDate','actualReplyDate'):
-                    vals.append(format_date(row.get(key,'')))
+        for ri, row in enumerate(records):
+            r_num  = header_row + 1 + ri
+            ws.row_dimensions[r_num].height = 20
+            is_rev = extract_rev(row.get("docNo","")) > 0
+            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
+            is_alt = (sr % 2 == 0)
+            base_bg = OVERDUE if ov else (ALT_ROW if is_alt else WHITE)
+
+            for ci, col in enumerate(all_cols, 1):
+                key = col["col_key"]
+                if key == "_sr":
+                    val = "" if is_rev else str(sr)
+                elif key == "expectedReplyDate":
+                    val = format_date(compute_expected_reply(row.get("issuedDate"), row.get("docNo")))
+                elif key == "duration":
+                    v = compute_duration(row.get("issuedDate"), row.get("actualReplyDate"))
+                    val = str(v) if v is not None else ""
+                elif key in ("issuedDate","actualReplyDate"):
+                    val = format_date(row.get(key,""))
                 else:
-                    vals.append(str(row.get(key,'') or ''))
-            w.writerow(vals)
+                    val = str(row.get(key,"") or "")
+
+                c = ws.cell(row=r_num, column=ci, value=val)
+                c.border    = bdr_bot()
+                c.alignment = Alignment(vertical="center",
+                    horizontal="center" if key in ("_sr","duration","issuedDate","expectedReplyDate","actualReplyDate") else "left")
+
+                if key == "status" and val:
+                    bg, fg = STATUS_MAP.get(val, ("F3F4F6","374151"))
+                    c.fill = fill(bg)
+                    c.font = Font(bold=True, size=9, name="Arial", color=fg)
+                elif key == "docNo":
+                    c.fill = fill(base_bg)
+                    c.font = Font(size=10, name="Consolas",
+                                  bold=not is_rev, color=REV_CLR if is_rev else PRIMARY)
+                elif key == "expectedReplyDate" and ov:
+                    c.fill = fill(DANGER)
+                    c.font = Font(bold=True, size=10, name="Arial", color=DANGER_FG)
+                else:
+                    c.fill = fill(base_bg)
+                    c.font = Font(size=10, name="Arial",
+                                  color=REV_CLR if is_rev else ("1E2A3A" if not ov else "991B1B"))
+
             if not is_rev: sr += 1
 
-        csv_text = '\ufeff' + out.getvalue()
-        body = csv_text.encode('utf-8')
-        fname = f"{proj.get('code','DCR')}_{dt_id}_Register.csv"
+        # ── Totals row ─────────────────────────────────────────
+        tot_row = header_row + 1 + len(records)
+        ws.row_dimensions[tot_row].height = 22
+        from openpyxl.utils import get_column_letter
+        ws.merge_cells(f"A{tot_row}:{get_column_letter(len(all_cols))}{tot_row}")
+        tc = ws[f"A{tot_row}"]
+        real_docs = sum(1 for r in records if extract_rev(r.get("docNo",""))==0)
+        tc.value     = f"TOTAL: {real_docs} documents  |  {len(records)} submissions (incl. revisions)  |  Exported: {datetime.datetime.now().strftime('%d/%b/%Y %H:%M')}"
+        tc.font      = Font(bold=True, color=WHITE, size=10, name="Arial")
+        tc.fill      = fill(PRIMARY)
+        tc.alignment = Alignment(horizontal="left", vertical="center")
+
+        # ── Write to bytes ─────────────────────────────────────
+        buf = io.BytesIO()
+        wb.save(buf)
+        body = buf.getvalue()
+
+        fname = f"{proj.get('code','DCR')}_{dt_id}_Register.xlsx"
         self.send_response(200)
-        self.send_header('Content-Type', 'text/csv; charset=utf-8')
+        self.send_header('Content-Type',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         self.send_header('Content-Disposition', f'attachment; filename="{fname}"')
         self.send_header('Content-Length', len(body))
         self.end_headers()
         self.wfile.write(body)
+
+    def _handle_import_xlsx(self, dt_id, file_b64):
+        try:
+            import openpyxl, base64, re as re2
+            # strip data URL prefix
+            if ',' in file_b64:
+                file_b64 = file_b64.split(',', 1)[1]
+            raw = base64.b64decode(file_b64)
+            wb  = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+            ws  = wb.active
+            cols_cfg = db.get_columns(dt_id)
+            col_map  = {c['label']: c['col_key'] for c in cols_cfg}
+            imported = 0
+            header   = None
+            for row in ws.iter_rows(values_only=True):
+                vals = [str(v).strip() if v is not None else '' for v in row]
+                if not any(vals): continue
+                if header is None:
+                    if any(v in col_map or v in ('Sr.','docNo','Document No.') for v in vals):
+                        header = [col_map.get(v, v) for v in vals]
+                    continue
+                row_data = {}
+                for i, val in enumerate(vals):
+                    if i < len(header) and header[i] and header[i] not in ('Sr.','sr',''):
+                        row_data[header[i]] = val
+                if row_data and any(row_data.values()):
+                    db.save_record(dt_id, str(uuid.uuid4()), row_data)
+                    imported += 1
+            self.send_json({'ok': True, 'imported': imported})
+        except Exception as e:
+            self.send_json({'ok': False, 'error': str(e)}, 500)
 
     def _handle_import(self, dt_id, csv_text):
         cols = db.get_columns(dt_id)
@@ -627,9 +788,8 @@ tr:hover td{{background:#eff6ff}}
   <a href="/app" class="tb-btn">📋 Register</a>
   <span style="color:rgba(255,255,255,.45);padding:0 6px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {_uname} <span style="background:{_rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{_role.upper()}</span></span>
-  <form action="/api/logout" method="post" style="display:inline;margin:0">
-    <button type="submit" class="tb-btn" style="padding:4px 10px;font-size:11px">⏻</button>
-  </form>
+  {'<a href="/login"><button class="tb-btn" style="background:rgba(240,165,0,.3);font-weight:700;border-color:rgba(240,165,0,.7)">🔐 Login</button></a>' if _uname=='guest' else '<form action="/api/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 10px;font-size:11px">⏻</button></form>'}
+  {'<a href="/login"><button class="tb-btn">⚙ Admin</button></a>' if _uname=='guest' else ''}
 </div>
 
 <div class="dash-wrap">
@@ -1044,9 +1204,7 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
   <a href="/" style="text-decoration:none"><button class="tb-btn" style="background:rgba(240,165,0,.25);border-color:rgba(240,165,0,.5)">📊 Dashboard</button></a>
   <span style="color:rgba(255,255,255,.45);padding:0 6px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {_uname} <span style="background:{_rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{_role_upper}</span></span>
-  <form action="/api/logout" method="post" style="display:inline;margin:0">
-    <button type="submit" class="tb-btn" style="padding:4px 10px;font-size:11px">⏻ Logout</button>
-  </form>
+  {'<a href="/login"><button class="tb-btn" style="background:rgba(240,165,0,.3);font-weight:700;border-color:rgba(240,165,0,.7)">🔐 Login</button></a>' if _uname=='guest' else '<form action="/api/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 10px;font-size:11px">⏻ Logout</button></form>'}
 </div>
 
 <!-- PROJECT BAR -->
@@ -1064,8 +1222,8 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
 <!-- TOOLBAR -->
 <div id="toolbar">
   {'' if _role=='viewer' else '<button class="tool-btn" onclick="openAddRecord()">➕ Add Document</button>'}
-  <button class="tool-btn green" onclick="doExport()">📥 Export Excel</button>
-  <button class="tool-btn teal" onclick="openImport()">📤 Import CSV</button>
+  <button class="tool-btn green" onclick="doExport()" title="Export to Excel (.xlsx)">📥 Export Excel (.xlsx)</button>
+  <button class="tool-btn teal" onclick="openImport()">📤 Import Excel/CSV</button>
   <button class="tool-btn purple" onclick="manageColumns()">⚙ Columns</button>
   <input type="text" id="search-box" placeholder="Search all fields..." oninput="applySearch()">
 </div>
@@ -1094,6 +1252,26 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
 </div>
 
 <div id="toast"></div>
+
+<!-- LOGIN REQUIRED MODAL -->
+<div class="overlay hidden" id="login-required-modal">
+  <div class="modal" style="max-width:400px;text-align:center">
+    <div class="modal-hdr" style="justify-content:center">
+      <span>🔐 Login Required</span>
+    </div>
+    <div class="modal-body" style="padding:28px 24px">
+      <div style="font-size:40px;margin-bottom:12px">🔒</div>
+      <p style="font-size:14px;font-weight:600;color:var(--primary);margin-bottom:8px">This action requires login</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:20px">You are viewing in read-only mode.<br>Login as Admin to add or edit documents.</p>
+      <a href="/login" style="text-decoration:none">
+        <button class="btn btn-primary" style="width:100%;padding:11px;font-size:13px">Sign In →</button>
+      </a>
+    </div>
+    <div class="modal-footer" style="justify-content:center">
+      <button class="btn btn-secondary" onclick="closeModal('login-required-modal')">Continue Viewing</button>
+    </div>
+  </div>
+</div>
 
 <!-- USER MANAGEMENT MODAL -->
 <div class="overlay hidden" id="user-modal">
@@ -1259,6 +1437,7 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
 // STATE
 // ============================================================
 const STATUS_COLORS = {json.dumps(STATUS_COLORS)};
+const ROLE = '{_role}';
 let state = {{
   activeTab: null,
   docTypes: [],
@@ -1290,8 +1469,19 @@ function updateClock() {{
 
 async function api(url, opts={{}}) {{
   const r = await fetch(url, {{headers:{{'Content-Type':'application/json'}},...opts}});
+  if (r.status === 403) {{
+    const d = await r.json().catch(()=>({{}}));
+    if(d.error === 'LOGIN_REQUIRED') {{
+      showLoginRequired(); return null;
+    }}
+    throw new Error(d.error||'Forbidden');
+  }}
   if (!r.ok) throw new Error(await r.text());
   return r.json();
+}}
+
+function showLoginRequired() {{
+  openModal('login-required-modal');
 }}
 
 async function loadDocTypes() {{
@@ -1334,6 +1524,7 @@ function switchTab(id) {{
   state.activeTab = id;
   state.colFilters = {{}};
   state.sortCol = null;
+  state.allRecords = null;
   document.getElementById('search-box').value = '';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.id===id));
   loadRecords();
@@ -1371,6 +1562,11 @@ async function deleteTab(id) {{
 // ============================================================
 async function loadRecords() {{
   if(!state.activeTab) return;
+  // Show loading spinner in table
+  const tbody = document.getElementById('t-body');
+  if(tbody && !state.allRecords) {{
+    tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:30px;color:var(--muted)">⏳ Loading...</td></tr>';
+  }}
   const search = document.getElementById('search-box').value.trim();
   const url = '/api/records/'+state.activeTab+(search?'?search='+encodeURIComponent(search):'');
   const data = await api(url);
@@ -1398,6 +1594,7 @@ function buildTableHead() {{
 
   state.columns.forEach(col => {{
     const th = document.createElement('th');
+    th.dataset.key = col.col_key;  // for column resize
     const sortable = !['auto_date','auto_num'].includes(col.col_type);
     th.innerHTML = col.label + (state.sortCol===col.col_key ? (state.sortDir==='asc'?' ↑':' ↓'):'');
     if(sortable) th.onclick = ()=>sortBy(col.col_key);
@@ -1570,7 +1767,11 @@ function initColResize() {{
   }});
 }}
 
-function applySearch() {{ loadRecords(); }}
+let _searchTimer;
+function applySearch() {{
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(()=>loadRecords(), 250);
+}}
 
 // ============================================================
 // ADD / EDIT RECORD
@@ -1847,13 +2048,15 @@ async function saveProject() {{
   }});
   data.extraFields = JSON.stringify(extra);
   try {{
-    await api('/api/project',{{method:'POST',body:JSON.stringify(data)}});
+    const r = await api('/api/project',{{method:'POST',body:JSON.stringify(data)}});
+    if(r === null) return;
+    if(!r || !r.ok) {{ toast('Save failed — r='+(r?r.ok:'null'),'error'); return; }}
     closeModal('proj-modal');
-    toast('Project saved ✔','success');
-    // Refresh project bar without full reload
+    toast('✔ Project info saved!','success');
     await refreshProjBar();
   }} catch(e) {{
-    toast('Error saving: '+e.message,'error');
+    console.error('saveProject error:', e);
+    toast('Error: '+e.message,'error');
   }}
 }}
 
@@ -2002,14 +2205,39 @@ function doExport() {{
 function openImport() {{ openModal('import-modal'); }}
 
 async function doImport() {{
-  const file=document.getElementById('import-file').files[0];
+  const file = document.getElementById('import-file').files[0];
   if(!file) return;
-  const text=await file.text();
-  const r=await api('/api/import_csv',{{method:'POST',body:JSON.stringify({{dt_id:state.activeTab,csv_text:text}})}});
-  closeModal('import-modal');
-  await loadRecords();
-  await loadDocTypes();
-  toast('Imported '+r.imported+' records','success');
+  const importBtn = document.querySelector('#import-modal .btn-primary');
+  if(importBtn) {{ importBtn.disabled=true; importBtn.textContent='⏳ Importing...'; }}
+  try {{
+    const ext = file.name.split('.').pop().toLowerCase();
+    if(ext === 'xlsx' || ext === 'xls') {{
+      const b64 = await new Promise((res,rej)=>{{
+        const fr=new FileReader(); fr.onload=e=>res(e.target.result); fr.onerror=rej;
+        fr.readAsDataURL(file);
+      }});
+      const r = await api('/api/import_xlsx',{{method:'POST',body:JSON.stringify({{dt_id:state.activeTab,file_b64:b64}})}});
+      if(r===null) return;
+      closeModal('import-modal');
+      switchTab(state.activeTab);  // clears cache + reloads
+      await loadDocTypes();
+      toast('✔ Imported '+r.imported+' records from Excel','success');
+    }} else if(ext === 'csv') {{
+      const text = await file.text();
+      const r = await api('/api/import_csv',{{method:'POST',body:JSON.stringify({{dt_id:state.activeTab,csv_text:text}})}});
+      if(r===null) return;
+      closeModal('import-modal');
+      switchTab(state.activeTab);  // clears cache + reloads
+      await loadDocTypes();
+      toast('✔ Imported '+r.imported+' records','success');
+    }} else {{
+      toast('Only .csv or .xlsx files supported','error');
+    }}
+  }} catch(e) {{
+    toast('Import error: '+e.message,'error');
+  }} finally {{
+    if(importBtn) {{ importBtn.disabled=false; importBtn.textContent='Import'; }}
+  }}
 }}
 
 // ============================================================
@@ -2033,6 +2261,7 @@ function toast(msg, type='info') {{
 // ============================================================
 async function openUserMgmt() {{
   const users = await api('/api/users/list');
+  if(users === null) return; // login required shown
   const wrap = document.getElementById('user-list-wrap');
   if(!users || users.error) {{ toast('Admin only','error'); return; }}
   wrap.innerHTML = '<div class="section-title" style="margin-bottom:8px">Current Users</div>';
