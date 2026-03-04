@@ -274,10 +274,18 @@ DEFAULT_LISTS = {
 
 def init_db():
     if USE_POSTGRES:
-        with _PGConn() as cur:
-            for stmt in _SCHEMA_PG.strip().split(";"):
-                stmt = stmt.strip()
-                if stmt: cur.execute(stmt)
+        # Each statement in its own transaction to avoid cascade failures
+        stmts = [s.strip() for s in _SCHEMA_PG.strip().split(";") if s.strip()]
+        for stmt in stmts:
+            try:
+                with _PGConn() as cur:
+                    cur.execute(stmt)
+            except Exception as e:
+                msg = str(e).lower()
+                if "already exists" in msg or "duplicate" in msg:
+                    pass  # Ignore — table/index already there
+                else:
+                    print(f"[DCR] Schema warning ({stmt[:40]}): {e}")
     else:
         from pathlib import Path
         _DB.parent.mkdir(parents=True, exist_ok=True)
@@ -290,113 +298,117 @@ def init_db():
 
 
 def _migrate_old_data():
-    """Migrate v5 single-project data → v6 multi-project schema."""
-    # Check if old tables exist and new projects table is empty
+    """Migrate v5 single-project data → v6 multi-project schema.
+    Uses raw SQL with explicit column names to avoid schema conflicts."""
+    if not USE_POSTGRES:
+        return  # SQLite: fresh install only
+
     try:
-        old_proj_rows = _q("SELECT key, value FROM project") if _table_exists("project") else []
+        # Check old 'project' table exists (v5 schema marker)
+        r = _q("SELECT to_regclass(%s) as t", ("project",), one=True)
+        if not r or not r.get("t"):
+            return  # No v5 data
+
+        # Check if already migrated
+        existing = _q("SELECT COUNT(*) as c FROM projects", one=True)
+        if existing and existing.get("c", 0) > 0:
+            return  # Already done
+
+        print("[DCR] Starting v5 → v6 migration...")
+
+        # Read old project data
+        old_proj_rows = _q("SELECT key, value FROM project")
         if not old_proj_rows:
             return
-        existing_projects = _q("SELECT id FROM projects")
-        if existing_projects:
-            return  # Already migrated
-
-        print("[DCR] Migrating v5 data to v6 schema...")
         old_proj = {r["key"]: r["value"] for r in old_proj_rows}
-        proj_id  = old_proj.get("code", "P001").upper()
-        proj_name = old_proj.get("name", "Migrated Project")
-        proj_code = old_proj.get("code", "P001")
-
-        # Create project
+        proj_id   = (old_proj.get("code") or "P001").strip().upper()
+        proj_name = old_proj.get("name") or "Migrated Project"
+        proj_code = old_proj.get("code") or "P001"
         proj_data = json.dumps({k: v for k, v in old_proj.items()})
-        if USE_POSTGRES:
-            _exe("INSERT INTO projects(id,name,code,data) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
-                 (proj_id, proj_name, proj_code, proj_data))
-        else:
-            _exe("INSERT OR IGNORE INTO projects(id,name,code,data) VALUES(?,?,?,?)",
-                 (proj_id, proj_name, proj_code, proj_data))
 
-        # Migrate doc_types
-        old_dts = _q("SELECT * FROM doc_types") if _table_exists("doc_types") else []
-        for dt in old_dts:
-            if USE_POSTGRES:
-                _exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
-                     (dt["id"], proj_id, dt["name"], dt["code"], dt.get("sort_order",0)))
-            else:
-                _exe("INSERT OR IGNORE INTO doc_types(id,project_id,name,code,sort_order) VALUES(?,?,?,?,?)",
-                     (dt["id"], proj_id, dt["name"], dt["code"], dt.get("sort_order",0)))
+        _exe("INSERT INTO projects(id,name,code,data) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+             (proj_id, proj_name, proj_code, proj_data))
 
-        # Migrate columns_config
-        old_cols = _q("SELECT * FROM columns_config") if _table_exists("columns_config") else []
-        for c in old_cols:
-            if USE_POSTGRES:
-                _exe("""INSERT INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
-                    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING""",
-                    (proj_id, c["doc_type_id"], c["col_key"], c["label"], c["col_type"],
-                     c.get("list_name"), c.get("visible",1), c.get("sort_order",0), c.get("width",120)))
-            else:
-                _exe("""INSERT OR IGNORE INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
-                    VALUES(?,?,?,?,?,?,?,?,?)""",
-                    (proj_id, c["doc_type_id"], c["col_key"], c["label"], c["col_type"],
-                     c.get("list_name"), c.get("visible",1), c.get("sort_order",0), c.get("width",120)))
+        # Migrate doc_types (old schema: id, name, code, sort_order — no project_id)
+        try:
+            rows = _q("SELECT id, name, code, sort_order FROM doc_types WHERE project_id IS NULL OR project_id = ''")
+        except Exception:
+            try:
+                rows = _q("SELECT id, name, code, sort_order FROM doc_types")
+            except Exception:
+                rows = []
+        migrated_dt_ids = set()
+        for dt in rows:
+            if dt.get("id") and dt.get("name"):
+                _exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                     (dt["id"], proj_id, dt["name"], dt.get("code", dt["id"]), dt.get("sort_order", 0)))
+                migrated_dt_ids.add(dt["id"])
 
-        # Migrate records
-        old_recs = _q("SELECT * FROM records") if _table_exists("records") else []
-        for r in old_recs:
-            if USE_POSTGRES:
-                _exe("""INSERT INTO records(id,project_id,doc_type_id,data,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING""",
-                    (r["id"], proj_id, r["doc_type_id"], r["data"],
-                     r.get("created_at",""), r.get("updated_at","")))
-            else:
-                _exe("""INSERT OR IGNORE INTO records(id,project_id,doc_type_id,data,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?)""",
-                    (r["id"], proj_id, r["doc_type_id"], r["data"],
-                     r.get("created_at",""), r.get("updated_at","")))
+        # Migrate columns_config (old schema: id, doc_type_id, col_key, label, col_type, list_name, visible, sort_order, width)
+        try:
+            cols = _q("SELECT id, doc_type_id, col_key, label, col_type, list_name, visible, sort_order, width FROM columns_config WHERE project_id IS NULL OR project_id = ''")
+        except Exception:
+            try:
+                cols = _q("SELECT id, doc_type_id, col_key, label, col_type, list_name, visible, sort_order, width FROM columns_config")
+            except Exception:
+                cols = []
+        for c in cols:
+            _exe("""INSERT INTO columns_config(project_id,doc_type_id,col_key,label,col_type,list_name,visible,sort_order,width)
+                VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                (proj_id, c["doc_type_id"], c["col_key"], c["label"], c["col_type"],
+                 c.get("list_name"), c.get("visible", 1), c.get("sort_order", 0), c.get("width", 120)))
 
-        # Migrate dropdown_lists
-        old_lists = _q("SELECT * FROM dropdown_lists") if _table_exists("dropdown_lists") else []
-        for item in old_lists:
-            if USE_POSTGRES:
-                _exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
-                     (proj_id, item["list_name"], item["item_value"], item.get("sort_order",0)))
-            else:
-                _exe("INSERT OR IGNORE INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(?,?,?,?)",
-                     (proj_id, item["list_name"], item["item_value"], item.get("sort_order",0)))
+        # Migrate records (old schema: id, doc_type_id, data, created_at, updated_at)
+        try:
+            recs = _q("SELECT id, doc_type_id, data, created_at, updated_at FROM records WHERE project_id IS NULL OR project_id = ''")
+        except Exception:
+            try:
+                recs = _q("SELECT id, doc_type_id, data, created_at, updated_at FROM records")
+            except Exception:
+                recs = []
+        for r in recs:
+            _exe("""INSERT INTO records(id,project_id,doc_type_id,data,created_at,updated_at)
+                VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                (r["id"], proj_id, r["doc_type_id"], r.get("data","{}"),
+                 r.get("created_at",""), r.get("updated_at","")))
 
-        # Migrate logos
-        old_logos = _q("SELECT * FROM logos") if _table_exists("logos") else []
-        for logo in old_logos:
-            key = logo.get("company_key") or logo.get("logo_key","")
-            if USE_POSTGRES:
-                _exe("INSERT INTO logos(project_id,logo_key,image_data) VALUES(?,?,?) ON CONFLICT DO NOTHING",
-                     (proj_id, key, logo.get("image_data","")))
-            else:
-                _exe("INSERT OR IGNORE INTO logos(project_id,logo_key,image_data) VALUES(?,?,?)",
-                     (proj_id, key, logo.get("image_data","")))
+        # Migrate dropdown_lists (old schema: id, list_name, item_value, sort_order)
+        try:
+            lists = _q("SELECT list_name, item_value, sort_order FROM dropdown_lists WHERE project_id IS NULL OR project_id = ''")
+        except Exception:
+            try:
+                lists = _q("SELECT list_name, item_value, sort_order FROM dropdown_lists")
+            except Exception:
+                lists = []
+        for item in lists:
+            _exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                 (proj_id, item["list_name"], item["item_value"], item.get("sort_order", 0)))
 
-        # Migrate users/settings
-        old_settings = _q("SELECT * FROM settings") if _table_exists("settings") else []
-        for s in old_settings:
-            if s["key"] == "users_json":
-                try:
-                    users = json.loads(s["value"] or "{}")
-                    for uname, udata in users.items():
-                        if USE_POSTGRES:
-                            _exe("INSERT INTO users(username,pw_hash,role) VALUES(?,?,?) ON CONFLICT DO NOTHING",
-                                 (uname, udata.get("pw",""), udata.get("role","viewer")))
-                            _exe("INSERT INTO user_projects(username,project_id,can_edit) VALUES(?,?,1) ON CONFLICT DO NOTHING",
-                                 (uname, proj_id))
-                        else:
-                            _exe("INSERT OR IGNORE INTO users(username,pw_hash,role) VALUES(?,?,?)",
-                                 (uname, udata.get("pw",""), udata.get("role","viewer")))
-                            _exe("INSERT OR IGNORE INTO user_projects(username,project_id,can_edit) VALUES(?,?,1)",
-                                 (uname, proj_id))
-                except Exception as e:
-                    print(f"[DCR] Warning migrating users: {e}")
+        # Migrate logos (old schema had company_key or logo_key)
+        try:
+            logos = _q("SELECT company_key, image_data FROM logos")
+            for logo in logos:
+                _exe("INSERT INTO logos(project_id,logo_key,image_data) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
+                     (proj_id, logo.get("company_key",""), logo.get("image_data","")))
+        except Exception:
+            pass  # logos table might already be new schema
 
-        print(f"[DCR] Migration complete → project '{proj_id}' with {len(old_recs)} records")
+        # Migrate users from settings table
+        try:
+            s = _q("SELECT value FROM settings WHERE key=%s", ("users_json",), one=True)
+            if s and s.get("value"):
+                users = json.loads(s["value"])
+                for uname, udata in users.items():
+                    _exe("INSERT INTO users(username,pw_hash,role) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
+                         (uname, udata.get("pw",""), udata.get("role","viewer")))
+                    _exe("INSERT INTO user_projects(username,project_id,can_edit) VALUES(%s,%s,1) ON CONFLICT DO NOTHING",
+                         (uname, proj_id))
+        except Exception as e:
+            print(f"[DCR] Users migration note: {e}")
+
+        print(f"[DCR] ✅ Migration complete → project '{proj_id}' with {len(recs)} records")
     except Exception as e:
-        print(f"[DCR] Migration skipped: {e}")
+        print(f"[DCR] Migration skipped (likely fresh install): {e}")
 
 
 def _table_exists(name):
