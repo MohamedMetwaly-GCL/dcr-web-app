@@ -421,29 +421,25 @@ class DCRHandler(BaseHTTPRequestHandler):
         WHITE     = "FFFFFF"
         LIGHT_BG  = "EEF1F7"
         ALT_ROW   = "F8FAFC"
-        OVERDUE   = "FFF0F0"
+        OVERDUE   = "FFF5F5"
         REV_CLR   = "9CA3AF"
-        SUCCESS   = "BBF7D0"; SUCCESS_FG = "166534"
-        WARNING   = "FEF9C3"; WARNING_FG = "713F12"
-        DANGER    = "FECACA"; DANGER_FG  = "7F1D1D"
-        ORANGE    = "FED7AA"; ORANGE_FG  = "9A3412"
-        BLUE      = "BFDBFE"; BLUE_FG    = "1E3A8A"
-        PURPLE    = "E9D5FF"; PURPLE_FG  = "5B21B6"
-        PINK      = "FCE7F3"; PINK_FG    = "831843"
 
+        # ── Status colors: exact match with app STATUS_COLORS in utils.py ──
         STATUS_MAP = {
-            "A - Approved":              (SUCCESS, SUCCESS_FG),
-            "B - Approved As Noted":     (PINK, PINK_FG),
-            "B,C - Approved & Resubmit": (ORANGE, ORANGE_FG),
-            "C - Revise & Resubmit":     (DANGER, DANGER_FG),
-            "D - Review not Required":   (DANGER, DANGER_FG),
-            "Under Review":              (WARNING, WARNING_FG),
-            "Cancelled":                 (DANGER, DANGER_FG),
-            "Open":                      (ORANGE, ORANGE_FG),
-            "Closed":                    (BLUE, BLUE_FG),
-            "Replied":                   (SUCCESS, SUCCESS_FG),
-            "Pending":                   (PURPLE, PURPLE_FG),
+            "A - Approved":              ("BBF7D0", "166534"),
+            "B - Approved As Noted":     ("DCF CE7", "14532D"),  # fixed below
+            "B,C - Approved & Resubmit": ("FED7AA", "7C2D12"),
+            "C - Revise & Resubmit":     ("FCE7F3", "831843"),
+            "D - Review not Required":   ("FECACA", "7F1D1D"),
+            "Under Review":              ("FEF9C3", "713F12"),
+            "Cancelled":                 ("EF4444", "FFFFFF"),
+            "Open":                      ("FED7AA", "7C2D12"),
+            "Closed":                    ("BFDBFE", "1E3A5F"),
+            "Replied":                   ("D1FAE5", "064E3B"),
+            "Pending":                   ("E0E7FF", "312E81"),
         }
+        # Fix typo in B - Approved As Noted
+        STATUS_MAP["B - Approved As Noted"] = ("DCFCE7", "14532D")
 
         def fill(hex_color):
             return PatternFill("solid", fgColor=hex_color)
@@ -731,6 +727,12 @@ def build_dashboard_page(session=None):
     _role   = (session or {}).get('role','viewer')
     _rbg    = "rgba(240,165,0,.35)" if _role=="admin" else "rgba(255,255,255,.18)"
 
+    # Logos
+    logo_left  = db.get_logo('logo_left')
+    logo_right = db.get_logo('logo_right')
+    _logo_left_html  = f'<img src="/api/logo/logo_left"  style="height:52px;object-fit:contain">' if logo_left  else ''
+    _logo_right_html = f'<img src="/api/logo/logo_right" style="height:52px;object-fit:contain">' if logo_right else ''
+
     # Build stats
     stats = []
     total_all = approved_all = pending_all = overdue_all = 0
@@ -827,6 +829,12 @@ tr:hover td{{background:#eff6ff}}
   {'<a href="/login"><button class="tb-btn" style="background:rgba(240,165,0,.3);font-weight:700;border-color:rgba(240,165,0,.7)">🔐 Login</button></a>' if _uname=='guest' else '<form action="/api/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 10px;font-size:11px">⏻</button></form>'}
   {'<a href="/login"><button class="tb-btn">⚙ Admin</button></a>' if _uname=='guest' else ''}
 </div>
+
+{f'''<div style="background:#fff;border-bottom:2px solid #dde3ed;padding:6px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+  <div style="display:flex;align-items:center;gap:12px">{_logo_left_html}</div>
+  <div style="font-size:11px;color:#6b7a94;font-weight:600">Document Control Register</div>
+  <div style="display:flex;align-items:center;gap:12px">{_logo_right_html}</div>
+</div>''' if (logo_left or logo_right) else ''}
 
 <div class="dash-wrap">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
@@ -1022,9 +1030,9 @@ def build_main_page(session=None):
     logo_right = db.get_logo('logo_right')
     logo_html  = ''
     if logo_left:
-        logo_html += f'<img src="/api/logo/logo_left" style="height:36px;object-fit:contain;margin-right:8px">'
+        logo_html += f'<img src="/api/logo/logo_left" style="height:52px;object-fit:contain;margin-right:10px">'
     if logo_right:
-        logo_html += f'<img src="/api/logo/logo_right" style="height:36px;object-fit:contain;margin-left:auto;margin-right:8px">'
+        logo_html += f'<img src="/api/logo/logo_right" style="height:52px;object-fit:contain;margin-left:auto;margin-right:10px">'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1448,19 +1456,22 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
 
 <!-- ADD COLUMN MODAL -->
 <div class="overlay hidden" id="addcol-modal">
-  <div class="modal" style="max-width:420px">
+  <div class="modal" style="max-width:460px">
     <div class="modal-hdr">
       <span>Add Column</span>
       <button class="modal-close" onclick="closeModal('addcol-modal')">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group full"><label>Column Name</label><input id="col-name"></div>
+        <div class="form-group full"><label>Column Name</label><input id="col-name" placeholder="e.g. Review Duration"></div>
         <div class="form-group full"><label>Type</label>
-          <select id="col-type" onchange="document.getElementById('col-list-grp').style.display=this.value==='dropdown'?'flex':'none'">
-            <option value="text">Text</option><option value="number">Number</option>
-            <option value="date">Date</option><option value="dropdown">Dropdown</option>
-            <option value="link">Hyperlink</option>
+          <select id="col-type" onchange="onColTypeChange(this.value)">
+            <option value="text">📝 Text</option>
+            <option value="number">🔢 Number</option>
+            <option value="date">📅 Date</option>
+            <option value="dropdown">📋 Dropdown List</option>
+            <option value="link">🔗 Hyperlink</option>
+            <option value="duration_calc">⏱ Duration (working days between 2 dates)</option>
           </select>
         </div>
         <div class="form-group full" id="col-list-grp" style="display:none">
@@ -1468,12 +1479,18 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
           <select id="col-list-src"></select>
         </div>
         <div class="form-group full" id="col-dur-grp" style="display:none">
-          <label>Start Date Column (key)</label>
-          <input id="col-dur-start" placeholder="e.g. issuedDate">
+          <label>Start Date Column</label>
+          <select id="col-dur-start-sel"></select>
         </div>
         <div class="form-group full" id="col-dur-end-grp" style="display:none">
-          <label>End Date Column (key)</label>
-          <input id="col-dur-end" placeholder="e.g. actualReplyDate">
+          <label>End Date Column</label>
+          <select id="col-dur-end-sel"></select>
+        </div>
+        <div class="form-group full" id="col-dur-info" style="display:none">
+          <div style="background:#f0f4fa;border-radius:6px;padding:9px 12px;font-size:11px;color:#1a3a5c;line-height:1.6">
+            ⏱ <b>Duration</b> = working days between the two selected date columns<br>
+            🗓 Excludes Fridays + Egyptian public holidays automatically
+          </div>
         </div>
       </div>
     </div>
@@ -1575,7 +1592,11 @@ function updateClock() {{
 }}
 
 async function api(url, opts={{}}) {{
-  const r = await fetch(url, {{headers:{{'Content-Type':'application/json'}},...opts}});
+  const r = await fetch(url, {{
+    credentials: 'include',
+    headers: {{'Content-Type':'application/json'}},
+    ...opts
+  }});
   if (r.status === 403) {{
     const d = await r.json().catch(()=>({{}}));
     if(d.error === 'LOGIN_REQUIRED') {{
@@ -2239,6 +2260,7 @@ async function saveProject() {{
   try {{
     const resp = await fetch('/api/project', {{
       method: 'POST',
+      credentials: 'include',
       headers: {{'Content-Type':'application/json'}},
       body: JSON.stringify(data)
     }});
@@ -2373,39 +2395,48 @@ async function deleteColumn(colId, btn) {{
 }}
 
 function onColTypeChange(val) {{
-  document.getElementById('col-list-grp').style.display = val==='dropdown' ? 'flex' : 'none';
-  const isDur = val==='duration_calc';
-  document.getElementById('col-dur-grp').style.display = isDur ? 'flex' : 'none';
-  document.getElementById('col-dur-end-grp').style.display = isDur ? 'flex' : 'none';
-  if(isDur) {{
-    document.getElementById('col-dur-start').value = document.getElementById('col-dur-start').value || 'issuedDate';
-    document.getElementById('col-dur-end').value = document.getElementById('col-dur-end').value || 'actualReplyDate';
-  }}
+  document.getElementById('col-list-grp').style.display    = val==='dropdown'      ? 'flex' : 'none';
+  document.getElementById('col-dur-grp').style.display     = val==='duration_calc' ? 'flex' : 'none';
+  document.getElementById('col-dur-end-grp').style.display = val==='duration_calc' ? 'flex' : 'none';
+  document.getElementById('col-dur-info').style.display    = val==='duration_calc' ? 'block': 'none';
 }}
 
 async function openAddColumn() {{
   await loadLists();
-  const sel=document.getElementById('col-list-src');
-  sel.innerHTML=Object.keys(state.allLists).map(k=>`<option value="${{k}}">${{k}}</option>`).join('');
+  // Populate dropdown list source
+  const sel = document.getElementById('col-list-src');
+  sel.innerHTML = Object.keys(state.allLists).map(k=>`<option value="${{k}}">${{k}}</option>`).join('');
+
+  // Populate date column dropdowns for Duration
+  const allCols = await api('/api/columns?dt='+state.activeTab);
+  const dateCols = allCols.filter(c=>['date','auto_date'].includes(c.col_type));
+  const dateOpts = dateCols.map(c=>`<option value="${{c.col_key}}">${{c.label}}</option>`).join('');
+  document.getElementById('col-dur-start-sel').innerHTML = dateOpts || '<option value="issuedDate">Issued Date</option>';
+  document.getElementById('col-dur-end-sel').innerHTML   = dateOpts || '<option value="actualReplyDate">Actual Reply</option>';
+
+  // Reset form
+  document.getElementById('col-name').value = '';
+  document.getElementById('col-type').value = 'text';
+  onColTypeChange('text');
   openModal('addcol-modal');
 }}
 
 async function saveAddColumn() {{
-  const name=document.getElementById('col-name').value.trim();
-  const type=document.getElementById('col-type').value;
-  const listSrc=type==='dropdown'?document.getElementById('col-list-src').value:null;
-  const durStart=type==='duration_calc'?document.getElementById('col-dur-start').value.trim():null;
-  const durEnd=type==='duration_calc'?document.getElementById('col-dur-end').value.trim():null;
-  if(!name) {{ toast('Name required','error'); return; }}
-  if(type==='duration_calc' && (!durStart||!durEnd)) {{ toast('Start and End date columns required','error'); return; }}
-  const key='custom_'+name.toLowerCase().replace(/[^a-z0-9]+/g,'_')+'_'+Date.now();
-  // list_name stores dur config for duration_calc
+  const name     = document.getElementById('col-name').value.trim();
+  const type     = document.getElementById('col-type').value;
+  const listSrc  = type==='dropdown'      ? document.getElementById('col-list-src').value : null;
+  const durStart = type==='duration_calc' ? document.getElementById('col-dur-start-sel').value : null;
+  const durEnd   = type==='duration_calc' ? document.getElementById('col-dur-end-sel').value   : null;
+  if(!name) {{ toast('Column name required','error'); return; }}
+  if(type==='duration_calc' && (!durStart||!durEnd)) {{ toast('Select start and end date columns','error'); return; }}
+  if(type==='duration_calc' && durStart===durEnd) {{ toast('Start and end columns must be different','error'); return; }}
+  const key      = 'custom_'+name.toLowerCase().replace(/[^a-z0-9]+/g,'_')+'_'+Date.now();
   const listName = type==='duration_calc' ? (durStart+','+durEnd) : listSrc;
   await api('/api/columns/add',{{method:'POST',body:JSON.stringify({{dt_id:state.activeTab,col_key:key,label:name,col_type:type,list_name:listName}})}});
   closeModal('addcol-modal');
   closeModal('cols-modal');
   await loadRecords();
-  toast('Column added','success');
+  toast('✔ Column "'+name+'" added','success');
 }}
 
 // ============================================================
