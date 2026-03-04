@@ -93,10 +93,15 @@ class DCRHandler(BaseHTTPRequestHandler):
 
     def send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode('utf-8')
+        origin = self.headers.get('Origin', '')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', len(body))
-        self.send_header('Access-Control-Allow-Origin', '*')
+        if origin:
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Access-Control-Allow-Credentials', 'true')
+        else:
+            self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         self.wfile.write(body)
 
@@ -129,10 +134,12 @@ class DCRHandler(BaseHTTPRequestHandler):
         return self.rfile.read(length) if length else b''
 
     def do_OPTIONS(self):
+        origin = self.headers.get('Origin', '*')
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', origin)
+        self.send_header('Access-Control-Allow-Credentials', 'true')
         self.send_header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type,Cookie')
         self.end_headers()
 
     def do_GET(self):
@@ -257,8 +264,9 @@ class DCRHandler(BaseHTTPRequestHandler):
                 token = _new_session(uname, user['role'])
                 self.send_response(200)
                 self.send_header('Content-Type','application/json')
+                secure_flag = '; Secure' if IS_RENDER else ''
                 self.send_header('Set-Cookie',
-                    f'dcr_token={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}')
+                    f'dcr_token={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}{secure_flag}')
                 body_out = json.dumps({'ok':True,'role':user['role'],'username':uname}).encode()
                 self.send_header('Content-Length', len(body_out))
                 self.end_headers(); self.wfile.write(body_out)
@@ -581,16 +589,27 @@ class DCRHandler(BaseHTTPRequestHandler):
             col_map  = {c['label']: c['col_key'] for c in cols_cfg}
             imported = 0
             header   = None
+            import datetime as _dt
+            DATE_COLS = {c['col_key'] for c in cols_cfg if c.get('col_type') in ('date','auto_date')}
             for row in ws.iter_rows(values_only=True):
-                vals = [str(v).strip() if v is not None else '' for v in row]
-                if not any(vals): continue
+                vals_raw = list(row)
+                if not any(v for v in vals_raw if v is not None): continue
+                # Convert values
+                vals = []
+                for v in vals_raw:
+                    if v is None:
+                        vals.append('')
+                    elif isinstance(v, (_dt.datetime, _dt.date)):
+                        vals.append(v.strftime('%Y-%m-%d') if not isinstance(v, _dt.datetime) else v.date().strftime('%Y-%m-%d'))
+                    else:
+                        vals.append(str(v).strip())
                 if header is None:
-                    if any(v in col_map or v in ('Sr.','docNo','Document No.') for v in vals):
-                        header = [col_map.get(v, v) for v in vals]
+                    if any(v in col_map or v in ('Sr.','docNo','Document No.','Sr') for v in vals):
+                        header = [col_map.get(v.strip(), v.strip()) for v in vals]
                     continue
                 row_data = {}
                 for i, val in enumerate(vals):
-                    if i < len(header) and header[i] and header[i] not in ('Sr.','sr',''):
+                    if i < len(header) and header[i] and header[i] not in ('Sr.','sr','Sr',''):
                         row_data[header[i]] = val
                 if row_data and any(row_data.values()):
                     db.save_record(dt_id, str(uuid.uuid4()), row_data)
@@ -600,22 +619,30 @@ class DCRHandler(BaseHTTPRequestHandler):
             self.send_json({'ok': False, 'error': str(e)}, 500)
 
     def _handle_import(self, dt_id, csv_text):
+        import datetime as _dt
         cols = db.get_columns(dt_id)
         col_map = {c['label']: c['col_key'] for c in cols}
+        date_cols = {c['col_key'] for c in cols if c.get('col_type') in ('date','auto_date')}
         imported = 0
         reader = csv.reader(io.StringIO(csv_text))
         header = None
         for line in reader:
             if not header:
-                if any(c in line for c in ['Document No.','Sr.','docNo']):
+                if any(c in line for c in ['Document No.','Sr.','docNo','Sr']):
                     header = [col_map.get(h.strip(), h.strip()) for h in line]
                 continue
             if not any(line): continue
             row_data = {}
             for i, val in enumerate(line):
-                if i < len(header) and header[i] and header[i] not in ('sr','Sr.',''):
-                    row_data[header[i]] = val.strip()
-            if row_data:
+                if i < len(header) and header[i] and header[i] not in ('sr','Sr.','Sr',''):
+                    v = val.strip()
+                    # Normalize dates
+                    if header[i] in date_cols and v:
+                        for fmt in ('%d/%b/%Y','%d-%b-%Y','%Y-%m-%d','%d/%m/%Y','%m/%d/%Y'):
+                            try: v = _dt.datetime.strptime(v, fmt).strftime('%Y-%m-%d'); break
+                            except: pass
+                    row_data[header[i]] = v
+            if row_data and any(row_data.values()):
                 db.save_record(dt_id, str(uuid.uuid4()), row_data)
                 imported += 1
         self.send_json({'ok': True, 'imported': imported})
@@ -663,7 +690,7 @@ body{{font-family:'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,
       <input id="pw" type="password" placeholder="Enter password" autocomplete="current-password">
     </div>
     <button class="btn-login" onclick="doLogin()">Sign In →</button>
-    <p class="hint">Default: admin / admin123</p>
+    <p class="hint">Contact your administrator for credentials</p>
   </div>
 </div>
 <script>
@@ -982,6 +1009,13 @@ def build_main_page(session=None):
                           ('contractor','Contractor'),('startDate','Start'),('endDate','End'),
                           ('pmo','PMO'),('landlord','Landlord')]
     )
+    logo_left  = db.get_logo('logo_left')
+    logo_right = db.get_logo('logo_right')
+    logo_html  = ''
+    if logo_left:
+        logo_html += f'<img src="/api/logo/logo_left" style="height:36px;object-fit:contain;margin-right:8px">'
+    if logo_right:
+        logo_html += f'<img src="/api/logo/logo_right" style="height:36px;object-fit:contain;margin-left:auto;margin-right:8px">'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1059,6 +1093,10 @@ tr.overdue:hover td{{background:#fee2e2}}
 tr.rev-row td{{color:var(--muted)}}
 tr.alt td{{background:#fafbfd}}
 .sr-cell{{text-align:center;color:var(--muted);font-size:10px;width:36px}}
+.chk-cell{{text-align:center;width:32px;padding:4px!important}}
+.chk-cell input[type=checkbox]{{width:14px;height:14px;cursor:pointer;accent-color:var(--primary)}}
+#bulk-bar{{display:none;background:#1a3a5c;color:#fff;padding:6px 14px;align-items:center;gap:10px;font-size:12px;flex-shrink:0}}
+#bulk-bar.show{{display:flex}}
 .actions-cell{{white-space:nowrap;width:70px}}
 .viewer-hide{{display:none!important}}
 .act-btn{{padding:2px 7px;border:1px solid var(--border);background:#fff;border-radius:3px;cursor:pointer;font-size:11px}}
@@ -1209,6 +1247,7 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
 
 <!-- PROJECT BAR -->
 <div id="projbar">
+  {logo_html}
   {proj_fields_html}
   <button id="proj-edit-btn" onclick="openProjectModal()">✏ Edit</button>
 </div>
@@ -1226,6 +1265,13 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
   <button class="tool-btn teal" onclick="openImport()">📤 Import Excel/CSV</button>
   <button class="tool-btn purple" onclick="manageColumns()">⚙ Columns</button>
   <input type="text" id="search-box" placeholder="Search all fields..." oninput="applySearch()">
+</div>
+
+<!-- BULK ACTION BAR -->
+<div id="bulk-bar">
+  <span id="bulk-count">0 selected</span>
+  <button class="btn btn-danger btn-sm" onclick="bulkDelete()">🗑 Delete Selected</button>
+  <button class="btn btn-secondary btn-sm" onclick="clearSelection()" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">✕ Cancel</button>
 </div>
 
 <!-- MAIN -->
@@ -1292,6 +1338,14 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
           <div class="form-group" style="padding-top:18px">
             <button class="btn btn-primary btn-sm" onclick="addUser()">+ Add User</button>
           </div>
+        </div>
+      </div>
+    </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="section-title">Change My Password</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="my-pw-new" type="password" placeholder="New password" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;outline:none">
+          <button class="btn btn-primary btn-sm" onclick="changeMyPassword()">Update</button>
         </div>
       </div>
     </div>
@@ -1405,6 +1459,14 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
           <label>Dropdown List Source</label>
           <select id="col-list-src"></select>
         </div>
+        <div class="form-group full" id="col-dur-grp" style="display:none">
+          <label>Start Date Column (key)</label>
+          <input id="col-dur-start" placeholder="e.g. issuedDate">
+        </div>
+        <div class="form-group full" id="col-dur-end-grp" style="display:none">
+          <label>End Date Column (key)</label>
+          <input id="col-dur-end" placeholder="e.g. actualReplyDate">
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1434,10 +1496,30 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
 
 <script>
 // ============================================================
+// HELPERS
+// ============================================================
+function calcWorkingDays(start, end) {{
+  if(!start||!end) return '';
+  try {{
+    let s=new Date(start), e=new Date(end);
+    if(isNaN(s.getTime())||isNaN(e.getTime())) return '';
+    if(e<=s) return '0';
+    let count=0;
+    const cur=new Date(s); cur.setDate(cur.getDate()+1);
+    while(cur<=e) {{
+      if(cur.getDay()!==5) count++; // exclude Friday
+      cur.setDate(cur.getDate()+1);
+    }}
+    return String(count);
+  }} catch(_) {{ return ''; }}
+}}
+
+// ============================================================
 // STATE
 // ============================================================
 const STATUS_COLORS = {json.dumps(STATUS_COLORS)};
 const ROLE = '{_role}';
+const CURRENT_USER = '{_uname}';
 let state = {{
   activeTab: null,
   docTypes: [],
@@ -1461,6 +1543,23 @@ async function init() {{
   await loadLists();
   updateClock();
   setInterval(updateClock, 60000);
+}}
+
+// ── Client-side working days (Egypt: Fri off) ──────────────────
+function calcDuration(start, end) {{
+  if(!start || !end) return '';
+  try {{
+    let s=new Date(start), e=new Date(end);
+    if(isNaN(s)||isNaN(e)||e<=s) return '0';
+    let count=0, cur=new Date(s);
+    cur.setDate(cur.getDate()+1);
+    while(cur<=e) {{
+      const dow=cur.getDay(); // 0=Sun,5=Fri,6=Sat
+      if(dow!==5) count++; // exclude Friday
+      cur.setDate(cur.getDate()+1);
+    }}
+    return String(count);
+  }} catch(e) {{ return ''; }}
 }}
 
 function updateClock() {{
@@ -1497,8 +1596,12 @@ async function loadDocTypes() {{
   if(targetTab) switchTab(targetTab);
 }}
 
+let _listsPromise = null;
 async function loadLists() {{
-  state.allLists = await api('/api/dropdown_lists');
+  if(!_listsPromise) {{
+    _listsPromise = api('/api/dropdown_lists').then(d=>{{ state.allLists = d||{{}}; }});
+  }}
+  return _listsPromise;
 }}
 
 // ============================================================
@@ -1588,6 +1691,11 @@ function buildTableHead() {{
 
   // Main header row
   const hr = document.createElement('tr');
+  // Select-all checkbox
+  const chkTh = document.createElement('th');
+  chkTh.className='chk-cell';
+  chkTh.innerHTML='<input type="checkbox" id="chk-all" title="Select all" onchange="toggleSelectAll(this.checked)">';
+  hr.appendChild(chkTh);
   const srTh = document.createElement('th');
   srTh.textContent = 'Sr.'; srTh.style.width='38px'; srTh.style.cursor='default';
   hr.appendChild(srTh);
@@ -1664,6 +1772,16 @@ function renderRows() {{
     else if(row._isRev) tr.classList.add('rev-row');
     else if(idx%2===1) tr.classList.add('alt');
 
+    // Checkbox (admin only)
+    const tdChk = document.createElement('td');
+    tdChk.className = 'chk-cell';
+    if(ROLE==='admin') {{
+      const cb = document.createElement('input');
+      cb.type='checkbox'; cb.dataset.id=row._id;
+      cb.onchange = updateBulkBar;
+      tdChk.appendChild(cb);
+    }}
+    tr.appendChild(tdChk);
     // Sr
     const tdSr = document.createElement('td');
     tdSr.className = 'sr-cell';
@@ -1681,6 +1799,10 @@ function renderRows() {{
         if(row._overdue && val) td.classList.add('overdue-date');
       }} else if(key==='duration') {{
         val = row._duration||'';
+      }} else if(col.col_type==='duration_calc') {{
+        const parts=(col.list_name||'issuedDate,actualReplyDate').split(',');
+        const s=row[parts[0].trim()]||'', e=row[parts[1].trim()]||'';
+        val = calcWorkingDays(s,e);
       }} else if(key==='issuedDate') {{
         val = row._issuedDateFmt||'';
       }} else if(key==='actualReplyDate') {{
@@ -1736,34 +1858,42 @@ function sortBy(key) {{
 
 // ── Column resize ─────────────────────────────────────────────
 function initColResize() {{
-  document.querySelectorAll('#reg-table thead th[data-key]').forEach(th => {{
-    th.querySelector('.col-resizer')?.remove();
+  const ths = document.querySelectorAll('#reg-table thead tr:first-child th[data-key]');
+  ths.forEach(th => {{
+    if(th.querySelector('.col-resizer')) return; // already init
     const rz = document.createElement('div');
     rz.className = 'col-resizer';
+    th.style.position = 'relative';
     th.appendChild(rz);
-    let startX, startW;
-    rz.addEventListener('mousedown', e => {{
+    let startX, startW, dragging=false;
+    rz.onmousedown = e => {{
       e.stopPropagation(); e.preventDefault();
-      startX = e.clientX; startW = th.offsetWidth;
+      startX=e.clientX; startW=th.getBoundingClientRect().width; dragging=true;
       rz.classList.add('resizing');
-      const onMove = ev => {{
-        const newW = Math.max(50, startW + ev.clientX - startX);
-        th.style.minWidth = newW+'px'; th.style.width = newW+'px';
-      }};
-      const onUp = () => {{
-        rz.classList.remove('resizing');
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        const saved = JSON.parse(localStorage.getItem('dcr_col_widths')||'{{}}');
-        saved[state.activeTab+'_'+th.dataset.key] = th.offsetWidth;
-        localStorage.setItem('dcr_col_widths', JSON.stringify(saved));
-      }};
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      document.body.style.cursor='col-resize';
+      document.body.style.userSelect='none';
+    }};
+    document.addEventListener('mousemove', e=>{{
+      if(!dragging) return;
+      const w = Math.max(40, startW + e.clientX - startX);
+      th.style.width=w+'px'; th.style.minWidth=w+'px'; th.style.maxWidth=w+'px';
     }});
-    const saved = JSON.parse(localStorage.getItem('dcr_col_widths')||'{{}}');
-    const sw = saved[state.activeTab+'_'+th.dataset.key];
-    if(sw) {{ th.style.minWidth=sw+'px'; th.style.width=sw+'px'; }}
+    document.addEventListener('mouseup', e=>{{
+      if(!dragging) return;
+      dragging=false; rz.classList.remove('resizing');
+      document.body.style.cursor=''; document.body.style.userSelect='';
+      try {{
+        const saved = JSON.parse(localStorage.getItem('dcr_col_w')||'{{}}');
+        saved[state.activeTab+'_'+th.dataset.key]=Math.round(th.getBoundingClientRect().width);
+        localStorage.setItem('dcr_col_w', JSON.stringify(saved));
+      }} catch(e){{}}
+    }});
+    // Restore saved width
+    try {{
+      const saved = JSON.parse(localStorage.getItem('dcr_col_w')||'{{}}');
+      const w = saved[state.activeTab+'_'+th.dataset.key];
+      if(w) {{ th.style.width=w+'px'; th.style.minWidth=w+'px'; th.style.maxWidth=w+'px'; }}
+    }} catch(e){{}}
   }});
 }}
 
@@ -2007,6 +2137,56 @@ async function openProjectModal() {{
   addBtn.textContent='+ Add Field'; addBtn.onclick=addExtraField;
   body.appendChild(addBtn);
 
+  // ── Logos section ──────────────────────────────────
+  const logoTitle = document.createElement('div');
+  logoTitle.className='section-title'; logoTitle.style.marginTop='16px';
+  logoTitle.textContent='Company Logos (shown in header)';
+  body.appendChild(logoTitle);
+
+  const logoGrid = document.createElement('div');
+  logoGrid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px';
+
+  for(const [logoKey, logoLabel] of [['logo_left','Left Logo'],['logo_right','Right Logo']]) {{
+    const logoDiv = document.createElement('div');
+    logoDiv.style.cssText='border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center;background:var(--bg)';
+    const logoLbl = document.createElement('div');
+    logoLbl.style.cssText='font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:6px';
+    logoLbl.textContent=logoLabel;
+    logoDiv.appendChild(logoLbl);
+    // Preview
+    const preview = document.createElement('img');
+    preview.id='logo-preview-'+logoKey;
+    preview.style.cssText='max-height:50px;max-width:100%;object-fit:contain;display:block;margin:0 auto 6px';
+    logoDiv.appendChild(preview);
+    // Load current logo
+    fetch('/api/logo/'+logoKey).then(r=>r.ok?r.blob():null).then(b=>{{
+      if(b) preview.src=URL.createObjectURL(b);
+    }});
+    // Upload input
+    const fileInp = document.createElement('input');
+    fileInp.type='file'; fileInp.accept='image/*';
+    fileInp.style.cssText='width:100%;font-size:10px;margin-bottom:4px';
+    fileInp.onchange = async (e) => {{
+      const file = e.target.files[0]; if(!file) return;
+      const b64 = await new Promise(res=>{{ const fr=new FileReader(); fr.onload=e2=>res(e2.target.result); fr.readAsDataURL(file); }});
+      preview.src = b64;
+      await api('/api/logo',{{method:'POST',body:JSON.stringify({{key:logoKey,data:b64.split(',')[1]}})}});
+      toast('Logo saved','success');
+    }};
+    logoDiv.appendChild(fileInp);
+    // Clear button
+    const clearBtn = document.createElement('button');
+    clearBtn.className='btn btn-secondary btn-sm'; clearBtn.textContent='Remove';
+    clearBtn.style.fontSize='9px';
+    clearBtn.onclick=async()=>{{
+      await api('/api/logo',{{method:'POST',body:JSON.stringify({{key:logoKey,data:''}})}});
+      preview.src=''; toast('Logo removed','warning');
+    }};
+    logoDiv.appendChild(clearBtn);
+    logoGrid.appendChild(logoDiv);
+  }}
+  body.appendChild(logoGrid);
+
   openModal('proj-modal');
 }}
 
@@ -2038,6 +2218,7 @@ function addExtraField() {{
 }}
 
 async function saveProject() {{
+  if(ROLE !== 'admin') {{ showLoginRequired(); return; }}
   const data = {{}};
   PROJ_FIELDS.forEach(([key])=>{{ const el=document.getElementById('pf-'+key); if(el) data[key]=el.value.trim(); }});
   const extra = [];
@@ -2048,9 +2229,18 @@ async function saveProject() {{
   }});
   data.extraFields = JSON.stringify(extra);
   try {{
-    const r = await api('/api/project',{{method:'POST',body:JSON.stringify(data)}});
-    if(r === null) return;
-    if(!r || !r.ok) {{ toast('Save failed — r='+(r?r.ok:'null'),'error'); return; }}
+    const resp = await fetch('/api/project', {{
+      method: 'POST',
+      headers: {{'Content-Type':'application/json'}},
+      body: JSON.stringify(data)
+    }});
+    if(!resp.ok) {{
+      const err = await resp.json().catch(()=>({{}}));
+      if(err.error === 'LOGIN_REQUIRED') {{ showLoginRequired(); return; }}
+      toast('Save failed: HTTP '+resp.status, 'error'); return;
+    }}
+    const r = await resp.json();
+    if(!r.ok) {{ toast('Save failed','error'); return; }}
     closeModal('proj-modal');
     toast('✔ Project info saved!','success');
     await refreshProjBar();
@@ -2174,6 +2364,17 @@ async function deleteColumn(colId, btn) {{
   btn.closest('li').remove();
 }}
 
+function onColTypeChange(val) {{
+  document.getElementById('col-list-grp').style.display = val==='dropdown' ? 'flex' : 'none';
+  const isDur = val==='duration_calc';
+  document.getElementById('col-dur-grp').style.display = isDur ? 'flex' : 'none';
+  document.getElementById('col-dur-end-grp').style.display = isDur ? 'flex' : 'none';
+  if(isDur) {{
+    document.getElementById('col-dur-start').value = document.getElementById('col-dur-start').value || 'issuedDate';
+    document.getElementById('col-dur-end').value = document.getElementById('col-dur-end').value || 'actualReplyDate';
+  }}
+}}
+
 async function openAddColumn() {{
   await loadLists();
   const sel=document.getElementById('col-list-src');
@@ -2185,9 +2386,14 @@ async function saveAddColumn() {{
   const name=document.getElementById('col-name').value.trim();
   const type=document.getElementById('col-type').value;
   const listSrc=type==='dropdown'?document.getElementById('col-list-src').value:null;
+  const durStart=type==='duration_calc'?document.getElementById('col-dur-start').value.trim():null;
+  const durEnd=type==='duration_calc'?document.getElementById('col-dur-end').value.trim():null;
   if(!name) {{ toast('Name required','error'); return; }}
-  const key='custom_'+name.toLowerCase().replace(/\\s+/g,'_')+'_'+Date.now();
-  await api('/api/columns/add',{{method:'POST',body:JSON.stringify({{dt_id:state.activeTab,col_key:key,label:name,col_type:type,list_name:listSrc}})}});
+  if(type==='duration_calc' && (!durStart||!durEnd)) {{ toast('Start and End date columns required','error'); return; }}
+  const key='custom_'+name.toLowerCase().replace(/[^a-z0-9]+/g,'_')+'_'+Date.now();
+  // list_name stores dur config for duration_calc
+  const listName = type==='duration_calc' ? (durStart+','+durEnd) : listSrc;
+  await api('/api/columns/add',{{method:'POST',body:JSON.stringify({{dt_id:state.activeTab,col_key:key,label:name,col_type:type,list_name:listName}})}});
   closeModal('addcol-modal');
   closeModal('cols-modal');
   await loadRecords();
@@ -2238,6 +2444,62 @@ async function doImport() {{
   }} finally {{
     if(importBtn) {{ importBtn.disabled=false; importBtn.textContent='Import'; }}
   }}
+}}
+
+// ============================================================
+// BULK DELETE
+// ============================================================
+function updateBulkBar() {{
+  const checked = document.querySelectorAll('.chk-cell input[type=checkbox][data-id]:checked');
+  const bar = document.getElementById('bulk-bar');
+  document.getElementById('bulk-count').textContent = checked.length + ' selected';
+  bar.classList.toggle('show', checked.length > 0);
+  // sync select-all
+  const all = document.querySelectorAll('.chk-cell input[type=checkbox][data-id]');
+  const chkAll = document.getElementById('chk-all');
+  if(chkAll) chkAll.checked = all.length > 0 && checked.length === all.length;
+}}
+function toggleSelectAll(val) {{
+  document.querySelectorAll('.chk-cell input[type=checkbox][data-id]').forEach(cb=>cb.checked=val);
+  updateBulkBar();
+}}
+function clearSelection() {{
+  document.querySelectorAll('.chk-cell input[type=checkbox]').forEach(cb=>cb.checked=false);
+  updateBulkBar();
+}}
+async function bulkDelete() {{
+  const ids = [...document.querySelectorAll('.chk-cell input[type=checkbox][data-id]:checked')].map(cb=>cb.dataset.id);
+  if(!ids.length) return;
+  if(!confirm('Delete '+ids.length+' documents? This cannot be undone.')) return;
+  let ok=0, fail=0;
+  for(const id of ids) {{
+    const r = await api('/api/delete_record/'+id, {{method:'POST'}});
+    if(r && r.ok) ok++; else fail++;
+  }}
+  clearSelection();
+  await loadRecords();
+  await loadDocTypes();
+  toast('✔ Deleted '+ok+' documents'+(fail?' ('+fail+' failed)':''), 'success');
+}}
+
+// ── Change my password ────────────────────────────────────────
+async function changeMyPassword() {{
+  const pw = document.getElementById('my-pw-new').value.trim();
+  if(!pw || pw.length < 4) {{ toast('Password must be at least 4 characters','error'); return; }}
+  const r = await api('/api/users', {{method:'POST', body:JSON.stringify({{action:'change_password',username:'{_uname}',password:pw}})}});
+  if(r===null) return;
+  if(r.ok) {{ toast('✔ Password changed successfully','success'); document.getElementById('my-pw-new').value=''; }}
+  else toast(r.error||'Error','error');
+}}
+
+// ── Change My Password ────────────────────────────────────────
+async function changeMyPassword() {{
+  const pw = document.getElementById('my-pw-new').value.trim();
+  if(pw.length < 4) {{ toast('Min 4 characters','error'); return; }}
+  const r = await api('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:CURRENT_USER,password:pw}})}});
+  if(r===null) return;
+  if(r && r.ok) {{ toast('✔ Password changed!','success'); document.getElementById('my-pw-new').value=''; }}
+  else toast((r&&r.error)||'Error','error');
 }}
 
 // ============================================================
