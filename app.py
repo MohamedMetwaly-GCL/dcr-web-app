@@ -757,6 +757,13 @@ canvas{{max-height:240px}}
       <h2 style="font-size:22px;font-weight:800;color:var(--pr)">📊 Projects Dashboard</h2>
       <p style="color:var(--mu);font-size:12px;margin-top:3px">All projects overview — login to edit</p>
     </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <label style="font-size:11px;font-weight:700;color:var(--mu)">🔍 Filter Project:</label>
+      <select id="proj-sel" onchange="filterProject(this.value)"
+        style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none">
+        <option value="">All Projects</option>
+      </select>
+    </div>
     <div style="background:#fff;border-radius:8px;padding:10px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);text-align:center">
       <div style="font-size:28px;font-weight:800;color:#16a34a">{pct_all}%</div>
       <div style="font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase">Overall</div>
@@ -777,6 +784,27 @@ canvas{{max-height:240px}}
   <div class="charts">
     <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
     <div class="ccard"><div class="clbl">Overall Status</div><canvas id="cStatus"></canvas></div>
+  </div>
+
+  <!-- Doc Types Summary Table -->
+  <div class="stitle" id="dt-table-title">📋 Document Types Summary</div>
+  <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:24px">
+    <table id="dt-table" style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead>
+        <tr style="background:var(--pr);color:#fff">
+          <th style="padding:10px 12px;text-align:left;font-weight:600">Project</th>
+          <th style="padding:10px 12px;text-align:left;font-weight:600">Type</th>
+          <th style="padding:10px 8px;text-align:center;font-weight:600">Total</th>
+          <th style="padding:10px 8px;text-align:center;font-weight:600">Approved</th>
+          <th style="padding:10px 8px;text-align:center;font-weight:600">Pending</th>
+          <th style="padding:10px 8px;text-align:center;font-weight:600">Overdue</th>
+          <th style="padding:10px 8px;text-align:center;font-weight:600">%</th>
+          <th style="padding:10px 8px;text-align:center;font-weight:600">Action</th>
+        </tr>
+      </thead>
+      <tbody id="dt-tbody"></tbody>
+    </table>
+    <div id="dt-empty" class="hidden" style="text-align:center;padding:30px;color:var(--mu)">No data</div>
   </div>
 </div>
 
@@ -859,6 +887,72 @@ new Chart(document.getElementById('cStatus'),{{type:'doughnut',
     datasets:[{{data:[{approved_all},{pending_all},{overdue_all},{max(0,total_all-approved_all-pending_all-overdue_all)}],
       backgroundColor:['#16a34a','#f59e0b','#ef4444','#9ca3af'],borderWidth:2,borderColor:'#fff'}}]}},
   options:{{responsive:true,plugins:{{legend:{{position:'bottom'}}}}}}}});
+
+// Project filter + doc types table
+let ALL_DT_STATS = [];
+
+async function buildDTTable(){{
+  ALL_DT_STATS=[];
+  const dts_map={{}};
+  for(const p of STATS){{
+    const dts=await apiFetch('/api/doc_types/'+p.id);
+    if(!dts)continue;
+    dts_map[p.id]=dts;
+    for(const dt of dts){{
+      const cnt=await apiFetch('/api/counts/'+p.id);
+      const total=cnt?cnt[dt.id]||0:0;
+      ALL_DT_STATS.push({{pid:p.id,pname:p.name,pcode:p.code,dtId:dt.id,dtName:dt.name,dtCode:dt.code,total}});
+    }}
+  }}
+  // Populate project selector
+  const sel=document.getElementById('proj-sel');
+  STATS.forEach(p=>{{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' ('+p.code+')';sel.appendChild(o);}});
+  renderDTTable('');
+}}
+
+function renderDTTable(filterPid){{
+  const tbody=document.getElementById('dt-tbody');tbody.innerHTML='';
+  const rows=filterPid?ALL_DT_STATS.filter(r=>r.pid===filterPid):ALL_DT_STATS;
+  const empty=document.getElementById('dt-empty');
+  if(!rows.length){{empty.classList.remove('hidden');return;}}
+  empty.classList.add('hidden');
+  rows.forEach((r,i)=>{{
+    const tr=document.createElement('tr');
+    tr.style.cssText=i%2===0?'background:#fff':'background:#f8fafc';
+    const pct=r.total>0?100:0;
+    const col=r.total>0?'#16a34a':'#9ca3af';
+    tr.innerHTML=`<td style="padding:7px 12px;font-size:11px;color:var(--mu)">${{r.pcode}}</td>
+      <td style="padding:7px 12px;font-weight:600"><a href="/app?p=${{r.pid}}&tab=${{r.dtId}}" style="color:var(--pr);text-decoration:none">${{r.dtCode}} — ${{r.dtName}}</a></td>
+      <td style="padding:7px 8px;text-align:center;font-weight:700">${{r.total}}</td>
+      <td style="padding:7px 8px;text-align:center;color:#16a34a;font-weight:600">—</td>
+      <td style="padding:7px 8px;text-align:center;color:#f59e0b;font-weight:600">—</td>
+      <td style="padding:7px 8px;text-align:center;color:#ef4444;font-weight:600">—</td>
+      <td style="padding:7px 8px;text-align:center"><span style="color:${{col}};font-weight:700">${{r.total}}</span></td>
+      <td style="padding:7px 8px;text-align:center"><a href="/app?p=${{r.pid}}&tab=${{r.dtId}}" class="btn btn-pr btn-sm" style="text-decoration:none;font-size:10px">Open</a></td>`;
+    tbody.appendChild(tr);
+  }});
+}}
+
+function filterProject(pid){{
+  renderDTTable(pid);
+  if(pid){{
+    // Update KPI cards to show filtered project stats
+    const ps=STATS.find(s=>s.id===pid);
+    if(ps){{
+      updateKPI(ps.total,ps.approved,ps.pending,ps.overdue,ps.pct);
+    }}
+  }}else{{
+    updateKPI({total_all},{approved_all},{pending_all},{overdue_all},{pct_all});
+  }}
+}}
+
+function updateKPI(total,approved,pending,overdue,pct){{
+  const els=document.querySelectorAll('.kval');
+  if(els.length>=5){{els[0].textContent=total;els[1].textContent=approved;els[2].textContent=pending;els[3].textContent=overdue;}}
+}}
+
+// Load table after charts
+buildDTTable();
 
 // Admin Panel
 async function openAdmin(){{
@@ -943,7 +1037,28 @@ async function createProject(){{
   const name=document.getElementById('np-name').value.trim();
   if(!id||!name||!code){{toast('All fields required','er');return;}}
   const r=await apiFetch('/api/projects/create',{{method:'POST',body:JSON.stringify({{id,name,code}})}});
-  if(r&&r.ok){{toast('✔ Project created','ok');closeM('newproj-modal');location.reload();}}
+  if(r&&r.ok){{
+    toast('✔ Project created: '+name,'ok');
+    closeM('newproj-modal');
+    // Add card immediately without reload
+    const col='#ef4444';
+    const a=document.createElement('a');
+    a.href='/app?p='+id;a.className='pcard';
+    a.innerHTML=`<div class="pchdr"><div>
+      <div style="color:rgba(255,255,255,.6);font-size:10px;font-weight:700">${{code}}</div>
+      <div style="color:#fff;font-weight:700;font-size:14px;margin-top:2px">${{name}}</div>
+    </div></div><div class="pcbody">
+      <div class="prow"><span style="font-size:11px;color:var(--mu)">Total</span><b>0</b></div>
+      <div class="prog"><div class="progf" style="width:0%;background:${{col}}"></div></div>
+      <div style="font-size:10px;color:${{col}};font-weight:700;margin-top:4px">0% complete</div>
+      <div style="margin-top:6px;font-size:10px;color:#2563a8;font-weight:600">✏ You can edit</div>
+    </div>`;
+    const addCard=document.querySelector('.addcard');
+    if(addCard) addCard.parentNode.insertBefore(a,addCard);
+    else document.getElementById('pgrid').appendChild(a);
+    // Clear form
+    ['np-id','np-code','np-name'].forEach(i=>{{const el=document.getElementById(i);if(el)el.value='';}});
+  }}
   else toast((r&&r.error)||'Error','er');
 }}
 </script></body></html>"""
@@ -1262,6 +1377,15 @@ tr.alt td{{background:#fafbfd}}
   </div>
 </div>
 
+<!-- ADMIN MODAL (register page) -->
+<div class="overlay hidden" id="admin-modal">
+  <div class="modal" style="max-width:780px">
+    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
+    <div class="mbody" id="admin-body"></div>
+    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
+  </div>
+</div>
+
 {SHARED_JS}
 <script>
 const PID='{pid}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
@@ -1279,13 +1403,19 @@ const state={{tab:null,cols:[],recs:null,sortCol:null,sortDir:'asc',filters:{{}}
 
 function updateClock(){{document.getElementById('s-clock').textContent=new Date().toLocaleString('en-GB');}}
 
-async function loadDTs(){{
+async function loadDTs(keepTab=false){{
   const dts=await apiFetch('/api/doc_types/'+PID); if(!dts)return;
   renderTabs(dts);
+  await refreshCounts();
+  if(!keepTab){{
+    const tab=new URLSearchParams(location.search).get('tab');
+    if(dts.length) switchTab(tab&&dts.find(d=>d.id===tab)?tab:dts[0].id);
+  }}
+}}
+
+async function refreshCounts(){{
   const cnts=await apiFetch('/api/counts/'+PID); if(!cnts)return;
-  dts.forEach(dt=>{{const el=document.getElementById('cnt-'+dt.id);if(el)el.textContent=cnts[dt.id]||0;}});
-  const tab=new URLSearchParams(location.search).get('tab');
-  if(dts.length) switchTab(tab&&dts.find(d=>d.id===tab)?tab:dts[0].id);
+  Object.entries(cnts).forEach(([id,n])=>{{const el=document.getElementById('cnt-'+id);if(el)el.textContent=n;}});
 }}
 
 async function loadLists(force=false){{
@@ -1380,16 +1510,67 @@ function buildHead(){{
   head.appendChild(fr);
 }}
 
+function parseDocNo(docNo){{
+  // Extract base number and rev from "DS-001 REV00" format
+  const m=(docNo||'').match(/^([A-Za-z]+)-([0-9]+) REV([0-9]+)$/i);
+  if(m)return{{prefix:m[1],num:parseInt(m[2]),rev:parseInt(m[3])}};
+  return{{prefix:docNo||'',num:0,rev:0}};
+}}
+
+function sortByDocNo(rows){{
+  // Group by base (prefix+num), then sort revs within group
+  const groups={{}};
+  rows.forEach(r=>{{
+    const p=parseDocNo(r.docNo||'');
+    const key=p.prefix+'-'+String(p.num).padStart(6,'0');
+    if(!groups[key])groups[key]={{baseNum:p.num,prefix:p.prefix,rows:[]}};
+    groups[key].rows.push({{...r,_parsedNum:p.num,_parsedRev:p.rev}});
+  }});
+  // Sort groups by base number, then rows within group by rev
+  const sorted=[];
+  Object.values(groups)
+    .sort((a,b)=>a.prefix.localeCompare(b.prefix)||a.baseNum-b.baseNum)
+    .forEach(g=>{{
+      g.rows.sort((a,b)=>a._parsedRev-b._parsedRev);
+      g.rows.forEach(r=>sorted.push(r));
+    }});
+  return sorted;
+}}
+
+function validateDocNo(docNo,existingRecs,editId){{
+  if(!docNo)return'Document No. is required';
+  const p=parseDocNo(docNo);
+  if(p.num===0&&!docNo.includes('-'))return'Invalid format. Use: CODE-001 REV00';
+  // Check for duplicate
+  const dup=existingRecs.find(r=>r._id!==editId&&(r.docNo||'').toLowerCase()===docNo.toLowerCase());
+  if(dup)return'Document No. already exists: '+docNo;
+  // Check REV: if REV>0, base must exist
+  if(p.rev>0){{
+    const base=p.prefix+'-'+String(p.num).padStart(3,'0')+' REV00';
+    const baseAlt=p.prefix+'-'+p.num+' REV00';
+    const hasBase=existingRecs.some(r=>{{
+      const bp=parseDocNo(r.docNo||'');
+      return bp.prefix===p.prefix&&bp.num===p.num&&bp.rev===0&&r._id!==editId;
+    }});
+    if(!hasBase)return'Cannot add REV'+String(p.rev).padStart(2,'0')+' — base document REV00 not found';
+  }}
+  return null;
+}}
+
 function renderRows(){{
   const body=document.getElementById('tbody');body.innerHTML='';
   let rows=state.recs.filter(r=>{{
     for(const[k,v]of Object.entries(state.filters)){{if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;}}
     return true;
   }});
-  if(state.sortCol)rows.sort((a,b)=>{{
-    const va=String(a[state.sortCol]||'').toLowerCase(),vb=String(b[state.sortCol]||'').toLowerCase();
-    return state.sortDir==='asc'?(va>vb?1:-1):(va<vb?1:-1);
-  }});
+  if(state.sortCol){{
+    rows.sort((a,b)=>{{
+      const va=String(a[state.sortCol]||'').toLowerCase(),vb=String(b[state.sortCol]||'').toLowerCase();
+      return state.sortDir==='asc'?(va>vb?1:-1):(va<vb?1:-1);
+    }});
+  }}else{{
+    rows=sortByDocNo(rows);
+  }}
   document.getElementById('empty').classList.toggle('hidden',rows.length>0);
   let sr=1;
   rows.forEach((row,idx)=>{{
@@ -1513,16 +1694,18 @@ async function saveRecord(){{
     data[col.col_key]=el.classList.contains('ms-con')?el.dataset.value||'':el.tagName==='TEXTAREA'?el.value.trim():el.value.trim();
   }}
   if(!data.docNo){{toast('Document No. required','er');return;}}
+  const valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
+  if(valErr){{toast('⚠ '+valErr,'er');return;}}
   if(state.editId)data._id=state.editId;
   const r=await apiFetch('/api/records/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify(data)}});
-  if(r&&r.ok){{closeM('rec-modal');await loadRecords();await loadDTs();toast(state.editId?'Updated':'Added','ok');}}
+  if(r&&r.ok){{closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');}}
   else toast('Error saving','er');
 }}
 
 async function delRec(id){{
   if(!confirm('Delete this record?'))return;
   await apiFetch('/api/records/'+id,{{method:'DELETE'}});
-  await loadRecords();await loadDTs();toast('Deleted','wa');
+  await loadRecords();await refreshCounts();toast('Deleted','wa');
 }}
 
 // Bulk
@@ -1539,7 +1722,7 @@ async function bulkDel(){{
   const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
   if(!ids.length||!confirm('Delete '+ids.length+' records?'))return;
   let ok=0;for(const id of ids){{const r=await apiFetch('/api/records/'+id,{{method:'DELETE'}});if(r&&r.ok)ok++;}}
-  clearSel();await loadRecords();await loadDTs();toast('✔ Deleted '+ok,'ok');
+  clearSel();await loadRecords();await refreshCounts();toast('✔ Deleted '+ok,'ok');
 }}
 
 // Project Modal
@@ -1642,7 +1825,7 @@ async function manageColumns(){{
   body.appendChild(ul);openM('col-modal');
 }}
 async function toggleCol(id,v){{await apiFetch('/api/columns/visibility/'+id,{{method:'POST',body:JSON.stringify({{visible:v}})}});}}
-async function deleteCol(id,btn){{if(!confirm('Delete column?'))return;await apiFetch('/api/columns/'+id,{{method:'DELETE'}});btn.closest('li').remove();}}
+async function deleteCol(id,key,btn){{const warn=key==='docNo'?'⚠ WARNING: Deleting Document No. column will break the register! Are you sure?':'Delete this column?';if(!confirm(warn))return;await apiFetch('/api/columns/'+id,{{method:'DELETE'}});btn.closest('li').remove();}}
 
 function onColType(v){{
   document.getElementById('cg-list').style.display=v==='dropdown'?'flex':'none';
@@ -1672,6 +1855,63 @@ async function saveAddCol(){{
   if(type==='duration_calc'&&ds===de){{toast('Start and end must differ','er');return;}}
   await apiFetch('/api/columns/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify({{label:name,col_type:type,list_name:type==='duration_calc'?(ds+','+de):list}})}});
   closeM('addcol-modal');closeM('col-modal');await loadRecords();toast('✔ Column added','ok');
+}}
+
+// Admin Panel (same as dashboard)
+async function openAdmin(){{
+  const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
+  if(!users||!projects) return;
+  const body=document.getElementById('admin-body'); body.innerHTML='';
+  const utitle=document.createElement('div');utitle.className='stitle';utitle.textContent='👥 Users';body.appendChild(utitle);
+  for(const u of users){{
+    const row=document.createElement('div');row.className='urow';
+    row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
+      <span class="badge" style="background:#fef3c7;color:#92400e">${{u.role.toUpperCase()}}</span>
+      ${{u.username!=='admin'?`<button class="btn btn-sc btn-sm" onclick="chgPw('${{u.username}}')">🔑 PW</button>
+        <button class="btn btn-er btn-sm" onclick="delUsr('${{u.username}}')">✕</button>`:
+        '<span style="font-size:10px;color:var(--mu)">(protected)</span>'}}`;
+    body.appendChild(row);
+    if(u.role!=='superadmin'){{
+      const ad=document.createElement('div');ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
+      ad.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:4px">Project access:</div>';
+      const assigned=await apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]);
+      const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:4px';
+      projects.forEach(p=>{{
+        const btn=document.createElement('button');btn.className='pbtn'+(assigned.includes(p.id)?' on':'');
+        btn.textContent=p.code;btn.title=p.name;
+        btn.onclick=async()=>{{const on=btn.classList.contains('on');
+          await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id}})}});
+          btn.classList.toggle('on');toast((btn.classList.contains('on')?'✔ Assigned: ':'Removed: ')+p.name,'ok');}};
+        pl.appendChild(btn);}});
+      ad.appendChild(pl);body.appendChild(ad);
+    }}
+  }}
+  const at=document.createElement('div');at.className='stitle';at.textContent='➕ Add User';body.appendChild(at);
+  const ar=document.createElement('div');
+  ar.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
+    <div class="fg"><label>Username</label><input id="nu-name" placeholder="username"></div>
+    <div class="fg"><label>Role</label><select id="nu-role">
+      <option value="editor">Editor</option><option value="viewer">Viewer</option>
+      <option value="superadmin">Super Admin</option></select></div>
+    <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
+    <button class="btn btn-pr btn-sm" style="margin-bottom:1px" onclick="addUsr()">Add</button></div>`;
+  body.appendChild(ar);openM('admin-modal');
+}}
+async function addUsr(){{
+  const name=document.getElementById('nu-name').value.trim().toLowerCase();
+  const role=document.getElementById('nu-role').value;
+  const pw=document.getElementById('nu-pw').value;
+  if(!name||!pw){{toast('Username and password required','er');return;}}
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw}})}});
+  if(r&&r.ok){{toast('✔ User added','ok');closeM('admin-modal');openAdmin();}}else toast((r&&r.error)||'Error','er');
+}}
+async function delUsr(u){{if(!confirm('Delete user: '+u+'?'))return;
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'delete',username:u}})}});
+  if(r&&r.ok){{toast('Deleted','wa');closeM('admin-modal');openAdmin();}}
+}}
+async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)return;
+  await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
+  toast('✔ Password changed','ok');
 }}
 
 // Export/Import
