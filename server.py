@@ -151,9 +151,18 @@ class DCRHandler(BaseHTTPRequestHandler):
         if path.startswith('/static/'):
             self.send_file(STATIC_DIR / path[8:]); return
 
-        # ── Ping endpoint ──
+        # ── Ping endpoint (lightweight - no DB, for UptimeRobot keep-alive) ──
         if path == '/ping':
             self.send_json({"status": "ok", "time": datetime.datetime.now().isoformat()}); return
+
+        # ── Health check endpoint (checks DB connectivity) ──
+        if path == '/health':
+            try:
+                count = db.get_record_count('DS')  # lightweight DB probe
+                self.send_json({"status": "ok", "db": "connected", "time": datetime.datetime.now().isoformat()})
+            except Exception as e:
+                self.send_json({"status": "error", "db": str(e)}, 503)
+            return
 
         # ── Login page (public) ──
         if path == '/login':
@@ -718,8 +727,8 @@ async function doLogin() {{
 def build_dashboard_page(session=None):
     proj    = db.get_project()
     dtypes  = db.get_doc_types()
-    _uname  = (session or {{}}).get('username','?')
-    _role   = (session or {{}}).get('role','viewer')
+    _uname  = (session or {}).get('username','?')
+    _role   = (session or {}).get('role','viewer')
     _rbg    = "rgba(240,165,0,.35)" if _role=="admin" else "rgba(255,255,255,.18)"
 
     # Build stats
@@ -1348,7 +1357,6 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
           <button class="btn btn-primary btn-sm" onclick="changeMyPassword()">Update</button>
         </div>
       </div>
-    </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('user-modal')">Close</button>
     </div>
@@ -1480,12 +1488,12 @@ tr:hover td{{background:rgba(37,99,168,.04)}}
 <div class="overlay hidden" id="import-modal">
   <div class="modal" style="max-width:500px">
     <div class="modal-hdr">
-      <span>📤 Import from CSV</span>
+      <span>📤 Import from Excel / CSV</span>
       <button class="modal-close" onclick="closeModal('import-modal')">✕</button>
     </div>
     <div class="modal-body">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Select a CSV file exported from the old Excel register. Column headers must match.</p>
-      <input type="file" id="import-file" accept=".csv" style="font-size:12px">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Select an Excel (.xlsx) or CSV file. Column headers must match the register columns.</p>
+      <input type="file" id="import-file" accept=".csv,.xlsx,.xls" style="font-size:12px">
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
@@ -1535,10 +1543,10 @@ let state = {{
 // ============================================================
 // INIT
 // ============================================================
+// URL tab param (module-level so loadDocTypes can access it)
+const tabParam = new URLSearchParams(window.location.search).get('tab');
+
 async function init() {{
-  // Auto-switch to tab from URL param
-  const urlParams = new URLSearchParams(window.location.search);
-  const tabParam  = urlParams.get('tab');
   await loadDocTypes();
   await loadLists();
   updateClock();
@@ -1597,8 +1605,8 @@ async function loadDocTypes() {{
 }}
 
 let _listsPromise = null;
-async function loadLists() {{
-  if(!_listsPromise) {{
+async function loadLists(force=false) {{
+  if(!_listsPromise || force) {{
     _listsPromise = api('/api/dropdown_lists').then(d=>{{ state.allLists = d||{{}}; }});
   }}
   return _listsPromise;
@@ -2294,21 +2302,21 @@ async function addListItem(listName) {{
   const inp=document.getElementById('new-'+listName);
   const val=inp?.value.trim(); if(!val) return;
   await api('/api/dropdown_lists/add',{{method:'POST',body:JSON.stringify({{list_name:listName,item:val}})}});
-  await loadLists();
+  await loadLists(true);
   openSettings();
 }}
 
 async function removeListItem(listName, item, btn) {{
   await api('/api/dropdown_lists/remove',{{method:'POST',body:JSON.stringify({{list_name:listName,item:item}})}});
   btn.closest('li').remove();
-  await loadLists();
+  await loadLists(true);
 }}
 
 async function createNewList() {{
   const name=document.getElementById('new-list-name')?.value.trim().toLowerCase().replace(/\\s+/g,'_');
   if(!name) return;
   await api('/api/dropdown_lists/add',{{method:'POST',body:JSON.stringify({{list_name:name,item:'Item 1'}})}});
-  await loadLists();
+  await loadLists(true);
   openSettings();
 }}
 
@@ -2480,16 +2488,6 @@ async function bulkDelete() {{
   await loadRecords();
   await loadDocTypes();
   toast('✔ Deleted '+ok+' documents'+(fail?' ('+fail+' failed)':''), 'success');
-}}
-
-// ── Change my password ────────────────────────────────────────
-async function changeMyPassword() {{
-  const pw = document.getElementById('my-pw-new').value.trim();
-  if(!pw || pw.length < 4) {{ toast('Password must be at least 4 characters','error'); return; }}
-  const r = await api('/api/users', {{method:'POST', body:JSON.stringify({{action:'change_password',username:'{_uname}',password:pw}})}});
-  if(r===null) return;
-  if(r.ok) {{ toast('✔ Password changed successfully','success'); document.getElementById('my-pw-new').value=''; }}
-  else toast(r.error||'Error','error');
 }}
 
 // ── Change My Password ────────────────────────────────────────

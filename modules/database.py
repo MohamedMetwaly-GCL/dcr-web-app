@@ -25,23 +25,52 @@ if USE_POSTGRES:
     def _get_pool():
         global _pool
         if _pool is None:
-            _pool = ThreadedConnectionPool(1, 10, DATABASE_URL, sslmode="require")
+            _pool = ThreadedConnectionPool(1, 10, DATABASE_URL, sslmode="require",
+                                           connect_timeout=10, keepalives=1,
+                                           keepalives_idle=30, keepalives_interval=10,
+                                           keepalives_count=5)
         return _pool
+
+    def _reset_pool():
+        global _pool
+        try:
+            if _pool:
+                _pool.closeall()
+        except Exception:
+            pass
+        _pool = None
 
     class _PGConn:
         def __init__(self):
-            self.conn = _get_pool().getconn()
-            self.conn.autocommit = False
+            # Retry once on connection failure (handles Supabase idle disconnects)
+            for attempt in range(2):
+                try:
+                    self.conn = _get_pool().getconn()
+                    # Test connection is alive
+                    self.conn.cursor().execute("SELECT 1")
+                    self.conn.autocommit = False
+                    break
+                except Exception as e:
+                    if attempt == 0:
+                        _reset_pool()  # force new pool
+                    else:
+                        raise
 
         def __enter__(self):
             return self.conn.cursor(cursor_factory=RealDictCursor)
 
         def __exit__(self, exc, *_):
             if exc:
-                self.conn.rollback()
+                try:
+                    self.conn.rollback()
+                except Exception:
+                    pass
             else:
                 self.conn.commit()
-            _get_pool().putconn(self.conn)
+            try:
+                _get_pool().putconn(self.conn)
+            except Exception:
+                pass
 
 
 # ── Unified query helpers ─────────────────────────────────────────────────
