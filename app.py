@@ -381,7 +381,7 @@ def api_export_all(pid):
     for dt in dts:
         cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
         records = db.get_records(pid, dt["id"])
-        if not records: continue
+        # always include tab (even if empty)
 
         ws = wb.create_sheet(title=dt["id"][:31])
         ws.sheet_view.showGridLines = False
@@ -417,6 +417,13 @@ def api_export_all(pid):
         ws.row_dimensions[3].height = 22
 
         sr = 1
+        if not records:
+            # Empty tab — write a "no records" row
+            c = ws.cell(row=4, column=1, value="No records in this register")
+            c.font = Font(italic=True, size=10, name="Arial", color="9CA3AF")
+            ws.merge_cells(f"A4:{gcl(nc)}4")
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[4].height = 24
         for ri, row in enumerate(records):
             rn = 4 + ri
             is_rev = extract_rev(row.get("docNo","")) > 0
@@ -1126,19 +1133,32 @@ async function createProject(){{
   const code=document.getElementById('np-code').value.trim().toUpperCase();
   const name=document.getElementById('np-name').value.trim();
   if(!id||!name||!code){{toast('All fields required','er');return;}}
-  const btn=document.getElementById('cpbtn');btn.disabled=true;btn.textContent='...';
+  const btn=document.getElementById('cpbtn');
+  btn.disabled=true;btn.textContent='⏳ Creating...';
   try{{
-    const r=await apiFetch('/api/projects/create',{{method:'POST',body:JSON.stringify({{id,name,code}})}});
-    if(r&&r.ok){{
-      toast('✔ Created: '+name,'ok');closeM('newproj-modal');
+    const resp=await fetch('/api/projects/create',{{
+      method:'POST',credentials:'include',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{id,name,code}})
+    }});
+    const r=await resp.json().catch(()=>({{}}));
+    if(resp.ok&&r.ok){{
+      toast('✔ Created: '+name,'ok');
+      closeM('newproj-modal');
       const np={{id,name,code,client:'',total:0,approved:0,pending:0,overdue:0,pct:0,can_edit:true,dt_stats:[]}};
       STATS.push(np);
       const sel=document.getElementById('proj-sel');
       const o=document.createElement('option');o.value=id;o.textContent=name+' ('+code+')';sel.appendChild(o);
       ['np-id','np-code','np-name'].forEach(i=>{{const el=document.getElementById(i);if(el)el.value='';}});
       renderAll('');
-    }}else toast((r&&r.error)||'Error','er');
-  }}finally{{btn.disabled=false;btn.textContent='Create';}}
+    }}else{{
+      toast((r&&r.error)||'Error: '+resp.status,'er');
+    }}
+  }}catch(e){{
+    toast('Network error: '+e.message,'er');
+  }}finally{{
+    btn.disabled=false;btn.textContent='Create';
+  }}
 }}
 
 init();
@@ -1671,7 +1691,14 @@ function renderRows(){{
     rows=sortByDocNo(rows);
   }}
   const emptyEl=document.getElementById('empty');
-  emptyEl.classList.toggle('hidden', rows.length>0 || !state.recs);
+  const tblEl=document.getElementById('regtbl');
+  if(rows.length===0){{
+    emptyEl.style.display='block';
+    tblEl.style.display='none';
+  }}else{{
+    emptyEl.style.display='none';
+    tblEl.style.display='';
+  }}
   let sr=1;
   rows.forEach((row,idx)=>{{
     const tr=document.createElement('tr');
@@ -1967,16 +1994,25 @@ async function saveColOrder(){{
 async function manageColumns(){{
   const cols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!cols)return;
   const body=document.getElementById('col-body');body.innerHTML='';
-  
-  const ul=document.createElement('ul');ul.className='slist';ul.style.maxHeight='350px';
+  const ul=document.createElement('ul');ul.id='col-sortable';ul.className='slist';ul.style.maxHeight='400px';
   cols.forEach(col=>{{
-    const li=document.createElement('li');li.className='sitem';
-    li.innerHTML=`<input type="checkbox" ${{col.visible?'checked':''}} onchange="toggleCol(${{col.id}},this.checked)">
-      <span class="nm">${{col.label}}</span>
-      <span style="font-size:9px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:3px">${{col.col_type}}</span>
-      ${{!CORE.has(col.col_key)?`<button onclick="deleteCol(${{col.id}},this)">Del</button>`:'<span style="font-size:9px;color:var(--mu)">core</span>'}}`;
+    const li=document.createElement('li');li.className='sitem';li.dataset.id=col.id;li.draggable=true;
+    li.style.cssText='cursor:default;align-items:center;gap:7px';
+    const grip=document.createElement('span');grip.textContent='⠿';
+    grip.style.cssText='cursor:grab;color:var(--mu);font-size:16px;flex-shrink:0';
+    grip.title='Drag to reorder';
+    const chk=document.createElement('input');chk.type='checkbox';chk.checked=col.visible;
+    chk.onchange=()=>toggleCol(col.id,chk.checked);
+    const nm=document.createElement('span');nm.textContent=col.label;nm.style.cssText='flex:1;font-size:12px';
+    const tp=document.createElement('span');tp.textContent=col.col_type;
+    tp.style.cssText='font-size:9px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:3px;flex-shrink:0';
+    const db_btn=document.createElement('button');db_btn.textContent='Del';
+    db_btn.className='btn btn-er btn-sm';db_btn.style.cssText='flex-shrink:0;padding:2px 8px;font-size:10px';
+    db_btn.onclick=()=>deleteCol(col.id,col.col_key,db_btn);
+    li.appendChild(grip);li.appendChild(chk);li.appendChild(nm);li.appendChild(tp);li.appendChild(db_btn);
     ul.appendChild(li);
   }});
+  initColDrag(ul);
   body.appendChild(ul);openM('col-modal');
 }}
 async function toggleCol(id,v){{await apiFetch('/api/columns/visibility/'+id,{{method:'POST',body:JSON.stringify({{visible:v}})}});}}
