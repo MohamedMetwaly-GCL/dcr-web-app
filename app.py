@@ -567,104 +567,6 @@ def api_export(pid, dt_id):
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ── Import ────────────────────────────────────────────────────
-@app.route("/api/export_all/<pid>")
-def api_export_all(pid):
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
-
-    proj = db.get_project(pid) or {}
-    dts  = db.get_doc_types(pid)
-    wb   = openpyxl.Workbook()
-    wb.remove(wb.active)  # remove default sheet
-
-    PRIMARY="1A3A5C"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
-    STATUS_XL = {
-        "A - Approved":("BBF7D0","166534"),"B - Approved As Noted":("DCFCE7","14532D"),
-        "B,C - Approved & Resubmit":("FED7AA","7C2D12"),"C - Revise & Resubmit":("FCE7F3","831843"),
-        "D - Review not Required":("FECACA","7F1D1D"),"Under Review":("FEF9C3","713F12"),
-        "Cancelled":("EF4444","FFFFFF"),"Open":("FED7AA","7C2D12"),"Closed":("BFDBFE","1E3A5F"),
-        "Replied":("D1FAE5","064E3B"),"Pending":("E0E7FF","312E81"),
-    }
-    def fill(c): return PatternFill("solid",fgColor=c)
-    def thin():
-        s=Side(style="thin",color="DDE3ED")
-        return Border(left=s,right=s,top=s,bottom=s)
-
-    for dt in dts:
-        cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
-        records = db.get_records(pid, dt["id"])
-        if not records: continue
-
-        ws = wb.create_sheet(title=dt["code"][:31])
-        ws.sheet_view.showGridLines = False
-        all_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
-        nc = len(all_cols)
-
-        def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11):
-            c = ws.cell(row=row, column=1, value=val)
-            if nc>1: ws.merge_cells(f"A{row}:{get_column_letter(nc)}{row}")
-            c.font=Font(bold=bold,color=fg,size=sz,name="Arial")
-            c.fill=fill(bg); c.alignment=Alignment(horizontal="left",vertical="center")
-            return c
-
-        mcell(1,f"{dt['name'].upper()} — {proj.get('name','')}",PRIMARY,bold=True,sz=12)
-        ws.row_dimensions[1].height=30
-        mcell(2,f"Project: {proj.get('code','')} | Exported: {datetime.datetime.now().strftime('%d/%b/%Y')}","2563A8",sz=9)
-        ws.row_dimensions[2].height=16; ws.row_dimensions[3].height=4
-
-        COL_W={"_sr":5,"docNo":22,"title":38,"issuedDate":13,"expectedReplyDate":14,
-               "actualReplyDate":13,"status":24,"duration":10,"remarks":28}
-        CENTER={"_sr","duration","issuedDate","expectedReplyDate","actualReplyDate"}
-
-        for ci,col in enumerate(all_cols,1):
-            ws.column_dimensions[get_column_letter(ci)].width=COL_W.get(col["col_key"],13)
-            c=ws.cell(row=4,column=ci,value=col["label"])
-            c.font=Font(bold=True,color=WHITE,size=10,name="Arial")
-            c.fill=fill(PRIMARY); c.alignment=Alignment(horizontal="center",vertical="center",wrap_text=True)
-            c.border=thin()
-        ws.row_dimensions[4].height=22
-
-        sr=1
-        for ri,row in enumerate(records):
-            rn=5+ri
-            is_rev=extract_rev(row.get("docNo",""))>0
-            ov=is_overdue(row.get("issuedDate"),row.get("docNo"),row.get("actualReplyDate"))
-            bg=OV if ov else (ALT if sr%2==0 else WHITE)
-            ws.row_dimensions[rn].height=18
-            for ci,col in enumerate(all_cols,1):
-                key=col["col_key"]
-                if key=="_sr": val="" if is_rev else str(sr)
-                elif key=="expectedReplyDate": val=format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
-                elif key=="duration": val=str(compute_duration(row.get("issuedDate"),row.get("actualReplyDate")) or "")
-                elif key in ("issuedDate","actualReplyDate"): val=format_date(row.get(key,""))
-                else: val=str(row.get(key,"") or "")
-                c=ws.cell(row=rn,column=ci,value=val)
-                c.border=thin()
-                c.alignment=Alignment(vertical="center",horizontal="center" if key in CENTER else "left")
-                if key=="status" and val:
-                    bg2,fg2=STATUS_XL.get(val,("F3F4F6","374151"))
-                    c.fill=fill(bg2); c.font=Font(bold=True,size=9,name="Arial",color=fg2)
-                else:
-                    c.fill=fill(bg)
-                    c.font=Font(size=10,name="Arial",color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
-            if not is_rev: sr+=1
-
-        tot=5+len(records)
-        ws.cell(row=tot,column=1,value=f"Total: {sr-1} docs | {len(records)} submissions").fill=fill(PRIMARY)
-        ws.cell(row=tot,column=1).font=Font(bold=True,color=WHITE,size=10,name="Arial")
-        if nc>1: ws.merge_cells(f"A{tot}:{get_column_letter(nc)}{tot}")
-        ws.row_dimensions[tot].height=18
-
-    if not wb.worksheets:
-        ws=wb.create_sheet("Empty"); ws.cell(1,1,"No records found")
-
-    buf=io.BytesIO(); wb.save(buf); buf.seek(0)
-    fname=f"{proj.get('code','DCR')}_Full_Register.xlsx"
-    return send_file(buf,as_attachment=True,download_name=fname,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-
 @app.route("/api/columns/reorder", methods=["POST"])
 def api_col_reorder():
     data   = request.get_json(silent=True) or {}
@@ -2169,7 +2071,6 @@ async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)retur
 
 // Export/Import
 function doExport(){{if(state.tab)window.location='/api/export/'+PID+'/'+state.tab;}}
-function doExportAll(){{window.location='/api/export_all/'+PID;}}
 function doExportAll(){{window.location='/api/export_all/'+PID;}}
 function openImport(){{openM('import-modal');}}
 async function doImport(){{
