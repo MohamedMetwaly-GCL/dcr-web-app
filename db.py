@@ -367,3 +367,85 @@ def add_list_item(pid, list_name, item):
 def remove_list_item(pid, list_name, item):
     exe("DELETE FROM dropdown_lists WHERE project_id=%s AND list_name=%s AND item_value=%s",
         (pid, list_name, item))
+
+# ── Fast Dashboard Stats (single query) ──────────────────────
+def get_dashboard_stats():
+    """One big SQL call — replaces N×M individual queries."""
+    import re, json as _json
+    from utils import is_overdue
+
+    projects = get_projects()
+    if not projects:
+        return []
+
+    pids = [p["id"] for p in projects]
+    ph   = ",".join(["%s"] * len(pids))
+
+    # All records in one query
+    all_recs = q(f"""
+        SELECT project_id, dt_id, data
+        FROM records
+        WHERE project_id IN ({ph})
+    """, pids)
+
+    # All doc_types in one query
+    all_dts = q(f"""
+        SELECT project_id, id, code, name, sort_order
+        FROM doc_types
+        WHERE project_id IN ({ph})
+        ORDER BY project_id, sort_order, id
+    """, pids)
+
+    dt_map   = {}  # pid -> list of dts
+    for dt in all_dts:
+        dt_map.setdefault(dt["project_id"], []).append(dt)
+
+    rec_map  = {}  # (pid, dt_id) -> list of data dicts
+    for row in all_recs:
+        key = (row["project_id"], row["dt_id"])
+        d   = row["data"] if isinstance(row["data"], dict) else {}
+        rec_map.setdefault(key, []).append(d)
+
+    result = []
+    for p in projects:
+        pid   = p["id"]
+        pdata = p.get("data") or {}
+        if isinstance(pdata, str):
+            try: pdata = _json.loads(pdata)
+            except: pdata = {}
+
+        dts      = dt_map.get(pid, [])
+        dt_stats = []
+        total = approved = pending = overdue_cnt = 0
+
+        for dt in dts:
+            rows  = rec_map.get((pid, dt["id"]), [])
+            t=ap=pe=ov = 0
+            for d in rows:
+                doc_no = d.get("docNo", "")
+                m = re.search(r"REV(\d+)", doc_no, re.IGNORECASE)
+                rev = int(m.group(1)) if m else 0
+                status = d.get("status", "")
+                if rev == 0: t += 1
+                if status.startswith("A") or "approved" in status.lower(): ap += 1
+                if status in ("Under Review","Pending",""): pe += 1
+                if is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate")): ov += 1
+            dt_stats.append({"id":dt["id"],"code":dt["code"],"name":dt["name"],
+                             "total":t,"approved":ap,"pending":pe,"overdue":ov})
+            total+=t; approved+=ap; pending+=pe; overdue_cnt+=ov
+
+        pct = round(approved / total * 100) if total else 0
+        result.append({
+            "id": pid, "name": p["name"], "code": p["code"],
+            "client": pdata.get("client","") if isinstance(pdata, dict) else "",
+            "total": total, "approved": approved, "pending": pending,
+            "overdue": overdue_cnt, "pct": pct, "dt_stats": dt_stats
+        })
+    return result
+
+
+def reorder_columns(pid, dt_id, ordered_ids):
+    """Update sort_order for columns given a list of ids in desired order."""
+    for i, col_id in enumerate(ordered_ids):
+        exe("UPDATE columns_config SET sort_order=%s WHERE id=%s AND project_id=%s",
+            (i, col_id, pid))

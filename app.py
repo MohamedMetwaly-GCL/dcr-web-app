@@ -235,6 +235,14 @@ def api_counts(pid):
     dts = db.get_doc_types(pid)
     return jsonify({dt["id"]: db.count_records(pid, dt["id"]) for dt in dts})
 
+@app.route("/api/dashboard_stats")
+def api_dashboard_stats():
+    stats = db.get_dashboard_stats()
+    u = current_user()
+    for s in stats:
+        s["can_edit"] = can_edit(s["id"])
+    return jsonify(stats)
+
 @app.route("/api/next_doc_no/<pid>/<dt_id>")
 def api_next_doc_no(pid, dt_id):
     dts    = db.get_doc_types(pid)
@@ -335,6 +343,114 @@ def api_change_own_pw():
     return jsonify(ok=True)
 
 # ── Export Excel ──────────────────────────────────────────────
+@app.route("/api/columns/reorder/<pid>/<dt_id>", methods=["POST"])
+def api_reorder_cols(pid, dt_id):
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    db.reorder_columns(pid, dt_id, data.get("order", []))
+    return jsonify(ok=True)
+
+@app.route("/api/export_all/<pid>")
+def api_export_all(pid):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    proj    = db.get_project(pid) or {}
+    dts     = db.get_doc_types(pid)
+    wb      = openpyxl.Workbook()
+    wb.remove(wb.active)  # remove default sheet
+
+    PRIMARY="1A3A5C"; PL="2563A8"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
+    STATUS_XL = {
+        "A - Approved":              ("BBF7D0","166534"),
+        "B - Approved As Noted":     ("DCFCE7","14532D"),
+        "B,C - Approved & Resubmit": ("FED7AA","7C2D12"),
+        "C - Revise & Resubmit":     ("FCE7F3","831843"),
+        "D - Review not Required":   ("FECACA","7F1D1D"),
+        "Under Review":              ("FEF9C3","713F12"),
+        "Cancelled":                 ("EF4444","FFFFFF"),
+        "Open":                      ("FED7AA","7C2D12"),
+        "Closed":                    ("BFDBFE","1E3A5F"),
+        "Replied":                   ("D1FAE5","064E3B"),
+        "Pending":                   ("E0E7FF","312E81"),
+    }
+    def fill(c): return PatternFill("solid", fgColor=c)
+    def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
+
+    for dt in dts:
+        cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
+        records = db.get_records(pid, dt["id"])
+        if not records: continue
+
+        ws = wb.create_sheet(title=dt["id"][:31])
+        ws.sheet_view.showGridLines = False
+        all_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
+        nc = len(all_cols)
+
+        from openpyxl.utils import get_column_letter as gcl
+        def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11):
+            c = ws.cell(row=row, column=1, value=val)
+            ws.merge_cells(f"A{row}:{gcl(nc)}{row}")
+            c.font = Font(bold=bold, color=fg, size=sz, name="Arial")
+            c.fill = fill(bg)
+            c.alignment = Alignment(horizontal="left", vertical="center")
+            return c
+
+        mcell(1, f"{dt['name'].upper()} — {proj.get('name','')} ({proj.get('code','')})",
+              PRIMARY, bold=True, sz=12)
+        ws.row_dimensions[1].height = 30
+        ws.row_dimensions[2].height = 4
+
+        COL_W = {"_sr":5,"docNo":22,"discipline":14,"trade":14,"title":38,"floor":12,
+                 "itemRef":16,"issuedDate":13,"expectedReplyDate":14,"actualReplyDate":13,
+                 "status":24,"duration":10,"remarks":28,"fileLocation":18}
+        CENTER = {"_sr","duration","issuedDate","expectedReplyDate","actualReplyDate"}
+
+        for ci, col in enumerate(all_cols, 1):
+            ws.column_dimensions[gcl(ci)].width = COL_W.get(col["col_key"],13)
+            c = ws.cell(row=3, column=ci, value=col["label"])
+            c.font = Font(bold=True,color=WHITE,size=10,name="Arial")
+            c.fill = fill(PRIMARY)
+            c.alignment = Alignment(horizontal="center",vertical="center",wrap_text=True)
+            c.border = thin()
+        ws.row_dimensions[3].height = 22
+
+        sr = 1
+        for ri, row in enumerate(records):
+            rn = 4 + ri
+            is_rev = extract_rev(row.get("docNo","")) > 0
+            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
+            bg     = OV if ov else (ALT if sr%2==0 else WHITE)
+            ws.row_dimensions[rn].height = 18
+            for ci, col in enumerate(all_cols, 1):
+                key = col["col_key"]
+                if key=="_sr":                   val = "" if is_rev else str(sr)
+                elif key=="expectedReplyDate":   val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
+                elif key=="duration":            val = str(compute_duration(row.get("issuedDate"),row.get("actualReplyDate")) or "")
+                elif key in ("issuedDate","actualReplyDate"): val = format_date(row.get(key,""))
+                else:                            val = str(row.get(key,"") or "")
+                c = ws.cell(row=rn, column=ci, value=val)
+                c.border = thin()
+                c.alignment = Alignment(vertical="center",
+                                        horizontal="center" if key in CENTER else "left")
+                if key=="status" and val:
+                    bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
+                    c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
+                else:
+                    c.fill = fill(bg)
+                    c.font = Font(size=10,name="Arial",
+                                  color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
+            if not is_rev: sr += 1
+
+    if not wb.sheetnames:
+        ws = wb.create_sheet("Empty"); ws.cell(1,1,"No data")
+
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    fname = f"{proj.get('code','DCR')}_All_Registers.xlsx"
+    return send_file(buf, as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 @app.route("/api/export/<pid>/<dt_id>")
 def api_export(pid, dt_id):
     import openpyxl
@@ -451,6 +567,124 @@ def api_export(pid, dt_id):
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ── Import ────────────────────────────────────────────────────
+@app.route("/api/export_all/<pid>")
+def api_export_all(pid):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    proj = db.get_project(pid) or {}
+    dts  = db.get_doc_types(pid)
+    wb   = openpyxl.Workbook()
+    wb.remove(wb.active)  # remove default sheet
+
+    PRIMARY="1A3A5C"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
+    STATUS_XL = {
+        "A - Approved":("BBF7D0","166534"),"B - Approved As Noted":("DCFCE7","14532D"),
+        "B,C - Approved & Resubmit":("FED7AA","7C2D12"),"C - Revise & Resubmit":("FCE7F3","831843"),
+        "D - Review not Required":("FECACA","7F1D1D"),"Under Review":("FEF9C3","713F12"),
+        "Cancelled":("EF4444","FFFFFF"),"Open":("FED7AA","7C2D12"),"Closed":("BFDBFE","1E3A5F"),
+        "Replied":("D1FAE5","064E3B"),"Pending":("E0E7FF","312E81"),
+    }
+    def fill(c): return PatternFill("solid",fgColor=c)
+    def thin():
+        s=Side(style="thin",color="DDE3ED")
+        return Border(left=s,right=s,top=s,bottom=s)
+
+    for dt in dts:
+        cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
+        records = db.get_records(pid, dt["id"])
+        if not records: continue
+
+        ws = wb.create_sheet(title=dt["code"][:31])
+        ws.sheet_view.showGridLines = False
+        all_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
+        nc = len(all_cols)
+
+        def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11):
+            c = ws.cell(row=row, column=1, value=val)
+            if nc>1: ws.merge_cells(f"A{row}:{get_column_letter(nc)}{row}")
+            c.font=Font(bold=bold,color=fg,size=sz,name="Arial")
+            c.fill=fill(bg); c.alignment=Alignment(horizontal="left",vertical="center")
+            return c
+
+        mcell(1,f"{dt['name'].upper()} — {proj.get('name','')}",PRIMARY,bold=True,sz=12)
+        ws.row_dimensions[1].height=30
+        mcell(2,f"Project: {proj.get('code','')} | Exported: {datetime.datetime.now().strftime('%d/%b/%Y')}","2563A8",sz=9)
+        ws.row_dimensions[2].height=16; ws.row_dimensions[3].height=4
+
+        COL_W={"_sr":5,"docNo":22,"title":38,"issuedDate":13,"expectedReplyDate":14,
+               "actualReplyDate":13,"status":24,"duration":10,"remarks":28}
+        CENTER={"_sr","duration","issuedDate","expectedReplyDate","actualReplyDate"}
+
+        for ci,col in enumerate(all_cols,1):
+            ws.column_dimensions[get_column_letter(ci)].width=COL_W.get(col["col_key"],13)
+            c=ws.cell(row=4,column=ci,value=col["label"])
+            c.font=Font(bold=True,color=WHITE,size=10,name="Arial")
+            c.fill=fill(PRIMARY); c.alignment=Alignment(horizontal="center",vertical="center",wrap_text=True)
+            c.border=thin()
+        ws.row_dimensions[4].height=22
+
+        sr=1
+        for ri,row in enumerate(records):
+            rn=5+ri
+            is_rev=extract_rev(row.get("docNo",""))>0
+            ov=is_overdue(row.get("issuedDate"),row.get("docNo"),row.get("actualReplyDate"))
+            bg=OV if ov else (ALT if sr%2==0 else WHITE)
+            ws.row_dimensions[rn].height=18
+            for ci,col in enumerate(all_cols,1):
+                key=col["col_key"]
+                if key=="_sr": val="" if is_rev else str(sr)
+                elif key=="expectedReplyDate": val=format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
+                elif key=="duration": val=str(compute_duration(row.get("issuedDate"),row.get("actualReplyDate")) or "")
+                elif key in ("issuedDate","actualReplyDate"): val=format_date(row.get(key,""))
+                else: val=str(row.get(key,"") or "")
+                c=ws.cell(row=rn,column=ci,value=val)
+                c.border=thin()
+                c.alignment=Alignment(vertical="center",horizontal="center" if key in CENTER else "left")
+                if key=="status" and val:
+                    bg2,fg2=STATUS_XL.get(val,("F3F4F6","374151"))
+                    c.fill=fill(bg2); c.font=Font(bold=True,size=9,name="Arial",color=fg2)
+                else:
+                    c.fill=fill(bg)
+                    c.font=Font(size=10,name="Arial",color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
+            if not is_rev: sr+=1
+
+        tot=5+len(records)
+        ws.cell(row=tot,column=1,value=f"Total: {sr-1} docs | {len(records)} submissions").fill=fill(PRIMARY)
+        ws.cell(row=tot,column=1).font=Font(bold=True,color=WHITE,size=10,name="Arial")
+        if nc>1: ws.merge_cells(f"A{tot}:{get_column_letter(nc)}{tot}")
+        ws.row_dimensions[tot].height=18
+
+    if not wb.worksheets:
+        ws=wb.create_sheet("Empty"); ws.cell(1,1,"No records found")
+
+    buf=io.BytesIO(); wb.save(buf); buf.seek(0)
+    fname=f"{proj.get('code','DCR')}_Full_Register.xlsx"
+    return send_file(buf,as_attachment=True,download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/api/columns/reorder", methods=["POST"])
+def api_col_reorder():
+    data   = request.get_json(silent=True) or {}
+    pid    = data.get("pid")
+    dt_id  = data.get("dt_id")
+    col_id = data.get("col_id")
+    new_order = data.get("new_order", 0)
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    # Get all columns and rebuild sort_order
+    cols = db.get_columns(pid, dt_id)
+    # Move col_id to new_order position
+    moving = next((c for c in cols if c["id"]==col_id), None)
+    if not moving: return jsonify(ok=False, error="Column not found"), 404
+    cols = [c for c in cols if c["id"]!=col_id]
+    cols.insert(int(new_order), moving)
+    for i, c in enumerate(cols):
+        db.exe("UPDATE columns_config SET sort_order=%s WHERE id=%s", (i, c["id"]))
+    return jsonify(ok=True)
+
+
 @app.route("/api/import/<pid>/<dt_id>", methods=["POST"])
 def api_import(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
@@ -668,78 +902,72 @@ async function login(){{
 </script></body></html>"""
 
 
+
 def render_dashboard(u):
     btns, uname, rlbl, rbg = _user_info_html(u)
-    projects = db.get_projects()
-
-    # Build stats
-    stats = []
-    for p in projects:
-        dts     = db.get_doc_types(p["id"])
-        total=approved=pending=overdue=0
-        for dt in dts:
-            recs = db.get_records(p["id"], dt["id"])
-            total    += len([r for r in recs if extract_rev(r.get("docNo",""))==0])
-            approved += len([r for r in recs if r.get("status","").startswith("A") or "approved" in str(r.get("status","")).lower()])
-            pending  += len([r for r in recs if r.get("status","") in ("Under Review","Pending","")])
-            overdue  += len([r for r in recs if is_overdue(r.get("issuedDate"),r.get("docNo"),r.get("actualReplyDate"))])
-        pct = round(approved/total*100) if total else 0
-        pdata = p if isinstance(p,dict) else {}
-        stats.append({"id":p["id"],"name":p["name"],"code":p["code"],
-                      "client":pdata.get("client",""),"total":total,"approved":approved,
-                      "pending":pending,"overdue":overdue,"pct":pct,
-                      "can_edit":can_edit(p["id"])})
-
-    total_all    = sum(s["total"]    for s in stats)
-    approved_all = sum(s["approved"] for s in stats)
-    pending_all  = sum(s["pending"]  for s in stats)
-    overdue_all  = sum(s["overdue"]  for s in stats)
-    pct_all = round(approved_all/total_all*100) if total_all else 0
-    stats_j = json.dumps(stats)
-    role    = u["role"] if u else "guest"
+    role = u["role"] if u else "guest"
 
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR — Dashboard</title>
+<title>DCR \u2014 Dashboard</title>
 {BASE_CSS}
 <style>
 body{{display:flex;flex-direction:column;min-height:100vh}}
-.wrap{{max-width:1400px;margin:0 auto;padding:20px 16px;flex:1;width:100%}}
-.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:24px}}
-.kpi{{background:#fff;border-radius:8px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,.07);
-  border-left:4px solid var(--pr);transition:transform .15s}}
-.kpi:hover{{transform:translateY(-2px)}}
+.wrap{{max-width:1440px;margin:0 auto;padding:18px 14px;flex:1;width:100%}}
+.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px}}
+.kpi{{background:#fff;border-radius:8px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid var(--pr)}}
 .kpi.ok{{border-left-color:var(--ok)}}.kpi.wa{{border-left-color:var(--wa)}}.kpi.er{{border-left-color:var(--er)}}
-.kval{{font-size:32px;font-weight:800;color:var(--pr)}}
+.kval{{font-size:26px;font-weight:800;color:var(--pr)}}
 .kpi.ok .kval{{color:var(--ok)}}.kpi.wa .kval{{color:var(--wa)}}.kpi.er .kval{{color:var(--er)}}
-.klbl{{font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:4px}}
-.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;margin-bottom:28px}}
-.pcard{{background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);overflow:hidden;
-  text-decoration:none;color:inherit;display:block;transition:transform .15s,box-shadow .15s}}
-.pcard:hover{{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.12)}}
-.pchdr{{background:var(--pr);padding:13px 16px;display:flex;align-items:center;justify-content:space-between}}
-.pcbody{{padding:14px 16px}}
-.prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}}
-.prog{{height:6px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:8px}}
+.klbl{{font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}}
+.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:20px}}
+.pcard{{background:#fff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.08);overflow:hidden;
+  text-decoration:none;color:inherit;display:block;transition:transform .15s,box-shadow .15s;position:relative}}
+.pcard:hover{{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.12)}}
+.pchdr{{background:var(--pr);padding:10px 12px;display:flex;align-items:center;justify-content:space-between}}
+.pcbody{{padding:10px 12px}}
+.prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}}
+.prog{{height:4px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:5px}}
 .progf{{height:100%;border-radius:99px}}
-.addcard{{background:#fff;border-radius:10px;border:2px dashed var(--bd);min-height:160px;
-  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;
-  cursor:pointer;transition:all .15s;color:var(--mu);font-size:13px;text-decoration:none}}
+.addcard{{background:#fff;border-radius:8px;border:2px dashed var(--bd);min-height:130px;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
+  cursor:pointer;transition:all .15s;color:var(--mu);font-size:12px}}
 .addcard:hover{{border-color:var(--pr);color:var(--pr);background:#f7faff}}
-.charts{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}}
-.ccard{{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.07)}}
-.clbl{{font-size:11px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px}}
-canvas{{max-height:240px}}
-.urow{{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);
-  border-radius:4px;font-size:12px;margin-bottom:4px}}
-.pbtn{{padding:2px 8px;font-size:10px;border:1.5px solid var(--bd);background:#fff;
-  border-radius:3px;cursor:pointer;transition:all .15s}}
+.charts{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}}
+.ccard{{background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.07)}}
+.clbl{{font-size:10px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}}
+canvas{{max-height:190px}}
+.urow{{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg);border-radius:4px;font-size:12px;margin-bottom:4px}}
+.pbtn{{padding:2px 8px;font-size:10px;border:1.5px solid var(--bd);background:#fff;border-radius:3px;cursor:pointer}}
 .pbtn.on{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 .pbtn:hover:not(.on){{background:var(--bg)}}
+#ld{{position:fixed;inset:0;background:rgba(15,38,64,.92);z-index:500;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px}}
+.spin{{width:40px;height:40px;border:4px solid rgba(255,255,255,.2);border-top-color:#f0a500;
+  border-radius:50%;animation:spin .6s linear infinite}}
+@keyframes spin{{to{{transform:rotate(360deg)}}}}
+.psel-bar{{display:flex;align-items:center;gap:10px;background:#fff;padding:8px 12px;
+  border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:14px;flex-wrap:wrap}}
+.psel-bar label{{font-size:11px;font-weight:700;color:var(--mu);white-space:nowrap}}
+.psel-bar select{{padding:5px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);
+  font-family:inherit;font-size:12px;outline:none}}
+.dt-tbl{{width:100%;border-collapse:collapse;font-size:12px}}
+.dt-tbl th{{background:var(--pr);color:#fff;padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap}}
+.dt-tbl td{{padding:6px 10px;border-bottom:1px solid #edf0f5}}
+.dt-tbl tr:hover td{{background:#f0f4f8}}
+.dt-tbl .alt td{{background:#fafbfd}}
+.del-pbtn{{background:none;border:none;cursor:pointer;color:#ef4444;font-size:12px;padding:2px 5px;border-radius:3px;line-height:1}}
+.del-pbtn:hover{{background:#fef2f2}}
 @media(max-width:768px){{.charts{{grid-template-columns:1fr}}.pgrid{{grid-template-columns:1fr}}}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head><body>
+
+<div id="ld">
+  <div class="spin"></div>
+  <div style="color:rgba(255,255,255,.7);font-size:13px;font-weight:600">Loading dashboard...</div>
+</div>
+
 <div id="topbar">
   <span style="font-size:20px">📋</span>
   <span style="font-weight:700;font-size:14px">Document Control Register</span>
@@ -752,63 +980,48 @@ canvas{{max-height:240px}}
 </div>
 
 <div class="wrap">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
-    <div>
-      <h2 style="font-size:22px;font-weight:800;color:var(--pr)">📊 Projects Dashboard</h2>
-      <p style="color:var(--mu);font-size:12px;margin-top:3px">All projects overview — login to edit</p>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px">
-      <label style="font-size:11px;font-weight:700;color:var(--mu)">🔍 Filter Project:</label>
-      <select id="proj-sel" onchange="filterProject(this.value)"
-        style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none">
-        <option value="">All Projects</option>
-      </select>
-    </div>
-    <div style="background:#fff;border-radius:8px;padding:10px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);text-align:center">
-      <div style="font-size:28px;font-weight:800;color:#16a34a">{pct_all}%</div>
-      <div style="font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase">Overall</div>
-    </div>
-  </div>
-
   <div class="kpi-grid">
-    <div class="kpi"><div class="kval">{total_all}</div><div class="klbl">Total Documents</div></div>
-    <div class="kpi ok"><div class="kval">{approved_all}</div><div class="klbl">Approved</div></div>
-    <div class="kpi wa"><div class="kval">{pending_all}</div><div class="klbl">Under Review</div></div>
-    <div class="kpi er"><div class="kval">{overdue_all}</div><div class="klbl">Overdue</div></div>
-    <div class="kpi"><div class="kval">{len(projects)}</div><div class="klbl">Projects</div></div>
+    <div class="kpi"><div class="kval" id="kpi-total">—</div><div class="klbl">Total Docs</div></div>
+    <div class="kpi ok"><div class="kval" id="kpi-approved">—</div><div class="klbl">Approved</div></div>
+    <div class="kpi wa"><div class="kval" id="kpi-pending">—</div><div class="klbl">Under Review</div></div>
+    <div class="kpi er"><div class="kval" id="kpi-overdue">—</div><div class="klbl">Overdue</div></div>
+    <div class="kpi"><div class="kval" id="kpi-pct">—</div><div class="klbl">Completion %</div></div>
+    <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
   </div>
 
-  <div class="stitle">🗂 All Projects</div>
+  <div class="psel-bar">
+    <label>🔍 Project:</label>
+    <select id="proj-sel" onchange="filterProject(this.value)">
+      <option value="">All Projects</option>
+    </select>
+  </div>
+
+  <div class="stitle">🗂 Projects</div>
   <div class="pgrid" id="pgrid"></div>
 
   <div class="charts">
     <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
-    <div class="ccard"><div class="clbl">Overall Status</div><canvas id="cStatus"></canvas></div>
+    <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
   </div>
 
-  <!-- Doc Types Summary Table -->
-  <div class="stitle" id="dt-table-title">📋 Document Types Summary</div>
-  <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:24px">
-    <table id="dt-table" style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead>
-        <tr style="background:var(--pr);color:#fff">
-          <th style="padding:10px 12px;text-align:left;font-weight:600">Project</th>
-          <th style="padding:10px 12px;text-align:left;font-weight:600">Type</th>
-          <th style="padding:10px 8px;text-align:center;font-weight:600">Total</th>
-          <th style="padding:10px 8px;text-align:center;font-weight:600">Approved</th>
-          <th style="padding:10px 8px;text-align:center;font-weight:600">Pending</th>
-          <th style="padding:10px 8px;text-align:center;font-weight:600">Overdue</th>
-          <th style="padding:10px 8px;text-align:center;font-weight:600">%</th>
-          <th style="padding:10px 8px;text-align:center;font-weight:600">Action</th>
-        </tr>
-      </thead>
+  <div class="stitle">📋 Document Types Summary</div>
+  <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:20px">
+    <table class="dt-tbl">
+      <thead><tr>
+        <th>Project</th><th>Code</th><th>Type</th>
+        <th style="text-align:center">Total</th>
+        <th style="text-align:center">Approved</th>
+        <th style="text-align:center">Pending</th>
+        <th style="text-align:center">Overdue</th>
+        <th style="text-align:center">%</th>
+        <th style="text-align:center">Open</th>
+      </tr></thead>
       <tbody id="dt-tbody"></tbody>
     </table>
-    <div id="dt-empty" class="hidden" style="text-align:center;padding:30px;color:var(--mu)">No data</div>
+    <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
   </div>
 </div>
 
-<!-- Admin Modal -->
 <div class="overlay hidden" id="admin-modal">
   <div class="modal" style="max-width:780px">
     <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
@@ -817,252 +1030,217 @@ canvas{{max-height:240px}}
   </div>
 </div>
 
-<!-- New Project Modal -->
 <div class="overlay hidden" id="newproj-modal">
-  <div class="modal" style="max-width:440px">
+  <div class="modal" style="max-width:420px">
     <div class="mhdr"><span>➕ New Project</span><button class="xbtn" onclick="closeM('newproj-modal')">✕</button></div>
     <div class="mbody">
       <div class="fgrid">
         <div class="fg"><label>Project ID</label><input id="np-id" placeholder="e.g. 24CP01"></div>
         <div class="fg"><label>Short Code</label><input id="np-code" placeholder="e.g. CP01"></div>
-        <div class="fg full"><label>Project Name</label><input id="np-name" placeholder="e.g. New Office Building"></div>
+        <div class="fg full"><label>Project Name</label><input id="np-name" placeholder="Full project name"></div>
       </div>
     </div>
     <div class="mfoot">
       <button class="btn btn-sc" onclick="closeM('newproj-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="createProject()">Create</button>
+      <button class="btn btn-pr" id="cpbtn" onclick="createProject()">Create</button>
     </div>
   </div>
 </div>
 
 {SHARED_JS}
 <script>
-const STATS = {stats_j};
-const ROLE  = '{role}';
+const ROLE='{role}';
+let STATS=[]; let pChart,sChart;
 
-// Render project cards
-const grid = document.getElementById('pgrid');
-STATS.forEach(p => {{
-  const col = p.pct>=80?'#16a34a':p.pct>=50?'#f59e0b':'#ef4444';
-  const a = document.createElement('a');
-  a.href = '/app?p='+p.id; a.className='pcard';
-  a.innerHTML = `
-    <div class="pchdr">
-      <div>
-        <div style="color:rgba(255,255,255,.6);font-size:10px;font-weight:700">${{p.code}}</div>
-        <div style="color:#fff;font-weight:700;font-size:14px;margin-top:2px">${{p.name}}</div>
-      </div>
-      ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">⚠ ${{p.overdue}}</span>`:''}}
+async function init(){{
+  try{{
+    STATS=await apiFetch('/api/dashboard_stats');
+    if(!STATS)return;
+    document.getElementById('proj-sel').innerHTML='<option value="">All Projects</option>'+
+      STATS.map(p=>`<option value="${{p.id}}">${{p.name}} (${{p.code}})</option>`).join('');
+    renderAll('');
+  }}finally{{document.getElementById('ld').style.display='none';}}
+}}
+
+function filterProject(pid){{renderAll(pid);}}
+
+function getFiltered(pid){{return pid?STATS.filter(s=>s.id===pid):STATS;}}
+
+function renderAll(pid){{
+  const d=getFiltered(pid);
+  updateKPIs(d);renderCards(d,pid);renderCharts(d);renderDTTable(d);
+}}
+
+function updateKPIs(d){{
+  const t=d.reduce((s,p)=>s+p.total,0),ap=d.reduce((s,p)=>s+p.approved,0),
+        pe=d.reduce((s,p)=>s+p.pending,0),ov=d.reduce((s,p)=>s+p.overdue,0);
+  document.getElementById('kpi-total').textContent=t;
+  document.getElementById('kpi-approved').textContent=ap;
+  document.getElementById('kpi-pending').textContent=pe;
+  document.getElementById('kpi-overdue').textContent=ov;
+  document.getElementById('kpi-pct').textContent=(t?Math.round(ap/t*100):0)+'%';
+  document.getElementById('kpi-projs').textContent=d.length;
+}}
+
+function renderCards(d,pid){{
+  const g=document.getElementById('pgrid');g.innerHTML='';
+  d.forEach(p=>{{
+    const col=p.pct>=80?'#16a34a':p.pct>=50?'#f59e0b':'#ef4444';
+    const a=document.createElement('a');a.href='/app?p='+p.id;a.className='pcard';
+    a.innerHTML=`<div class="pchdr">
+      <div><div style="color:rgba(255,255,255,.6);font-size:10px;font-weight:700">${{p.code}}</div>
+        <div style="color:#fff;font-weight:700;font-size:13px">${{p.name}}</div></div>
+      ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">⚠${{p.overdue}}</span>`:''}}
     </div>
     <div class="pcbody">
-      ${{p.client?`<div style="font-size:11px;color:var(--mu);margin-bottom:8px">👤 ${{p.client}}</div>`:''}}
+      ${{p.client?`<div style="font-size:10px;color:var(--mu);margin-bottom:5px">👤 ${{p.client}}</div>`:''}}
       <div class="prow"><span style="font-size:11px;color:var(--mu)">Total</span><b>${{p.total}}</b></div>
       <div class="prow"><span style="font-size:11px;color:var(--mu)">Approved</span><b style="color:#16a34a">${{p.approved}}</b></div>
       <div class="prow"><span style="font-size:11px;color:var(--mu)">Pending</span><b style="color:#f59e0b">${{p.pending}}</b></div>
       <div class="prog"><div class="progf" style="width:${{p.pct}}%;background:${{col}}"></div></div>
-      <div style="font-size:10px;color:${{col}};font-weight:700;margin-top:4px">${{p.pct}}% complete</div>
-      ${{p.can_edit?'<div style="margin-top:6px;font-size:10px;color:#2563a8;font-weight:600">✏ You can edit</div>':''}}
+      <div style="font-size:10px;color:${{col}};font-weight:700;margin-top:3px">${{p.pct}}%</div>
+      ${{p.can_edit?'<div style="margin-top:3px;font-size:10px;color:#2563a8">✏ Can edit</div>':''}}
+      ${{ROLE==='superadmin'?`<button class="del-pbtn" onclick="event.preventDefault();delProject('${{p.id}}','${{p.name}}')">🗑 Delete</button>`:''}}
     </div>`;
-  grid.appendChild(a);
-}});
-
-if(ROLE==='superadmin'){{
-  const add=document.createElement('div');
-  add.className='addcard';
-  add.innerHTML='<span style="font-size:32px">➕</span><span>New Project</span>';
-  add.onclick=()=>openM('newproj-modal');
-  grid.appendChild(add);
-}}
-
-// Charts
-new Chart(document.getElementById('cProj'),{{type:'bar',
-  data:{{labels:STATS.map(s=>s.code),datasets:[
-    {{label:'Approved',data:STATS.map(s=>s.approved),backgroundColor:'#16a34a'}},
-    {{label:'Pending',data:STATS.map(s=>s.pending),backgroundColor:'#f59e0b'}},
-    {{label:'Overdue',data:STATS.map(s=>s.overdue),backgroundColor:'#ef4444'}}]}},
-  options:{{responsive:true,plugins:{{legend:{{position:'bottom'}}}},scales:{{y:{{beginAtZero:true}}}}}}}});
-
-new Chart(document.getElementById('cStatus'),{{type:'doughnut',
-  data:{{labels:['Approved','Pending','Overdue','Other'],
-    datasets:[{{data:[{approved_all},{pending_all},{overdue_all},{max(0,total_all-approved_all-pending_all-overdue_all)}],
-      backgroundColor:['#16a34a','#f59e0b','#ef4444','#9ca3af'],borderWidth:2,borderColor:'#fff'}}]}},
-  options:{{responsive:true,plugins:{{legend:{{position:'bottom'}}}}}}}});
-
-// Project filter + doc types table
-let ALL_DT_STATS = [];
-
-async function buildDTTable(){{
-  ALL_DT_STATS=[];
-  const dts_map={{}};
-  for(const p of STATS){{
-    const dts=await apiFetch('/api/doc_types/'+p.id);
-    if(!dts)continue;
-    dts_map[p.id]=dts;
-    for(const dt of dts){{
-      const cnt=await apiFetch('/api/counts/'+p.id);
-      const total=cnt?cnt[dt.id]||0:0;
-      ALL_DT_STATS.push({{pid:p.id,pname:p.name,pcode:p.code,dtId:dt.id,dtName:dt.name,dtCode:dt.code,total}});
-    }}
+    g.appendChild(a);
+  }});
+  if(ROLE==='superadmin'&&!pid){{
+    const add=document.createElement('div');add.className='addcard';
+    add.innerHTML='<span style="font-size:28px">➕</span><span>New Project</span>';
+    add.onclick=()=>openM('newproj-modal');g.appendChild(add);
   }}
-  // Populate project selector
-  const sel=document.getElementById('proj-sel');
-  STATS.forEach(p=>{{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' ('+p.code+')';sel.appendChild(o);}});
-  renderDTTable('');
 }}
 
-function renderDTTable(filterPid){{
-  const tbody=document.getElementById('dt-tbody');tbody.innerHTML='';
-  const rows=filterPid?ALL_DT_STATS.filter(r=>r.pid===filterPid):ALL_DT_STATS;
-  const empty=document.getElementById('dt-empty');
-  if(!rows.length){{empty.classList.remove('hidden');return;}}
-  empty.classList.add('hidden');
-  rows.forEach((r,i)=>{{
-    const tr=document.createElement('tr');
-    tr.style.cssText=i%2===0?'background:#fff':'background:#f8fafc';
-    const pct=r.total>0?100:0;
-    const col=r.total>0?'#16a34a':'#9ca3af';
-    tr.innerHTML=`<td style="padding:7px 12px;font-size:11px;color:var(--mu)">${{r.pcode}}</td>
-      <td style="padding:7px 12px;font-weight:600"><a href="/app?p=${{r.pid}}&tab=${{r.dtId}}" style="color:var(--pr);text-decoration:none">${{r.dtCode}} — ${{r.dtName}}</a></td>
-      <td style="padding:7px 8px;text-align:center;font-weight:700">${{r.total}}</td>
-      <td style="padding:7px 8px;text-align:center;color:#16a34a;font-weight:600">—</td>
-      <td style="padding:7px 8px;text-align:center;color:#f59e0b;font-weight:600">—</td>
-      <td style="padding:7px 8px;text-align:center;color:#ef4444;font-weight:600">—</td>
-      <td style="padding:7px 8px;text-align:center"><span style="color:${{col}};font-weight:700">${{r.total}}</span></td>
-      <td style="padding:7px 8px;text-align:center"><a href="/app?p=${{r.pid}}&tab=${{r.dtId}}" class="btn btn-pr btn-sm" style="text-decoration:none;font-size:10px">Open</a></td>`;
+function renderCharts(d){{
+  if(pChart)pChart.destroy();
+  pChart=new Chart(document.getElementById('cProj'),{{type:'bar',
+    data:{{labels:d.map(s=>s.code),datasets:[
+      {{label:'Approved',data:d.map(s=>s.approved),backgroundColor:'#16a34a'}},
+      {{label:'Pending', data:d.map(s=>s.pending), backgroundColor:'#f59e0b'}},
+      {{label:'Overdue', data:d.map(s=>s.overdue), backgroundColor:'#ef4444'}}]}},
+    options:{{responsive:true,plugins:{{legend:{{position:'bottom'}}}},scales:{{y:{{beginAtZero:true}}}}}}}});
+  const t=d.reduce((s,p)=>s+p.total,0),ap=d.reduce((s,p)=>s+p.approved,0),
+        pe=d.reduce((s,p)=>s+p.pending,0),ov=d.reduce((s,p)=>s+p.overdue,0);
+  if(sChart)sChart.destroy();
+  sChart=new Chart(document.getElementById('cStatus'),{{type:'doughnut',
+    data:{{labels:['Approved','Pending','Overdue','Other'],
+      datasets:[{{data:[ap,pe,ov,Math.max(0,t-ap-pe-ov)],
+        backgroundColor:['#16a34a','#f59e0b','#ef4444','#9ca3af'],borderWidth:2,borderColor:'#fff'}}]}},
+    options:{{responsive:true,plugins:{{legend:{{position:'bottom'}}}}}}}});
+}}
+
+function renderDTTable(d){{
+  const tbody=document.getElementById('dt-tbody'),empty=document.getElementById('dt-empty');
+  tbody.innerHTML='';
+  let rows=[],i=0;
+  d.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{rows.push({{...dt,pid:p.id,pcode:p.code}});}});}});
+  if(!rows.length){{empty.style.display='block';return;}}
+  empty.style.display='none';
+  rows.forEach(r=>{{
+    const pct=r.total?Math.round(r.approved/r.total*100):0;
+    const col=pct>=80?'#16a34a':pct>=50?'#f59e0b':'#ef4444';
+    const tr=document.createElement('tr');if(i%2)tr.className='alt';i++;
+    tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{r.pcode}}</td>
+      <td style="font-weight:700;color:var(--pr)">${{r.dtCode||r.id}}</td>
+      <td>${{r.dtName||r.name}}</td>
+      <td style="text-align:center;font-weight:700">${{r.total}}</td>
+      <td style="text-align:center;color:#16a34a;font-weight:600">${{r.approved}}</td>
+      <td style="text-align:center;color:#f59e0b;font-weight:600">${{r.pending}}</td>
+      <td style="text-align:center;color:#ef4444;font-weight:600">${{r.overdue}}</td>
+      <td style="text-align:center"><span style="color:${{col}};font-weight:700">${{pct}}%</span></td>
+      <td style="text-align:center"><a href="/app?p=${{r.pid}}&tab=${{r.id}}"
+        style="padding:2px 9px;background:var(--pr);color:#fff;border-radius:3px;text-decoration:none;font-size:10px;font-weight:600">Open</a></td>`;
     tbody.appendChild(tr);
   }});
 }}
 
-function filterProject(pid){{
-  renderDTTable(pid);
-  if(pid){{
-    // Update KPI cards to show filtered project stats
-    const ps=STATS.find(s=>s.id===pid);
-    if(ps){{
-      updateKPI(ps.total,ps.approved,ps.pending,ps.overdue,ps.pct);
-    }}
-  }}else{{
-    updateKPI({total_all},{approved_all},{pending_all},{overdue_all},{pct_all});
-  }}
-}}
-
-function updateKPI(total,approved,pending,overdue,pct){{
-  const els=document.querySelectorAll('.kval');
-  if(els.length>=5){{els[0].textContent=total;els[1].textContent=approved;els[2].textContent=pending;els[3].textContent=overdue;}}
-}}
-
-// Load table after charts
-buildDTTable();
-
-// Admin Panel
 async function openAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
-  if(!users||!projects) return;
-  const body=document.getElementById('admin-body'); body.innerHTML='';
-
-  const utitle=document.createElement('div'); utitle.className='stitle'; utitle.textContent='👥 Users';
-  body.appendChild(utitle);
-
+  if(!users||!projects)return;
+  const body=document.getElementById('admin-body');body.innerHTML='';
+  const ut=document.createElement('div');ut.className='stitle';ut.textContent='👥 Users';body.appendChild(ut);
   for(const u of users){{
-    const row=document.createElement('div'); row.className='urow';
+    const row=document.createElement('div');row.className='urow';
     row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
       <span class="badge" style="background:#fef3c7;color:#92400e">${{u.role.toUpperCase()}}</span>
-      ${{u.username!=='admin'?`
-        <button class="btn btn-sc btn-sm" onclick="changeUserPw('${{u.username}}')">🔑 PW</button>
-        <button class="btn btn-er btn-sm" onclick="delUser('${{u.username}}')">✕ Del</button>`:
+      ${{u.username!=='admin'?`<button class="btn btn-sc btn-sm" onclick="changeUserPw('${{u.username}}')">🔑</button>
+        <button class="btn btn-er btn-sm" onclick="delUser('${{u.username}}')">✕</button>`:
         '<span style="font-size:10px;color:var(--mu)">(protected)</span>'}}`;
     body.appendChild(row);
-
     if(u.role!=='superadmin'){{
-      const assignDiv=document.createElement('div');
-      assignDiv.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
-      assignDiv.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:4px">Project access:</div>';
+      const ad=document.createElement('div');
+      ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
+      ad.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:4px">Project access:</div>';
       const assigned=await apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]);
-      const plist=document.createElement('div'); plist.style.cssText='display:flex;flex-wrap:wrap;gap:4px';
+      const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:4px';
       projects.forEach(p=>{{
-        const btn=document.createElement('button');
-        btn.className='pbtn'+(assigned.includes(p.id)?' on':'');
-        btn.textContent=p.code; btn.title=p.name;
-        btn.onclick=async()=>{{
-          const isOn=btn.classList.contains('on');
-          await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:isOn?'unassign':'assign',username:u.username,project_id:p.id}})}});
-          btn.classList.toggle('on');
-          toast((btn.classList.contains('on')?'✔ Assigned: ':'Removed: ')+p.name,'ok');
-        }};
-        plist.appendChild(btn);
-      }});
-      assignDiv.appendChild(plist); body.appendChild(assignDiv);
+        const btn=document.createElement('button');btn.className='pbtn'+(assigned.includes(p.id)?' on':'');
+        btn.textContent=p.code;btn.title=p.name;
+        btn.onclick=async()=>{{const on=btn.classList.contains('on');
+          await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id}})}});
+          btn.classList.toggle('on');}};
+        pl.appendChild(btn);}});
+      ad.appendChild(pl);body.appendChild(ad);
     }}
   }}
-
-  const atitle=document.createElement('div'); atitle.className='stitle'; atitle.textContent='➕ Add User';
-  body.appendChild(atitle);
-  const arow=document.createElement('div');
-  arow.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
-    <div class="fg"><label>Username</label><input id="nu-name" placeholder="username"></div>
+  const at=document.createElement('div');at.className='stitle';at.textContent='➕ Add User';body.appendChild(at);
+  body.innerHTML+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
+    <div class="fg"><label>Username</label><input id="nu-name"></div>
     <div class="fg"><label>Role</label><select id="nu-role">
-      <option value="editor">Editor</option>
-      <option value="viewer">Viewer</option>
-      <option value="superadmin">Super Admin</option>
-    </select></div>
+      <option value="editor">Editor</option><option value="viewer">Viewer</option>
+      <option value="superadmin">Super Admin</option></select></div>
     <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
-    <button class="btn btn-pr btn-sm" style="margin-bottom:1px" onclick="addUser()">Add</button>
-  </div>`;
-  body.appendChild(arow);
+    <button class="btn btn-pr btn-sm" style="margin-bottom:1px" onclick="addUser()">Add</button></div>`;
   openM('admin-modal');
 }}
-
 async function addUser(){{
-  const name=document.getElementById('nu-name').value.trim().toLowerCase();
-  const role=document.getElementById('nu-role').value;
-  const pw=document.getElementById('nu-pw').value;
-  if(!name||!pw){{toast('Username and password required','er');return;}}
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw}})}});
-  if(r&&r.ok){{toast('✔ User added','ok');closeM('admin-modal');openAdmin();}}
-  else toast((r&&r.error)||'Error','er');
+  const n=document.getElementById('nu-name').value.trim().toLowerCase(),
+        role=document.getElementById('nu-role').value,pw=document.getElementById('nu-pw').value;
+  if(!n||!pw){{toast('Required','er');return;}}
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:n,role,password:pw}})}});
+  if(r&&r.ok){{toast('✔ Added','ok');closeM('admin-modal');openAdmin();}}else toast((r&&r.error)||'Error','er');
 }}
-async function delUser(u){{
-  if(!confirm('Delete user: '+u+'?'))return;
+async function delUser(u){{if(!confirm('Delete '+u+'?'))return;
   const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'delete',username:u}})}});
   if(r&&r.ok){{toast('Deleted','wa');closeM('admin-modal');openAdmin();}}
 }}
-async function changeUserPw(u){{
-  const pw=prompt('New password for '+u+':'); if(!pw)return;
+async function changeUserPw(u){{const pw=prompt('New pw for '+u+':');if(!pw)return;
   await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
-  toast('✔ Password changed','ok');
+  toast('✔ Changed','ok');
+}}
+async function delProject(id,name){{
+  if(!confirm('Delete project "'+name+'" and ALL data? Cannot be undone!'))return;
+  const r=await apiFetch('/api/projects/delete/'+id,{{method:'POST'}});
+  if(r&&r.ok){{
+    toast('Deleted','wa');
+    STATS=STATS.filter(s=>s.id!==id);
+    const sel=document.getElementById('proj-sel');
+    [...sel.options].forEach(o=>{{if(o.value===id)o.remove();}});
+    renderAll('');
+  }}else toast('Error','er');
 }}
 async function createProject(){{
   const id=document.getElementById('np-id').value.trim().toUpperCase();
   const code=document.getElementById('np-code').value.trim().toUpperCase();
   const name=document.getElementById('np-name').value.trim();
   if(!id||!name||!code){{toast('All fields required','er');return;}}
-  const r=await apiFetch('/api/projects/create',{{method:'POST',body:JSON.stringify({{id,name,code}})}});
-  if(r&&r.ok){{
-    toast('✔ Project created: '+name,'ok');
-    closeM('newproj-modal');
-    // Add card immediately without reload
-    const col='#ef4444';
-    const a=document.createElement('a');
-    a.href='/app?p='+id;a.className='pcard';
-    a.innerHTML=`<div class="pchdr"><div>
-      <div style="color:rgba(255,255,255,.6);font-size:10px;font-weight:700">${{code}}</div>
-      <div style="color:#fff;font-weight:700;font-size:14px;margin-top:2px">${{name}}</div>
-    </div></div><div class="pcbody">
-      <div class="prow"><span style="font-size:11px;color:var(--mu)">Total</span><b>0</b></div>
-      <div class="prog"><div class="progf" style="width:0%;background:${{col}}"></div></div>
-      <div style="font-size:10px;color:${{col}};font-weight:700;margin-top:4px">0% complete</div>
-      <div style="margin-top:6px;font-size:10px;color:#2563a8;font-weight:600">✏ You can edit</div>
-    </div>`;
-    const addCard=document.querySelector('.addcard');
-    if(addCard) addCard.parentNode.insertBefore(a,addCard);
-    else document.getElementById('pgrid').appendChild(a);
-    // Clear form
-    ['np-id','np-code','np-name'].forEach(i=>{{const el=document.getElementById(i);if(el)el.value='';}});
-  }}
-  else toast((r&&r.error)||'Error','er');
+  const btn=document.getElementById('cpbtn');btn.disabled=true;btn.textContent='...';
+  try{{
+    const r=await apiFetch('/api/projects/create',{{method:'POST',body:JSON.stringify({{id,name,code}})}});
+    if(r&&r.ok){{
+      toast('✔ Created: '+name,'ok');closeM('newproj-modal');
+      const np={{id,name,code,client:'',total:0,approved:0,pending:0,overdue:0,pct:0,can_edit:true,dt_stats:[]}};
+      STATS.push(np);
+      const sel=document.getElementById('proj-sel');
+      const o=document.createElement('option');o.value=id;o.textContent=name+' ('+code+')';sel.appendChild(o);
+      ['np-id','np-code','np-name'].forEach(i=>{{const el=document.getElementById(i);if(el)el.value='';}});
+      renderAll('');
+    }}else toast((r&&r.error)||'Error','er');
+  }}finally{{btn.disabled=false;btn.textContent='Create';}}
 }}
-</script></body></html>"""
 
+init();
+</script></body></html>"""
 
 def render_register(u, proj):
     from utils import STATUS_COLORS
@@ -1153,7 +1331,7 @@ th:hover{{background:var(--pl)}}
   border-radius:3px;font-size:10px;font-family:inherit;background:#fff;outline:none}}
 td{{padding:5px 8px;border-bottom:1px solid #edf0f5;border-right:1px solid #f3f4f6;
   vertical-align:middle;max-width:220px;word-break:break-word}}
-tr:hover td{{background:rgba(37,99,168,.04)}}
+tr:hover td{{background:rgba(37,99,168,.10);transition:background .1s}}
 tr.ov td{{background:#fff5f5}}
 tr.rv td{{color:var(--mu)}}
 tr.alt td{{background:#fafbfd}}
@@ -1231,7 +1409,7 @@ tr.alt td{{background:#fafbfd}}
 
 <div id="toolbar">
   {edit_btns}
-  <button class="tool-btn teal" onclick="doExport()">📥 Export</button>
+  <button class="tool-btn teal" onclick="doExport()">📥 Export Tab</button><button class="tool-btn teal" onclick="doExportAll()">📥 Export All</button>
   {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
   <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
 </div>
@@ -1245,7 +1423,7 @@ tr.alt td{{background:#fafbfd}}
 <div id="main">
   <div id="tblwrap">
     <table id="regtbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
-    <div class="empty hidden" id="empty"><div style="font-size:48px;margin-bottom:10px">📁</div><h3>No records</h3></div>
+    <div class="empty hidden" id="empty" style="display:none"><div style="font-size:48px;margin-bottom:10px">📁</div><p style="color:var(--mu)">No records yet — click ➕ Add to create one</p></div>
   </div>
 </div>
 
@@ -1540,20 +1718,39 @@ function sortByDocNo(rows){{
 function validateDocNo(docNo,existingRecs,editId){{
   if(!docNo)return'Document No. is required';
   const p=parseDocNo(docNo);
-  if(p.num===0&&!docNo.includes('-'))return'Invalid format. Use: CODE-001 REV00';
-  // Check for duplicate
+  if(!p.num&&!docNo.includes('-'))return'Invalid format. Use: CODE-001 REV00';
+  // Duplicate check
   const dup=existingRecs.find(r=>r._id!==editId&&(r.docNo||'').toLowerCase()===docNo.toLowerCase());
   if(dup)return'Document No. already exists: '+docNo;
-  // Check REV: if REV>0, base must exist
+  // REV check: base must exist
   if(p.rev>0){{
-    const base=p.prefix+'-'+String(p.num).padStart(3,'0')+' REV00';
-    const baseAlt=p.prefix+'-'+p.num+' REV00';
     const hasBase=existingRecs.some(r=>{{
       const bp=parseDocNo(r.docNo||'');
       return bp.prefix===p.prefix&&bp.num===p.num&&bp.rev===0&&r._id!==editId;
     }});
-    if(!hasBase)return'Cannot add REV'+String(p.rev).padStart(2,'0')+' — base document REV00 not found';
+    if(!hasBase)return'Cannot add REV'+String(p.rev).padStart(2,'0')+' — REV00 not found for this document';
   }}
+  // Sequence gap check (warning only)
+  if(p.rev===0&&p.num>1){{
+    const nums=existingRecs
+      .filter(r=>{{const bp=parseDocNo(r.docNo||'');return bp.prefix===p.prefix&&bp.rev===0&&r._id!==editId;}})
+      .map(r=>parseDocNo(r.docNo||'').num);
+    const maxExist=nums.length?Math.max(...nums):0;
+    if(p.num>maxExist+1)return'GAP: '+p.prefix+'-'+String(maxExist+1).padStart(3,'0')+' to '+p.prefix+'-'+String(p.num-1).padStart(3,'0')+' are missing';
+  }}
+  return null;
+}}
+
+function checkGap(docNo,recs,editId){{
+  const p=parseDocNo(docNo);if(!p||p.rev>0)return null;
+  // Find max existing base num for same prefix
+  let maxN=0;
+  recs.forEach(r=>{{
+    if(r._id===editId)return;
+    const rp=parseDocNo(r.docNo||'');
+    if(rp&&rp.prefix===p.prefix&&rp.rev===0)maxN=Math.max(maxN,rp.num);
+  }});
+  if(p.num>maxN+1)return`Sequence gap detected: Next expected is ${{p.prefix}}-${{String(maxN+1).padStart(3,'0')}} REV00, but you entered ${{p.prefix}}-${{String(p.num).padStart(3,'0')}} REV00`;
   return null;
 }}
 
@@ -1571,7 +1768,8 @@ function renderRows(){{
   }}else{{
     rows=sortByDocNo(rows);
   }}
-  document.getElementById('empty').classList.toggle('hidden',rows.length>0);
+  const emptyEl=document.getElementById('empty');
+  emptyEl.classList.toggle('hidden', rows.length>0 || !state.recs);
   let sr=1;
   rows.forEach((row,idx)=>{{
     const tr=document.createElement('tr');
@@ -1632,16 +1830,46 @@ function sortBy(key){{
   state.sortCol=key;buildHead();renderRows();
 }}
 
+let _rzDrag=null;
+document.addEventListener('mousemove',e=>{{
+  if(!_rzDrag)return;
+  const w=Math.max(40,_rzDrag.sw+e.clientX-_rzDrag.sx);
+  _rzDrag.th.style.width=w+'px';_rzDrag.th.style.minWidth=w+'px';
+}});
+document.addEventListener('mouseup',()=>{{
+  if(!_rzDrag)return;
+  _rzDrag.rz.classList.remove('rzg');
+  document.body.style.cursor='';document.body.style.userSelect='none';
+  _rzDrag=null;
+}});
+let _rzActive=null;
 function initRz(){{
   document.querySelectorAll('#regtbl thead tr:first-child th[data-key]').forEach(th=>{{
     if(th.querySelector('.rz'))return;
     const rz=document.createElement('div');rz.className='rz';th.appendChild(rz);
-    let sx,sw,drag=false;
-    rz.onmousedown=e=>{{e.stopPropagation();e.preventDefault();sx=e.clientX;sw=th.getBoundingClientRect().width;drag=true;rz.classList.add('rzg');document.body.style.cursor='col-resize';document.body.style.userSelect='none';}};
-    document.addEventListener('mousemove',e=>{{if(!drag)return;const w=Math.max(40,sw+e.clientX-sx);th.style.cssText=`width:${{w}}px;min-width:${{w}}px;max-width:${{w}}px`;}});
-    document.addEventListener('mouseup',()=>{{if(!drag)return;drag=false;rz.classList.remove('rzg');document.body.style.cursor='';document.body.style.userSelect='';}});
+    rz.addEventListener('mousedown',e=>{{
+      e.stopPropagation();e.preventDefault();
+      _rzActive={{th,sx:e.clientX,sw:th.offsetWidth}};
+      rz.classList.add('rzg');
+      document.body.style.cursor='col-resize';
+      document.body.style.userSelect='none';
+    }});
   }});
 }}
+document.addEventListener('mousemove',e=>{{
+  if(!_rzActive)return;
+  const w=Math.max(40,_rzActive.sw+(e.clientX-_rzActive.sx));
+  _rzActive.th.style.width=w+'px';
+  _rzActive.th.style.minWidth=w+'px';
+  _rzActive.th.style.maxWidth=w+'px';
+}});
+document.addEventListener('mouseup',()=>{{
+  if(!_rzActive)return;
+  _rzActive.th.querySelector('.rz')?.classList.remove('rzg');
+  _rzActive=null;
+  document.body.style.cursor='';
+  document.body.style.userSelect='';
+}});
 
 let _st;
 function doSearch(){{clearTimeout(_st);_st=setTimeout(()=>loadRecords(),250);}}
@@ -1695,7 +1923,9 @@ async function saveRecord(){{
   }}
   if(!data.docNo){{toast('Document No. required','er');return;}}
   const valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
-  if(valErr){{toast('⚠ '+valErr,'er');return;}}
+  if(valErr&&valErr.startsWith('GAP')){{
+    if(!confirm('⚠ Sequence gap detected: '+valErr.replace('GAP:','')+'. Continue anyway?'))return;
+  }}else if(valErr){{toast('⚠ '+valErr,'er');return;}}
   if(state.editId)data._id=state.editId;
   const r=await apiFetch('/api/records/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify(data)}});
   if(r&&r.ok){{closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');}}
@@ -1808,11 +2038,34 @@ async function mkList(){{
   await loadLists(true);openLists();
 }}
 
+// Column drag-to-reorder
+function initColDrag(ul){{
+  let drag=null,over=null;
+  ul.querySelectorAll('li').forEach(li=>{{
+    li.draggable=true;
+    li.ondragstart=e=>{{drag=li;li.style.opacity='.4';e.dataTransfer.effectAllowed='move';}};
+    li.ondragend=()=>{{drag.style.opacity='';drag=null;ul.querySelectorAll('li').forEach(l=>l.style.background='');}};
+    li.ondragover=e=>{{e.preventDefault();if(li===drag)return;over=li;
+      ul.querySelectorAll('li').forEach(l=>l.style.background='');
+      li.style.background='#e0f2fe';}};
+    li.ondrop=e=>{{e.preventDefault();if(!drag||drag===li)return;
+      const items=[...ul.querySelectorAll('li')];
+      const di=items.indexOf(drag),oi=items.indexOf(li);
+      if(di<oi)ul.insertBefore(drag,li.nextSibling);else ul.insertBefore(drag,li);
+      saveColOrder();}};
+  }});
+}}
+async function saveColOrder(){{
+  const ids=[...document.querySelectorAll('#col-sortable li')].map(li=>parseInt(li.dataset.id));
+  await apiFetch('/api/columns/reorder/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify({{order:ids}})}});
+  toast('✔ Order saved','ok');
+}}
+
 // Columns
 async function manageColumns(){{
   const cols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!cols)return;
   const body=document.getElementById('col-body');body.innerHTML='';
-  const CORE=new Set(['docNo','issuedDate','status','expectedReplyDate']);
+  
   const ul=document.createElement('ul');ul.className='slist';ul.style.maxHeight='350px';
   cols.forEach(col=>{{
     const li=document.createElement('li');li.className='sitem';
@@ -1916,6 +2169,8 @@ async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)retur
 
 // Export/Import
 function doExport(){{if(state.tab)window.location='/api/export/'+PID+'/'+state.tab;}}
+function doExportAll(){{window.location='/api/export_all/'+PID;}}
+function doExportAll(){{window.location='/api/export_all/'+PID;}}
 function openImport(){{openM('import-modal');}}
 async function doImport(){{
   const file=document.getElementById('imp-file').files[0];if(!file)return;
