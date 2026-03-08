@@ -5,7 +5,7 @@ from flask import (Flask, request, session, redirect, url_for,
 import db
 from utils import (compute_expected_reply, compute_duration, is_overdue,
                    format_date, get_next_doc_no, extract_rev, STATUS_COLORS,
-                   REJECTED_STATUSES, working_days_until_today, invalidate_holidays_cache)
+                   REJECTED_STATUSES, invalidate_holidays_cache)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(32))
