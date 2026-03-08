@@ -263,10 +263,8 @@ def api_records(pid, dt_id):
             compute_expected_reply(row.get("issuedDate"), row.get("docNo")))
         issued   = row.get("issuedDate","")
         actual   = row.get("actualReplyDate","")
-        dur_real = compute_duration(issued, actual)
-        dur_today= working_days_until_today(issued) if issued and not actual else None
-        row["_duration"]       = str(dur_real or "")
-        row["_duration_today"] = str(dur_today or "") if dur_today is not None else ""
+        dur = compute_duration(issued, actual)
+        row["_duration"] = str(dur) if dur is not None else ""
         row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
         row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
         row["_issuedFmt"]  = format_date(row.get("issuedDate",""))
@@ -628,6 +626,176 @@ def api_export(pid, dt_id):
     fname = f"{proj.get('code','DCR')}_{dt_id}_Register.xlsx"
     return send_file(buf, as_attachment=True, download_name=fname,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# ── PDF Export ────────────────────────────────────────────────
+
+def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
+    """Build a PDF for one document type. Returns BytesIO."""
+    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
+                                    Paragraph, Spacer, HRFlowable)
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+
+    buf = buf or io.BytesIO()
+    cols    = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
+    records = db.get_records(pid, dt_id)
+    dts     = db.get_doc_types(pid)
+    dt      = next((d for d in dts if d["id"] == dt_id), {"name": dt_id, "code": dt_id})
+
+    PAGE = landscape(A4)
+    doc = SimpleDocTemplate(buf, pagesize=PAGE,
+                            leftMargin=10*mm, rightMargin=10*mm,
+                            topMargin=12*mm, bottomMargin=12*mm)
+    styles = getSampleStyleSheet()
+    DARK   = rl_colors.HexColor("#1A3A5C")
+    LIGHT  = rl_colors.HexColor("#F8FAFC")
+    OV_COL = rl_colors.HexColor("#FEF2F2")
+    REV_COL= rl_colors.HexColor("#F0F9FF")
+    ALT    = rl_colors.HexColor("#F0F4F8")
+
+    STATUS_PDF = {
+        "A - Approved":              rl_colors.HexColor("#BBF7D0"),
+        "B - Approved As Noted":     rl_colors.HexColor("#DCFCE7"),
+        "B,C - Approved & Resubmit": rl_colors.HexColor("#FED7AA"),
+        "C - Revise & Resubmit":     rl_colors.HexColor("#FCE7F3"),
+        "D - Review not Required":   rl_colors.HexColor("#FECACA"),
+        "Under Review":              rl_colors.HexColor("#FEF9C3"),
+        "Cancelled":                 rl_colors.HexColor("#EF4444"),
+        "Open":                      rl_colors.HexColor("#FED7AA"),
+        "Closed":                    rl_colors.HexColor("#BFDBFE"),
+        "Replied":                   rl_colors.HexColor("#D1FAE5"),
+        "Pending":                   rl_colors.HexColor("#E0E7FF"),
+    }
+
+    pstyle = ParagraphStyle("cell", fontName="Helvetica", fontSize=7, leading=9,
+                             wordWrap="LTR", spaceAfter=0, spaceBefore=0)
+    hstyle = ParagraphStyle("hdr", fontName="Helvetica-Bold", fontSize=7.5,
+                             leading=10, textColor=rl_colors.white)
+
+    hdr_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
+
+    # Column widths (points)
+    W_MAP = {"_sr":18,"docNo":68,"discipline":55,"trade":55,"title":110,
+             "floor":38,"itemRef":48,"issuedDate":46,"expectedReplyDate":48,
+             "actualReplyDate":46,"status":80,"duration":34,"remarks":80,"fileLocation":60}
+    page_w = PAGE[0] - 20*mm
+    col_ws = [W_MAP.get(c["col_key"], 55) for c in hdr_cols]
+    scale  = page_w / sum(col_ws)
+    col_ws = [w * scale for w in col_ws]
+
+    # Build header row
+    hdr_row = [Paragraph(c["label"], hstyle) for c in hdr_cols]
+    data    = [hdr_row]
+    row_meta = []   # (bg, is_header)
+
+    sr = 1
+    for row in records:
+        is_rev = extract_rev(row.get("docNo","")) > 0
+        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
+        cells  = []
+        for c in hdr_cols:
+            key = c["col_key"]
+            if key == "_sr":
+                val = "" if is_rev else str(sr)
+            elif key == "expectedReplyDate":
+                val = format_date(compute_expected_reply(row.get("issuedDate"), row.get("docNo")))
+            elif key == "duration":
+                val = str(compute_duration(row.get("issuedDate"), row.get("actualReplyDate")) or "")
+            elif key in ("issuedDate","actualReplyDate"):
+                val = format_date(row.get(key,""))
+            else:
+                val = str(row.get(key,"") or "")
+            cells.append(Paragraph(val, pstyle))
+        data.append(cells)
+        if ov:     row_meta.append(OV_COL)
+        elif is_rev: row_meta.append(REV_COL)
+        elif sr % 2 == 0: row_meta.append(ALT)
+        else:      row_meta.append(rl_colors.white)
+        if not is_rev: sr += 1
+
+    # Build table style
+    ts = [
+        ("BACKGROUND", (0,0), (-1,0), DARK),
+        ("TEXTCOLOR",  (0,0), (-1,0), rl_colors.white),
+        ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",   (0,0), (-1,-1), 7),
+        ("ROWBACKGROUND", (0,0), (-1,0), DARK),
+        ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
+        ("TOPPADDING", (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 2),
+        ("LEFTPADDING",(0,0),(-1,-1), 2),
+        ("RIGHTPADDING",(0,0),(-1,-1), 2),
+        ("GRID",       (0,0), (-1,-1), 0.3, rl_colors.HexColor("#CBD5E1")),
+    ]
+    # Row backgrounds
+    for i, bg in enumerate(row_meta, start=1):
+        ts.append(("BACKGROUND", (0,i), (-1,i), bg))
+    # Status column color
+    status_idx = next((i for i,c in enumerate(hdr_cols) if c["col_key"]=="status"), None)
+    if status_idx is not None:
+        for i, row in enumerate(records, start=1):
+            sv = row.get("status","")
+            bg = STATUS_PDF.get(sv)
+            if bg: ts.append(("BACKGROUND", (status_idx,i), (status_idx,i), bg))
+
+    tbl = Table(data, colWidths=col_ws, repeatRows=1)
+    tbl.setStyle(TableStyle(ts))
+
+    proj_name = proj.get("name","") if isinstance(proj, dict) else ""
+    title_st  = ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=12,
+                                textColor=DARK, spaceAfter=4)
+    sub_st    = ParagraphStyle("s", fontName="Helvetica", fontSize=9,
+                                textColor=rl_colors.HexColor("#64748B"), spaceAfter=8)
+
+    story = [
+        Paragraph(f"{dt['name'].upper()} — {proj_name}", title_st),
+        Paragraph(f"Project: {proj.get('code','')}  |  Exported: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}", sub_st),
+        HRFlowable(width="100%", thickness=1, color=DARK, spaceAfter=6),
+        tbl,
+    ]
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+@app.route("/api/export_pdf/<pid>/<dt_id>")
+def api_export_pdf(pid, dt_id):
+    proj = db.get_project(pid) or {}
+    buf  = _build_pdf_for_dt(pid, dt_id, proj)
+    fname = f"{proj.get('code','DCR')}_{dt_id}_Register.pdf"
+    return send_file(buf, as_attachment=True, download_name=fname,
+                     mimetype="application/pdf")
+
+
+@app.route("/api/export_pdf_all/<pid>")
+def api_export_pdf_all(pid):
+    from reportlab.platypus import SimpleDocTemplate, PageBreak
+    proj = db.get_project(pid) or {}
+    dts  = db.get_doc_types(pid)
+
+    # Build each DT as separate PDF bytes then merge
+    try:
+        from pypdf import PdfWriter
+        writer = PdfWriter()
+        for dt in dts:
+            if not db.count_records(pid, dt["id"]): continue
+            single_buf = _build_pdf_for_dt(pid, dt["id"], proj)
+            from pypdf import PdfReader
+            reader = PdfReader(single_buf)
+            for page in reader.pages:
+                writer.add_page(page)
+        out = io.BytesIO()
+        writer.write(out); out.seek(0)
+    except ImportError:
+        # Fallback: just export first DT or give error
+        out = _build_pdf_for_dt(pid, dts[0]["id"], proj) if dts else io.BytesIO()
+
+    fname = f"{proj.get('code','DCR')}_All_Registers.pdf"
+    return send_file(out, as_attachment=True, download_name=fname,
+                     mimetype="application/pdf")
+
 
 # ── Import ────────────────────────────────────────────────────
 @app.route("/api/columns/reorder", methods=["POST"])
@@ -1347,6 +1515,10 @@ body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
 .tool-btn:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 .tool-btn.purple:hover{{background:#7c3aed;border-color:#7c3aed}}
 .tool-btn.teal:hover{{background:#0891b2;border-color:#0891b2}}
+.tool-dd{{position:relative}}
+.tool-dd-menu{{position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1.5px solid var(--bd);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:300;min-width:210px;overflow:hidden}}
+.tool-dd-menu button{{display:block;width:100%;text-align:left;padding:9px 14px;border:none;background:none;cursor:pointer;font-size:12px;font-family:inherit;color:#1e2a3a;white-space:nowrap}}
+.tool-dd-menu button:hover{{background:#f0f4f8;color:var(--pr)}}
 #srchbox{{flex:1;min-width:150px;max-width:260px;padding:5px 10px 5px 28px;border:1px solid var(--bd);
   border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none;
   background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%236b7a94' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 7px center}}
@@ -1442,8 +1614,15 @@ tr.alt td{{background:#fafbfd}}
 
 <div id="toolbar">
   {edit_btns}
-  <button class="tool-btn teal" onclick="doExport()">📥 Excel Tab</button>
-  <button class="tool-btn teal" onclick="doExportAll()">📥 Excel All</button>
+  <div class="tool-dd" id="exp-dd">
+    <button class="tool-btn teal" onclick="toggleExpDD()">📥 Export ▾</button>
+    <div class="tool-dd-menu hidden" id="exp-menu">
+      <button onclick="doExport();closeExpDD()">📊 Excel — This Tab</button>
+      <button onclick="doExportAll();closeExpDD()">📊 Excel — All Tabs</button>
+      <button onclick="doExportPDF();closeExpDD()">📄 PDF — This Tab</button>
+      <button onclick="doExportAllPDF();closeExpDD()">📄 PDF — All Tabs</button>
+    </div>
+  </div>
   <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
   {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
   <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
@@ -2008,14 +2187,7 @@ async function saveRecord(){{
     data[col.col_key]=el.classList.contains('ms-con')?el.dataset.value||'':el.tagName==='TEXTAREA'?el.value.trim():el.value.trim();
   }}
   if(!data.docNo){{toast('Document No. required','er');return;}}
-  // Fix 7: Duration — if one date present but not other, warn + choice
-  const isd=data.issuedDate||''; const ard=data.actualReplyDate||'';
-  if(isd&&!ard){{
-    const choice=await durChoice(data.docNo);
-    // choice: 'today' => set _dur_use_today=true, 'empty' => leave, null = cancel
-    if(choice===null)return;
-    data._dur_use_today=(choice==='today');
-  }}
+    // Duration is computed server-side automatically
   const valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
   if(valErr&&valErr.startsWith('GAP')){{
     if(!confirm('⚠ Sequence gap detected: '+valErr.replace('GAP:','')+'. Continue anyway?'))return;
@@ -2283,6 +2455,11 @@ async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)retur
 
 // Export/Import
 function doExport(){{if(state.tab)window.location='/api/export/'+PID+'/'+state.tab;}}
+function doExportPDF(){{if(state.tab)window.location='/api/export_pdf/'+PID+'/'+state.tab;}}
+function doExportAllPDF(){{window.location='/api/export_pdf_all/'+PID;}}
+function toggleExpDD(){{document.getElementById('exp-menu').classList.toggle('hidden');}}
+function closeExpDD(){{document.getElementById('exp-menu').classList.add('hidden');}}
+document.addEventListener('click',e=>{{if(!e.target.closest('#exp-dd'))closeExpDD();}});
 function doPrint(){{
   const orig=document.title;
   document.title='DCR Print';
