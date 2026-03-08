@@ -100,6 +100,17 @@ CREATE TABLE IF NOT EXISTS records (
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_records_proj_dt ON records(project_id, dt_id);
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      JSONB NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS col_widths (
+    project_id TEXT NOT NULL,
+    dt_id      TEXT NOT NULL,
+    col_key    TEXT NOT NULL,
+    width_px   INTEGER NOT NULL DEFAULT 120,
+    PRIMARY KEY (project_id, dt_id, col_key)
+);
 CREATE TABLE IF NOT EXISTS dropdown_lists (
     id          SERIAL PRIMARY KEY,
     project_id  TEXT NOT NULL,
@@ -416,33 +427,78 @@ def get_dashboard_stats():
 
         dts      = dt_map.get(pid, [])
         dt_stats = []
-        total = approved = pending = overdue_cnt = 0
+        total = approved = pending = overdue_cnt = total_rj = 0
 
         for dt in dts:
             rows  = rec_map.get((pid, dt["id"]), [])
-            t=ap=pe=ov = 0
+            t=ap=pe=ov=rj = 0
+            disc_map = {}   # discipline -> {total,approved,pending,rejected,overdue}
             for d in rows:
                 doc_no = d.get("docNo", "")
                 m = re.search(r"REV(\d+)", doc_no, re.IGNORECASE)
                 rev = int(m.group(1)) if m else 0
                 status = d.get("status", "")
+                disc   = d.get("discipline","") or "—"
                 if rev == 0: t += 1
-                if status.startswith("A") or "approved" in status.lower(): ap += 1
-                if status in ("Under Review","Pending",""): pe += 1
-                if is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate")): ov += 1
+                is_ap = status.startswith("A") or "approved" in status.lower()
+                is_pe = status in ("Under Review","Pending","")
+                is_rj = status in ("C - Revise & Resubmit","D - Review not Required","Cancelled")
+                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"))
+                if is_ap: ap += 1
+                if is_pe: pe += 1
+                if is_rj: rj += 1
+                if is_ov: ov += 1
+                # Discipline breakdown
+                ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
+                if rev == 0: ds["total"] += 1
+                if is_ap: ds["approved"] += 1
+                if is_pe: ds["pending"]  += 1
+                if is_rj: ds["rejected"] += 1
+                if is_ov: ds["overdue"]  += 1
+            disc_list = [{"disc":k,"total":v["total"],"approved":v["approved"],
+                          "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"]}
+                         for k,v in sorted(disc_map.items())]
             dt_stats.append({"id":dt["id"],"code":dt["code"],"name":dt["name"],
-                             "total":t,"approved":ap,"pending":pe,"overdue":ov})
-            total+=t; approved+=ap; pending+=pe; overdue_cnt+=ov
+                             "total":t,"approved":ap,"pending":pe,"overdue":ov,"rejected":rj,
+                             "disc_breakdown":disc_list})
+            total+=t; approved+=ap; pending+=pe; overdue_cnt+=ov; total_rj+=rj
 
         pct = round(approved / total * 100) if total else 0
         result.append({
             "id": pid, "name": p["name"], "code": p["code"],
             "client": pdata.get("client","") if isinstance(pdata, dict) else "",
             "total": total, "approved": approved, "pending": pending,
-            "overdue": overdue_cnt, "pct": pct, "dt_stats": dt_stats
+            "overdue": overdue_cnt, "rejected": total_rj, "pct": pct, "dt_stats": dt_stats
         })
     return result
 
+
+def rename_column(col_id, new_label):
+    exe("UPDATE columns_config SET label=%s WHERE id=%s", (new_label.strip(), col_id))
+
+def get_col_widths(pid, dt_id):
+    rows = q("SELECT col_key, width_px FROM col_widths WHERE project_id=%s AND dt_id=%s", (pid, dt_id))
+    return {r["col_key"]: r["width_px"] for r in rows}
+
+def save_col_width(pid, dt_id, col_key, width_px):
+    exe(
+        "INSERT INTO col_widths(project_id,dt_id,col_key,width_px) VALUES(%s,%s,%s,%s)"
+        " ON CONFLICT(project_id,dt_id,col_key) DO UPDATE SET width_px=EXCLUDED.width_px",
+        (pid, dt_id, col_key, width_px))
+
+def get_setting(key, default=None):
+    r = q("SELECT value FROM app_settings WHERE key=%s", (key,), one=True)
+    if r is None: return default
+    import json
+    v = r["value"]
+    return v if not isinstance(v, str) else json.loads(v)
+
+def save_setting(key, value):
+    import json
+    exe(
+        "INSERT INTO app_settings(key,value) VALUES(%s,%s::jsonb)"
+        " ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+        (key, json.dumps(value)))
 
 def reorder_columns(pid, dt_id, ordered_ids):
     """Update sort_order for columns given a list of ids in desired order."""

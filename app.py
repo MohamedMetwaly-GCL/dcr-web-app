@@ -4,7 +4,8 @@ from flask import (Flask, request, session, redirect, url_for,
                    jsonify, make_response, send_file, g)
 import db
 from utils import (compute_expected_reply, compute_duration, is_overdue,
-                   format_date, get_next_doc_no, extract_rev, STATUS_COLORS)
+                   format_date, get_next_doc_no, extract_rev, STATUS_COLORS,
+                   REJECTED_STATUSES, working_days_until_today, invalidate_holidays_cache)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(32))
@@ -201,6 +202,56 @@ def api_delete_col(col_id):
     db.delete_col(col_id)
     return jsonify(ok=True)
 
+@app.route("/api/columns/rename/<int:col_id>", methods=["POST"])
+def api_rename_col(col_id):
+    if not current_user(): return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    label = data.get("label","").strip()
+    if not label: return jsonify(error="Label required"), 400
+    db.rename_column(col_id, label)
+    return jsonify(ok=True)
+
+@app.route("/api/col_width/<pid>/<dt_id>", methods=["GET"])
+def api_get_col_widths(pid, dt_id):
+    return jsonify(db.get_col_widths(pid, dt_id))
+
+@app.route("/api/col_width/<pid>/<dt_id>", methods=["POST"])
+def api_save_col_width(pid, dt_id):
+    u = current_user()
+    if not u or u.get("role") not in ("superadmin","admin"):
+        return jsonify(error="Superadmin only"), 403
+    data = request.get_json(silent=True) or {}
+    col_key   = data.get("col_key","")
+    width_px  = int(data.get("width_px", 120))
+    if not col_key: return jsonify(error="col_key required"), 400
+    db.save_col_width(pid, dt_id, col_key, max(40, min(600, width_px)))
+    return jsonify(ok=True)
+
+@app.route("/api/settings/holidays", methods=["GET"])
+def api_get_holidays():
+    from utils import DEFAULT_HOLIDAYS
+    h = db.get_setting("holidays", sorted(DEFAULT_HOLIDAYS))
+    return jsonify(holidays=sorted(h) if h else [])
+
+@app.route("/api/settings/holidays", methods=["POST"])
+def api_save_holidays():
+    u = current_user()
+    if not u or u.get("role") not in ("superadmin","admin"):
+        return jsonify(error="Superadmin only"), 403
+    data = request.get_json(silent=True) or {}
+    holidays = data.get("holidays", [])
+    if not isinstance(holidays, list): return jsonify(error="Invalid"), 400
+    # Validate format
+    import datetime
+    valid = []
+    for h in holidays:
+        try: datetime.date.fromisoformat(h); valid.append(h)
+        except: pass
+    db.save_setting("holidays", sorted(valid))
+    from utils import invalidate_holidays_cache
+    invalidate_holidays_cache()
+    return jsonify(ok=True, count=len(valid))
+
 # ── API: Records ──────────────────────────────────────────────
 @app.route("/api/records/<pid>/<dt_id>")
 def api_records(pid, dt_id):
@@ -210,7 +261,12 @@ def api_records(pid, dt_id):
     for row in records:
         row["_expectedReplyDate"] = format_date(
             compute_expected_reply(row.get("issuedDate"), row.get("docNo")))
-        row["_duration"]   = str(compute_duration(row.get("issuedDate"), row.get("actualReplyDate")) or "")
+        issued   = row.get("issuedDate","")
+        actual   = row.get("actualReplyDate","")
+        dur_real = compute_duration(issued, actual)
+        dur_today= working_days_until_today(issued) if issued and not actual else None
+        row["_duration"]       = str(dur_real or "")
+        row["_duration_today"] = str(dur_today or "") if dur_today is not None else ""
         row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
         row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
         row["_issuedFmt"]  = format_date(row.get("issuedDate",""))
@@ -894,6 +950,7 @@ canvas{{max-height:190px}}
     <div class="kpi ok"><div class="kval" id="kpi-approved">—</div><div class="klbl">Approved</div></div>
     <div class="kpi wa"><div class="kval" id="kpi-pending">—</div><div class="klbl">Under Review</div></div>
     <div class="kpi er"><div class="kval" id="kpi-overdue">—</div><div class="klbl">Overdue</div></div>
+    <div class="kpi" style="border-left-color:#7c3aed"><div class="kval" id="kpi-rejected" style="color:#7c3aed">—</div><div class="klbl">Rejected/Revise</div></div>
     <div class="kpi"><div class="kval" id="kpi-pct">—</div><div class="klbl">Completion %</div></div>
     <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
   </div>
@@ -921,13 +978,29 @@ canvas{{max-height:190px}}
         <th style="text-align:center">Total</th>
         <th style="text-align:center">Approved</th>
         <th style="text-align:center">Pending</th>
+        <th style="text-align:center">Rejected</th>
         <th style="text-align:center">Overdue</th>
-        <th style="text-align:center">%</th>
         <th style="text-align:center">Open</th>
       </tr></thead>
       <tbody id="dt-tbody"></tbody>
     </table>
     <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+  </div>
+
+  <div class="stitle" style="margin-top:20px">🏗 Discipline Breakdown by Document Type</div>
+  <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:24px">
+    <table class="dt-tbl">
+      <thead><tr>
+        <th>Project</th><th>Doc Type</th><th>Discipline</th>
+        <th style="text-align:center">Total</th>
+        <th style="text-align:center">Approved</th>
+        <th style="text-align:center">Pending</th>
+        <th style="text-align:center;color:#c4b5fd">Rejected</th>
+        <th style="text-align:center">Overdue</th>
+      </tr></thead>
+      <tbody id="disc-tbody"></tbody>
+    </table>
+    <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
   </div>
 </div>
 
@@ -977,7 +1050,32 @@ function getFiltered(pid){{return pid?STATS.filter(s=>s.id===pid):STATS;}}
 
 function renderAll(pid){{
   const d=getFiltered(pid);
-  updateKPIs(d);renderCards(d,pid);renderCharts(d);renderDTTable(d);
+  updateKPIs(d);renderCards(d,pid);renderCharts(d);renderDTTable(d);renderDiscTable(d);
+}}
+
+function renderDiscTable(data){{
+  const tbody=document.getElementById('disc-tbody');if(!tbody)return;
+  const empty=document.getElementById('disc-empty');
+  tbody.innerHTML='';let rows=0;
+  data.forEach(p=>{{
+    (p.dt_stats||[]).forEach(dt=>{{
+      const disc=dt.disc_breakdown||[];if(!disc.length)return;
+      disc.forEach((ds,di)=>{{
+        rows++;
+        const tr=document.createElement('tr');tr.className=rows%2===0?'alt':'';
+        if(di===0){{
+          const tdc=document.createElement('td');tdc.rowSpan=disc.length;tdc.style.cssText='font-size:11px;color:var(--mu);vertical-align:top;padding:6px 10px';tdc.textContent=p.code;tr.appendChild(tdc);
+          const tdt=document.createElement('td');tdt.rowSpan=disc.length;tdt.style.cssText='font-weight:600;vertical-align:top;padding:6px 10px';tdt.textContent=dt.code+' '+dt.name;tr.appendChild(tdt);
+        }}
+        const mk=(v,c)=>{{const td=document.createElement('td');td.style.cssText='text-align:center;padding:6px 8px;font-weight:600;color:'+c;td.textContent=v||'0';return td;}};
+        const tdisc=document.createElement('td');tdisc.style.cssText='padding:6px 10px';tdisc.textContent=ds.disc;tr.appendChild(tdisc);
+        tr.appendChild(mk(ds.total,'#1a3a5c'));tr.appendChild(mk(ds.approved,'#16a34a'));
+        tr.appendChild(mk(ds.pending,'#f59e0b'));tr.appendChild(mk(ds.rejected,'#7c3aed'));tr.appendChild(mk(ds.overdue,'#ef4444'));
+        tbody.appendChild(tr);
+      }});
+    }});
+  }});
+  if(empty)empty.style.display=rows?'none':'block';
 }}
 
 function updateKPIs(d){{
@@ -1050,13 +1148,13 @@ function renderDTTable(d){{
     const col=pct>=80?'#16a34a':pct>=50?'#f59e0b':'#ef4444';
     const tr=document.createElement('tr');if(i%2)tr.className='alt';i++;
     tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{r.pcode}}</td>
-      <td style="font-weight:700;color:var(--pr)">${{r.dtCode||r.id}}</td>
+      <td style="font-weight:700;color:var(--pr)">${{r.dtCode||r.code||r.id}}</td>
       <td>${{r.dtName||r.name}}</td>
       <td style="text-align:center;font-weight:700">${{r.total}}</td>
       <td style="text-align:center;color:#16a34a;font-weight:600">${{r.approved}}</td>
       <td style="text-align:center;color:#f59e0b;font-weight:600">${{r.pending}}</td>
+      <td style="text-align:center;color:#7c3aed;font-weight:600">${{r.rejected||0}}</td>
       <td style="text-align:center;color:#ef4444;font-weight:600">${{r.overdue}}</td>
-      <td style="text-align:center"><span style="color:${{col}};font-weight:700">${{pct}}%</span></td>
       <td style="text-align:center"><a href="/app?p=${{r.pid}}&tab=${{r.id}}"
         style="padding:2px 9px;background:var(--pr);color:#fff;border-radius:3px;text-decoration:none;font-size:10px;font-weight:600">Open</a></td>`;
     tbody.appendChild(tr);
@@ -1134,31 +1232,33 @@ async function createProject(){{
   const name=document.getElementById('np-name').value.trim();
   if(!id||!name||!code){{toast('All fields required','er');return;}}
   const btn=document.getElementById('cpbtn');
-  btn.disabled=true;btn.textContent='⏳ Creating...';
+  btn.disabled=true;btn.textContent='⏳';
+  let ok=false;
   try{{
     const resp=await fetch('/api/projects/create',{{
       method:'POST',credentials:'include',
-      headers:{{'Content-Type':'application/json'}},
+      headers:{{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}},
       body:JSON.stringify({{id,name,code}})
     }});
-    const r=await resp.json().catch(()=>({{}}));
+    let r={{}};
+    try{{r=await resp.json();}}catch(e){{}}
     if(resp.ok&&r.ok){{
-      toast('✔ Created: '+name,'ok');
-      closeM('newproj-modal');
+      ok=true;
       const np={{id,name,code,client:'',total:0,approved:0,pending:0,overdue:0,pct:0,can_edit:true,dt_stats:[]}};
       STATS.push(np);
       const sel=document.getElementById('proj-sel');
       const o=document.createElement('option');o.value=id;o.textContent=name+' ('+code+')';sel.appendChild(o);
       ['np-id','np-code','np-name'].forEach(i=>{{const el=document.getElementById(i);if(el)el.value='';}});
+      closeM('newproj-modal');
       renderAll('');
+      toast('✔ Project created: '+name,'ok');
     }}else{{
-      toast((r&&r.error)||'Error: '+resp.status,'er');
+      toast((r&&r.error)||('HTTP '+resp.status),'er');
     }}
   }}catch(e){{
-    toast('Network error: '+e.message,'er');
-  }}finally{{
-    btn.disabled=false;btn.textContent='Create';
+    toast('Error: '+e.message,'er');
   }}
+  btn.disabled=false;btn.textContent='Create';
 }}
 
 init();
@@ -1194,8 +1294,10 @@ def render_register(u, proj):
         f'<span>{dt["code"]}</span><span class="tcnt" id="cnt-{dt["id"]}">0</span></button>'
         for dt in dts)
 
+    _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if role=='superadmin' else ''
     edit_btns = (f'<button class="tool-btn" onclick="addRecord()">➕ Add</button>'
                  f'<button class="tool-btn purple" onclick="manageColumns()">⚙ Columns</button>'
+                 f'{_hol_btn}'
                  f'<button class="tool-btn" onclick="openLists()">📋 Lists</button>'
                  f'<button class="tool-btn" onclick="editProject()">🏗 Project</button>'
                  if editable else
@@ -1208,6 +1310,15 @@ def render_register(u, proj):
 {BASE_CSS}
 <style>
 body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
+@media print{{
+  #topbar,#tabbar,.toolrow,.bulkbar,#statusbar,.acts{{display:none!important}}
+  body{{height:auto;overflow:visible}}
+  #main{{overflow:visible;height:auto}}
+  #tblwrap{{overflow:visible;height:auto}}
+  #regtbl{{font-size:10px}}
+  #regtbl th,#regtbl td{{padding:4px 6px!important;white-space:normal!important}}
+  @page{{size:A4 landscape;margin:10mm}}
+}}
 #projbar{{background:#fff;border-bottom:2px solid var(--pr);padding:3px 12px;
   display:flex;align-items:center;overflow-x:auto;flex-shrink:0;gap:0}}
 .pf{{display:flex;flex-direction:column;padding:0 10px;border-right:1px solid var(--bd)}}
@@ -1331,7 +1442,9 @@ tr.alt td{{background:#fafbfd}}
 
 <div id="toolbar">
   {edit_btns}
-  <button class="tool-btn teal" onclick="doExport()">📥 Export Tab</button><button class="tool-btn teal" onclick="doExportAll()">📥 Export All</button>
+  <button class="tool-btn teal" onclick="doExport()">📥 Excel Tab</button>
+  <button class="tool-btn teal" onclick="doExportAll()">📥 Excel All</button>
+  <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
   {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
   <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
 </div>
@@ -1566,11 +1679,15 @@ async function delDT(id){{
 async function loadRecords(){{
   if(!state.tab)return;
   const search=document.getElementById('srchbox').value.trim();
-  const data=await apiFetch('/api/records/'+PID+'/'+state.tab+(search?'?search='+encodeURIComponent(search):''));
+  const [data, widths]=await Promise.all([
+    apiFetch('/api/records/'+PID+'/'+state.tab+(search?'?search='+encodeURIComponent(search):'')),
+    apiFetch('/api/col_width/'+PID+'/'+state.tab)
+  ]);
   if(!data)return;
   state.recs=data.records; state.cols=data.columns.filter(c=>c.visible);
+  state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
-  buildHead(); requestAnimationFrame(initRz); renderRows();
+  buildHead(); requestAnimationFrame(()=>initRz()); renderRows();
 }}
 
 function buildHead(){{
@@ -1579,10 +1696,14 @@ function buildHead(){{
   const chk=document.createElement('th'); chk.className='chkcell';
   if(CAN_EDIT)chk.innerHTML='<input type="checkbox" id="chkall" onchange="selAll(this.checked)">';
   hr.appendChild(chk);
-  const sr=document.createElement('th');sr.textContent='Sr.';sr.style.cssText='width:34px;cursor:default';hr.appendChild(sr);
+  const sr=document.createElement('th');sr.textContent='Sr.';sr.style.cssText='width:34px;cursor:default;white-space:normal;word-break:break-word';hr.appendChild(sr);
   state.cols.forEach(col=>{{
     const th=document.createElement('th');th.dataset.key=col.col_key;
-    th.innerHTML=col.label+(state.sortCol===col.col_key?(state.sortDir==='asc'?' ↑':' ↓'):'');
+    const w=state.colWidths&&state.colWidths[col.col_key];
+    if(w)th.style.cssText='width:'+w+'px;min-width:'+w+'px;max-width:'+w+'px;white-space:normal;word-break:break-word';
+    else th.style.cssText='white-space:normal;word-break:break-word';
+    const sortInd=state.sortCol===col.col_key?(state.sortDir==='asc'?' ↑':' ↓'):'';
+    th.innerHTML='<span class="th-lbl">'+col.label+sortInd+'</span>';
     if(!['auto_date','auto_num'].includes(col.col_type))th.onclick=()=>sortBy(col.col_key);
     else th.style.cursor='default';
     hr.appendChild(th);
@@ -1778,7 +1899,7 @@ function initRz(){{
     const rz=document.createElement('div');rz.className='rz';th.appendChild(rz);
     rz.addEventListener('mousedown',e=>{{
       e.stopPropagation();e.preventDefault();
-      _rzActive={{th,sx:e.clientX,sw:th.offsetWidth}};
+      _rzActive={{th,sx:e.clientX,sw:th.offsetWidth,key:th.dataset.key}};
       rz.classList.add('rzg');
       document.body.style.cursor='col-resize';
       document.body.style.userSelect='none';
@@ -1792,12 +1913,24 @@ document.addEventListener('mousemove',e=>{{
   _rzActive.th.style.minWidth=w+'px';
   _rzActive.th.style.maxWidth=w+'px';
 }});
+let _rzSaveTimer=null;
 document.addEventListener('mouseup',()=>{{
   if(!_rzActive)return;
-  _rzActive.th.querySelector('.rz')?.classList.remove('rzg');
+  const {{th,key}}=_rzActive;
+  const w=th.offsetWidth;
+  th.querySelector('.rz')?.classList.remove('rzg');
   _rzActive=null;
   document.body.style.cursor='';
   document.body.style.userSelect='';
+  // Save width if superadmin
+  if(ROLE==='superadmin'&&key){{
+    clearTimeout(_rzSaveTimer);
+    _rzSaveTimer=setTimeout(()=>{{
+      apiFetch('/api/col_width/'+PID+'/'+state.tab,{{
+        method:'POST',body:JSON.stringify({{col_key:key,width_px:w}})
+      }}).then(r=>{{if(r&&r.ok){{if(!state.colWidths)state.colWidths={{}};state.colWidths[key]=w;}}}});
+    }},400);
+  }}
 }});
 
 let _st;
@@ -1809,7 +1942,7 @@ function editRec(id){{state.editId=id;const row=state.recs.find(r=>r._id===id);i
 
 async function buildForm(row){{
   const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols)return;
-  const AUTO=new Set(['expectedReplyDate','duration']);
+  const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today']);
   const grid=document.getElementById('rec-form');grid.innerHTML='';
   let nextNo='';
   if(!row){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
@@ -1822,7 +1955,13 @@ async function buildForm(row){{
     const val=row?.[key]||'';
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
     else if(col.col_type==='dropdown'&&col.list_name){{grp.appendChild(buildMS(key,state.lists[col.list_name]||[],val));}}
-    else if(col.col_type==='docno'){{const inp=document.createElement('input');inp.id='f-'+key;inp.value=row?val:nextNo;inp.style.cssText='font-family:Consolas,monospace;font-weight:600';grp.appendChild(inp);}}
+    else if(col.col_type==='docno'){{
+      const inp=document.createElement('input');inp.id='f-'+key;
+      if(row){{inp.value=val;}}
+      else{{inp.value=nextNo;inp.placeholder=nextNo?'':state.tab+'-001 REV00';}}
+      inp.style.cssText='font-family:Consolas,monospace;font-weight:600';
+      grp.appendChild(inp);
+    }}
     else if(key==='remarks'){{const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;ta.rows=3;grp.appendChild(ta);}}
     else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';grp.appendChild(inp);}}
     grid.appendChild(grp);
@@ -1841,9 +1980,27 @@ function buildMS(key,options,init){{
   render();return con;
 }}
 
+function durChoice(docNo){{
+  return new Promise(resolve=>{{
+    const ov=document.createElement('div');ov.className='overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+    ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:28px 24px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px">⏱ Duration</div>
+      <p style="font-size:13px;color:#64748b;margin-bottom:20px">Issue date is set but no reply date yet.<br>How should Duration be shown?</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="dur-today" style="padding:10px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">📅 Calculate from issue date → Today</button>
+        <button id="dur-empty" style="padding:10px 16px;background:#f1f5f9;color:#374151;border:none;border-radius:6px;cursor:pointer;font-size:13px">— Leave Duration empty</button>
+        <button id="dur-cancel" style="padding:8px;background:none;border:none;cursor:pointer;font-size:12px;color:#94a3b8">Cancel</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#dur-today').onclick=()=>{{document.body.removeChild(ov);resolve('today');}};
+    ov.querySelector('#dur-empty').onclick=()=>{{document.body.removeChild(ov);resolve('empty');}};
+    ov.querySelector('#dur-cancel').onclick=()=>{{document.body.removeChild(ov);resolve(null);}};
+  }});
+}}
+
 async function saveRecord(){{
   const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols)return;
-  const AUTO=new Set(['expectedReplyDate','duration']);
+  const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today']);
   const data={{}};
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;
@@ -1851,6 +2008,14 @@ async function saveRecord(){{
     data[col.col_key]=el.classList.contains('ms-con')?el.dataset.value||'':el.tagName==='TEXTAREA'?el.value.trim():el.value.trim();
   }}
   if(!data.docNo){{toast('Document No. required','er');return;}}
+  // Fix 7: Duration — if one date present but not other, warn + choice
+  const isd=data.issuedDate||''; const ard=data.actualReplyDate||'';
+  if(isd&&!ard){{
+    const choice=await durChoice(data.docNo);
+    // choice: 'today' => set _dur_use_today=true, 'empty' => leave, null = cancel
+    if(choice===null)return;
+    data._dur_use_today=(choice==='today');
+  }}
   const valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
   if(valErr&&valErr.startsWith('GAP')){{
     if(!confirm('⚠ Sequence gap detected: '+valErr.replace('GAP:','')+'. Continue anyway?'))return;
@@ -2006,10 +2171,21 @@ async function manageColumns(){{
     const nm=document.createElement('span');nm.textContent=col.label;nm.style.cssText='flex:1;font-size:12px';
     const tp=document.createElement('span');tp.textContent=col.col_type;
     tp.style.cssText='font-size:9px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:3px;flex-shrink:0';
-    const db_btn=document.createElement('button');db_btn.textContent='Del';
-    db_btn.className='btn btn-er btn-sm';db_btn.style.cssText='flex-shrink:0;padding:2px 8px;font-size:10px';
+    const ren_btn=document.createElement('button');ren_btn.textContent='✏';
+    ren_btn.title='Rename';ren_btn.className='btn btn-sc btn-sm';
+    ren_btn.style.cssText='flex-shrink:0;padding:2px 6px;font-size:11px';
+    ren_btn.onclick=async()=>{{
+      const newLbl=prompt('New label for column:',col.label);
+      if(!newLbl||!newLbl.trim())return;
+      const r=await apiFetch('/api/columns/rename/'+col.id,{{method:'POST',body:JSON.stringify({{label:newLbl.trim()}})}});
+      if(r&&r.ok){{nm.textContent=newLbl.trim();toast('✔ Renamed','ok');}}
+      else toast('Error','er');
+    }};
+    const db_btn=document.createElement('button');db_btn.textContent='🗑';
+    db_btn.title='Delete';db_btn.className='btn btn-er btn-sm';
+    db_btn.style.cssText='flex-shrink:0;padding:2px 6px;font-size:11px';
     db_btn.onclick=()=>deleteCol(col.id,col.col_key,db_btn);
-    li.appendChild(grip);li.appendChild(chk);li.appendChild(nm);li.appendChild(tp);li.appendChild(db_btn);
+    li.appendChild(grip);li.appendChild(chk);li.appendChild(nm);li.appendChild(tp);li.appendChild(ren_btn);li.appendChild(db_btn);
     ul.appendChild(li);
   }});
   initColDrag(ul);
@@ -2107,6 +2283,71 @@ async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)retur
 
 // Export/Import
 function doExport(){{if(state.tab)window.location='/api/export/'+PID+'/'+state.tab;}}
+function doPrint(){{
+  const orig=document.title;
+  document.title='DCR Print';
+  window.print();
+  document.title=orig;
+}}
+// Holidays Settings
+async function openSettings(){{
+  const r=await apiFetch('/api/settings/holidays');if(!r)return;
+  let hols=[...(r.holidays||[])];
+  const ov=document.createElement('div');ov.className='overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center';
+  function buildUI(){{
+    ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:520px;width:95%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:800;color:#1a3a5c">🗓 Public Holidays</div>
+        <button id="hol-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748b">✕</button>
+      </div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:12px">These dates are excluded from Duration and Expected Reply calculations (along with Fridays).</p>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input type="date" id="hol-inp" style="flex:1;padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:12px">
+        <button id="hol-add-btn" style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">+ Add</button>
+      </div>
+      <div id="hol-list" style="flex:1;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:8px;min-height:180px;max-height:340px"></div>
+      <div style="margin-top:12px;font-size:11px;color:#94a3b8">${{hols.length}} holidays total</div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button id="hol-cancel" style="padding:7px 16px;border:1.5px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px">Cancel</button>
+        <button id="hol-save" style="padding:7px 16px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">💾 Save Holidays</button>
+      </div></div>`;
+    renderHL();
+    ov.querySelector('#hol-close').onclick=()=>ov.remove();
+    ov.querySelector('#hol-cancel').onclick=()=>ov.remove();
+    ov.querySelector('#hol-add-btn').onclick=()=>{{
+      const v=ov.querySelector('#hol-inp').value;
+      if(!v)return;if(hols.includes(v)){{toast('Already added','wa');return;}}
+      hols.push(v);renderHL();ov.querySelector('#hol-inp').value='';
+    }};
+    ov.querySelector('#hol-save').onclick=async()=>{{
+      const btn=ov.querySelector('#hol-save');btn.disabled=true;btn.textContent='Saving...';
+      const res=await apiFetch('/api/settings/holidays',{{method:'POST',body:JSON.stringify({{holidays:hols}})}});
+      btn.disabled=false;btn.textContent='💾 Save Holidays';
+      if(res&&res.ok){{toast('✔ '+res.count+' holidays saved','ok');ov.remove();}}
+      else toast('Error','er');
+    }};
+  }}
+  function renderHL(){{
+    const ul=ov.querySelector('#hol-list');if(!ul)return;ul.innerHTML='';
+    if(!hols.length){{ul.innerHTML='<div style="color:#94a3b8;text-align:center;padding:30px;font-size:12px">No holidays — click + Add to add dates</div>';return;}}
+    [...hols].sort().forEach(d=>{{
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;margin-bottom:3px;background:#f8fafc;font-size:12px';
+      const dt=new Date(d+'T00:00:00');
+      const fmt=dt.getDate().toString().padStart(2,'0')+'-'+(dt.getMonth()+1).toString().padStart(2,'0')+'-'+dt.getFullYear();
+      const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const day=days[dt.getDay()];
+      row.innerHTML=`<span style="color:#1e293b">${{fmt}} <span style="color:#94a3b8;font-size:10px">(${{day}})</span></span>
+        <button data-d="${{d}}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:15px;line-height:1;padding:2px 6px">✕</button>`;
+      row.querySelector('button').onclick=e=>{{const dv=e.currentTarget.dataset.d;hols=hols.filter(h=>h!==dv);renderHL();}};
+      ul.appendChild(row);
+    }});
+  }}
+  buildUI();
+  document.body.appendChild(ov);
+}}
+
 function doExportAll(){{window.location='/api/export_all/'+PID;}}
 function openImport(){{openM('import-modal');}}
 async function doImport(){{
