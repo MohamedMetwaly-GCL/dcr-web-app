@@ -258,6 +258,7 @@ def api_records(pid, dt_id):
     search  = request.args.get("search","")
     records = db.get_records(pid, dt_id, search=search)
     cols    = db.get_columns(pid, dt_id)
+    date_col_keys = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
     for row in records:
         row["_expectedReplyDate"] = format_date(
             compute_expected_reply(row.get("issuedDate"), row.get("docNo")))
@@ -267,6 +268,11 @@ def api_records(pid, dt_id):
         row["_duration"] = str(dur) if dur is not None else ""
         row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
         row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
+        # Format ALL date columns (any col_type=date)
+        for dk in date_col_keys:
+            if dk in row and row[dk]:
+                row["_fmt_" + dk] = format_date(row[dk])
+        # Standard aliases
         row["_issuedFmt"]  = format_date(row.get("issuedDate",""))
         row["_replyFmt"]   = format_date(row.get("actualReplyDate",""))
     return jsonify(records=records, columns=cols, count=db.count_records(pid, dt_id))
@@ -1477,6 +1483,7 @@ def render_register(u, proj):
 <title>DCR — {proj.get("name","Register")}</title>
 {BASE_CSS}
 <style>
+.hidden{{display:none!important}}
 body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
 @media print{{
   #topbar,#tabbar,.toolrow,.bulkbar,#statusbar,.acts{{display:none!important}}
@@ -1615,7 +1622,7 @@ tr.alt td{{background:#fafbfd}}
 <div id="toolbar">
   {edit_btns}
   <div class="tool-dd" id="exp-dd">
-    <button class="tool-btn teal" onclick="toggleExpDD()">📥 Export ▾</button>
+    <button class="tool-btn teal" onclick="toggleExpDD(event)">📥 Export ▾</button>
     <div class="tool-dd-menu hidden" id="exp-menu">
       <button onclick="doExport();closeExpDD()">📊 Excel — This Tab</button>
       <button onclick="doExportAll();closeExpDD()">📊 Excel — All Tabs</button>
@@ -2019,6 +2026,9 @@ function renderRows(){{
       }}
       else if(key==='issuedDate')val=row._issuedFmt||'';
       else if(key==='actualReplyDate')val=row._replyFmt||'';
+      else if(col.col_type==='date'||col.col_type==='auto_date'){{
+        val=row['_fmt_'+key]||row[key]||'';  // use pre-formatted version
+      }}
       else if(key==='status'){{
         val=row[key]||'';
         if(val){{
@@ -2457,7 +2467,7 @@ async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)retur
 function doExport(){{if(state.tab)window.location='/api/export/'+PID+'/'+state.tab;}}
 function doExportPDF(){{if(state.tab)window.location='/api/export_pdf/'+PID+'/'+state.tab;}}
 function doExportAllPDF(){{window.location='/api/export_pdf_all/'+PID;}}
-function toggleExpDD(){{document.getElementById('exp-menu').classList.toggle('hidden');}}
+function toggleExpDD(e){{e.stopPropagation();document.getElementById('exp-menu').classList.toggle('hidden');}}
 function closeExpDD(){{document.getElementById('exp-menu').classList.add('hidden');}}
 document.addEventListener('click',e=>{{if(!e.target.closest('#exp-dd'))closeExpDD();}});
 function doPrint(){{
