@@ -329,6 +329,20 @@ def api_remove_list_item(pid):
     db.remove_list_item(pid, data.get("list_name",""), data.get("item",""))
     return jsonify(ok=True)
 
+@app.route("/api/lists_meta/<pid>")
+def api_lists_meta(pid):
+    return jsonify(db.get_lists_with_meta(pid))
+
+@app.route("/api/lists_meta/<pid>", methods=["POST"])
+def api_set_list_meta(pid):
+    u = current_user()
+    if not u or u.get("role") not in ("superadmin","admin"):
+        return jsonify(error="Admin only"), 403
+    data = request.get_json(silent=True) or {}
+    db.set_list_item_meta(pid, data.get("list_name",""),
+                         data.get("item_value",""), data.get("meta","pending"))
+    return jsonify(ok=True)
+
 # ── API: Logos ────────────────────────────────────────────────
 @app.route("/api/logo/<pid>/<key>")
 def api_get_logo(pid, key):
@@ -2299,22 +2313,75 @@ async function saveDocType(){{
 // Lists
 async function openLists(){{
   await loadLists(true);
+  const metaData=await apiFetch('/api/lists_meta/'+PID)||{{}};
+  const META_LABELS={{approved:{{lbl:'Approved',bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:'Rejected',bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:'Pending',bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:'Cancelled',bg:'#f1f5f9',fg:'#94a3b8'}}}};
   const body=document.getElementById('lists-body');body.innerHTML='';
   for(const[ln,items]of Object.entries(state.lists)){{
-    const t=document.createElement('div');t.className='stitle';t.textContent=ln.charAt(0).toUpperCase()+ln.slice(1);body.appendChild(t);
+    const isStatus=ln.toLowerCase().startsWith('status');
+    const t=document.createElement('div');t.className='stitle';
+    t.textContent=ln.charAt(0).toUpperCase()+ln.slice(1)+(isStatus?' 🏷':'');
+    body.appendChild(t);
     const ul=document.createElement('ul');ul.className='slist';
-    items.forEach(item=>{{const li=document.createElement('li');li.className='sitem';li.innerHTML=`<span class="nm">${{item}}</span><button onclick="rmItem('${{ln}}','${{item.replace(/'/g,"\\'")}}'  ,this)">Remove</button>`;ul.appendChild(li);}});
+    const metaItems=metaData[ln]||[];
+    items.forEach(item=>{{
+      const mi=metaItems.find(m=>m.value===item);
+      const curMeta=mi?.meta||'pending';
+      const ml=META_LABELS[curMeta]||META_LABELS.pending;
+      const li=document.createElement('li');li.className='sitem';
+      li.style.cssText='display:flex;align-items:center;gap:6px;padding:5px 8px';
+      const nm=document.createElement('span');nm.style.flex='1';nm.textContent=item;
+      li.appendChild(nm);
+      if(isStatus){{
+        const badge=document.createElement('span');
+        badge.style.cssText=`background:${{ml.bg}};color:${{ml.fg}};font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap`;
+        badge.textContent=ml.lbl;
+        const sel=document.createElement('select');
+        sel.style.cssText='font-size:10px;padding:2px 5px;border:1.5px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer';
+        ['approved','rejected','pending','cancelled'].forEach(m=>{{
+          const o=document.createElement('option');o.value=m;
+          o.textContent=META_LABELS[m].lbl;
+          if(m===curMeta)o.selected=true;
+          sel.appendChild(o);
+        }});
+        sel.onchange=async()=>{{
+          const nm2=META_LABELS[sel.value];
+          badge.style.background=nm2.bg;badge.style.color=nm2.fg;badge.textContent=nm2.lbl;
+          await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:item,meta:sel.value}})}});
+          toast('✔ Saved','ok');
+        }};
+        li.appendChild(badge);li.appendChild(sel);
+      }}
+      const rb=document.createElement('button');rb.textContent='Remove';
+      rb.onclick=()=>rmItem(ln,item,rb);li.appendChild(rb);
+      ul.appendChild(li);
+    }});
     body.appendChild(ul);
     const ar=document.createElement('div');ar.className='addrow';
-    ar.innerHTML=`<input id="new-${{ln}}" placeholder="New item..."><button class="btn btn-ok btn-sm" onclick="addItem('${{ln}}')">Add</button>`;
+    const ni=document.createElement('input');ni.id='new-'+ln;ni.placeholder='New item...';
+    const ab=document.createElement('button');ab.className='btn btn-ok btn-sm';ab.textContent='Add';ab.onclick=()=>addItem(ln);
+    ar.appendChild(ni);ar.appendChild(ab);
+    if(isStatus){{
+      const hint=document.createElement('div');
+      hint.style.cssText='font-size:10px;color:#94a3b8;margin-top:4px';
+      hint.textContent='🏷 Set category for each status — affects Dashboard counts';
+      ar.appendChild(hint);
+    }}
     body.appendChild(ar);
   }}
-  body.innerHTML+=`<div class="stitle">New List</div><div class="addrow"><input id="new-list" placeholder="List name"><button class="btn btn-pr btn-sm" onclick="mkList()">Create</button></div>`;
+  const nl=document.createElement('div');nl.className='stitle';nl.textContent='New List';
+  const nar=document.createElement('div');nar.className='addrow';
+  nar.innerHTML=`<input id="new-list" placeholder="List name"><button class="btn btn-pr btn-sm" onclick="mkList()">Create</button>`;
+  body.appendChild(nl);body.appendChild(nar);
   openM('lists-modal');
 }}
+
 async function addItem(ln){{
   const inp=document.getElementById('new-'+ln);const val=inp?.value.trim();if(!val)return;
   await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item:val}})}});
+  // Auto-assign pending meta for new status items
+  if(ln.toLowerCase().startsWith('status')){{
+    await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:val,meta:'pending'}})}});
+  }}
   await loadLists(true);openLists();
 }}
 async function rmItem(ln,item,btn){{

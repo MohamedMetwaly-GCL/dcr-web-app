@@ -117,8 +117,10 @@ CREATE TABLE IF NOT EXISTS dropdown_lists (
     list_name   TEXT NOT NULL,
     item_value  TEXT NOT NULL,
     sort_order  INTEGER DEFAULT 0,
+    meta        TEXT DEFAULT NULL,
     UNIQUE (project_id, list_name, item_value)
 );
+ALTER TABLE dropdown_lists ADD COLUMN IF NOT EXISTS meta TEXT DEFAULT NULL;
 """
 
 DEFAULT_DOC_TYPES = [
@@ -149,6 +151,22 @@ DEFAULT_COLS = [
     ("remarks","Remarks","text",None,11),
     ("fileLocation","File Location","link",None,12),
 ]
+
+# Default meta categories for known status values
+DEFAULT_STATUS_META = {
+    "A - Approved":              "approved",
+    "B - Approved As Noted":     "approved",
+    "B,C - Approved & Resubmit": "approved",
+    "C - Revise & Resubmit":     "rejected",
+    "D - Review not Required":   "rejected",
+    "Under Review":              "pending",
+    "Pending":                   "pending",
+    "Open":                      "pending",
+    "Not Closed":                "pending",
+    "Replied":                   "approved",
+    "Closed":                    "approved",
+    "Cancelled":                 "cancelled",
+}
 
 DEFAULT_LISTS = {
     "discipline": ["Electrical","Mechanical","Civil","Structural","Architecture","General","Others"],
@@ -279,8 +297,11 @@ def _seed_project(pid):
                 (pid, code, ck, lbl, ct, ln, so))
     for ln, items in DEFAULT_LISTS.items():
         for i, item in enumerate(items):
-            exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                (pid, ln, item, i))
+            meta = DEFAULT_STATUS_META.get(item) if ln == "status" else None
+            exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
+                " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
+                " DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
+                (pid, ln, item, i, meta))
 
 # ── Logos ─────────────────────────────────────────────────────
 def get_logo(pid, key):
@@ -369,6 +390,28 @@ def get_lists(pid):
                 q("SELECT item_value FROM dropdown_lists WHERE project_id=%s AND list_name=%s ORDER BY sort_order",
                   (pid, n))] for n in names}
 
+def get_lists_with_meta(pid):
+    """Return {list_name: [{value, meta}]} for status-aware lists."""
+    rows = q("SELECT list_name, item_value, meta FROM dropdown_lists"
+             " WHERE project_id=%s ORDER BY list_name, sort_order", (pid,))
+    result = {}
+    for r in rows:
+        result.setdefault(r["list_name"], []).append(
+            {"value": r["item_value"], "meta": r["meta"]})
+    return result
+
+def get_status_meta_map(pid):
+    """Return {status_value: meta} for all status lists in this project."""
+    rows = q("SELECT item_value, meta FROM dropdown_lists"
+             " WHERE project_id=%s AND list_name LIKE %s AND meta IS NOT NULL",
+             (pid, "status%"))
+    return {r["item_value"]: r["meta"] for r in rows}
+
+def set_list_item_meta(pid, list_name, item_value, meta):
+    exe("UPDATE dropdown_lists SET meta=%s"
+        " WHERE project_id=%s AND list_name=%s AND item_value=%s",
+        (meta, pid, list_name, item_value))
+
 def add_list_item(pid, list_name, item):
     r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
           (pid, list_name), one=True)
@@ -383,6 +426,13 @@ def remove_list_item(pid, list_name, item):
 def get_dashboard_stats():
     """One big SQL call — replaces N×M individual queries."""
     import re, json as _json
+    # Pre-load status meta for all projects
+    meta_rows = q("SELECT project_id, item_value, meta FROM dropdown_lists"
+                  " WHERE list_name LIKE %s AND meta IS NOT NULL", ("status%",))
+    # meta_map[pid][status_value] = meta
+    meta_map = {}
+    for r in meta_rows:
+        meta_map.setdefault(r["project_id"], {})[r["item_value"]] = r["meta"]
     from utils import is_overdue
 
     projects = get_projects()
@@ -444,7 +494,7 @@ def get_dashboard_stats():
                 base = re.sub(r"\s*REV\d+$", "", doc_no, flags=re.IGNORECASE).strip()
                 doc_groups.setdefault(base, []).append((rev, d))
 
-            RJ_STATUSES = {"C - Revise & Resubmit", "D - Review not Required"}
+            pid_meta = meta_map.get(pid, {})
 
             for base, revisions in doc_groups.items():
                 revisions.sort(key=lambda x: x[0])   # sort ascending by rev
@@ -452,11 +502,13 @@ def get_dashboard_stats():
                 doc_no = d.get("docNo", "")
                 status = d.get("status", "")
                 disc   = d.get("discipline","") or "—"
-                if status == "Cancelled": continue   # skip cancelled entirely
+                # Resolve meta: DB first, then fallback to DEFAULT_STATUS_META
+                meta = pid_meta.get(status) or DEFAULT_STATUS_META.get(status) or "pending"
+                if meta == "cancelled": continue   # skip cancelled entirely
                 t += 1
-                is_ap = status.startswith("A") or "approved" in status.lower()
-                is_pe = status in ("Under Review", "Pending", "")
-                is_rj = (status in RJ_STATUSES)
+                is_ap = (meta == "approved")
+                is_rj = (meta == "rejected")
+                is_pe = (meta == "pending")
                 is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"))
                 if is_ap: ap += 1
                 if is_pe: pe += 1
