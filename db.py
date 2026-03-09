@@ -434,27 +434,29 @@ def get_dashboard_stats():
             t=ap=pe=ov=rj = 0
             disc_map = {}
 
-            # ── Approach 1: group by base doc number, use LATEST revision status ──
-            # Step 1: build dict  base_key → {latest_rev, latest_row, issued}
-            doc_groups = {}  # base_key → (max_rev, row_with_max_rev)
+            # ── Approach 1: group by base doc, use LATEST rev status ──
+            # Collect ALL revisions per base document first
+            doc_groups = {}  # base_key → list of (rev, row)
             for d in rows:
                 doc_no = d.get("docNo", "")
                 m = re.search(r"REV(\d+)", doc_no, re.IGNORECASE)
                 rev = int(m.group(1)) if m else 0
-                # base key = everything before REV
                 base = re.sub(r"\s*REV\d+$", "", doc_no, flags=re.IGNORECASE).strip()
-                if base not in doc_groups or rev > doc_groups[base][0]:
-                    doc_groups[base] = (rev, d)
+                doc_groups.setdefault(base, []).append((rev, d))
 
-            # Step 2: count from latest revision per unique document
-            for base, (rev, d) in doc_groups.items():
+            RJ_STATUSES = {"C - Revise & Resubmit", "D - Review not Required"}
+
+            for base, revisions in doc_groups.items():
+                revisions.sort(key=lambda x: x[0])   # sort ascending by rev
+                latest_rev, d = revisions[-1]
                 doc_no = d.get("docNo", "")
                 status = d.get("status", "")
                 disc   = d.get("discipline","") or "—"
-                t += 1   # one unique document
+                if status == "Cancelled": continue   # skip cancelled entirely
+                t += 1
                 is_ap = status.startswith("A") or "approved" in status.lower()
-                is_pe = status in ("Under Review","Pending","")
-                is_rj = status in ("C - Revise & Resubmit","D - Review not Required","Cancelled")
+                is_pe = status in ("Under Review", "Pending", "")
+                is_rj = (status in RJ_STATUSES)
                 is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"))
                 if is_ap: ap += 1
                 if is_pe: pe += 1

@@ -1253,12 +1253,17 @@ function renderDiscTable(data){{
 }}
 
 function updateKPIs(d){{
-  const t=d.reduce((s,p)=>s+p.total,0),ap=d.reduce((s,p)=>s+p.approved,0),
-        pe=d.reduce((s,p)=>s+p.pending,0),ov=d.reduce((s,p)=>s+p.overdue,0);
+  const t =d.reduce((s,p)=>s+p.total,0),
+        ap=d.reduce((s,p)=>s+p.approved,0),
+        pe=d.reduce((s,p)=>s+p.pending,0),
+        ov=d.reduce((s,p)=>s+p.overdue,0),
+        rj=d.reduce((s,p)=>s+(p.rejected||0),0);
   document.getElementById('kpi-total').textContent=t;
   document.getElementById('kpi-approved').textContent=ap;
   document.getElementById('kpi-pending').textContent=pe;
   document.getElementById('kpi-overdue').textContent=ov;
+  const rjEl=document.getElementById('kpi-rejected');
+  if(rjEl)rjEl.textContent=rj;
   document.getElementById('kpi-pct').textContent=(t?Math.round(ap/t*100):0)+'%';
   document.getElementById('kpi-projs').textContent=d.length;
 }}
