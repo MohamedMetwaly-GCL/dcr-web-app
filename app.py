@@ -1547,7 +1547,7 @@ tr:hover td{{background:rgba(37,99,168,.10);transition:background .1s}}
 tr.ov td{{background:#fff5f5}}
 tr.rv td{{color:var(--mu)}}
 tr.alt td{{background:#fafbfd}}
-.sr{{text-align:center;color:var(--mu);font-size:10px;width:32px}}
+.sr{{text-align:center;color:var(--mu);font-size:10px;min-width:28px}}
 .chkcell{{text-align:center;width:28px;padding:4px!important}}
 .chkcell input{{width:14px;height:14px;cursor:pointer;accent-color:var(--pr)}}
 .acts{{white-space:nowrap;width:64px}}
@@ -1882,7 +1882,12 @@ function buildHead(){{
   const chk=document.createElement('th'); chk.className='chkcell';
   if(CAN_EDIT)chk.innerHTML='<input type="checkbox" id="chkall" onchange="selAll(this.checked)">';
   hr.appendChild(chk);
-  const sr=document.createElement('th');sr.textContent='Sr.';sr.style.cssText='width:34px;cursor:default;white-space:normal;word-break:break-word';hr.appendChild(sr);
+  const sr=document.createElement('th');sr.textContent='Sr.';
+  const _srW=state.colWidths&&state.colWidths['_sr'];
+  sr.dataset.key='_sr';
+  sr.style.cssText=(_srW?'width:'+_srW+'px;min-width:'+_srW+'px;max-width:'+_srW+'px;':'width:34px;')
+    +'white-space:normal;word-break:break-word;cursor:default';
+  hr.appendChild(sr);
   state.cols.forEach(col=>{{
     const th=document.createElement('th');th.dataset.key=col.col_key;
     const w=state.colWidths&&state.colWidths[col.col_key];
@@ -2015,7 +2020,10 @@ function renderRows(){{
     const tc=document.createElement('td');tc.className='chkcell';
     if(CAN_EDIT){{const cb=document.createElement('input');cb.type='checkbox';cb.dataset.id=row._id;cb.onchange=updBulk;tc.appendChild(cb);}}
     tr.appendChild(tc);
-    const tsr=document.createElement('td');tsr.className='sr';tsr.textContent=row._isRev?'':sr;tr.appendChild(tsr);
+    const tsr=document.createElement('td');tsr.className='sr';
+    const _srTdW=state.colWidths&&state.colWidths['_sr'];
+    if(_srTdW)tsr.style.cssText='width:'+_srTdW+'px;min-width:'+_srTdW+'px;max-width:'+_srTdW+'px';
+    tsr.textContent=row._isRev?'':sr;tr.appendChild(tsr);
     state.cols.forEach(col=>{{
       const td=document.createElement('td');const key=col.col_key;let val='';
       if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}

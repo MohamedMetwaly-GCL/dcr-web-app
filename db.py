@@ -432,14 +432,26 @@ def get_dashboard_stats():
         for dt in dts:
             rows  = rec_map.get((pid, dt["id"]), [])
             t=ap=pe=ov=rj = 0
-            disc_map = {}   # discipline -> {total,approved,pending,rejected,overdue}
+            disc_map = {}
+
+            # ── Approach 1: group by base doc number, use LATEST revision status ──
+            # Step 1: build dict  base_key → {latest_rev, latest_row, issued}
+            doc_groups = {}  # base_key → (max_rev, row_with_max_rev)
             for d in rows:
                 doc_no = d.get("docNo", "")
                 m = re.search(r"REV(\d+)", doc_no, re.IGNORECASE)
                 rev = int(m.group(1)) if m else 0
+                # base key = everything before REV
+                base = re.sub(r"\s*REV\d+$", "", doc_no, flags=re.IGNORECASE).strip()
+                if base not in doc_groups or rev > doc_groups[base][0]:
+                    doc_groups[base] = (rev, d)
+
+            # Step 2: count from latest revision per unique document
+            for base, (rev, d) in doc_groups.items():
+                doc_no = d.get("docNo", "")
                 status = d.get("status", "")
                 disc   = d.get("discipline","") or "—"
-                if rev == 0: t += 1
+                t += 1   # one unique document
                 is_ap = status.startswith("A") or "approved" in status.lower()
                 is_pe = status in ("Under Review","Pending","")
                 is_rj = status in ("C - Revise & Resubmit","D - Review not Required","Cancelled")
@@ -450,11 +462,12 @@ def get_dashboard_stats():
                 if is_ov: ov += 1
                 # Discipline breakdown
                 ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
-                if rev == 0: ds["total"] += 1
+                ds["total"] += 1
                 if is_ap: ds["approved"] += 1
                 if is_pe: ds["pending"]  += 1
                 if is_rj: ds["rejected"] += 1
                 if is_ov: ds["overdue"]  += 1
+
             disc_list = [{"disc":k,"total":v["total"],"approved":v["approved"],
                           "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"]}
                          for k,v in sorted(disc_map.items())]
