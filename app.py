@@ -65,6 +65,11 @@ def health():
     except Exception as e:
         return jsonify(status="error", db=str(e)), 503
 
+@app.route("/api/keepalive")
+def keepalive():
+    """Called periodically to prevent free-tier sleep."""
+    return jsonify(status="ok", ts=datetime.datetime.now().isoformat())
+
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
@@ -1056,62 +1061,216 @@ async function login(){{
 
 
 
+
+# ── Phase 2 — Analytics APIs ─────────────────────────────────
+@app.route("/api/analytics/trend")
+def api_trend():
+    pid = request.args.get("pid")
+    return jsonify(db.get_monthly_trend(pid))
+
+@app.route("/api/analytics/aging")
+def api_aging():
+    pid = request.args.get("pid")
+    return jsonify(db.get_aging_report(pid))
+
+@app.route("/api/analytics/quality")
+def api_quality():
+    pid = request.args.get("pid")
+    return jsonify(db.get_quality_report(pid))
+
+@app.route("/api/analytics/overdue")
+def api_overdue_list():
+    pid = request.args.get("pid")
+    return jsonify(db.get_overdue_records(pid))
+
+# ── Phase 3 — Overdue Digest API ─────────────────────────────
+@app.route("/api/overdue_digest")
+def api_overdue_digest():
+    """Returns overdue summary for email/display."""
+    u = current_user()
+    if not u: return jsonify(error="LOGIN_REQUIRED"), 403
+    records = db.get_overdue_records()
+    return jsonify({
+        "total": len(records),
+        "records": records[:50],
+        "generated_at": datetime.datetime.now().isoformat()
+    })
+
+# ── Phase 4 — Date range filter for records ──────────────────
+@app.route("/api/records_range/<pid>/<dt_id>")
+def api_records_range(pid, dt_id):
+    """Filter records by issued date range."""
+    from_date = request.args.get("from")
+    to_date   = request.args.get("to")
+    records = db.get_records(pid, dt_id)
+    if from_date:
+        records = [r for r in records if (r.get("issuedDate") or "") >= from_date]
+    if to_date:
+        records = [r for r in records if (r.get("issuedDate") or "") <= to_date]
+    return jsonify(records)
+
+# ── Phase 4 — Executive Summary ──────────────────────────────
+@app.route("/api/executive_summary")
+def api_executive_summary():
+    """One-page executive summary data."""
+    stats  = db.get_dashboard_stats()
+    aging  = db.get_aging_report()
+    quality= db.get_quality_report()
+    overdue= db.get_overdue_records()
+    total_docs = sum(p["total"]    for p in stats)
+    total_ap   = sum(p["approved"] for p in stats)
+    total_pe   = sum(p["pending"]  for p in stats)
+    total_rj   = sum(p["rejected"] for p in stats)
+    total_ov   = sum(p["overdue"]  for p in stats)
+    return jsonify({
+        "summary": {
+            "total": total_docs, "approved": total_ap,
+            "pending": total_pe, "rejected": total_rj,
+            "overdue": total_ov,
+            "completion_pct": round(total_ap/total_docs*100) if total_docs else 0,
+            "projects": len(stats),
+        },
+        "projects": [{"name":p["name"],"code":p["code"],"total":p["total"],
+                      "approved":p["approved"],"pct":p["pct"],"overdue":p["overdue"]}
+                     for p in stats],
+        "aging":   aging,
+        "quality": quality,
+        "top_overdue": overdue[:10],
+        "generated_at": datetime.datetime.now().strftime("%d-%m-%Y %H:%M"),
+    })
+
+
+
 def render_dashboard(u):
     btns, uname, rlbl, rbg = _user_info_html(u)
     role = u["role"] if u else "guest"
 
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR \u2014 Dashboard</title>
+<title>DCR — Dashboard</title>
 {BASE_CSS}
 <style>
+/* ── Layout ── */
 body{{display:flex;flex-direction:column;min-height:100vh}}
-.wrap{{max-width:1440px;margin:0 auto;padding:18px 14px;flex:1;width:100%}}
-.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px}}
-.kpi{{background:#fff;border-radius:8px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid var(--pr)}}
-.kpi.ok{{border-left-color:var(--ok)}}.kpi.wa{{border-left-color:var(--wa)}}.kpi.er{{border-left-color:var(--er)}}
-.kval{{font-size:26px;font-weight:800;color:var(--pr)}}
-.kpi.ok .kval{{color:var(--ok)}}.kpi.wa .kval{{color:var(--wa)}}.kpi.er .kval{{color:var(--er)}}
-.klbl{{font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}}
-.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:20px}}
-.pcard{{background:#fff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.08);overflow:hidden;
-  text-decoration:none;color:inherit;display:block;transition:transform .15s,box-shadow .15s;position:relative}}
+.wrap{{max-width:1480px;margin:0 auto;padding:14px 12px;flex:1;width:100%}}
+
+/* ── Dark Mode ── */
+body.dark{{--bg:#0f172a;--wh:#1e293b;--tx:#e2e8f0;--mu:#94a3b8;--bd:#334155;--pr:#3b82f6;--pl:#60a5fa}}
+body.dark .kpi,body.dark .ccard,body.dark .pcard,body.dark .panel,
+body.dark .psel-bar,body.dark .tbl-wrap{{background:#1e293b;color:#e2e8f0}}
+body.dark .dt-tbl th{{background:#1e3a5f}}
+body.dark .dt-tbl td{{border-color:#334155}}
+body.dark .dt-tbl tr:hover td{{background:#1e293b}}
+body.dark #topbar{{background:#0f2640}}
+
+/* ── KPIs ── */
+.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px}}
+.kpi{{background:var(--wh);border-radius:10px;padding:12px 14px;
+  box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid var(--pr);cursor:default;
+  transition:transform .15s,box-shadow .15s}}
+.kpi:hover{{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.12)}}
+.kpi.ok{{border-left-color:var(--ok)}}.kpi.wa{{border-left-color:var(--wa)}}
+.kpi.er{{border-left-color:var(--er)}}.kpi.pu{{border-left-color:#7c3aed}}
+.kval{{font-size:28px;font-weight:800;color:var(--pr);line-height:1}}
+.kpi.ok .kval{{color:var(--ok)}}.kpi.wa .kval{{color:var(--wa)}}
+.kpi.er .kval{{color:var(--er)}}.kpi.pu .kval{{color:#7c3aed}}
+.klbl{{font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:3px}}
+.ktrend{{font-size:10px;color:var(--mu);margin-top:2px}}
+
+/* ── Toolbar ── */
+.psel-bar{{display:flex;align-items:center;gap:8px;background:var(--wh);padding:8px 12px;
+  border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:12px;flex-wrap:wrap}}
+.psel-bar label{{font-size:11px;font-weight:700;color:var(--mu);white-space:nowrap}}
+.psel-bar select,.psel-bar input{{padding:5px 10px;border:1.5px solid var(--bd);
+  border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none}}
+.tbtn{{padding:5px 11px;border:1.5px solid var(--bd);border-radius:var(--rd);
+  background:var(--wh);cursor:pointer;font-size:11px;font-weight:600;font-family:inherit;
+  transition:all .15s;color:var(--tx)}}
+.tbtn:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
+.tbtn.active{{background:var(--pr);color:#fff;border-color:var(--pr)}}
+
+/* ── Charts grid ── */
+.charts-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}}
+.charts-grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}}
+.ccard{{background:var(--wh);border-radius:10px;padding:14px;
+  box-shadow:0 1px 4px rgba(0,0,0,.07)}}
+.clbl{{font-size:10px;font-weight:700;color:var(--pr);text-transform:uppercase;
+  letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:6px}}
+canvas{{max-height:200px}}
+
+/* ── Project cards ── */
+.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px}}
+.pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
+  overflow:hidden;text-decoration:none;color:inherit;display:block;
+  transition:transform .15s,box-shadow .15s;position:relative}}
 .pcard:hover{{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.12)}}
 .pchdr{{background:var(--pr);padding:10px 12px;display:flex;align-items:center;justify-content:space-between}}
 .pcbody{{padding:10px 12px}}
 .prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}}
-.prog{{height:4px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:5px}}
-.progf{{height:100%;border-radius:99px}}
-.addcard{{background:#fff;border-radius:8px;border:2px dashed var(--bd);min-height:130px;
+.prog{{height:5px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:5px}}
+.progf{{height:100%;border-radius:99px;transition:width .6s ease}}
+.addcard{{background:var(--wh);border-radius:10px;border:2px dashed var(--bd);min-height:130px;
   display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
   cursor:pointer;transition:all .15s;color:var(--mu);font-size:12px}}
-.addcard:hover{{border-color:var(--pr);color:var(--pr);background:#f7faff}}
-.charts{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}}
-.ccard{{background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.07)}}
-.clbl{{font-size:10px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}}
-canvas{{max-height:190px}}
-.urow{{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg);border-radius:4px;font-size:12px;margin-bottom:4px}}
-.pbtn{{padding:2px 8px;font-size:10px;border:1.5px solid var(--bd);background:#fff;border-radius:3px;cursor:pointer}}
-.pbtn.on{{background:var(--pr);color:#fff;border-color:var(--pr)}}
-.pbtn:hover:not(.on){{background:var(--bg)}}
+.addcard:hover{{border-color:var(--pr);color:var(--pr)}}
+
+/* ── Tables ── */
+.tbl-wrap{{background:var(--wh);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07);
+  overflow:hidden;margin-bottom:14px}}
+.dt-tbl{{width:100%;border-collapse:collapse;font-size:12px}}
+.dt-tbl th{{background:var(--pr);color:#fff;padding:8px 10px;
+  text-align:left;font-weight:600;white-space:nowrap;font-size:11px}}
+.dt-tbl td{{padding:6px 10px;border-bottom:1px solid #edf0f5}}
+.dt-tbl tr:hover td{{background:#f0f4f8}}
+.dt-tbl .alt td{{background:#fafbfd}}
+
+/* ── Overdue panel ── */
+.ov-row{{display:flex;align-items:center;gap:8px;padding:7px 10px;
+  border-bottom:1px solid var(--bd);font-size:11px}}
+.ov-row:last-child{{border-bottom:none}}
+.ov-badge{{background:#fef2f2;color:#ef4444;border-radius:6px;
+  padding:2px 8px;font-weight:700;font-size:10px;white-space:nowrap}}
+.ov-badge.warn{{background:#fffbeb;color:#f59e0b}}
+
+/* ── Executive Summary panel ── */
+.panel{{background:var(--wh);border-radius:10px;padding:16px;
+  box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:14px}}
+.panel-title{{font-size:12px;font-weight:700;color:var(--pr);
+  text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;
+  border-bottom:2px solid var(--pr);padding-bottom:6px}}
+
+/* ── Tabs ── */
+.tab-bar{{display:flex;gap:4px;margin-bottom:12px;border-bottom:2px solid var(--bd);padding-bottom:0}}
+.tab{{padding:8px 16px;cursor:pointer;font-size:12px;font-weight:600;color:var(--mu);
+  border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}}
+.tab.active{{color:var(--pr);border-bottom-color:var(--pr)}}
+.tab:hover:not(.active){{color:var(--tx)}}
+.tab-pane{{display:none}}.tab-pane.active{{display:block}}
+
+/* ── Loading spinner ── */
 #ld{{position:fixed;inset:0;background:rgba(15,38,64,.92);z-index:500;
   display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px}}
 .spin{{width:40px;height:40px;border:4px solid rgba(255,255,255,.2);border-top-color:#f0a500;
   border-radius:50%;animation:spin .6s linear infinite}}
 @keyframes spin{{to{{transform:rotate(360deg)}}}}
-.psel-bar{{display:flex;align-items:center;gap:10px;background:#fff;padding:8px 12px;
-  border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:14px;flex-wrap:wrap}}
-.psel-bar label{{font-size:11px;font-weight:700;color:var(--mu);white-space:nowrap}}
-.psel-bar select{{padding:5px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);
-  font-family:inherit;font-size:12px;outline:none}}
-.dt-tbl{{width:100%;border-collapse:collapse;font-size:12px}}
-.dt-tbl th{{background:var(--pr);color:#fff;padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap}}
-.dt-tbl td{{padding:6px 10px;border-bottom:1px solid #edf0f5}}
-.dt-tbl tr:hover td{{background:#f0f4f8}}
-.dt-tbl .alt td{{background:#fafbfd}}
-.del-pbtn{{background:none;border:none;cursor:pointer;color:#ef4444;font-size:12px;padding:2px 5px;border-radius:3px;line-height:1}}
+
+/* ── Mobile ── */
+@media(max-width:768px){{
+  .charts-grid,.charts-grid-3{{grid-template-columns:1fr}}
+  .pgrid{{grid-template-columns:1fr}}
+  .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
+  .wrap{{padding:8px}}
+  .tab{{padding:6px 10px;font-size:11px}}
+}}
+@media(max-width:480px){{
+  .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
+  .psel-bar{{flex-direction:column;align-items:stretch}}
+}}
+
+/* ── Del button ── */
+.del-pbtn{{background:none;border:none;cursor:pointer;color:#ef4444;
+  font-size:11px;padding:2px 5px;border-radius:3px}}
 .del-pbtn:hover{{background:#fef2f2}}
-@media(max-width:768px){{.charts{{grid-template-columns:1fr}}.pgrid{{grid-template-columns:1fr}}}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head><body>
@@ -1126,6 +1285,7 @@ canvas{{max-height:190px}}
   <span style="font-weight:700;font-size:14px">Document Control Register</span>
   <div class="sp"></div>
   {btns}
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
@@ -1133,73 +1293,131 @@ canvas{{max-height:190px}}
 </div>
 
 <div class="wrap">
+
+  <!-- KPIs -->
   <div class="kpi-grid">
     <div class="kpi"><div class="kval" id="kpi-total">—</div><div class="klbl">Total Docs</div></div>
     <div class="kpi ok"><div class="kval" id="kpi-approved">—</div><div class="klbl">Approved</div></div>
     <div class="kpi wa"><div class="kval" id="kpi-pending">—</div><div class="klbl">Under Review</div></div>
     <div class="kpi er"><div class="kval" id="kpi-overdue">—</div><div class="klbl">Overdue</div></div>
-    <div class="kpi" style="border-left-color:#7c3aed"><div class="kval" id="kpi-rejected" style="color:#7c3aed">—</div><div class="klbl">Rejected/Revise</div></div>
+    <div class="kpi pu"><div class="kval" id="kpi-rejected">—</div><div class="klbl">Rejected/Revise</div></div>
     <div class="kpi"><div class="kval" id="kpi-pct">—</div><div class="klbl">Completion %</div></div>
     <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
   </div>
 
+  <!-- Toolbar -->
   <div class="psel-bar">
     <label>🔍 Project:</label>
     <select id="proj-sel" onchange="filterProject(this.value)">
       <option value="">All Projects</option>
     </select>
+    <label>🏗 Discipline:</label>
+    <select id="disc-sel" onchange="filterDisc(this.value)">
+      <option value="">All Disciplines</option>
+    </select>
+    <div class="sp" style="flex:1"></div>
+    <button class="tbtn" onclick="showTab('overview')">📊 Overview</button>
+    <button class="tbtn" onclick="showTab('analytics')">📈 Analytics</button>
+    <button class="tbtn" onclick="showTab('overdue')">⚠️ Overdue</button>
+    <button class="tbtn" onclick="showTab('executive')">📋 Executive</button>
   </div>
 
-  <div class="stitle">🗂 Projects</div>
-  <div class="pgrid" id="pgrid"></div>
+  <!-- TAB: OVERVIEW -->
+  <div id="tab-overview" class="tab-pane active">
+    <div class="stitle">🗂 Projects</div>
+    <div class="pgrid" id="pgrid"></div>
 
-  <div class="charts">
-    <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
-    <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
+    <div class="charts-grid">
+      <div class="ccard"><div class="clbl">📊 Documents by Project</div><canvas id="cProj"></canvas></div>
+      <div class="ccard"><div class="clbl">🥧 Status Distribution</div><canvas id="cStatus"></canvas></div>
+    </div>
+
+    <div class="stitle">📋 Document Types Summary</div>
+    <div class="tbl-wrap">
+      <table class="dt-tbl">
+        <thead><tr>
+          <th>Project</th><th>Code</th><th>Type</th>
+          <th style="text-align:center">Total</th>
+          <th style="text-align:center">Approved</th>
+          <th style="text-align:center">Pending</th>
+          <th style="text-align:center">Rejected</th>
+          <th style="text-align:center">Overdue</th>
+        </tr></thead>
+        <tbody id="dt-tbody"></tbody>
+      </table>
+      <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+    </div>
+
+    <div class="stitle">🏗 Discipline Breakdown</div>
+    <div class="tbl-wrap">
+      <table class="dt-tbl">
+        <thead><tr>
+          <th>Project</th><th>Doc Type</th><th>Discipline</th>
+          <th style="text-align:center">Total</th>
+          <th style="text-align:center">Approved</th>
+          <th style="text-align:center">Pending</th>
+          <th style="text-align:center">Rejected</th>
+          <th style="text-align:center">Overdue</th>
+        </tr></thead>
+        <tbody id="disc-tbody"></tbody>
+      </table>
+      <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+    </div>
   </div>
 
-  <div class="stitle">📋 Document Types Summary</div>
-  <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:20px">
-    <table class="dt-tbl">
-      <thead><tr>
-        <th>Project</th><th>Code</th><th>Type</th>
-        <th style="text-align:center">Total</th>
-        <th style="text-align:center">Approved</th>
-        <th style="text-align:center">Pending</th>
-        <th style="text-align:center">Rejected</th>
-        <th style="text-align:center">Overdue</th>
-        <th style="text-align:center">Open</th>
-      </tr></thead>
-      <tbody id="dt-tbody"></tbody>
-    </table>
-    <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+  <!-- TAB: ANALYTICS -->
+  <div id="tab-analytics" class="tab-pane">
+    <div class="charts-grid">
+      <div class="ccard">
+        <div class="clbl">📅 Monthly Trend (last 6 months)</div>
+        <canvas id="cTrend"></canvas>
+      </div>
+      <div class="ccard">
+        <div class="clbl">⏳ Aging — Pending Docs (Days Lapsed)</div>
+        <canvas id="cAging"></canvas>
+      </div>
+    </div>
+    <div class="charts-grid">
+      <div class="ccard">
+        <div class="clbl">🔄 Document Quality (Revisions Needed)</div>
+        <canvas id="cQuality"></canvas>
+      </div>
+      <div class="ccard">
+        <div class="clbl">✅ Approval Rate by Doc Type</div>
+        <canvas id="cApprRate"></canvas>
+      </div>
+    </div>
   </div>
 
-  <div class="stitle" style="margin-top:20px">🏗 Discipline Breakdown by Document Type</div>
-  <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:24px">
-    <table class="dt-tbl">
-      <thead><tr>
-        <th>Project</th><th>Doc Type</th><th>Discipline</th>
-        <th style="text-align:center">Total</th>
-        <th style="text-align:center">Approved</th>
-        <th style="text-align:center">Pending</th>
-        <th style="text-align:center;color:#c4b5fd">Rejected</th>
-        <th style="text-align:center">Overdue</th>
-      </tr></thead>
-      <tbody id="disc-tbody"></tbody>
-    </table>
-    <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+  <!-- TAB: OVERDUE -->
+  <div id="tab-overdue" class="tab-pane">
+    <div class="panel">
+      <div class="panel-title">⚠️ Overdue Documents — Awaiting Reply</div>
+      <div id="ov-filter" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input id="ov-search" placeholder="🔍 Search..." oninput="filterOverdue()"
+          style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;flex:1;min-width:160px">
+        <select id="ov-sort" onchange="filterOverdue()"
+          style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
+          <option value="days">Sort: Most Overdue</option>
+          <option value="doc">Sort: Doc No.</option>
+          <option value="disc">Sort: Discipline</option>
+        </select>
+      </div>
+      <div id="ov-list" style="max-height:450px;overflow-y:auto"></div>
+      <div id="ov-count" style="font-size:11px;color:var(--mu);margin-top:8px;text-align:right"></div>
+    </div>
   </div>
+
+  <!-- TAB: EXECUTIVE SUMMARY -->
+  <div id="tab-executive" class="tab-pane">
+    <div id="exec-content">
+      <div style="text-align:center;padding:40px;color:var(--mu)">Loading...</div>
+    </div>
+  </div>
+
 </div>
 
-<div class="overlay hidden" id="admin-modal">
-  <div class="modal" style="max-width:780px">
-    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
-    <div class="mbody" id="admin-body"></div>
-    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
-  </div>
-</div>
-
+<!-- Modals -->
 <div class="overlay hidden" id="newproj-modal">
   <div class="modal" style="max-width:420px">
     <div class="mhdr"><span>➕ New Project</span><button class="xbtn" onclick="closeM('newproj-modal')">✕</button></div>
@@ -1220,58 +1438,88 @@ canvas{{max-height:190px}}
 {SHARED_JS}
 <script>
 const ROLE='{role}';
-let STATS=[]; let pChart,sChart;
+let STATS=[],OVERDUE_DATA=[],EXEC_DATA=null;
+let pChart,sChart,tChart,aChart,qChart,arChart;
+let _currentDisc='',_currentPid='';
 
+// ── Dark mode ──────────────────────────────────────────────
+function toggleDark(){{
+  document.body.classList.toggle('dark');
+  const on=document.body.classList.contains('dark');
+  document.getElementById('darkBtn').textContent=on?'☀️':'🌙';
+  localStorage.setItem('dcr_dark',on?'1':'');
+}}
+if(localStorage.getItem('dcr_dark')){{
+  document.body.classList.add('dark');
+  document.getElementById('darkBtn').textContent='☀️';
+}}
+
+// ── Tab switching ──────────────────────────────────────────
+function showTab(name){{
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='analytics') loadAnalytics();
+  if(name==='overdue')   loadOverdue();
+  if(name==='executive') loadExecutive();
+}}
+
+// ── Init ──────────────────────────────────────────────────
 async function init(){{
   try{{
     STATS=await apiFetch('/api/dashboard_stats');
     if(!STATS)return;
-    document.getElementById('proj-sel').innerHTML='<option value="">All Projects</option>'+
+    // Populate project filter
+    document.getElementById('proj-sel').innerHTML=
+      '<option value="">All Projects</option>'+
       STATS.map(p=>`<option value="${{p.id}}">${{p.name}} (${{p.code}})</option>`).join('');
-    renderAll('');
+    // Populate discipline filter
+    const discs=new Set();
+    STATS.forEach(p=>(p.dt_stats||[]).forEach(dt=>
+      (dt.disc_breakdown||[]).forEach(d=>discs.add(d.disc))));
+    document.getElementById('disc-sel').innerHTML=
+      '<option value="">All Disciplines</option>'+
+      [...discs].sort().map(d=>`<option value="${{d}}">${{d}}</option>`).join('');
+    renderAll('','');
   }}finally{{document.getElementById('ld').style.display='none';}}
 }}
 
-function filterProject(pid){{renderAll(pid);}}
+function filterProject(pid){{_currentPid=pid;renderAll(pid,_currentDisc);}}
+function filterDisc(disc){{_currentDisc=disc;renderAll(_currentPid,disc);}}
 
-function getFiltered(pid){{return pid?STATS.filter(s=>s.id===pid):STATS;}}
+function getFiltered(pid,disc){{
+  let d=pid?STATS.filter(s=>s.id===pid):STATS;
+  if(disc){{
+    d=d.map(p=>{{
+      const dtFiltered=(p.dt_stats||[]).map(dt=>{{
+        const discF=(dt.disc_breakdown||[]).filter(ds=>ds.disc===disc);
+        const t=discF.reduce((s,r)=>s+r.total,0);
+        const ap=discF.reduce((s,r)=>s+r.approved,0);
+        const pe=discF.reduce((s,r)=>s+r.pending,0);
+        const rj=discF.reduce((s,r)=>s+r.rejected,0);
+        const ov=discF.reduce((s,r)=>s+r.overdue,0);
+        return {{...dt,total:t,approved:ap,pending:pe,rejected:rj,overdue:ov,disc_breakdown:discF}};
+      }}).filter(dt=>dt.total>0);
+      const t=dtFiltered.reduce((s,dt)=>s+dt.total,0);
+      const ap=dtFiltered.reduce((s,dt)=>s+dt.approved,0);
+      return {{...p,dt_stats:dtFiltered,total:t,approved:ap,
+        pct:t?Math.round(ap/t*100):0}};
+    }}).filter(p=>p.total>0);
+  }}
+  return d;
+}}
 
-function renderAll(pid){{
-  const d=getFiltered(pid);
+function renderAll(pid,disc){{
+  const d=getFiltered(pid,disc);
   updateKPIs(d);renderCards(d,pid);renderCharts(d);renderDTTable(d);renderDiscTable(d);
 }}
 
-function renderDiscTable(data){{
-  const tbody=document.getElementById('disc-tbody');if(!tbody)return;
-  const empty=document.getElementById('disc-empty');
-  tbody.innerHTML='';let rows=0;
-  data.forEach(p=>{{
-    (p.dt_stats||[]).forEach(dt=>{{
-      const disc=dt.disc_breakdown||[];if(!disc.length)return;
-      disc.forEach((ds,di)=>{{
-        rows++;
-        const tr=document.createElement('tr');tr.className=rows%2===0?'alt':'';
-        if(di===0){{
-          const tdc=document.createElement('td');tdc.rowSpan=disc.length;tdc.style.cssText='font-size:11px;color:var(--mu);vertical-align:top;padding:6px 10px';tdc.textContent=p.code;tr.appendChild(tdc);
-          const tdt=document.createElement('td');tdt.rowSpan=disc.length;tdt.style.cssText='font-weight:600;vertical-align:top;padding:6px 10px';tdt.textContent=dt.code+' '+dt.name;tr.appendChild(tdt);
-        }}
-        const mk=(v,c)=>{{const td=document.createElement('td');td.style.cssText='text-align:center;padding:6px 8px;font-weight:600;color:'+c;td.textContent=v||'0';return td;}};
-        const tdisc=document.createElement('td');tdisc.style.cssText='padding:6px 10px';tdisc.textContent=ds.disc;tr.appendChild(tdisc);
-        tr.appendChild(mk(ds.total,'#1a3a5c'));tr.appendChild(mk(ds.approved,'#16a34a'));
-        tr.appendChild(mk(ds.pending,'#f59e0b'));tr.appendChild(mk(ds.rejected,'#7c3aed'));tr.appendChild(mk(ds.overdue,'#ef4444'));
-        tbody.appendChild(tr);
-      }});
-    }});
-  }});
-  if(empty)empty.style.display=rows?'none':'block';
-}}
-
+// ── KPIs ──────────────────────────────────────────────────
 function updateKPIs(d){{
-  const t =d.reduce((s,p)=>s+p.total,0),
-        ap=d.reduce((s,p)=>s+p.approved,0),
-        pe=d.reduce((s,p)=>s+p.pending,0),
-        ov=d.reduce((s,p)=>s+p.overdue,0),
-        rj=d.reduce((s,p)=>s+(p.rejected||0),0);
+  const t=d.reduce((s,p)=>s+p.total,0),
+    ap=d.reduce((s,p)=>s+p.approved,0),
+    pe=d.reduce((s,p)=>s+p.pending,0),
+    ov=d.reduce((s,p)=>s+p.overdue,0),
+    rj=d.reduce((s,p)=>s+(p.rejected||0),0);
   document.getElementById('kpi-total').textContent=t;
   document.getElementById('kpi-approved').textContent=ap;
   document.getElementById('kpi-pending').textContent=pe;
@@ -1282,6 +1530,7 @@ function updateKPIs(d){{
   document.getElementById('kpi-projs').textContent=d.length;
 }}
 
+// ── Project Cards ─────────────────────────────────────────
 function renderCards(d,pid){{
   const g=document.getElementById('pgrid');g.innerHTML='';
   d.forEach(p=>{{
@@ -1290,17 +1539,17 @@ function renderCards(d,pid){{
     a.innerHTML=`<div class="pchdr">
       <div><div style="color:rgba(255,255,255,.6);font-size:10px;font-weight:700">${{p.code}}</div>
         <div style="color:#fff;font-weight:700;font-size:13px">${{p.name}}</div></div>
-      ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">⚠${{p.overdue}}</span>`:''}}
-    </div>
+      ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">⚠${{p.overdue}}</span>`:''}}</div>
     <div class="pcbody">
-      ${{p.client?`<div style="font-size:10px;color:var(--mu);margin-bottom:5px">👤 ${{p.client}}</div>`:''}}
-      <div class="prow"><span style="font-size:11px;color:var(--mu)">Total</span><b>${{p.total}}</b></div>
-      <div class="prow"><span style="font-size:11px;color:var(--mu)">Approved</span><b style="color:#16a34a">${{p.approved}}</b></div>
-      <div class="prow"><span style="font-size:11px;color:var(--mu)">Pending</span><b style="color:#f59e0b">${{p.pending}}</b></div>
+      ${{p.client?`<div style="font-size:10px;color:var(--mu);margin-bottom:5px">👤 ${{p.client}}</div>`:''}}<div class="prow">
+        <span style="font-size:11px;color:var(--mu)">Total</span><b>${{p.total}}</b></div>
+      <div class="prow"><span style="font-size:11px;color:var(--mu)">Approved</span>
+        <b style="color:#16a34a">${{p.approved}}</b></div>
+      <div class="prow"><span style="font-size:11px;color:var(--mu)">Pending</span>
+        <b style="color:#f59e0b">${{p.pending}}</b></div>
       <div class="prog"><div class="progf" style="width:${{p.pct}}%;background:${{col}}"></div></div>
       <div style="font-size:10px;color:${{col}};font-weight:700;margin-top:3px">${{p.pct}}%</div>
-      ${{p.can_edit?'<div style="margin-top:3px;font-size:10px;color:#2563a8">✏ Can edit</div>':''}}
-      ${{ROLE==='superadmin'?`<button class="del-pbtn" onclick="event.preventDefault();delProject('${{p.id}}','${{p.name}}')">🗑 Delete</button>`:''}}
+      ${{ROLE==='superadmin'?`<button class="del-pbtn" onclick="event.preventDefault();delProject('${{p.id}}','${{p.name}}')">🗑</button>`:''}}
     </div>`;
     g.appendChild(a);
   }});
@@ -1311,29 +1560,36 @@ function renderCards(d,pid){{
   }}
 }}
 
+// ── Overview Charts ───────────────────────────────────────
 function renderCharts(d){{
   if(pChart)pChart.destroy();
   pChart=new Chart(document.getElementById('cProj'),{{type:'bar',
     data:{{labels:d.map(s=>s.code),datasets:[
-      {{label:'Approved',data:d.map(s=>s.approved),backgroundColor:'#16a34a'}},
-      {{label:'Pending', data:d.map(s=>s.pending), backgroundColor:'#f59e0b'}},
-      {{label:'Overdue', data:d.map(s=>s.overdue), backgroundColor:'#ef4444'}}]}},
-    options:{{responsive:true,plugins:{{legend:{{position:'bottom'}}}},scales:{{y:{{beginAtZero:true}}}}}}}});
+      {{label:'Approved',data:d.map(s=>s.approved),backgroundColor:'#16a34a',borderRadius:4}},
+      {{label:'Pending', data:d.map(s=>s.pending), backgroundColor:'#f59e0b',borderRadius:4}},
+      {{label:'Overdue', data:d.map(s=>s.overdue), backgroundColor:'#ef4444',borderRadius:4}}]}},
+    options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}}}},
+      scales:{{y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}}}},
+        x:{{grid:{{display:false}}}}}}}}}});
   const t=d.reduce((s,p)=>s+p.total,0),ap=d.reduce((s,p)=>s+p.approved,0),
-        pe=d.reduce((s,p)=>s+p.pending,0),ov=d.reduce((s,p)=>s+p.overdue,0);
+    pe=d.reduce((s,p)=>s+p.pending,0),ov=d.reduce((s,p)=>s+p.overdue,0),
+    rj=d.reduce((s,p)=>s+(p.rejected||0),0);
   if(sChart)sChart.destroy();
   sChart=new Chart(document.getElementById('cStatus'),{{type:'doughnut',
-    data:{{labels:['Approved','Pending','Overdue','Other'],
-      datasets:[{{data:[ap,pe,ov,Math.max(0,t-ap-pe-ov)],
-        backgroundColor:['#16a34a','#f59e0b','#ef4444','#9ca3af'],borderWidth:2,borderColor:'#fff'}}]}},
-    options:{{responsive:true,plugins:{{legend:{{position:'bottom'}}}}}}}});
+    data:{{labels:['Approved','Pending','Rejected','Overdue'],
+      datasets:[{{data:[ap,pe,rj,ov],
+        backgroundColor:['#16a34a','#f59e0b','#7c3aed','#ef4444'],
+        borderWidth:3,borderColor:'#fff',hoverOffset:6}}]}},
+    options:{{responsive:true,cutout:'65%',
+      plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}},
+        tooltip:{{callbacks:{{label:ctx=>` ${{ctx.label}}: ${{ctx.raw}} (${{t?Math.round(ctx.raw/t*100):0}}%)`}}}}}}}}}});
 }}
 
+// ── DT Table ──────────────────────────────────────────────
 function renderDTTable(d){{
   const tbody=document.getElementById('dt-tbody'),empty=document.getElementById('dt-empty');
-  tbody.innerHTML='';
-  let rows=[],i=0;
-  d.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{rows.push({{...dt,pid:p.id,pcode:p.code}});}});}});
+  tbody.innerHTML='';let rows=[],i=0;
+  d.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{rows.push({{...dt,pcode:p.code,pid:p.id}});}});}});
   if(!rows.length){{empty.style.display='block';return;}}
   empty.style.display='none';
   rows.forEach(r=>{{
@@ -1341,121 +1597,239 @@ function renderDTTable(d){{
     const col=pct>=80?'#16a34a':pct>=50?'#f59e0b':'#ef4444';
     const tr=document.createElement('tr');if(i%2)tr.className='alt';i++;
     tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{r.pcode}}</td>
-      <td style="font-weight:700;color:var(--pr)">${{r.dtCode||r.code||r.id}}</td>
-      <td>${{r.dtName||r.name}}</td>
+      <td style="font-weight:700;color:var(--pr)">${{r.code}}</td>
+      <td>${{r.name}}</td>
       <td style="text-align:center;font-weight:700">${{r.total}}</td>
-      <td style="text-align:center;color:#16a34a;font-weight:600">${{r.approved}}</td>
-      <td style="text-align:center;color:#f59e0b;font-weight:600">${{r.pending}}</td>
-      <td style="text-align:center;color:#7c3aed;font-weight:600">${{r.rejected||0}}</td>
-      <td style="text-align:center;color:#ef4444;font-weight:600">${{r.overdue}}</td>
-      <td style="text-align:center"><a href="/app?p=${{r.pid}}&tab=${{r.id}}"
-        style="padding:2px 9px;background:var(--pr);color:#fff;border-radius:3px;text-decoration:none;font-size:10px;font-weight:600">Open</a></td>`;
+      <td style="text-align:center;color:#16a34a;font-weight:700">${{r.approved}}</td>
+      <td style="text-align:center;color:#f59e0b;font-weight:700">${{r.pending}}</td>
+      <td style="text-align:center;color:#7c3aed;font-weight:700">${{r.rejected||0}}</td>
+      <td style="text-align:center;color:#ef4444;font-weight:700">${{r.overdue}}</td>`;
     tbody.appendChild(tr);
   }});
 }}
 
-async function openAdmin(){{
-  const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
-  if(!users||!projects)return;
-  const body=document.getElementById('admin-body');body.innerHTML='';
-  const ut=document.createElement('div');ut.className='stitle';ut.textContent='👥 Users';body.appendChild(ut);
-  for(const u of users){{
-    const row=document.createElement('div');row.className='urow';
-    row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
-      <span class="badge" style="background:#fef3c7;color:#92400e">${{u.role.toUpperCase()}}</span>
-      ${{u.username!=='admin'?`<button class="btn btn-sc btn-sm" onclick="changeUserPw('${{u.username}}')">🔑</button>
-        <button class="btn btn-er btn-sm" onclick="delUser('${{u.username}}')">✕</button>`:
-        '<span style="font-size:10px;color:var(--mu)">(protected)</span>'}}`;
-    body.appendChild(row);
-    if(u.role!=='superadmin'){{
-      const ad=document.createElement('div');
-      ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
-      ad.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:4px">Project access:</div>';
-      const assigned=await apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]);
-      const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:4px';
-      projects.forEach(p=>{{
-        const btn=document.createElement('button');btn.className='pbtn'+(assigned.includes(p.id)?' on':'');
-        btn.textContent=p.code;btn.title=p.name;
-        btn.onclick=async()=>{{const on=btn.classList.contains('on');
-          await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id}})}});
-          btn.classList.toggle('on');}};
-        pl.appendChild(btn);}});
-      ad.appendChild(pl);body.appendChild(ad);
-    }}
-  }}
-  const at=document.createElement('div');at.className='stitle';at.textContent='➕ Add User';body.appendChild(at);
-  body.innerHTML+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
-    <div class="fg"><label>Username</label><input id="nu-name"></div>
-    <div class="fg"><label>Role</label><select id="nu-role">
-      <option value="editor">Editor</option><option value="viewer">Viewer</option>
-      <option value="superadmin">Super Admin</option></select></div>
-    <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
-    <button class="btn btn-pr btn-sm" style="margin-bottom:1px" onclick="addUser()">Add</button></div>`;
-  openM('admin-modal');
-}}
-async function addUser(){{
-  const n=document.getElementById('nu-name').value.trim().toLowerCase(),
-        role=document.getElementById('nu-role').value,pw=document.getElementById('nu-pw').value;
-  if(!n||!pw){{toast('Required','er');return;}}
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:n,role,password:pw}})}});
-  if(r&&r.ok){{toast('✔ Added','ok');closeM('admin-modal');openAdmin();}}else toast((r&&r.error)||'Error','er');
-}}
-async function delUser(u){{if(!confirm('Delete '+u+'?'))return;
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'delete',username:u}})}});
-  if(r&&r.ok){{toast('Deleted','wa');closeM('admin-modal');openAdmin();}}
-}}
-async function changeUserPw(u){{const pw=prompt('New pw for '+u+':');if(!pw)return;
-  await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
-  toast('✔ Changed','ok');
-}}
-async function delProject(id,name){{
-  if(!confirm('Delete project "'+name+'" and ALL data? Cannot be undone!'))return;
-  const r=await apiFetch('/api/projects/delete/'+id,{{method:'POST'}});
-  if(r&&r.ok){{
-    toast('Deleted','wa');
-    STATS=STATS.filter(s=>s.id!==id);
-    const sel=document.getElementById('proj-sel');
-    [...sel.options].forEach(o=>{{if(o.value===id)o.remove();}});
-    renderAll('');
-  }}else toast('Error','er');
-}}
-async function createProject(){{
-  const id=document.getElementById('np-id').value.trim().toUpperCase();
-  const code=document.getElementById('np-code').value.trim().toUpperCase();
-  const name=document.getElementById('np-name').value.trim();
-  if(!id||!name||!code){{toast('All fields required','er');return;}}
-  const btn=document.getElementById('cpbtn');
-  btn.disabled=true;btn.textContent='⏳';
-  let ok=false;
-  try{{
-    const resp=await fetch('/api/projects/create',{{
-      method:'POST',credentials:'include',
-      headers:{{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}},
-      body:JSON.stringify({{id,name,code}})
+// ── Disc Table ────────────────────────────────────────────
+function renderDiscTable(data){{
+  const tbody=document.getElementById('disc-tbody'),empty=document.getElementById('disc-empty');
+  tbody.innerHTML='';let rows=0;
+  data.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{
+    const disc=dt.disc_breakdown||[];if(!disc.length)return;
+    disc.forEach((ds,di)=>{{
+      rows++;
+      const tr=document.createElement('tr');tr.className=rows%2===0?'alt':'';
+      if(di===0){{
+        const tdc=document.createElement('td');tdc.rowSpan=disc.length;
+        tdc.style.cssText='font-size:10px;color:var(--mu);vertical-align:top;padding:6px 10px';
+        tdc.textContent=p.code;tr.appendChild(tdc);
+        const tdt=document.createElement('td');tdt.rowSpan=disc.length;
+        tdt.style.cssText='font-weight:600;vertical-align:top;padding:6px 10px;font-size:11px';
+        tdt.textContent=dt.code;tr.appendChild(tdt);
+      }}
+      const mk=(v,c)=>{{const td=document.createElement('td');
+        td.style.cssText='text-align:center;padding:6px 8px;font-weight:600;color:'+c;
+        td.textContent=v||'0';return td;}};
+      const tdisc=document.createElement('td');tdisc.style.cssText='padding:6px 10px';
+      tdisc.textContent=ds.disc;tr.appendChild(tdisc);
+      tr.appendChild(mk(ds.total,'var(--pr)'));tr.appendChild(mk(ds.approved,'#16a34a'));
+      tr.appendChild(mk(ds.pending,'#f59e0b'));tr.appendChild(mk(ds.rejected,'#7c3aed'));
+      tr.appendChild(mk(ds.overdue,'#ef4444'));
+      tbody.appendChild(tr);
     }});
-    let r={{}};
-    try{{r=await resp.json();}}catch(e){{}}
-    if(resp.ok&&r.ok){{
-      ok=true;
-      const np={{id,name,code,client:'',total:0,approved:0,pending:0,overdue:0,pct:0,can_edit:true,dt_stats:[]}};
-      STATS.push(np);
-      const sel=document.getElementById('proj-sel');
-      const o=document.createElement('option');o.value=id;o.textContent=name+' ('+code+')';sel.appendChild(o);
-      ['np-id','np-code','np-name'].forEach(i=>{{const el=document.getElementById(i);if(el)el.value='';}});
-      closeM('newproj-modal');
-      renderAll('');
-      toast('✔ Project created: '+name,'ok');
-    }}else{{
-      toast((r&&r.error)||('HTTP '+resp.status),'er');
-    }}
-  }}catch(e){{
-    toast('Error: '+e.message,'er');
-  }}
-  btn.disabled=false;btn.textContent='Create';
+  }});}});
+  if(empty)empty.style.display=rows?'none':'block';
+}}
+
+// ── Analytics Tab ─────────────────────────────────────────
+let analyticsLoaded=false;
+async function loadAnalytics(){{
+  if(analyticsLoaded)return;
+  analyticsLoaded=true;
+  const pid=_currentPid;
+  const [trend,aging,quality]=await Promise.all([
+    apiFetch('/api/analytics/trend'+(pid?`?pid=${{pid}}`:'') ),
+    apiFetch('/api/analytics/aging'+(pid?`?pid=${{pid}}`:'') ),
+    apiFetch('/api/analytics/quality'+(pid?`?pid=${{pid}}`:'') ),
+  ]);
+
+  // Monthly Trend
+  if(tChart)tChart.destroy();
+  tChart=new Chart(document.getElementById('cTrend'),{{type:'bar',
+    data:{{labels:trend.map(t=>t.month),datasets:[
+      {{label:'Submitted',data:trend.map(t=>t.submitted),backgroundColor:'rgba(37,99,168,.25)',
+        borderColor:'#2563a8',borderWidth:2,borderRadius:4,type:'bar'}},
+      {{label:'Approved',data:trend.map(t=>t.approved),backgroundColor:'#16a34a',
+        borderColor:'#16a34a',borderWidth:2,borderRadius:4,type:'bar'}}]}},
+    options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}}}},
+      scales:{{y:{{beginAtZero:true}},x:{{grid:{{display:false}}}}}}}}}});
+
+  // Aging
+  if(aChart)aChart.destroy();
+  aChart=new Chart(document.getElementById('cAging'),{{type:'bar',
+    data:{{labels:aging.map(a=>a.range+' Days'),
+      datasets:[{{label:'Pending Docs',data:aging.map(a=>a.count),
+        backgroundColor:['#16a34a','#f59e0b','#f97316','#ef4444'],borderRadius:6}}]}},
+    options:{{responsive:true,plugins:{{legend:{{display:false}},
+      tooltip:{{callbacks:{{label:ctx=>`${{ctx.raw}} documents`}}}}}},
+      scales:{{y:{{beginAtZero:true}},x:{{grid:{{display:false}}}}}}}}}});
+
+  // Quality
+  if(qChart)qChart.destroy();
+  qChart=new Chart(document.getElementById('cQuality'),{{type:'doughnut',
+    data:{{labels:quality.map(q=>'Rev '+q.revisions),
+      datasets:[{{data:quality.map(q=>q.count),
+        backgroundColor:['#16a34a','#f59e0b','#f97316','#ef4444'],
+        borderWidth:3,borderColor:'#fff',hoverOffset:6}}]}},
+    options:{{responsive:true,cutout:'60%',
+      plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}}}}}}}});
+
+  // Approval Rate per Doc Type
+  const d=getFiltered(_currentPid,_currentDisc);
+  const dtLabels=[],dtRates=[];
+  d.forEach(p=>(p.dt_stats||[]).forEach(dt=>{{
+    if(dt.total>0){{dtLabels.push(dt.code);dtRates.push(dt.total?Math.round(dt.approved/dt.total*100):0);}}
+  }}));
+  if(arChart)arChart.destroy();
+  arChart=new Chart(document.getElementById('cApprRate'),{{type:'bar',
+    data:{{labels:dtLabels,datasets:[{{label:'Approval %',data:dtRates,
+      backgroundColor:dtRates.map(r=>r>=80?'#16a34a':r>=50?'#f59e0b':'#ef4444'),
+      borderRadius:4}}]}},
+    options:{{responsive:true,indexAxis:'y',
+      plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>`${{ctx.raw}}%`}}}}}},
+      scales:{{x:{{beginAtZero:true,max:100,ticks:{{callback:v=>v+'%'}}}},y:{{grid:{{display:false}}}}}}}}}});
+}}
+
+// ── Overdue Tab ───────────────────────────────────────────
+let overdueLoaded=false;
+async function loadOverdue(){{
+  if(overdueLoaded)return;
+  overdueLoaded=true;
+  const pid=_currentPid;
+  OVERDUE_DATA=await apiFetch('/api/analytics/overdue'+(pid?`?pid=${{pid}}`:'') )||[];
+  filterOverdue();
+}}
+
+function filterOverdue(){{
+  const q=(document.getElementById('ov-search')?.value||'').toLowerCase();
+  const sort=document.getElementById('ov-sort')?.value||'days';
+  let data=[...OVERDUE_DATA];
+  if(q)data=data.filter(r=>
+    (r.docNo||'').toLowerCase().includes(q)||
+    (r.title||'').toLowerCase().includes(q)||
+    (r.discipline||'').toLowerCase().includes(q)||
+    (r.dt_code||'').toLowerCase().includes(q));
+  data.sort((a,b)=>sort==='days'?b.days_overdue-a.days_overdue:
+    sort==='doc'?(a.docNo||'').localeCompare(b.docNo||''):
+    (a.discipline||'').localeCompare(b.discipline||''));
+  const list=document.getElementById('ov-list');
+  if(!data.length){{list.innerHTML='<div style="text-align:center;padding:32px;color:var(--mu)">✅ No overdue documents</div>';return;}}
+  list.innerHTML=data.map(r=>{{
+    const bg=r.days_overdue>21?'er':r.days_overdue>14?'warn':'warn';
+    return `<div class="ov-row">
+      <span class="ov-badge ${{bg}}">${{r.days_overdue}}d</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.docNo}}</div>
+        <div style="color:var(--mu);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.title||'—'}}</div>
+      </div>
+      <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{r.discipline||'—'}}</span>
+      <span style="font-size:10px;background:#f0f4f8;padding:2px 7px;border-radius:4px;white-space:nowrap">${{r.dt_code}}</span>
+      <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{(r.issuedDate||'').slice(0,10)}}</span>
+    </div>`;
+  }}).join('');
+  document.getElementById('ov-count').textContent=`Showing ${{data.length}} overdue document${{data.length!==1?'s':''}}`;
+}}
+
+// ── Executive Summary ─────────────────────────────────────
+async function loadExecutive(){{
+  if(EXEC_DATA)return;
+  EXEC_DATA=await apiFetch('/api/executive_summary');
+  if(!EXEC_DATA)return;
+  const s=EXEC_DATA.summary;
+  const col=s.completion_pct>=80?'#16a34a':s.completion_pct>=50?'#f59e0b':'#ef4444';
+  document.getElementById('exec-content').innerHTML=`
+    <div class="panel">
+      <div class="panel-title">📋 Executive Summary — Generated ${{EXEC_DATA.generated_at}}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:16px">
+        ${{[['Total Docs',s.total,'var(--pr)'],['Approved',s.approved,'#16a34a'],
+           ['Pending',s.pending,'#f59e0b'],['Rejected',s.rejected,'#7c3aed'],
+           ['Overdue',s.overdue,'#ef4444'],['Completion',s.completion_pct+'%',col]]
+          .map(([l,v,c])=>`<div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center">
+            <div style="font-size:22px;font-weight:800;color:${{c}}">${{v}}</div>
+            <div style="font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase">${{l}}</div>
+          </div>`).join('')}}
+      </div>
+      <table class="dt-tbl" style="margin-bottom:16px">
+        <thead><tr><th>Project</th><th>Code</th>
+          <th style="text-align:center">Total</th>
+          <th style="text-align:center">Approved</th>
+          <th style="text-align:center">%</th>
+          <th style="text-align:center">Overdue</th></tr></thead>
+        <tbody>
+          ${{EXEC_DATA.projects.map((p,i)=>{{
+            const col2=p.pct>=80?'#16a34a':p.pct>=50?'#f59e0b':'#ef4444';
+            return `<tr class="${{i%2?'alt':''}}">
+              <td style="font-weight:600">${{p.name}}</td>
+              <td style="color:var(--pr);font-weight:700">${{p.code}}</td>
+              <td style="text-align:center;font-weight:700">${{p.total}}</td>
+              <td style="text-align:center;color:#16a34a;font-weight:700">${{p.approved}}</td>
+              <td style="text-align:center;font-weight:700;color:${{col2}}">${{p.pct}}%</td>
+              <td style="text-align:center;color:#ef4444;font-weight:700">${{p.overdue||0}}</td>
+            </tr>`;
+          }}).join('')}}
+        </tbody>
+      </table>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div class="panel-title" style="margin-top:0">⏳ Aging Summary</div>
+          ${{EXEC_DATA.aging.map(a=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;
+              padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px">
+              <span>${{a.range}} Days</span>
+              <span style="font-weight:700;color:${{a.range==='>21'?'#ef4444':'#f59e0b'}}">${{a.count}} docs</span>
+            </div>`).join('')}}
+        </div>
+        <div>
+          <div class="panel-title" style="margin-top:0">⚠️ Top Overdue</div>
+          ${{EXEC_DATA.top_overdue.slice(0,5).map(r=>`
+            <div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11px">
+              <div style="font-weight:700">${{r.docNo}}</div>
+              <div style="color:var(--mu)">${{r.discipline||'—'}} · <span style="color:#ef4444;font-weight:700">${{r.days_overdue}}d overdue</span></div>
+            </div>`).join('')||'<div style="color:var(--mu);padding:10px 0">No overdue documents ✅</div>'}}
+        </div>
+      </div>
+    </div>`;
+}}
+
+// ── Project management ────────────────────────────────────
+async function createProject(){{
+  const id=document.getElementById('np-id')?.value.trim();
+  const code=document.getElementById('np-code')?.value.trim();
+  const name=document.getElementById('np-name')?.value.trim();
+  if(!id||!name){{toast('Fill in Project ID and Name','er');return;}}
+  const btn=document.getElementById('cpbtn');
+  btn.disabled=true;btn.textContent='Creating...';
+  try{{
+    const r=await fetch('/api/projects',{{method:'POST',credentials:'include',
+      headers:{{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}},
+      body:JSON.stringify({{id,code:code||id,name}})}});
+    const d=await r.json();
+    if(d.ok){{toast('✔ Project created','ok');closeM('newproj-modal');
+      setTimeout(()=>location.reload(),800);}}
+    else toast(d.error||'Error','er');
+  }}catch(e){{toast('Network error','er');}}
+  finally{{btn.disabled=false;btn.textContent='Create';}}
+}}
+
+async function delProject(pid,name){{
+  if(!confirm(`Delete project "${{name}}"? This cannot be undone.`))return;
+  const r=await apiFetch('/api/projects/'+pid,{{method:'DELETE'}});
+  if(r&&r.ok){{toast('Project deleted','ok');setTimeout(()=>location.reload(),800);}}
+  else toast((r&&r.error)||'Error','er');
 }}
 
 init();
-</script></body></html>"""
+</script>
+</body></html>"""
+
 
 def render_register(u, proj):
     from utils import STATUS_COLORS
@@ -2639,3 +3013,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"[DCR Flask] Running on http://localhost:{port}")
     app.run(host="0.0.0.0", port=port, debug=not IS_RENDER)
+

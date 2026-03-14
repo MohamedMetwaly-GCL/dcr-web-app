@@ -540,6 +540,125 @@ def get_dashboard_stats():
     return result
 
 
+
+def get_monthly_trend(pid=None):
+    """Returns last 6 months of submission counts per month."""
+    import re as _re
+    from utils import DEFAULT_STATUS_META
+    where = "WHERE project_id=%s" if pid else "WHERE 1=1"
+    params = (pid,) if pid else ()
+    rows = q(f"SELECT data FROM records {where}", params)
+    months = {}
+    import datetime
+    today = datetime.date.today()
+    for i in range(5, -1, -1):
+        m = (today.month - i - 1) % 12 + 1
+        y = today.year - ((today.month - i - 1) // 12)
+        key = f"{y:04d}-{m:02d}"
+        months[key] = {"submitted": 0, "approved": 0}
+    for row in rows:
+        d = row["data"] if isinstance(row["data"], dict) else {}
+        issued = d.get("issuedDate", "") or ""
+        if not issued: continue
+        try:
+            key = issued[:7]
+        except: continue
+        if key not in months: continue
+        months[key]["submitted"] += 1
+        meta = DEFAULT_STATUS_META.get(d.get("status", ""), "pending")
+        if meta == "approved":
+            months[key]["approved"] += 1
+    return [{"month": k, "submitted": v["submitted"], "approved": v["approved"]}
+            for k, v in sorted(months.items())]
+
+
+def get_aging_report(pid=None):
+    """Returns pending docs grouped by days lapsed: 1-7, 8-14, 15-21, >21."""
+    from utils import is_overdue
+    import datetime, re as _re
+    where = "WHERE project_id=%s" if pid else "WHERE 1=1"
+    params = (pid,) if pid else ()
+    rows = q(f"SELECT data FROM records {where}", params)
+    buckets = {"1-7": 0, "8-14": 0, "15-21": 0, ">21": 0}
+    today = datetime.date.today()
+    for row in rows:
+        d = row["data"] if isinstance(row["data"], dict) else {}
+        if d.get("actualReplyDate"): continue
+        issued = d.get("issuedDate", "")
+        if not issued: continue
+        try:
+            dt = datetime.date.fromisoformat(str(issued)[:10])
+        except: continue
+        days = (today - dt).days
+        if days < 1: continue
+        if days <= 7:   buckets["1-7"]   += 1
+        elif days <= 14: buckets["8-14"]  += 1
+        elif days <= 21: buckets["15-21"] += 1
+        else:           buckets[">21"]   += 1
+    return [{"range": k, "count": v} for k, v in buckets.items()]
+
+
+def get_quality_report(pid=None):
+    """Returns doc quality: how many docs needed 0,1,2,3+ revisions."""
+    import re as _re
+    where = "WHERE project_id=%s" if pid else "WHERE 1=1"
+    params = (pid,) if pid else ()
+    rows = q(f"SELECT data FROM records {where}", params)
+    doc_revs = {}
+    for row in rows:
+        d = row["data"] if isinstance(row["data"], dict) else {}
+        doc_no = d.get("docNo", "") or ""
+        m = _re.search(r"REV(\d+)", doc_no, _re.IGNORECASE)
+        rev = int(m.group(1)) if m else 0
+        base = _re.sub(r"\s*REV\d+$", "", doc_no, flags=_re.IGNORECASE).strip()
+        if base:
+            doc_revs[base] = max(doc_revs.get(base, 0), rev)
+    buckets = {"0": 0, "1": 0, "2": 0, "3+": 0}
+    for rev in doc_revs.values():
+        if rev == 0:   buckets["0"]  += 1
+        elif rev == 1: buckets["1"]  += 1
+        elif rev == 2: buckets["2"]  += 1
+        else:          buckets["3+"] += 1
+    return [{"revisions": k, "count": v} for k, v in buckets.items()]
+
+
+def get_overdue_records(pid=None):
+    """Returns all overdue records for notification/report."""
+    from utils import is_overdue
+    import datetime
+    where = "WHERE project_id=%s" if pid else "WHERE 1=1"
+    params = (pid,) if pid else ()
+    rows = q(f"""SELECT r.project_id, r.dt_id, r.data, d.code as dt_code, d.name as dt_name
+                 FROM records r
+                 JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
+                 {where.replace("project_id", "r.project_id")}""", params)
+    result = []
+    for row in rows:
+        d = row["data"] if isinstance(row["data"], dict) else {}
+        if d.get("actualReplyDate"): continue
+        doc_no = d.get("docNo", "") or ""
+        issued = d.get("issuedDate", "") or ""
+        if not issued: continue
+        if is_overdue(issued, doc_no, None):
+            import datetime as _dt
+            try:
+                dt = _dt.date.fromisoformat(str(issued)[:10])
+                days = (_dt.date.today() - dt).days
+            except: days = 0
+            result.append({
+                "project_id": row["project_id"],
+                "dt_code": row["dt_code"],
+                "dt_name": row["dt_name"],
+                "docNo": doc_no,
+                "title": d.get("title", ""),
+                "discipline": d.get("discipline", ""),
+                "issuedDate": issued,
+                "days_overdue": days,
+                "status": d.get("status", ""),
+            })
+    result.sort(key=lambda x: x["days_overdue"], reverse=True)
+    return result
+
 def rename_column(col_id, new_label):
     exe("UPDATE columns_config SET label=%s WHERE id=%s", (new_label.strip(), col_id))
 
