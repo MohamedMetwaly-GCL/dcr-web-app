@@ -286,14 +286,16 @@ def api_records(pid, dt_id):
     records = db.get_records(pid, dt_id, search=search)
     cols    = db.get_columns(pid, dt_id)
     date_col_keys = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
+    has_exp_reply = any(c["col_key"] == "expectedReplyDate" for c in cols)
+    has_status    = any(c["col_key"] == "status" for c in cols)
     for row in records:
         row["_expectedReplyDate"] = format_date(
-            compute_expected_reply(row.get("issuedDate"), row.get("docNo")))
+            compute_expected_reply(row.get("issuedDate"), row.get("docNo"))) if has_exp_reply else ""
         issued   = row.get("issuedDate","")
         actual   = row.get("actualReplyDate","")
         dur = compute_duration(issued, actual)
         row["_duration"] = str(dur) if dur is not None else ""
-        row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
+        row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply)
         row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
         # Format ALL date columns (any col_type=date)
         for dk in date_col_keys:
@@ -525,10 +527,11 @@ def api_export_all(pid):
             ws.merge_cells(f"A4:{gcl(nc)}4")
             c.alignment = Alignment(horizontal="center", vertical="center")
             ws.row_dimensions[4].height = 24
+        has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in all_cols)
         for ri, row in enumerate(records):
             rn = 4 + ri
             is_rev = extract_rev(row.get("docNo","")) > 0
-            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
+            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col)
             bg     = OV if ov else (ALT if sr%2==0 else WHITE)
             ws.row_dimensions[rn].height = 18
             for ci, col in enumerate(all_cols, 1):
@@ -738,9 +741,10 @@ def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
     row_meta = []   # (bg, is_header)
 
     sr = 1
+    has_exp_col_pdf = any(c["col_key"]=="expectedReplyDate" for c in hdr_cols)
     for row in records:
         is_rev = extract_rev(row.get("docNo","")) > 0
-        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
+        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col_pdf)
         cells  = []
         for c in hdr_cols:
             key = c["col_key"]

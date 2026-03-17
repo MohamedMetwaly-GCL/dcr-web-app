@@ -479,11 +479,18 @@ def get_dashboard_stats():
         dt_stats = []
         total = approved = pending = overdue_cnt = total_rj = 0
 
-        # Which doc types have expectedReplyDate column
+        # Which doc types have expectedReplyDate and status columns
         exp_col_rows = q(
-            "SELECT DISTINCT dt_id FROM columns_config WHERE project_id=%s AND col_key=%s",
-            (pid, "expectedReplyDate"))
-        dt_has_exp_reply = {r["dt_id"]: True for r in exp_col_rows}
+            "SELECT DISTINCT dt_id, col_key FROM columns_config"
+            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status')",
+            (pid,))
+        dt_has_exp_reply = {}
+        dt_has_status    = {}
+        for r in exp_col_rows:
+            if r["col_key"] == "expectedReplyDate":
+                dt_has_exp_reply[r["dt_id"]] = True
+            elif r["col_key"] == "status":
+                dt_has_status[r["dt_id"]] = True
 
         for dt in dts:
             rows  = rec_map.get((pid, dt["id"]), [])
@@ -508,6 +515,15 @@ def get_dashboard_stats():
                 doc_no = d.get("docNo", "")
                 status = d.get("status", "")
                 disc   = d.get("discipline","") or "—"
+                # Docs from types WITHOUT status column → count in total only (no status bucket)
+                if not dt_has_status.get(dt["id"], False):
+                    t += 1
+                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), dt_has_exp_reply.get(dt["id"], False))
+                    if is_ov: ov += 1
+                    ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
+                    ds["total"] += 1
+                    if is_ov: ds["overdue"] += 1
+                    continue
                 # Resolve meta: DB first, then fallback to DEFAULT_STATUS_META
                 meta = pid_meta.get(status) or DEFAULT_STATUS_META.get(status) or "pending"
                 if meta == "cancelled": continue   # skip cancelled entirely
