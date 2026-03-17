@@ -176,6 +176,28 @@ def api_add_doc_type(pid):
     db.add_doc_type(pid, code, name)
     return jsonify(ok=True)
 
+
+@app.route("/api/doc_types/<pid>/<dt_id>", methods=["PATCH"])
+def api_rename_doc_type(pid, dt_id):
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    new_code = data.get("code","").strip().upper()
+    new_name = data.get("name","").strip()
+    if new_code:
+        db.exe("UPDATE doc_types SET code=%s WHERE id=%s AND project_id=%s", (new_code, dt_id, pid))
+    if new_name:
+        db.exe("UPDATE doc_types SET name=%s WHERE id=%s AND project_id=%s", (new_name, dt_id, pid))
+    return jsonify(ok=True)
+
+@app.route("/api/doc_types/<pid>/reorder", methods=["POST"])
+def api_reorder_doc_types(pid):
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    order = data.get("order", [])
+    for i, dt_id in enumerate(order):
+        db.exe("UPDATE doc_types SET sort_order=%s WHERE id=%s AND project_id=%s", (i, dt_id, pid))
+    return jsonify(ok=True)
+
 @app.route("/api/doc_types/<pid>/<dt_id>", methods=["DELETE"])
 def api_delete_doc_type(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
@@ -1158,10 +1180,25 @@ body{{display:flex;flex-direction:column;min-height:100vh}}
 body.dark{{--bg:#0f172a;--wh:#1e293b;--tx:#e2e8f0;--mu:#94a3b8;--bd:#334155;--pr:#3b82f6;--pl:#60a5fa}}
 body.dark .kpi,body.dark .ccard,body.dark .pcard,body.dark .panel,
 body.dark .psel-bar,body.dark .tbl-wrap{{background:#1e293b;color:#e2e8f0}}
-body.dark .dt-tbl th{{background:#1e3a5f}}
-body.dark .dt-tbl td{{border-color:#334155}}
-body.dark .dt-tbl tr:hover td{{background:#1e293b}}
+body.dark .kval{{color:#93c5fd}}
+body.dark .kpi.ok .kval{{color:#86efac}}
+body.dark .kpi.wa .kval{{color:#fcd34d}}
+body.dark .kpi.er .kval{{color:#fca5a5}}
+body.dark .kpi.pu .kval{{color:#c4b5fd}}
+body.dark .klbl{{color:#94a3b8}}
+body.dark .clbl{{color:#93c5fd}}
+body.dark .stitle{{color:#93c5fd;border-color:#93c5fd}}
+body.dark .dt-tbl th{{background:#1e3a5f;color:#e2e8f0}}
+body.dark .dt-tbl td{{border-color:#334155;color:#cbd5e1}}
+body.dark .dt-tbl tr:hover td{{background:#0f172a}}
+body.dark .dt-tbl .alt td{{background:#162032}}
 body.dark #topbar{{background:#0f2640}}
+body.dark .pchdr{{background:#1e3a5f}}
+body.dark .pcbody{{color:#cbd5e1}}
+body.dark select,body.dark input{{background:#1e293b;color:#e2e8f0;border-color:#334155}}
+body.dark .tbtn{{background:#1e293b;color:#e2e8f0;border-color:#334155}}
+body.dark .ov-row{{border-color:#334155;color:#cbd5e1}}
+body.dark .prog{{background:#334155}}
 
 /* ── KPIs ── */
 .kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px}}
@@ -1261,10 +1298,18 @@ canvas{{max-height:200px}}
   .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
   .wrap{{padding:8px}}
   .tab{{padding:6px 10px;font-size:11px}}
+  .tbl-wrap{{overflow-x:auto;-webkit-overflow-scrolling:touch}}
+  .dt-tbl{{min-width:600px}}
+  .psel-bar{{flex-wrap:wrap;gap:6px}}
+  .psel-bar select{{min-width:140px;flex:1}}
+  .kpi{{padding:8px 10px}}
+  .kval{{font-size:22px}}
 }}
 @media(max-width:480px){{
   .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
   .psel-bar{{flex-direction:column;align-items:stretch}}
+  .kpi-grid{{gap:5px}}
+  .charts-grid{{gap:8px}}
 }}
 
 /* ── Del button ── */
@@ -1432,6 +1477,15 @@ canvas{{max-height:200px}}
       <button class="btn btn-sc" onclick="closeM('newproj-modal')">Cancel</button>
       <button class="btn btn-pr" id="cpbtn" onclick="createProject()">Create</button>
     </div>
+  </div>
+</div>
+
+<!-- ADMIN MODAL (dashboard) -->
+<div class="overlay hidden" id="admin-modal">
+  <div class="modal" style="max-width:780px">
+    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
+    <div class="mbody" id="admin-body"></div>
+    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
   </div>
 </div>
 
@@ -1844,8 +1898,8 @@ def render_register(u, proj):
     logo_l    = db.get_logo(pid,"logo_left")
     logo_r    = db.get_logo(pid,"logo_right")
     logo_html = ""
-    if logo_l: logo_html += f'<img src="/api/logo/{pid}/logo_left" style="height:52px;object-fit:contain;margin-right:10px">'
-    if logo_r: logo_html += f'<img src="/api/logo/{pid}/logo_right" style="height:52px;object-fit:contain;margin-left:auto;margin-right:10px">'
+    if logo_l: logo_html += f'<img src="/api/logo/{pid}/logo_left" style="height:48px;object-fit:contain;flex-shrink:0">'
+    if logo_r: logo_html += f'<img src="/api/logo/{pid}/logo_right" style="height:48px;object-fit:contain;flex-shrink:0;margin-left:8px">'
 
     PROJ_FIELDS = [("code","Code"),("name","Project Name"),("startDate","Start"),("endDate","End"),
                    ("client","Client"),("landlord","Landlord"),("pmo","PMO"),
@@ -1888,7 +1942,7 @@ body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
   @page{{size:A4 landscape;margin:10mm}}
 }}
 #projbar{{background:#fff;border-bottom:2px solid var(--pr);padding:3px 12px;
-  display:flex;align-items:center;overflow-x:auto;flex-shrink:0;gap:0}}
+  display:flex;align-items:center;overflow-x:auto;flex-shrink:0;gap:4px}}
 .pf{{display:flex;flex-direction:column;padding:0 10px;border-right:1px solid var(--bd)}}
 .pf:last-of-type{{border-right:none}}
 .pf-lbl{{font-size:9px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px}}
@@ -2216,6 +2270,7 @@ async function loadLists(force=false){{
 }}
 
 function renderTabs(dts){{
+  state.dtList=dts;
   const bar=document.getElementById('tabsbar');
   bar.querySelectorAll('.tab-btn').forEach(b=>b.remove());
   const addBtn=bar.querySelector('.tab-add');
@@ -2242,10 +2297,25 @@ function tabMenu(id,e){{
   const m=document.createElement('div');m.id='tabctx';
   m.style.cssText=`position:fixed;left:${{e.clientX}}px;top:${{e.clientY}}px;background:#fff;
     border:1px solid var(--bd);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:9999;min-width:140px;overflow:hidden`;
-  m.innerHTML=`<div onclick="delDT('${{id}}')" style="padding:8px 14px;cursor:pointer;font-size:12px;color:#ef4444"
-    onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">🗑 Delete Type</div>`;
+  const dt=state.dtList?.find(d=>d.id===id)||{{}};
+  m.innerHTML=`
+    <div onclick="renameDT('${{id}}','${{dt.code||id}}','${{(dt.name||'').replace(/'/g,\"\\\\'\")}}')"
+      style="padding:8px 14px;cursor:pointer;font-size:12px"
+      onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''">✏ Rename</div>
+    <div onclick="delDT('${{id}}')" style="padding:8px 14px;cursor:pointer;font-size:12px;color:#ef4444"
+      onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">🗑 Delete Type</div>`;
   document.body.appendChild(m);
   setTimeout(()=>document.addEventListener('click',()=>m.remove(),{{once:true}}),10);
+}}
+
+async function renameDT(id,oldCode,oldName){{
+  const newCode=prompt('Tab code (short):',oldCode);
+  if(newCode===null)return;
+  const newName=prompt('Full name:',oldName);
+  if(newName===null)return;
+  await apiFetch('/api/doc_types/'+PID+'/'+id,{{method:'PATCH',
+    body:JSON.stringify({{code:newCode.trim().toUpperCase(),name:newName.trim()}})}});
+  await loadDTs(true);toast('✔ Renamed','ok');
 }}
 
 async function delDT(id){{
@@ -2544,7 +2614,31 @@ async function buildForm(row){{
     const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
     const val=row?.[key]||'';
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
-    else if(col.col_type==='dropdown'&&col.list_name){{grp.appendChild(buildMS(key,state.lists[col.list_name]||[],val));}}
+    else if(col.col_type==='dropdown'&&col.list_name){{
+      // Add free-text input below multiselect
+      const wrapper=document.createElement('div');
+      wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],val));
+      const freeInp=document.createElement('input');
+      freeInp.id='f-free-'+key;freeInp.placeholder='Or type custom value...';
+      freeInp.style.cssText='margin-top:4px;width:100%;padding:5px 8px;border:1px dashed var(--bd);border-radius:var(--rd);font-size:11px;color:var(--mu);outline:none';
+      freeInp.title='Type a custom value not in the list';
+      freeInp.onchange=()=>{{
+        const v=freeInp.value.trim();
+        if(!v)return;
+        const ms=document.getElementById('f-'+key);
+        if(ms&&ms.classList.contains('ms-con')){{
+          const cur=ms.dataset.value||'';
+          const arr=cur?cur.split(', ').filter(Boolean):[];
+          if(!arr.includes(v))arr.push(v);
+          ms.dataset.value=arr.join(', ');
+          // Trigger re-render
+          ms.dispatchEvent(new Event('_update'));
+          freeInp.value='';
+        }}
+      }};
+      wrapper.appendChild(freeInp);
+      grp.appendChild(wrapper);
+    }}
     else if(col.col_type==='docno'){{
       const inp=document.createElement('input');inp.id='f-'+key;
       if(row){{inp.value=val;}}
@@ -2564,7 +2658,7 @@ function buildMS(key,options,init){{
   function render(){{con.innerHTML='';sel.forEach(v=>{{const t=document.createElement('span');t.className='ms-tag';t.innerHTML=`${{v}} <span class="ms-rm" data-v="${{v}}">✕</span>`;t.querySelector('.ms-rm').onclick=e=>{{e.stopPropagation();sel.splice(sel.indexOf(v),1);con.dataset.value=sel.join(', ');render();}};con.appendChild(t);}});if(!sel.length)con.innerHTML='<span class="ms-ph">Select...</span>';con.dataset.value=sel.join(', ');}}
   con.onclick=e=>{{if(e.target.classList.contains('ms-rm'))return;const ex=document.querySelector('.ms-dd');if(ex){{ex.remove();return;}}
     const dd=document.createElement('div');dd.className='ms-dd';
-    options.forEach(opt=>{{const it=document.createElement('div');it.className='ms-opt'+(sel.includes(opt)?' sel':'');it.innerHTML=`<input type="checkbox" ${{sel.includes(opt)?'checked':''}} style="pointer-events:none"> ${{opt}}`;it.onclick=ev=>{{ev.stopPropagation();if(sel.includes(opt))sel.splice(sel.indexOf(opt),1);else sel.push(opt);con.dataset.value=sel.join(', ');render();it.classList.toggle('sel',sel.includes(opt));it.querySelector('input').checked=sel.includes(opt);}};dd.appendChild(it);}});
+    options.forEach(opt=>{{const it=document.createElement('div');it.className='ms-opt'+(sel.includes(opt)?' sel':'');it.style.cssText='padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f1f5f9';it.innerHTML=`<input type="checkbox" ${{sel.includes(opt)?'checked':''}} style="pointer-events:none;flex-shrink:0"> ${{opt}}`;it.onclick=ev=>{{ev.stopPropagation();if(sel.includes(opt))sel.splice(sel.indexOf(opt),1);else sel.push(opt);con.dataset.value=sel.join(', ');render();it.classList.toggle('sel',sel.includes(opt));it.querySelector('input').checked=sel.includes(opt);}};dd.appendChild(it);}});
     con.style.position='relative';con.appendChild(dd);}};
   document.addEventListener('click',e=>{{if(!con.contains(e.target))con.querySelector('.ms-dd')?.remove();}},true);
   render();return con;
@@ -2880,11 +2974,18 @@ async function openAdmin(){{
       const assigned=await apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]);
       const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:4px';
       projects.forEach(p=>{{
-        const btn=document.createElement('button');btn.className='pbtn'+(assigned.includes(p.id)?' on':'');
+        const isOn=assigned.includes(p.id);
+        const btn=document.createElement('button');
+        btn.style.cssText=`padding:3px 10px;border-radius:4px;border:2px solid;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;transition:all .15s;background:${{isOn?'#1a3a5c':'#f1f5f9'}};color:${{isOn?'#fff':'#94a3b8'}};border-color:${{isOn?'#f0a500':'#e2e8f0'}}`;
         btn.textContent=p.code;btn.title=p.name;
-        btn.onclick=async()=>{{const on=btn.classList.contains('on');
+        if(isOn) btn.dataset.on='1';
+        btn.onclick=async()=>{{
+          const on=!!btn.dataset.on;
           await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id}})}});
-          btn.classList.toggle('on');toast((btn.classList.contains('on')?'✔ Assigned: ':'Removed: ')+p.name,'ok');}};
+          if(on){{delete btn.dataset.on;btn.style.background='#f1f5f9';btn.style.color='#94a3b8';btn.style.borderColor='#e2e8f0';}}
+          else{{btn.dataset.on='1';btn.style.background='#1a3a5c';btn.style.color='#fff';btn.style.borderColor='#f0a500';}}
+          toast((btn.dataset.on?'✔ Assigned: ':'Removed: ')+p.name,'ok');
+        }};
         pl.appendChild(btn);}});
       ad.appendChild(pl);body.appendChild(ad);
     }}
