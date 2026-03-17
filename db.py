@@ -485,6 +485,12 @@ def get_dashboard_stats():
             (pid, "expectedReplyDate"))
         dt_has_exp_reply = {r["dt_id"]: True for r in all_cols_for_pid}
 
+        # Which doc types have expectedReplyDate column
+        exp_col_rows = q(
+            "SELECT DISTINCT dt_id FROM columns_config WHERE project_id=%s AND col_key=%s",
+            (pid, "expectedReplyDate"))
+        dt_has_exp_reply = {r["dt_id"]: True for r in exp_col_rows}
+
         for dt in dts:
             rows  = rec_map.get((pid, dt["id"]), [])
             t=ap=pe=ov=rj = 0
@@ -629,24 +635,30 @@ def get_quality_report(pid=None):
 
 
 def get_overdue_records(pid=None):
-    """Returns all overdue records for notification/report."""
+    """Returns overdue records — only for doc types WITH expectedReplyDate column."""
     from utils import is_overdue
-    import datetime
+    import datetime as _dt
     where = "WHERE project_id=%s" if pid else "WHERE 1=1"
     params = (pid,) if pid else ()
     rows = q(f"""SELECT r.project_id, r.dt_id, r.data, d.code as dt_code, d.name as dt_name
                  FROM records r
                  JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
                  {where.replace("project_id", "r.project_id")}""", params)
+    # Only dt_ids with expectedReplyDate column
+    if pid:
+        exp_rows = q("SELECT DISTINCT dt_id FROM columns_config WHERE project_id=%s AND col_key='expectedReplyDate'", (pid,))
+    else:
+        exp_rows = q("SELECT DISTINCT dt_id FROM columns_config WHERE col_key='expectedReplyDate'")
+    dt_with_exp = {r["dt_id"] for r in exp_rows}
     result = []
     for row in rows:
+        if row["dt_id"] not in dt_with_exp: continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         if d.get("actualReplyDate"): continue
         doc_no = d.get("docNo", "") or ""
         issued = d.get("issuedDate", "") or ""
         if not issued: continue
-        if is_overdue(issued, doc_no, None):
-            import datetime as _dt
+        if is_overdue(issued, doc_no, None, True):
             try:
                 dt = _dt.date.fromisoformat(str(issued)[:10])
                 days = (_dt.date.today() - dt).days

@@ -1880,6 +1880,75 @@ async function delProject(pid,name){{
   else toast((r&&r.error)||'Error','er');
 }}
 
+// ── Admin Panel ─────────────────────────────────────────
+async function openAdmin(){{
+  const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
+  if(!users||!projects)return;
+  const body=document.getElementById('admin-body');body.innerHTML='';
+  const utitle=document.createElement('div');utitle.className='stitle';utitle.textContent='👥 Users';body.appendChild(utitle);
+  for(const u of users){{
+    const row=document.createElement('div');row.className='urow';
+    row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
+      <span class="badge" style="background:#fef3c7;color:#92400e">${{u.role.toUpperCase()}}</span>
+      ${{u.username!=='admin'?`<button class="btn btn-sc btn-sm" onclick="chgPw('${{u.username}}')">🔑 PW</button>
+        <button class="btn btn-er btn-sm" onclick="delUsr('${{u.username}}')">✕</button>`:
+        '<span style="font-size:10px;color:var(--mu)">(protected)</span>'}}`;
+    body.appendChild(row);
+    if(u.role!=='superadmin'){{
+      const ad=document.createElement('div');
+      ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
+      ad.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:6px">Project access:</div>';
+      const assigned=await apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]);
+      const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:5px';
+      projects.forEach(p=>{{
+        const isOn=assigned.includes(p.id);
+        const btn=document.createElement('button');
+        btn.style.cssText='padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;transition:all .15s;border:2px solid '+(isOn?'#f0a500':'#e2e8f0')+';background:'+(isOn?'#1a3a5c':'#f8fafc')+';color:'+(isOn?'#fff':'#94a3b8');
+        btn.textContent=p.code;btn.title=p.name;
+        if(isOn)btn.dataset.on='1';
+        btn.onclick=async()=>{{
+          const on=!!btn.dataset.on;
+          await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id}})}});
+          if(on){{delete btn.dataset.on;btn.style.borderColor='#e2e8f0';btn.style.background='#f8fafc';btn.style.color='#94a3b8';}}
+          else{{btn.dataset.on='1';btn.style.borderColor='#f0a500';btn.style.background='#1a3a5c';btn.style.color='#fff';}}
+          toast((btn.dataset.on?'✔ Assigned: ':'Removed: ')+p.name,'ok');
+        }};
+        pl.appendChild(btn);
+      }});
+      ad.appendChild(pl);body.appendChild(ad);
+    }}
+  }}
+  const at=document.createElement('div');at.className='stitle';at.textContent='➕ Add User';body.appendChild(at);
+  const ar=document.createElement('div');
+  ar.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
+    <div class="fg"><label>Username</label><input id="nu-name" placeholder="username"></div>
+    <div class="fg"><label>Role</label><select id="nu-role">
+      <option value="editor">Editor</option><option value="viewer">Viewer</option>
+      <option value="admin">Admin</option></select></div>
+    <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
+    <button class="btn btn-pr btn-sm" onclick="addUsr()">Add</button></div>`;
+  body.appendChild(ar);openM('admin-modal');
+}}
+async function addUsr(){{
+  const name=document.getElementById('nu-name')?.value.trim().toLowerCase();
+  const role=document.getElementById('nu-role')?.value;
+  const pw=document.getElementById('nu-pw')?.value;
+  if(!name||!pw){{toast('Username and password required','er');return;}}
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw}})}});
+  if(r&&r.ok){{toast('✔ User added','ok');closeM('admin-modal');openAdmin();}}
+  else toast((r&&r.error)||'Error','er');
+}}
+async function delUsr(u){{
+  if(!confirm('Delete user: '+u+'?'))return;
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'delete',username:u}})}});
+  if(r&&r.ok){{toast('Deleted','wa');closeM('admin-modal');openAdmin();}}
+}}
+async function chgPw(u){{
+  const pw=prompt('New password for '+u+':');if(!pw)return;
+  await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
+  toast('✔ Password changed','ok');
+}}
+
 init();
 </script>
 </body></html>"""
@@ -2018,8 +2087,9 @@ tr.alt td{{background:#fafbfd}}
 .ms-dd{{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--bd);
   border-radius:var(--rd);z-index:200;max-height:200px;overflow-y:auto;
   box-shadow:0 4px 16px rgba(0,0,0,.12);margin-top:2px}}
-.ms-opt{{padding:6px 10px;cursor:pointer;font-size:11px;display:flex;align-items:center;gap:6px}}
-.ms-opt:hover{{background:var(--bg)}}
+.ms-opt{{padding:9px 12px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f0f4f8}}
+.ms-opt:last-child{{border-bottom:none}}
+.ms-opt:hover{{background:#f0f4f8;color:var(--pr)}}
 .ms-opt.sel{{background:#eff6ff}}
 .empty{{text-align:center;padding:60px 20px;color:var(--mu)}}
 .slist{{list-style:none;display:flex;flex-direction:column;gap:3px;
