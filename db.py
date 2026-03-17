@@ -479,12 +479,6 @@ def get_dashboard_stats():
         dt_stats = []
         total = approved = pending = overdue_cnt = total_rj = 0
 
-        # Build map of which doc types have expectedReplyDate column
-        all_cols_for_pid = q(
-            "SELECT dt_id, col_key FROM columns_config WHERE project_id=%s AND col_key=%s",
-            (pid, "expectedReplyDate"))
-        dt_has_exp_reply = {r["dt_id"]: True for r in all_cols_for_pid}
-
         # Which doc types have expectedReplyDate column
         exp_col_rows = q(
             "SELECT DISTINCT dt_id FROM columns_config WHERE project_id=%s AND col_key=%s",
@@ -521,7 +515,7 @@ def get_dashboard_stats():
                 is_ap = (meta == "approved")
                 is_rj = (meta == "rejected")
                 is_pe = (meta == "pending")
-                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), dt_has_exp_reply.get(dt["id"], True))
+                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), dt_has_exp_reply.get(dt["id"], False))
                 if is_ap: ap += 1
                 if is_pe: pe += 1
                 if is_rj: rj += 1

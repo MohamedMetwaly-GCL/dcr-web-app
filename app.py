@@ -2725,11 +2725,39 @@ async function buildForm(row){{
 function buildMS(key,options,init){{
   const sel=init?init.split(',').map(s=>s.trim()).filter(Boolean):[];
   const con=document.createElement('div');con.className='ms-con';con.id='f-'+key;con.dataset.value=init||'';
-  function render(){{con.innerHTML='';sel.forEach(v=>{{const t=document.createElement('span');t.className='ms-tag';t.innerHTML=`${{v}} <span class="ms-rm" data-v="${{v}}">✕</span>`;t.querySelector('.ms-rm').onclick=e=>{{e.stopPropagation();sel.splice(sel.indexOf(v),1);con.dataset.value=sel.join(', ');render();}};con.appendChild(t);}});if(!sel.length)con.innerHTML='<span class="ms-ph">Select...</span>';con.dataset.value=sel.join(', ');}}
-  con.onclick=e=>{{if(e.target.classList.contains('ms-rm'))return;const ex=document.querySelector('.ms-dd');if(ex){{ex.remove();return;}}
+  function render(){{
+    con.innerHTML='';
+    sel.forEach(v=>{{
+      const t=document.createElement('span');t.className='ms-tag';
+      t.innerHTML=`${{v}} <span class="ms-rm" data-v="${{v}}">✕</span>`;
+      t.querySelector('.ms-rm').onclick=e=>{{e.stopPropagation();sel.splice(sel.indexOf(v),1);con.dataset.value=sel.join(', ');render();}};
+      con.appendChild(t);
+    }});
+    if(!sel.length)con.innerHTML='<span class="ms-ph">Select or type below...</span>';
+    con.dataset.value=sel.join(', ');
+  }}
+  con.onclick=e=>{{
+    if(e.target.classList.contains('ms-rm'))return;
+    const ex=document.querySelector('.ms-dd');if(ex){{ex.remove();return;}}
     const dd=document.createElement('div');dd.className='ms-dd';
-    options.forEach(opt=>{{const it=document.createElement('div');it.className='ms-opt'+(sel.includes(opt)?' sel':'');it.style.cssText='padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f1f5f9';it.innerHTML=`<input type="checkbox" ${{sel.includes(opt)?'checked':''}} style="pointer-events:none;flex-shrink:0"> ${{opt}}`;it.onclick=ev=>{{ev.stopPropagation();if(sel.includes(opt))sel.splice(sel.indexOf(opt),1);else sel.push(opt);con.dataset.value=sel.join(', ');render();it.classList.toggle('sel',sel.includes(opt));it.querySelector('input').checked=sel.includes(opt);}};dd.appendChild(it);}});
-    con.style.position='relative';con.appendChild(dd);}};
+    dd.style.cssText='position:absolute;left:0;right:0;top:100%;background:#fff;border:1.5px solid var(--bd);border-radius:6px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.15);overflow:hidden';
+    options.forEach(opt=>{{
+      const it=document.createElement('div');
+      it.style.cssText='padding:10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:12px'+(sel.includes(opt)?';background:#eff6ff':'');
+      const chk=document.createElement('input');chk.type='checkbox';chk.checked=sel.includes(opt);chk.style.cssText='flex-shrink:0;width:14px;height:14px;pointer-events:none';
+      const lbl=document.createElement('span');lbl.textContent=opt;lbl.style.flex='1';
+      it.appendChild(chk);it.appendChild(lbl);
+      it.onclick=ev=>{{
+        ev.stopPropagation();
+        if(sel.includes(opt))sel.splice(sel.indexOf(opt),1);else sel.push(opt);
+        con.dataset.value=sel.join(', ');render();
+        chk.checked=sel.includes(opt);
+        it.style.background=sel.includes(opt)?'#eff6ff':'';
+      }};
+      dd.appendChild(it);
+    }});
+    con.style.position='relative';con.appendChild(dd);
+  }};
   document.addEventListener('click',e=>{{if(!con.contains(e.target))con.querySelector('.ms-dd')?.remove();}},true);
   render();return con;
 }}
