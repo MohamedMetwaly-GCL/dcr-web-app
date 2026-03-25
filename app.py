@@ -655,11 +655,12 @@ def api_export(pid, dt_id):
         c.border = thin()
     ws.row_dimensions[4].height = 24
 
+    has_exp_col_s = any(c["col_key"]=="expectedReplyDate" for c in cols)
     sr = 1
     for ri, row in enumerate(records):
         rn   = 5 + ri
         is_rev = extract_rev(row.get("docNo","")) > 0
-        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"))
+        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col_s)
         bg     = OV if ov else (ALT if sr%2==0 else WHITE)
         ws.row_dimensions[rn].height = 20
 
@@ -667,26 +668,38 @@ def api_export(pid, dt_id):
             key = col["col_key"]
             if key=="_sr":                  val = "" if is_rev else str(sr)
             elif key=="expectedReplyDate":  val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
-            elif key=="duration":           val = str(compute_duration(row.get("issuedDate"),row.get("actualReplyDate")) or "")
+            elif key=="duration":
+                dur_val = compute_duration(row.get("issuedDate"),row.get("actualReplyDate"))
+                val = str(dur_val) if dur_val is not None else ""
             elif key=="issuedDate":         val = format_date(row.get(key,""))
             elif key=="actualReplyDate":    val = format_date(row.get(key,""))
             else:                           val = str(row.get(key,"") or "")
 
-            c = ws.cell(row=rn, column=ci, value=val)
-            c.border    = thin()
-            c.alignment = Alignment(vertical="center",
-                                    horizontal="center" if key in CENTER else "left")
-            if key=="status" and val:
-                bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
-                c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
-            elif key=="docNo":
-                c.fill = fill(bg)
-                c.font = Font(size=10,name="Consolas",bold=not is_rev,
-                              color=MUTED if is_rev else PRIMARY)
+            # fileLocation → hyperlink "View"
+            if key == "fileLocation" and val and val.startswith("http"):
+                c = ws.cell(row=rn, column=ci)
+                c.value = "View"
+                c.hyperlink = val
+                c.font = Font(size=9,name="Arial",color="2563A8",underline="single")
             else:
-                c.fill = fill(bg)
-                c.font = Font(size=10,name="Arial",
-                              color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
+                c = ws.cell(row=rn, column=ci, value=val)
+                # Duration 0 should show as number not empty
+                if key == "duration" and val == "0":
+                    c.value = 0
+                if key=="status" and val:
+                    bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
+                    c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
+                elif key=="docNo":
+                    c.fill = fill(bg)
+                    c.font = Font(size=10,name="Consolas",bold=not is_rev,
+                                  color=MUTED if is_rev else PRIMARY)
+                else:
+                    c.fill = fill(bg)
+                    c.font = Font(size=10,name="Arial",
+                                  color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
+            c.border    = thin()
+            c.alignment = Alignment(vertical="center", wrap_text=True,
+                                    horizontal="center" if key in CENTER else "left")
         if not is_rev: sr += 1
 
     tot = 5 + len(records)
@@ -1537,9 +1550,14 @@ if(localStorage.getItem('dcr_dark')){{
 // ── Tab switching ──────────────────────────────────────────
 function showTab(name){{
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
+  const pane=document.getElementById('tab-'+name);
+  if(pane)pane.classList.add('active');
   // Always reload with current pid filter when switching tabs
-  if(name==='analytics'){{analyticsLoaded=false;loadAnalytics();}}
+  if(name==='analytics'){{
+    analyticsLoaded=false;
+    // Use setTimeout to ensure the tab is visible before Chart.js renders
+    setTimeout(()=>loadAnalytics(),50);
+  }}
   if(name==='overdue'){{overdueLoaded=false;loadOverdue();}}
   if(name==='executive'){{EXEC_DATA=null;loadExecutive();}}
 }}
@@ -2004,9 +2022,11 @@ def render_register(u, proj):
     if logo_l: logo_html += f'<img src="/api/logo/{pid}/logo_left" style="height:48px;object-fit:contain;flex-shrink:0">'
     if logo_r: logo_html += f'<img src="/api/logo/{pid}/logo_right" style="height:48px;object-fit:contain;flex-shrink:0;margin-left:8px">'
 
-    PROJ_FIELDS = [("code","Code"),("name","Project Name"),("startDate","Start"),("endDate","End"),
+    DEFAULT_PROJ_FIELDS = [("code","Code"),("name","Project Name"),("startDate","Start"),("endDate","End"),
                    ("client","Client"),("landlord","Landlord"),("pmo","PMO"),
                    ("mainConsultant","Consultant"),("mepConsultant","MEP"),("contractor","Contractor")]
+    custom_labels = proj.get("_labels") or {}
+    PROJ_FIELDS = [(k, custom_labels.get(k, lbl)) for k, lbl in DEFAULT_PROJ_FIELDS]
 
     projbar = "".join(
         f'<div class="pf"><span class="pf-lbl">{lbl}</span>'
@@ -2866,12 +2886,28 @@ async function bulkDel(){{
 async function editProject(){{
   const proj=await apiFetch('/api/project/'+PID);if(!proj)return;
   const body=document.getElementById('proj-body');body.innerHTML='';
+  const customLabels=proj._labels||{{}};
+  // Field visibility toggles
+  const visNote=document.createElement('div');
+  visNote.style.cssText='font-size:10px;color:var(--mu);margin-bottom:8px;padding:6px 8px;background:var(--bg);border-radius:4px';
+  visNote.textContent='💡 Leave any field empty to hide it from the project bar';
+  body.appendChild(visNote);
   const grid=document.createElement('div');grid.className='fgrid';
-  PROJ_FIELDS.forEach(([key,lbl])=>{{
+  PROJ_FIELDS.forEach(([key,defaultLbl])=>{{
+    const curLbl=customLabels[key]||defaultLbl;
     const grp=document.createElement('div');grp.className='fg';
-    const label=document.createElement('label');label.textContent=lbl;
-    const inp=document.createElement('input');inp.id='pf-'+key;inp.value=proj[key]||'';
-    grp.appendChild(label);grp.appendChild(inp);grid.appendChild(grp);
+    // Label row: custom label input + value input
+    const lblRow=document.createElement('div');lblRow.style.cssText='display:flex;gap:4px;margin-bottom:3px;align-items:center';
+    const lblInp=document.createElement('input');
+    lblInp.id='lbl-'+key;lblInp.value=curLbl;
+    lblInp.placeholder='Field label';
+    lblInp.title='Edit field label';
+    lblInp.style.cssText='font-size:9px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px;border:1px dashed var(--bd);border-radius:3px;padding:2px 5px;width:100%;background:transparent;outline:none';
+    lblRow.appendChild(lblInp);
+    const valInp=document.createElement('input');valInp.id='pf-'+key;valInp.value=proj[key]||'';
+    valInp.placeholder='(leave empty to hide)';
+    grp.appendChild(lblRow);grp.appendChild(valInp);
+    grid.appendChild(grp);
   }});
   body.appendChild(grid);
   // Logo section
@@ -2895,12 +2931,20 @@ async function editProject(){{
 
 async function saveProject(){{
   const data={{}};
-  PROJ_FIELDS.forEach(([key])=>{{const el=document.getElementById('pf-'+key);if(el)data[key]=el.value.trim();}});
+  const labels={{}};
+  PROJ_FIELDS.forEach(([key,defaultLbl])=>{{
+    const el=document.getElementById('pf-'+key);
+    if(el)data[key]=el.value.trim();
+    const lblEl=document.getElementById('lbl-'+key);
+    if(lblEl&&lblEl.value.trim()&&lblEl.value.trim()!==defaultLbl)
+      labels[key]=lblEl.value.trim();
+  }});
+  data._labels=labels;
   const r=await apiFetch('/api/project/'+PID,{{method:'POST',body:JSON.stringify(data)}});
   if(r===null)return;
   if(r.ok){{
     closeM('proj-modal');toast('✔ Project saved!','ok');
-    PROJ_FIELDS.forEach(([key])=>{{const el=document.querySelector('#projbar .pf-val[data-key="'+key+'"]');if(el)el.textContent=data[key]||'—';}});
+    setTimeout(()=>location.reload(),400);
   }}else toast('Save failed','er');
 }}
 

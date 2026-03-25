@@ -575,7 +575,7 @@ def get_monthly_trend(pid=None):
     from utils import DEFAULT_STATUS_META
     where = "WHERE project_id=%s" if pid else "WHERE 1=1"
     params = (pid,) if pid else ()
-    rows = q(f"SELECT data FROM records {where}", params)
+    rows = q(f"SELECT data FROM records {where} AND data->>'issuedDate' IS NOT NULL AND data->>'issuedDate' != ''", params)
     months = {}
     import datetime
     today = datetime.date.today()
