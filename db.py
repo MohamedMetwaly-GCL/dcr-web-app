@@ -479,18 +479,21 @@ def get_dashboard_stats():
         dt_stats = []
         total = approved = pending = overdue_cnt = total_rj = 0
 
-        # Which doc types have expectedReplyDate and status columns
+        # Which doc types have expectedReplyDate, status, and discipline columns
         exp_col_rows = q(
             "SELECT DISTINCT dt_id, col_key FROM columns_config"
-            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status')",
+            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status','discipline')",
             (pid,))
         dt_has_exp_reply = {}
         dt_has_status    = {}
+        dt_has_discipline = {}
         for r in exp_col_rows:
             if r["col_key"] == "expectedReplyDate":
                 dt_has_exp_reply[r["dt_id"]] = True
             elif r["col_key"] == "status":
                 dt_has_status[r["dt_id"]] = True
+            elif r["col_key"] == "discipline":
+                dt_has_discipline[r["dt_id"]] = True
 
         for dt in dts:
             rows  = rec_map.get((pid, dt["id"]), [])
@@ -520,9 +523,10 @@ def get_dashboard_stats():
                     t += 1
                     is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), dt_has_exp_reply.get(dt["id"], False))
                     if is_ov: ov += 1
-                    ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
-                    ds["total"] += 1
-                    if is_ov: ds["overdue"] += 1
+                    if dt_has_discipline.get(dt["id"], False):
+                        ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
+                        ds["total"] += 1
+                        if is_ov: ds["overdue"] += 1
                     continue
                 # Resolve meta: DB first, then fallback to DEFAULT_STATUS_META
                 meta = pid_meta.get(status) or DEFAULT_STATUS_META.get(status) or "pending"
@@ -537,12 +541,14 @@ def get_dashboard_stats():
                 if is_rj: rj += 1
                 if is_ov: ov += 1
                 # Discipline breakdown
-                ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
-                ds["total"] += 1
-                if is_ap: ds["approved"] += 1
-                if is_pe: ds["pending"]  += 1
-                if is_rj: ds["rejected"] += 1
-                if is_ov: ds["overdue"]  += 1
+                # Only add to discipline breakdown if this dt has a discipline column
+                if dt_has_discipline.get(dt["id"], False):
+                    ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
+                    ds["total"] += 1
+                    if is_ap: ds["approved"] += 1
+                    if is_pe: ds["pending"]  += 1
+                    if is_rj: ds["rejected"] += 1
+                    if is_ov: ds["overdue"]  += 1
 
             disc_list = [{"disc":k,"total":v["total"],"approved":v["approved"],
                           "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"]}

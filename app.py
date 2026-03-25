@@ -336,8 +336,20 @@ def api_dashboard_stats():
 def api_next_doc_no(pid, dt_id):
     dts    = db.get_doc_types(pid)
     dt     = next((d for d in dts if d["id"] == dt_id), None)
-    prefix = dt["code"] if dt else dt_id
-    return jsonify(next=get_next_doc_no(prefix, db.get_records(pid, dt_id)))
+    records = db.get_records(pid, dt_id)
+    # Auto-detect prefix from existing records or build from project+dt codes
+    if records:
+        first_doc = next((r.get("docNo","") for r in records if r.get("docNo","")), "")
+        import re as _re
+        m = _re.match(r"^(.+?)\s*-\s*\d+", first_doc)
+        prefix = m.group(1).strip() if m else (dt["code"] if dt else dt_id)
+    else:
+        # Build default prefix: PROJECT-DTCODE (e.g. PEM064-DS)
+        proj = db.get_project(pid) or {}
+        proj_code = proj.get("code", pid).replace("-","")
+        dt_code = dt["code"] if dt else dt_id
+        prefix = f"{proj_code}-{dt_code}"
+    return jsonify(next=get_next_doc_no(prefix, records))
 
 # ── API: Dropdown Lists ───────────────────────────────────────
 @app.route("/api/lists/<pid>")
@@ -538,17 +550,27 @@ def api_export_all(pid):
                 key = col["col_key"]
                 if key=="_sr":                   val = "" if is_rev else str(sr)
                 elif key=="expectedReplyDate":   val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
-                elif key=="duration":            val = str(compute_duration(row.get("issuedDate"),row.get("actualReplyDate")) or "")
+                elif key=="duration":
+                    dur_val = compute_duration(row.get("issuedDate"),row.get("actualReplyDate"))
+                    val = str(dur_val) if dur_val is not None else ""
                 elif key in ("issuedDate","actualReplyDate"): val = format_date(row.get(key,""))
                 else:                            val = str(row.get(key,"") or "")
-                c = ws.cell(row=rn, column=ci, value=val)
+                if key == "fileLocation" and val and val.startswith("http"):
+                    c = ws.cell(row=rn, column=ci)
+                    c.value = "View"
+                    c.hyperlink = val
+                    c.font = Font(size=9,name="Arial",color="2563A8",underline="single")
+                else:
+                    c = ws.cell(row=rn, column=ci, value=val)
+                    if key == "duration" and val == "0":
+                        c.value = 0
                 c.border = thin()
-                c.alignment = Alignment(vertical="center",
+                c.alignment = Alignment(vertical="center", wrap_text=True,
                                         horizontal="center" if key in CENTER else "left")
                 if key=="status" and val:
                     bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
                     c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
-                else:
+                elif key != "fileLocation" or not (val and val.startswith("http")):
                     c.fill = fill(bg)
                     c.font = Font(size=10,name="Arial",
                                   color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
@@ -1516,9 +1538,10 @@ if(localStorage.getItem('dcr_dark')){{
 function showTab(name){{
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  if(name==='analytics') loadAnalytics();
-  if(name==='overdue')   loadOverdue();
-  if(name==='executive') loadExecutive();
+  // Always reload with current pid filter when switching tabs
+  if(name==='analytics'){{analyticsLoaded=false;loadAnalytics();}}
+  if(name==='overdue'){{overdueLoaded=false;loadOverdue();}}
+  if(name==='executive'){{EXEC_DATA=null;loadExecutive();}}
 }}
 
 // ── Init ──────────────────────────────────────────────────
@@ -1541,7 +1564,14 @@ async function init(){{
   }}finally{{document.getElementById('ld').style.display='none';}}
 }}
 
-function filterProject(pid){{_currentPid=pid;renderAll(pid,_currentDisc);}}
+function filterProject(pid){{
+  _currentPid=pid;renderAll(pid,_currentDisc);
+  // Reload analytics/overdue if their tab is active
+  const activeTab=document.querySelector('.tab-pane.active');
+  if(activeTab?.id==='tab-analytics'){{analyticsLoaded=false;loadAnalytics();}}
+  if(activeTab?.id==='tab-overdue'){{overdueLoaded=false;loadOverdue();}}
+  if(activeTab?.id==='tab-executive'){{EXEC_DATA=null;loadExecutive();}}
+}}
 function filterDisc(disc){{_currentDisc=disc;renderAll(_currentPid,disc);}}
 
 function getFiltered(pid,disc){{
@@ -1699,8 +1729,8 @@ function renderDiscTable(data){{
 
 // ── Analytics Tab ─────────────────────────────────────────
 let analyticsLoaded=false;
-async function loadAnalytics(){{
-  if(analyticsLoaded)return;
+async function loadAnalytics(forceReload=false){{
+  if(analyticsLoaded&&!forceReload)return;
   analyticsLoaded=true;
   const pid=_currentPid;
   const [trend,aging,quality]=await Promise.all([
@@ -1980,19 +2010,23 @@ def render_register(u, proj):
 
     projbar = "".join(
         f'<div class="pf"><span class="pf-lbl">{lbl}</span>'
-        f'<span class="pf-val" data-key="{key}">{proj.get(key,"—")}</span></div>'
-        for key,lbl in PROJ_FIELDS)
+        f'<span class="pf-val" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
+        for key,lbl in PROJ_FIELDS
+        if proj.get(key,"").strip())  # hide empty fields
 
     tabs_html = "".join(
         f'<button class="tab-btn" data-id="{dt["id"]}" onclick="switchTab(\'{dt["id"]}\')">'
         f'<span>{dt["code"]}</span><span class="tcnt" id="cnt-{dt["id"]}">0</span></button>'
         for dt in dts)
 
-    _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if role=='superadmin' else ''
+    _sa_only = role == 'superadmin'
+    _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _sa_only else ''
+    _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _sa_only else ''
+    _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _sa_only else ''
     edit_btns = (f'<button class="tool-btn" onclick="addRecord()">➕ Add</button>'
-                 f'<button class="tool-btn purple" onclick="manageColumns()">⚙ Columns</button>'
+                 f'{_col_btn}'
                  f'{_hol_btn}'
-                 f'<button class="tool-btn" onclick="openLists()">📋 Lists</button>'
+                 f'{_lst_btn}'
                  f'<button class="tool-btn" onclick="editProject()">🏗 Project</button>'
                  if editable else
                  '<span style="font-size:11px;color:rgba(255,255,255,.5);padding:4px 8px">'
@@ -2088,9 +2122,9 @@ tr.alt td{{background:#fafbfd}}
   border-radius:3px;padding:2px 7px;font-size:10px;margin:2px}}
 .ms-rm{{cursor:pointer;opacity:.7}}
 .ms-ph{{color:var(--mu);font-size:11px;padding:3px 5px}}
-.ms-dd{{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--bd);
-  border-radius:var(--rd);z-index:200;max-height:200px;overflow-y:auto;
-  box-shadow:0 4px 16px rgba(0,0,0,.12);margin-top:2px}}
+.ms-dd{{position:absolute;left:0;right:0;top:100%;background:#fff;border:1.5px solid var(--bd);
+  border-radius:var(--rd);z-index:500;max-height:260px;overflow-y:auto;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);margin-top:2px}}
 .ms-opt{{padding:9px 12px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f0f4f8}}
 .ms-opt:last-child{{border-bottom:none}}
 .ms-opt:hover{{background:#f0f4f8;color:var(--pr)}}
@@ -2744,7 +2778,7 @@ function buildMS(key,options,init){{
     if(e.target.classList.contains('ms-rm'))return;
     const ex=document.querySelector('.ms-dd');if(ex){{ex.remove();return;}}
     const dd=document.createElement('div');dd.className='ms-dd';
-    dd.style.cssText='position:absolute;left:0;right:0;top:100%;background:#fff;border:1.5px solid var(--bd);border-radius:6px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.15);overflow:hidden';
+    dd.style.cssText='position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1.5px solid var(--bd);border-radius:6px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.15);max-height:260px;overflow-y:auto';
     options.forEach(opt=>{{
       const it=document.createElement('div');
       it.style.cssText='padding:10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:12px'+(sel.includes(opt)?';background:#eff6ff':'');
