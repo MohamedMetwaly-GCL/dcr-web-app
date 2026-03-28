@@ -135,9 +135,10 @@ def api_save_project(pid):
     if not can_edit(pid):
         return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    name = data.pop("name", pid)
-    code = data.pop("code", pid)
+    name = data.pop("name", pid) or pid
+    code = data.pop("code", pid) or pid
     data.pop("id", None)
+    # _labels is valid custom data, keep it
     db.save_project(pid, name, code, data)
     return jsonify(ok=True)
 
@@ -1926,8 +1927,8 @@ async function createProject(){{
 }}
 
 async function delProject(pid,name){{
-  if(!confirm(`Delete project "${{name}}"? This cannot be undone.`))return;
-  const r=await apiFetch('/api/projects/'+pid,{{method:'DELETE'}});
+  if(!confirm(`Delete project "${{name}}"?\nThis will delete ALL records, documents and settings. This cannot be undone.`))return;
+  const r=await apiFetch('/api/projects/delete/'+pid,{{method:'POST'}});
   if(r&&r.ok){{toast('Project deleted','ok');setTimeout(()=>location.reload(),800);}}
   else toast((r&&r.error)||'Error','er');
 }}

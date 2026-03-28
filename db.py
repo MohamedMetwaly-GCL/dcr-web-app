@@ -269,10 +269,15 @@ def get_project(pid):
     if isinstance(data, str):
         try: data = json.loads(data)
         except: data = {}
+    if not isinstance(data, dict): data = {}
+    # Never let data override the core fields
+    data.pop("id", None); data.pop("name", None); data.pop("code", None)
     return {"id": r["id"], "name": r["name"], "code": r["code"], **data}
 
 def save_project(pid, name, code, extra: dict):
-    jdata = json.dumps(extra)
+    if isinstance(extra, dict):
+        extra.pop("id", None); extra.pop("name", None); extra.pop("code", None)
+    jdata = json.dumps(extra or {})
     exe("""INSERT INTO projects(id,name,code,data) VALUES(%s,%s,%s,%s::jsonb)
            ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data""",
         (pid, name, code, jdata))
