@@ -121,6 +121,22 @@ CREATE TABLE IF NOT EXISTS dropdown_lists (
     UNIQUE (project_id, list_name, item_value)
 );
 ALTER TABLE dropdown_lists ADD COLUMN IF NOT EXISTS meta TEXT DEFAULT NULL;
+CREATE TABLE IF NOT EXISTS audit_log (
+    id          SERIAL PRIMARY KEY,
+    ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    username    TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    project_id  TEXT,
+    dt_id       TEXT,
+    record_id   TEXT,
+    doc_no      TEXT,
+    field_name  TEXT,
+    old_value   TEXT,
+    new_value   TEXT,
+    detail      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_proj ON audit_log(project_id, ts DESC);
 """
 
 DEFAULT_DOC_TYPES = [
@@ -359,6 +375,12 @@ def delete_col(col_id):
     exe("DELETE FROM columns_config WHERE id=%s", (col_id,))
 
 # ── Records ───────────────────────────────────────────────────
+def get_record_by_id(rec_id):
+    """Get a single record's data dict by its ID."""
+    r = q("SELECT data FROM records WHERE id=%s", (rec_id,), one=True)
+    if not r: return None
+    return r["data"] if isinstance(r["data"], dict) else {}
+
 def get_records(pid, dt_id, search=""):
     rows = q("SELECT id, data, created_at FROM records WHERE project_id=%s AND dt_id=%s ORDER BY created_at",
              (pid, dt_id))
@@ -487,7 +509,8 @@ def get_dashboard_stats():
         # Which doc types have expectedReplyDate, status, and discipline columns
         exp_col_rows = q(
             "SELECT DISTINCT dt_id, col_key FROM columns_config"
-            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status','discipline')",
+            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status','discipline')"
+            " AND visible=TRUE",
             (pid,))
         dt_has_exp_reply = {}
         dt_has_status    = {}
@@ -606,30 +629,30 @@ def get_monthly_trend(pid=None):
 
 
 def get_aging_report(pid=None):
-    """Returns pending docs grouped by days lapsed: 1-7, 8-14, 15-21, >21."""
-    from utils import is_overdue
-    import datetime, re as _re
-    where = "WHERE project_id=%s" if pid else "WHERE 1=1"
+    """Returns pending docs grouped by days lapsed — only for types with visible expectedReplyDate."""
+    from utils import compute_duration
+    where = "WHERE r.project_id=%s" if pid else "WHERE 1=1"
     params = (pid,) if pid else ()
-    rows = q(f"SELECT data FROM records {where}", params)
+    if pid:
+        exp_rows = q("SELECT DISTINCT dt_id FROM columns_config WHERE project_id=%s AND col_key='expectedReplyDate' AND visible=TRUE", (pid,))
+    else:
+        exp_rows = q("SELECT DISTINCT dt_id FROM columns_config WHERE col_key='expectedReplyDate' AND visible=TRUE")
+    dt_with_exp = {r["dt_id"] for r in exp_rows}
+    rows = q(f"SELECT r.dt_id, r.data FROM records r {where}", params)
     buckets = {"1-7": 0, "8-14": 0, "15-21": 0, ">21": 0}
-    today = datetime.date.today()
     for row in rows:
+        if row["dt_id"] not in dt_with_exp: continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         if d.get("actualReplyDate"): continue
         issued = d.get("issuedDate", "")
         if not issued: continue
-        try:
-            dt = datetime.date.fromisoformat(str(issued)[:10])
-        except: continue
-        days = (today - dt).days
+        days = compute_duration(issued, None) or 0
         if days < 1: continue
-        if days <= 7:   buckets["1-7"]   += 1
+        if days <= 7:    buckets["1-7"]   += 1
         elif days <= 14: buckets["8-14"]  += 1
         elif days <= 21: buckets["15-21"] += 1
-        else:           buckets[">21"]   += 1
+        else:            buckets[">21"]   += 1
     return [{"range": k, "count": v} for k, v in buckets.items()]
-
 
 def get_quality_report(pid=None):
     """Returns doc quality: how many docs needed 0,1,2,3+ revisions."""
@@ -665,11 +688,15 @@ def get_overdue_records(pid=None):
                  FROM records r
                  JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
                  {where.replace("project_id", "r.project_id")}""", params)
-    # Only dt_ids with expectedReplyDate column
+    # Only dt_ids where expectedReplyDate column EXISTS and is VISIBLE
     if pid:
-        exp_rows = q("SELECT DISTINCT dt_id FROM columns_config WHERE project_id=%s AND col_key='expectedReplyDate'", (pid,))
+        exp_rows = q(
+            "SELECT DISTINCT dt_id FROM columns_config"
+            " WHERE project_id=%s AND col_key='expectedReplyDate' AND visible=TRUE", (pid,))
     else:
-        exp_rows = q("SELECT DISTINCT dt_id FROM columns_config WHERE col_key='expectedReplyDate'")
+        exp_rows = q(
+            "SELECT DISTINCT dt_id FROM columns_config"
+            " WHERE col_key='expectedReplyDate' AND visible=TRUE")
     dt_with_exp = {r["dt_id"] for r in exp_rows}
     result = []
     for row in rows:
@@ -681,8 +708,8 @@ def get_overdue_records(pid=None):
         if not issued: continue
         if is_overdue(issued, doc_no, None, True):
             try:
-                dt = _dt.date.fromisoformat(str(issued)[:10])
-                days = (_dt.date.today() - dt).days
+                from utils import compute_duration
+                days = compute_duration(issued, None) or 0
             except: days = 0
             result.append({
                 "project_id": row["project_id"],
@@ -697,6 +724,48 @@ def get_overdue_records(pid=None):
             })
     result.sort(key=lambda x: x["days_overdue"], reverse=True)
     return result
+
+
+# ── Audit Log ─────────────────────────────────────────────────
+def log_action(username, action, project_id=None, dt_id=None, record_id=None,
+               doc_no=None, field_name=None, old_value=None, new_value=None, detail=None):
+    """Write one audit entry. Never raises — silently ignores errors."""
+    try:
+        exe("""INSERT INTO audit_log(username,action,project_id,dt_id,record_id,
+               doc_no,field_name,old_value,new_value,detail)
+               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (username, action, project_id, dt_id, record_id,
+             doc_no, field_name,
+             str(old_value)[:500] if old_value is not None else None,
+             str(new_value)[:500] if new_value is not None else None,
+             str(detail)[:500] if detail else None))
+    except Exception as e:
+        print(f"[Audit] log error: {e}")
+
+def get_audit_log(project_id=None, username=None, action=None,
+                  limit=200, offset=0):
+    """Fetch audit entries with optional filters."""
+    conditions = []
+    params = []
+    if project_id:
+        conditions.append("project_id=%s"); params.append(project_id)
+    if username:
+        conditions.append("username=%s"); params.append(username)
+    if action:
+        conditions.append("action=%s"); params.append(action)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    params += [limit, offset]
+    return q(f"""SELECT id,ts,username,action,project_id,dt_id,
+                        doc_no,field_name,old_value,new_value,detail
+                 FROM audit_log {where}
+                 ORDER BY ts DESC
+                 LIMIT %s OFFSET %s""", params)
+
+def get_audit_actions():
+    """Return distinct action types for filter dropdown."""
+    rows = q("SELECT DISTINCT action FROM audit_log ORDER BY action")
+    return [r["action"] for r in rows]
+
 
 def rename_column(col_id, new_label):
     exe("UPDATE columns_config SET label=%s WHERE id=%s", (new_label.strip(), col_id))

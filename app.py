@@ -79,11 +79,13 @@ def login():
         if db.verify_pw(uname, pw):
             u     = db.get_user(uname)
             token = db.create_session(uname, u["role"])
+            db.log_action(uname,"LOGIN",detail=f"Role: {u['role']}")
             resp  = make_response(jsonify(ok=True, role=u["role"], username=uname))
             resp.set_cookie("dcr_token", token, httponly=True,
                             samesite="Lax", secure=IS_RENDER,
                             max_age=db.SESSION_TTL)
             return resp
+        db.log_action(uname,"LOGIN_FAIL",detail="Invalid credentials")
         return jsonify(ok=False, error="Invalid username or password"), 401
     return render_login()
 
@@ -310,14 +312,38 @@ def api_records(pid, dt_id):
 @app.route("/api/records/<pid>/<dt_id>", methods=["POST"])
 def api_save_record(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    u      = current_user()
+    uname  = u["username"] if u else "unknown"
     data   = request.get_json(silent=True) or {}
-    rec_id = data.pop("_id", None) or str(uuid.uuid4())
-    db.save_record(pid, dt_id, rec_id, data)
+    rec_id = data.pop("_id", None)
+    clean  = {k:v for k,v in data.items() if not k.startswith("_")}
+    if rec_id:
+        old_data = db.get_record_by_id(rec_id) or {}
+        db.save_record(pid, dt_id, rec_id, clean)
+        for field, new_val in clean.items():
+            old_val = old_data.get(field,"")
+            if str(old_val).strip() != str(new_val or "").strip():
+                db.log_action(uname,"EDIT",pid,dt_id,rec_id,
+                    clean.get("docNo",""),field,
+                    str(old_val)[:200],str(new_val)[:200])
+    else:
+        rec_id = str(uuid.uuid4())
+        db.save_record(pid, dt_id, rec_id, clean)
+        db.log_action(uname,"ADD",pid,dt_id,rec_id,
+            clean.get("docNo",""),detail="New document added")
     return jsonify(ok=True, id=rec_id)
 
 @app.route("/api/records/<rec_id>", methods=["DELETE"])
 def api_delete_record(rec_id):
+    u = current_user()
+    uname = u["username"] if u else "unknown"
+    old_rec = db.get_record_by_id(rec_id) or {}
+    pid = old_rec.get("_pid","")
+    dt_id = old_rec.get("_dt_id","")
+    doc_no = old_rec.get("docNo","")
     db.delete_record(rec_id)
+    db.log_action(uname,"DELETE",pid or None,dt_id or None,rec_id,
+                  doc_no, detail=f"Deleted: {doc_no}")
     return jsonify(ok=True)
 
 @app.route("/api/counts/<pid>")
@@ -468,6 +494,8 @@ def api_reorder_cols(pid, dt_id):
 
 @app.route("/api/export_all/<pid>")
 def api_export_all(pid):
+    u = current_user()
+    if u: db.log_action(u["username"],"EXPORT_EXCEL",pid,detail="Export All")
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -1203,6 +1231,29 @@ def api_executive_summary():
 
 
 
+
+# ── Audit Log API ─────────────────────────────────────────────
+@app.route("/api/audit")
+def api_audit():
+    u = current_user()
+    if not u or u.get("role") not in ("superadmin","admin"):
+        return jsonify(error="Admin only"), 403
+    pid      = request.args.get("pid")
+    username = request.args.get("username")
+    action   = request.args.get("action")
+    offset   = int(request.args.get("offset","0"))
+    rows     = db.get_audit_log(project_id=pid, username=username,
+                                action=action, limit=100, offset=offset)
+    users    = [r["username"] for r in db.get_users()]
+    actions  = db.get_audit_actions()
+    projects = db.get_projects()
+    return jsonify(
+        rows=[{**dict(r), "ts": str(r["ts"])} for r in rows],
+        users=users, actions=actions,
+        projects=[{"id":p["id"],"name":p["name"],"code":p["code"]} for p in projects]
+    )
+
+
 def render_dashboard(u):
     btns, uname, rlbl, rbg = _user_info_html(u)
     role = u["role"] if u else "guest"
@@ -1405,6 +1456,7 @@ canvas{{max-height:200px}}
     <button class="tbtn" onclick="showTab('analytics')">📈 Analytics</button>
     <button class="tbtn" onclick="showTab('overdue')">⚠️ Overdue</button>
     <button class="tbtn" onclick="showTab('executive')">📋 Executive</button>
+    {'<button class="tbtn" onclick="showTab(\'audit\')">📜 Audit Log</button>' if role in ('superadmin','admin') else ''}
   </div>
 
   <!-- TAB: OVERVIEW -->
@@ -1455,21 +1507,21 @@ canvas{{max-height:200px}}
     <div class="charts-grid">
       <div class="ccard">
         <div class="clbl">📅 Monthly Trend (last 6 months)</div>
-        <canvas id="cTrend"></canvas>
+        <div style="position:relative;height:200px"><canvas id="cTrend"></canvas></div>
       </div>
       <div class="ccard">
         <div class="clbl">⏳ Aging — Pending Docs (Days Lapsed)</div>
-        <canvas id="cAging"></canvas>
+        <div style="position:relative;height:200px"><canvas id="cAging"></canvas></div>
       </div>
     </div>
     <div class="charts-grid">
       <div class="ccard">
         <div class="clbl">🔄 Document Quality (Revisions Needed)</div>
-        <canvas id="cQuality"></canvas>
+        <div style="position:relative;height:200px"><canvas id="cQuality"></canvas></div>
       </div>
       <div class="ccard">
         <div class="clbl">✅ Approval Rate by Doc Type</div>
-        <canvas id="cApprRate"></canvas>
+        <div style="position:relative;height:200px"><canvas id="cApprRate"></canvas></div>
       </div>
     </div>
   </div>
@@ -1497,6 +1549,54 @@ canvas{{max-height:200px}}
   <div id="tab-executive" class="tab-pane">
     <div id="exec-content">
       <div style="text-align:center;padding:40px;color:var(--mu)">Loading...</div>
+    </div>
+  </div>
+
+  <!-- TAB: AUDIT LOG -->
+  <div id="tab-audit" class="tab-pane">
+    <div class="panel">
+      <div class="panel-title">📜 Activity Log — All Changes</div>
+      <!-- Filters -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <select id="aud-pid" onchange="loadAudit()"
+          style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;min-width:160px">
+          <option value="">All Projects</option>
+        </select>
+        <select id="aud-user" onchange="loadAudit()"
+          style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
+          <option value="">All Users</option>
+        </select>
+        <select id="aud-action" onchange="loadAudit()"
+          style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
+          <option value="">All Actions</option>
+        </select>
+        <button class="tbtn" onclick="loadAudit(true)" style="margin-left:auto">🔄 Refresh</button>
+      </div>
+      <!-- Table -->
+      <div style="overflow-x:auto">
+        <table class="dt-tbl" id="aud-tbl" style="min-width:800px">
+          <thead><tr>
+            <th style="width:140px">Time</th>
+            <th style="width:100px">User</th>
+            <th style="width:80px">Action</th>
+            <th style="width:100px">Project</th>
+            <th style="width:120px">Document</th>
+            <th style="width:100px">Field</th>
+            <th>Old Value</th>
+            <th>New Value</th>
+            <th>Detail</th>
+          </tr></thead>
+          <tbody id="aud-tbody"></tbody>
+        </table>
+      </div>
+      <div id="aud-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--mu)">
+        <span id="aud-count"></span>
+        <div style="display:flex;gap:8px">
+          <button id="aud-prev" class="tbtn" onclick="auditPage(-1)" disabled>← Prev</button>
+          <span id="aud-page" style="padding:5px 10px;font-size:11px">Page 1</span>
+          <button id="aud-next" class="tbtn" onclick="auditPage(1)">Next →</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1553,14 +1653,10 @@ function showTab(name){{
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
   const pane=document.getElementById('tab-'+name);
   if(pane)pane.classList.add('active');
-  // Always reload with current pid filter when switching tabs
-  if(name==='analytics'){{
-    analyticsLoaded=false;
-    // Use setTimeout to ensure the tab is visible before Chart.js renders
-    setTimeout(()=>loadAnalytics(),50);
-  }}
+  if(name==='analytics'){{analyticsLoaded=false;setTimeout(()=>loadAnalytics(),50);}}
   if(name==='overdue'){{overdueLoaded=false;loadOverdue();}}
   if(name==='executive'){{EXEC_DATA=null;loadExecutive();}}
+  if(name==='audit'){{loadAudit(true);}}
 }}
 
 // ── Init ──────────────────────────────────────────────────
@@ -2001,6 +2097,86 @@ async function chgPw(u){{
   await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
   toast('✔ Password changed','ok');
 }}
+
+// ── Audit Log ────────────────────────────────────────────────
+let _auditOffset=0,_auditHasMore=true;
+const ACTION_COLORS={{
+  'ADD':'#166534','EDIT':'#1d4ed8','DELETE':'#991b1b',
+  'LOGIN':'#6b7280','LOGIN_FAIL':'#dc2626','EXPORT_EXCEL':'#7c3aed'
+}};
+
+async function loadAudit(reset=false){{
+  if(reset)_auditOffset=0;
+  const pid=document.getElementById('aud-pid')?.value||'';
+  const user=document.getElementById('aud-user')?.value||'';
+  const action=document.getElementById('aud-action')?.value||'';
+  const params=new URLSearchParams();
+  if(pid)params.set('pid',pid);
+  if(user)params.set('username',user);
+  if(action)params.set('action',action);
+  params.set('offset',_auditOffset);
+  const data=await apiFetch('/api/audit?'+params);
+  if(!data)return;
+
+  // Populate filters on first load
+  if(reset||_auditOffset===0){{
+    const pSel=document.getElementById('aud-pid');
+    const curPid=pSel.value;
+    pSel.innerHTML='<option value="">All Projects</option>'+
+      (data.projects||[]).map(p=>`<option value="${{p.id}}"${{p.id===curPid?' selected':''}}>${{p.code}} — ${{p.name}}</option>`).join('');
+
+    const uSel=document.getElementById('aud-user');
+    const curU=uSel.value;
+    uSel.innerHTML='<option value="">All Users</option>'+
+      (data.users||[]).map(u=>`<option value="${{u}}"${{u===curU?' selected':''}}>${{u}}</option>`).join('');
+
+    const aSel=document.getElementById('aud-action');
+    const curA=aSel.value;
+    aSel.innerHTML='<option value="">All Actions</option>'+
+      (data.actions||[]).map(a=>`<option value="${{a}}"${{a===curA?' selected':''}}>${{a}}</option>`).join('');
+  }}
+
+  const tbody=document.getElementById('aud-tbody');
+  tbody.innerHTML='';
+  const rows=data.rows||[];
+  _auditHasMore=rows.length===100;
+
+  if(!rows.length){{
+    tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
+  }}else{{
+    rows.forEach((r,i)=>{{
+      const tr=document.createElement('tr');
+      tr.className=i%2===0?'':'alt';
+      const ts=new Date(r.ts);
+      const tsStr=ts.toLocaleDateString('en-GB')+' '+ts.toLocaleTimeString('en-GB',{{hour:'2-digit',minute:'2-digit'}});
+      const actionColor=ACTION_COLORS[r.action]||'#374151';
+      const actionBg=r.action==='ADD'?'#bbf7d0':r.action==='EDIT'?'#dbeafe':r.action==='DELETE'?'#fee2e2':r.action==='LOGIN'?'#f3f4f6':'#fef3c7';
+      tr.innerHTML=`
+        <td style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
+        <td style="font-weight:600;font-size:11px">${{r.username||''}}</td>
+        <td><span style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
+        <td style="font-size:10px;color:var(--mu)">${{r.project_id||''}}</td>
+        <td style="font-size:11px;font-weight:600;color:var(--pr)">${{r.doc_no||''}}</td>
+        <td style="font-size:10px;color:var(--mu)">${{r.field_name||''}}</td>
+        <td style="font-size:10px;color:#dc2626;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{r.old_value||''}}">${{r.old_value||''}}</td>
+        <td style="font-size:10px;color:#166534;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{r.new_value||''}}">${{r.new_value||''}}</td>
+        <td style="font-size:10px;color:var(--mu)">${{r.detail||''}}</td>`;
+      tbody.appendChild(tr);
+    }});
+  }}
+
+  const page=Math.floor(_auditOffset/100)+1;
+  document.getElementById('aud-count').textContent=`Showing ${{rows.length}} entries`;
+  document.getElementById('aud-page').textContent=`Page ${{page}}`;
+  document.getElementById('aud-prev').disabled=_auditOffset===0;
+  document.getElementById('aud-next').disabled=!_auditHasMore;
+}}
+
+function auditPage(dir){{
+  _auditOffset=Math.max(0,_auditOffset+dir*100);
+  loadAudit();
+}}
+
 
 init();
 </script>
