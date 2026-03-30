@@ -1257,6 +1257,7 @@ def api_audit():
 def render_dashboard(u):
     btns, uname, rlbl, rbg = _user_info_html(u)
     role = u["role"] if u else "guest"
+    audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
 
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1456,7 +1457,7 @@ canvas{{max-height:200px}}
     <button class="tbtn" onclick="showTab('analytics')">📈 Analytics</button>
     <button class="tbtn" onclick="showTab('overdue')">⚠️ Overdue</button>
     <button class="tbtn" onclick="showTab('executive')">📋 Executive</button>
-    {'<button class="tbtn" onclick="showTab(\'audit\')">📜 Audit Log</button>' if role in ('superadmin','admin') else ''}
+    {audit_btn}
   </div>
 
   <!-- TAB: OVERVIEW -->
