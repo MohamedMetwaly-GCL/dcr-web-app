@@ -47,8 +47,8 @@ def require_superadmin(fn):
 def can_edit(project_id):
     u = current_user()
     if not u: return False
-    if u["role"] == "superadmin": return True
-    if u["role"] in ("admin","editor"):
+    if u["role"] in ("superadmin","admin"): return True  # admins can edit all projects
+    if u["role"] == "editor":
         return project_id in db.get_user_projects(u["username"])
     return False
 

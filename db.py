@@ -549,7 +549,8 @@ def get_dashboard_stats():
                 # Docs from types WITHOUT status column → count in total only (no status bucket)
                 if not dt_has_status.get(dt["id"], False):
                     t += 1
-                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), dt_has_exp_reply.get(dt["id"], False))
+                    _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False)
+                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both)
                     if is_ov: ov += 1
                     if dt_has_discipline.get(dt["id"], False):
                         ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
@@ -563,7 +564,8 @@ def get_dashboard_stats():
                 is_ap = (meta == "approved")
                 is_rj = (meta == "rejected")
                 is_pe = (meta == "pending")
-                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), dt_has_exp_reply.get(dt["id"], False))
+                _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False)
+                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both)
                 if is_ap: ap += 1
                 if is_pe: pe += 1
                 if is_rj: rj += 1
@@ -603,11 +605,12 @@ def get_monthly_trend(pid=None):
     from utils import DEFAULT_STATUS_META
     where = "WHERE project_id=%s" if pid else "WHERE 1=1"
     params = (pid,) if pid else ()
-    rows = q(f"SELECT data FROM records {where} AND data->>'issuedDate' IS NOT NULL AND data->>'issuedDate' != ''", params)
+    rows = q(f"SELECT data FROM records {where}", params)
     months = {}
     import datetime
     today = datetime.date.today()
-    for i in range(5, -1, -1):
+    # Show last 12 months to capture more data
+    for i in range(11, -1, -1):
         m = (today.month - i - 1) % 12 + 1
         y = today.year - ((today.month - i - 1) // 12)
         key = f"{y:04d}-{m:02d}"
@@ -634,10 +637,20 @@ def get_aging_report(pid=None):
     where = "WHERE r.project_id=%s" if pid else "WHERE 1=1"
     params = (pid,) if pid else ()
     if pid:
-        exp_rows = q("SELECT DISTINCT dt_id FROM columns_config WHERE project_id=%s AND col_key='expectedReplyDate' AND visible=TRUE", (pid,))
+        exp_rows = q(
+            "SELECT dt_id, col_key FROM columns_config"
+            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status') AND visible=TRUE",
+            (pid,))
     else:
-        exp_rows = q("SELECT DISTINCT dt_id FROM columns_config WHERE col_key='expectedReplyDate' AND visible=TRUE")
-    dt_with_exp = {r["dt_id"] for r in exp_rows}
+        exp_rows = q(
+            "SELECT dt_id, col_key FROM columns_config"
+            " WHERE col_key IN ('expectedReplyDate','status') AND visible=TRUE")
+    dt_has_exp_a    = set()
+    dt_has_status_a = set()
+    for r in exp_rows:
+        if r["col_key"] == "expectedReplyDate": dt_has_exp_a.add(r["dt_id"])
+        elif r["col_key"] == "status":          dt_has_status_a.add(r["dt_id"])
+    dt_with_exp = dt_has_exp_a & dt_has_status_a
     rows = q(f"SELECT r.dt_id, r.data FROM records r {where}", params)
     buckets = {"1-7": 0, "8-14": 0, "15-21": 0, ">21": 0}
     for row in rows:
@@ -679,7 +692,7 @@ def get_quality_report(pid=None):
 
 
 def get_overdue_records(pid=None):
-    """Returns overdue records — only for doc types WITH expectedReplyDate column."""
+    """Returns overdue records — only for doc types with BOTH visible status AND visible expectedReplyDate."""
     from utils import is_overdue
     import datetime as _dt
     where = "WHERE project_id=%s" if pid else "WHERE 1=1"
@@ -688,16 +701,24 @@ def get_overdue_records(pid=None):
                  FROM records r
                  JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
                  {where.replace("project_id", "r.project_id")}""", params)
-    # Only dt_ids where expectedReplyDate column EXISTS and is VISIBLE
+    # Only dt_ids that have BOTH visible status AND visible expectedReplyDate
+    # (types like Letters/PR that have no status column are excluded)
     if pid:
         exp_rows = q(
-            "SELECT DISTINCT dt_id FROM columns_config"
-            " WHERE project_id=%s AND col_key='expectedReplyDate' AND visible=TRUE", (pid,))
+            "SELECT dt_id, col_key FROM columns_config"
+            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status') AND visible=TRUE",
+            (pid,))
     else:
         exp_rows = q(
-            "SELECT DISTINCT dt_id FROM columns_config"
-            " WHERE col_key='expectedReplyDate' AND visible=TRUE")
-    dt_with_exp = {r["dt_id"] for r in exp_rows}
+            "SELECT dt_id, col_key FROM columns_config"
+            " WHERE col_key IN ('expectedReplyDate','status') AND visible=TRUE")
+    dt_has_exp    = set()
+    dt_has_status = set()
+    for r in exp_rows:
+        if r["col_key"] == "expectedReplyDate": dt_has_exp.add(r["dt_id"])
+        elif r["col_key"] == "status":          dt_has_status.add(r["dt_id"])
+    # Must have BOTH to be considered overdue-eligible
+    dt_with_exp = dt_has_exp & dt_has_status
     result = []
     for row in rows:
         if row["dt_id"] not in dt_with_exp: continue
