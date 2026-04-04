@@ -8,7 +8,18 @@ from utils import (compute_expected_reply, compute_duration, is_overdue,
                    REJECTED_STATUSES, invalidate_holidays_cache)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", os.urandom(32))
+
+# ── SECRET_KEY — must be set as a Railway environment variable ─
+# Generate once with: python -c "import secrets; print(secrets.token_hex(32))"
+# Then add to Railway: Variables → SECRET_KEY → <your generated value>
+_secret_key = os.environ.get("SECRET_KEY")
+if not _secret_key:
+    raise RuntimeError(
+        "SECRET_KEY environment variable is not set. "
+        "Generate a value with:  python -c \"import secrets; print(secrets.token_hex(32))\" "
+        "and add it to your Railway service Variables before deploying."
+    )
+app.secret_key = _secret_key
 IS_RENDER = bool(os.environ.get("RENDER"))
 
 # ── Session cookie settings ───────────────────────────────────
@@ -316,9 +327,12 @@ def api_save_record(pid, dt_id):
     uname  = u["username"] if u else "unknown"
     data   = request.get_json(silent=True) or {}
     rec_id = data.pop("_id", None)
+    # Strip all _ keys — they are computed/meta fields, never stored
     clean  = {k:v for k,v in data.items() if not k.startswith("_")}
     if rec_id:
-        old_data = db.get_record_by_id(rec_id) or {}
+        full_row = db.get_record_by_id(rec_id) or {}
+        # Extract only the stored document fields for the diff (exclude _ meta keys)
+        old_data = {k: v for k, v in full_row.items() if not k.startswith("_")}
         db.save_record(pid, dt_id, rec_id, clean)
         for field, new_val in clean.items():
             old_val = old_data.get(field,"")
@@ -335,15 +349,30 @@ def api_save_record(pid, dt_id):
 
 @app.route("/api/records/<rec_id>", methods=["DELETE"])
 def api_delete_record(rec_id):
+    # Fix: require authentication — unauthenticated callers are rejected
     u = current_user()
-    uname = u["username"] if u else "unknown"
-    old_rec = db.get_record_by_id(rec_id) or {}
-    pid = old_rec.get("_pid","")
-    dt_id = old_rec.get("_dt_id","")
-    doc_no = old_rec.get("docNo","")
+    if not u:
+        return jsonify(error="LOGIN_REQUIRED"), 403
+
+    # Fix: get_record_by_id now returns full row with _project_id and _dt_id
+    full_row = db.get_record_by_id(rec_id)
+    if not full_row:
+        return jsonify(error="Not found"), 404
+
+    pid   = full_row.get("_project_id", "")
+    dt_id = full_row.get("_dt_id", "")
+    doc_no = full_row.get("docNo", "")
+
+    # Fix: verify the caller has edit rights on this specific project
+    if not can_edit(pid):
+        return jsonify(error="Forbidden"), 403
+
     db.delete_record(rec_id)
-    db.log_action(uname,"DELETE",pid or None,dt_id or None,rec_id,
-                  doc_no, detail=f"Deleted: {doc_no}")
+    db.log_action(
+        u["username"], "DELETE",
+        pid or None, dt_id or None, rec_id,
+        doc_no, detail=f"Deleted: {doc_no}"
+    )
     return jsonify(ok=True)
 
 @app.route("/api/counts/<pid>")

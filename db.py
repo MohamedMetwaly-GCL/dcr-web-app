@@ -1,5 +1,6 @@
 """db.py - DCR Flask - Clean PostgreSQL database layer"""
 import os, json, uuid, datetime, hashlib, secrets
+import bcrypt as _bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from psycopg2.pool import ThreadedConnectionPool
@@ -212,11 +213,36 @@ def _ensure_admin():
             ("admin", hash_pw("admin123"), "superadmin"))
 
 # ── Auth ──────────────────────────────────────────────────────
-def hash_pw(pw): return hashlib.sha256(pw.encode()).hexdigest()
+def hash_pw(pw: str) -> str:
+    """Always produces a bcrypt hash. Used for new passwords and upgrades."""
+    return _bcrypt.hashpw(pw.encode(), _bcrypt.gensalt()).decode()
 
-def verify_pw(username, pw):
+def _is_bcrypt(h: str) -> bool:
+    return h.startswith("$2b$") or h.startswith("$2a$")
+
+def verify_pw(username: str, pw: str) -> bool:
+    """
+    Verify password with automatic lazy migration from SHA-256 to bcrypt.
+    - If stored hash is already bcrypt → verify directly with bcrypt.
+    - If stored hash is legacy SHA-256 → verify with SHA-256, then silently
+      re-hash with bcrypt and update the DB row in the same call.
+    This means every user is upgraded on their next successful login with
+    zero disruption: no forced logout, no data loss, no migration script.
+    """
     u = q("SELECT pw_hash FROM users WHERE username=%s", (username,), one=True)
-    return u and u["pw_hash"] == hash_pw(pw)
+    if not u:
+        return False
+    stored = u["pw_hash"]
+    if _is_bcrypt(stored):
+        return _bcrypt.checkpw(pw.encode(), stored.encode())
+    # Legacy SHA-256 path
+    legacy_hash = hashlib.sha256(pw.encode()).hexdigest()
+    if stored == legacy_hash:
+        # Password correct — silently upgrade to bcrypt
+        exe("UPDATE users SET pw_hash=%s WHERE username=%s",
+            (hash_pw(pw), username))
+        return True
+    return False
 
 def get_user(username):
     return q("SELECT * FROM users WHERE username=%s", (username,), one=True)
@@ -376,10 +402,25 @@ def delete_col(col_id):
 
 # ── Records ───────────────────────────────────────────────────
 def get_record_by_id(rec_id):
-    """Get a single record's data dict by its ID."""
-    r = q("SELECT data FROM records WHERE id=%s", (rec_id,), one=True)
-    if not r: return None
-    return r["data"] if isinstance(r["data"], dict) else {}
+    """
+    Return full row context: _id, _project_id, _dt_id, _updated_at,
+    plus all document data fields unpacked at the top level.
+    The _ prefix on injected keys matches the existing convention (_id, _created)
+    so no downstream code needs to change for read operations.
+    Returns None if record not found.
+    """
+    r = q("""SELECT id, project_id, dt_id, data, updated_at
+             FROM records WHERE id=%s""", (rec_id,), one=True)
+    if not r:
+        return None
+    data = r["data"] if isinstance(r["data"], dict) else {}
+    return {
+        "_id":         r["id"],
+        "_project_id": r["project_id"],
+        "_dt_id":      r["dt_id"],
+        "_updated_at": str(r["updated_at"] or ""),
+        **data,
+    }
 
 def get_records(pid, dt_id, search=""):
     rows = q("SELECT id, data, created_at FROM records WHERE project_id=%s AND dt_id=%s ORDER BY created_at",
