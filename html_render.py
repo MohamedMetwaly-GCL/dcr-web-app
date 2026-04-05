@@ -939,7 +939,7 @@ async function createProject(){{
   const btn=document.getElementById('cpbtn');
   btn.disabled=true;btn.textContent='Creating...';
   try{{
-    const r=await fetch('/api/projects',{{method:'POST',credentials:'include',
+    const r=await fetch('/api/projects/create',{{method:'POST',credentials:'include',
       headers:{{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}},
       body:JSON.stringify({{id,code:code||id,name}})}});
     const d=await r.json();
