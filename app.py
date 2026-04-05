@@ -9,10 +9,12 @@ from utils import (compute_expected_reply, compute_duration, is_overdue,
 
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
 from html_render import render_login, render_dashboard, render_register
+from blueprints.projects import projects_bp
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
+app.register_blueprint(projects_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, require_login, require_superadmin, can_edit
@@ -74,59 +76,6 @@ def register():
     proj = db.get_project(pid)
     if not proj: return "Project not found", 404
     return render_register(u, proj)
-
-# ── API: Projects ─────────────────────────────────────────────
-@app.route("/api/projects")
-def api_projects():
-    u = current_user()
-    projects = db.get_projects()
-    out = []
-    for p in projects:
-        try: data = p.get("data") or {}
-        except: data = {}
-        out.append({
-            "id": p["id"], "name": p["name"], "code": p["code"],
-            "client": data.get("client","") if isinstance(data,dict) else "",
-            "can_edit": can_edit(p["id"])
-        })
-    return jsonify(out)
-
-@app.route("/api/project/<pid>")
-def api_get_project(pid):
-    p = db.get_project(pid)
-    if not p: return jsonify(error="Not found"), 404
-    return jsonify(p)
-
-@app.route("/api/project/<pid>", methods=["POST"])
-def api_save_project(pid):
-    if not can_edit(pid):
-        return jsonify(error="LOGIN_REQUIRED"), 403
-    data = request.get_json(silent=True) or {}
-    name = data.pop("name", pid) or pid
-    code = data.pop("code", pid) or pid
-    data.pop("id", None)
-    # _labels is valid custom data, keep it
-    db.save_project(pid, name, code, data)
-    return jsonify(ok=True)
-
-@app.route("/api/projects/create", methods=["POST"])
-@require_superadmin
-def api_create_project():
-    data = request.get_json(silent=True) or {}
-    pid  = data.get("id","").strip().upper()
-    name = data.get("name","").strip()
-    code = data.get("code","").strip().upper()
-    if not pid or not name or not code:
-        return jsonify(ok=False, error="ID, name and code required"), 400
-    u = current_user()
-    db.create_project(pid, name, code, creator=u["username"])
-    return jsonify(ok=True)
-
-@app.route("/api/projects/delete/<pid>", methods=["POST"])
-@require_superadmin
-def api_delete_project(pid):
-    db.delete_project(pid)
-    return jsonify(ok=True)
 
 # ── API: Doc Types ────────────────────────────────────────────
 @app.route("/api/doc_types/<pid>")
