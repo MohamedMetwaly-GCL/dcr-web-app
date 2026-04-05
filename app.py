@@ -13,38 +13,8 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
 
-# ── Auth helpers ──────────────────────────────────────────────
-def current_user():
-    token = request.cookies.get("dcr_token")
-    if not token: return None
-    return db.get_session(token)
-
-def require_login(fn):
-    from functools import wraps
-    @wraps(fn)
-    def wrapper(*a, **kw):
-        if not current_user():
-            return jsonify(error="LOGIN_REQUIRED"), 403
-        return fn(*a, **kw)
-    return wrapper
-
-def require_superadmin(fn):
-    from functools import wraps
-    @wraps(fn)
-    def wrapper(*a, **kw):
-        u = current_user()
-        if not u or u["role"] != "superadmin":
-            return jsonify(error="Forbidden"), 403
-        return fn(*a, **kw)
-    return wrapper
-
-def can_edit(project_id):
-    u = current_user()
-    if not u: return False
-    if u["role"] in ("superadmin","admin"): return True  # admins can edit all projects
-    if u["role"] == "editor":
-        return project_id in db.get_user_projects(u["username"])
-    return False
+# ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
+from auth import current_user, require_login, require_superadmin, can_edit
 
 # ── Pages ─────────────────────────────────────────────────────
 @app.route("/ping")
@@ -1256,7 +1226,7 @@ def api_audit():
     offset   = int(request.args.get("offset","0"))
     rows     = db.get_audit_log(project_id=pid, username=username,
                                 action=action, limit=100, offset=offset)
-    users    = [r["username"] for r in db.get_users()]
+    users    = [r["username"] for r in db.get_all_users()]
     actions  = db.get_audit_actions()
     projects = db.get_projects()
     return jsonify(
