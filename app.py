@@ -7,28 +7,11 @@ from utils import (compute_expected_reply, compute_duration, is_overdue,
                    format_date, get_next_doc_no, extract_rev, STATUS_COLORS,
                    REJECTED_STATUSES, invalidate_holidays_cache)
 
+from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
+
 app = Flask(__name__)
-
-# ── SECRET_KEY — must be set as a Railway environment variable ─
-# Generate once with: python -c "import secrets; print(secrets.token_hex(32))"
-# Then add to Railway: Variables → SECRET_KEY → <your generated value>
-_secret_key = os.environ.get("SECRET_KEY")
-if not _secret_key:
-    raise RuntimeError(
-        "SECRET_KEY environment variable is not set. "
-        "Generate a value with:  python -c \"import secrets; print(secrets.token_hex(32))\" "
-        "and add it to your Railway service Variables before deploying."
-    )
-app.secret_key = _secret_key
-IS_RENDER = bool(os.environ.get("RENDER"))
-
-# ── Session cookie settings ───────────────────────────────────
-app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=IS_RENDER,
-    PERMANENT_SESSION_LIFETIME=datetime.timedelta(hours=8),
-)
+app.secret_key = SECRET_KEY
+app.config.update(**SESSION_CONFIG)
 
 # ── Auth helpers ──────────────────────────────────────────────
 def current_user():
