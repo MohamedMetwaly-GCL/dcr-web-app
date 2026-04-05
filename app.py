@@ -10,11 +10,13 @@ from utils import (compute_expected_reply, compute_duration, is_overdue,
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
 from html_render import render_login, render_dashboard, render_register
 from blueprints.projects import projects_bp
+from blueprints.doc_types import doc_types_bp
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
 app.register_blueprint(projects_bp)
+app.register_blueprint(doc_types_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, require_login, require_superadmin, can_edit
@@ -76,50 +78,6 @@ def register():
     proj = db.get_project(pid)
     if not proj: return "Project not found", 404
     return render_register(u, proj)
-
-# ── API: Doc Types ────────────────────────────────────────────
-@app.route("/api/doc_types/<pid>")
-def api_doc_types(pid):
-    return jsonify(db.get_doc_types(pid))
-
-@app.route("/api/doc_types/<pid>", methods=["POST"])
-def api_add_doc_type(pid):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
-    data = request.get_json(silent=True) or {}
-    code = data.get("code","").strip().upper()
-    name = data.get("name","").strip()
-    if not code or not name:
-        return jsonify(ok=False, error="Code and name required"), 400
-    db.add_doc_type(pid, code, name)
-    return jsonify(ok=True)
-
-
-@app.route("/api/doc_types/<pid>/<dt_id>", methods=["PATCH"])
-def api_rename_doc_type(pid, dt_id):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
-    data = request.get_json(silent=True) or {}
-    new_code = data.get("code","").strip().upper()
-    new_name = data.get("name","").strip()
-    if new_code:
-        db.exe("UPDATE doc_types SET code=%s WHERE id=%s AND project_id=%s", (new_code, dt_id, pid))
-    if new_name:
-        db.exe("UPDATE doc_types SET name=%s WHERE id=%s AND project_id=%s", (new_name, dt_id, pid))
-    return jsonify(ok=True)
-
-@app.route("/api/doc_types/<pid>/reorder", methods=["POST"])
-def api_reorder_doc_types(pid):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
-    data = request.get_json(silent=True) or {}
-    order = data.get("order", [])
-    for i, dt_id in enumerate(order):
-        db.exe("UPDATE doc_types SET sort_order=%s WHERE id=%s AND project_id=%s", (i, dt_id, pid))
-    return jsonify(ok=True)
-
-@app.route("/api/doc_types/<pid>/<dt_id>", methods=["DELETE"])
-def api_delete_doc_type(pid, dt_id):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
-    db.delete_doc_type(pid, dt_id)
-    return jsonify(ok=True)
 
 # ── API: Columns ──────────────────────────────────────────────
 @app.route("/api/columns/<pid>/<dt_id>")
