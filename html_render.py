@@ -1236,6 +1236,7 @@ tr.alt td{{background:#fafbfd}}
 .sbadge{{display:inline-block;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700}}
 .flink{{color:var(--pl);text-decoration:underline;cursor:pointer;font-size:11px}}
 .ovdate{{color:#dc2626;font-weight:700}}
+.mlcell{{white-space:pre-line}}
 #bulkbar{{display:none;background:#1a3a5c;color:#fff;padding:5px 14px;align-items:center;gap:10px;font-size:12px;flex-shrink:0}}
 #bulkbar.show{{display:flex}}
 #sbar{{background:var(--pr);color:rgba(255,255,255,.75);padding:3px 14px;font-size:10px;display:flex;gap:16px;flex-shrink:0}}
@@ -1722,6 +1723,8 @@ function renderRows(){{
     tsr.textContent=row._isRev?'':sr;tr.appendChild(tsr);
     state.cols.forEach(col=>{{
       const td=document.createElement('td');const key=col.col_key;let val='';
+      const ML_KEYS=new Set(['remarks','content','msRef','ms_ref']);
+      if(ML_KEYS.has(key)||key.toLowerCase().includes('ms_ref')||key.toLowerCase().includes('msref'))td.classList.add('mlcell');
       if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}
       else if(key==='duration')val=row._duration||'';
       else if(col.col_type==='duration_calc'){{
@@ -1879,7 +1882,11 @@ async function buildForm(row){{
       inp.style.cssText='font-family:Consolas,monospace;font-weight:600';
       grp.appendChild(inp);
     }}
-    else if(key==='remarks'){{const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;ta.rows=3;grp.appendChild(ta);}}
+    else if(key==='remarks'||key==='content'||key==='msRef'||key==='ms_ref'||key.toLowerCase().includes('ms_ref')||key.toLowerCase().includes('msref')){{
+      const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
+      ta.rows=(key==='content')?3:2;ta.style.cssText='resize:vertical';
+      grp.appendChild(ta);
+    }}
     else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';grp.appendChild(inp);}}
     grid.appendChild(grp);
   }}
