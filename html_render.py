@@ -106,10 +106,6 @@ function toast(msg,type=''){
 }
 function openM(id){document.getElementById(id).classList.remove('hidden')}
 function closeM(id){document.getElementById(id).classList.add('hidden')}
-document.addEventListener('DOMContentLoaded',()=>{
-  document.querySelectorAll('.overlay').forEach(o=>
-    o.addEventListener('click',e=>{if(e.target===o)o.classList.add('hidden')}));
-});
 async function apiFetch(url,opts={}){
   const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},...opts});
   if(r.status===403){const d=await r.json().catch(()=>({}));

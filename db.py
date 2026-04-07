@@ -196,6 +196,11 @@ DEFAULT_LISTS = {
               "Cancelled","Open","Closed","Replied","Pending"],
 }
 
+def _is_non_workflow_dt(dt_code="", dt_name=""):
+    code = str(dt_code or "").strip().lower()
+    name = str(dt_name or "").strip().lower()
+    return code in ("pr", "ltr") or "requisition" in name or "letter" in name
+
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
     for stmt in stmts:
@@ -568,6 +573,7 @@ def get_dashboard_stats():
             rows  = rec_map.get((pid, dt["id"]), [])
             t=ap=pe=ov=rj = 0
             disc_map = {}
+            dt_is_non_workflow = _is_non_workflow_dt(dt.get("code",""), dt.get("name",""))
 
             # ── Approach 1: group by base doc, use LATEST rev status ──
             # Collect ALL revisions per base document first
@@ -590,7 +596,7 @@ def get_dashboard_stats():
                 # Docs from types WITHOUT status column → count in total only (no status bucket)
                 if not dt_has_status.get(dt["id"], False):
                     t += 1
-                    _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False)
+                    _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
                     is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both)
                     if is_ov: ov += 1
                     if dt_has_discipline.get(dt["id"], False):
@@ -605,7 +611,7 @@ def get_dashboard_stats():
                 is_ap = (meta == "approved")
                 is_rj = (meta == "rejected")
                 is_pe = (meta == "pending")
-                _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False)
+                _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
                 is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both)
                 if is_ap: ap += 1
                 if is_pe: pe += 1
@@ -643,7 +649,6 @@ def get_dashboard_stats():
 def get_monthly_trend(pid=None):
     """Returns last 6 months of submission counts per month."""
     import re as _re
-    from utils import DEFAULT_STATUS_META
     where = "WHERE project_id=%s" if pid else "WHERE 1=1"
     params = (pid,) if pid else ()
     rows = q(f"SELECT data FROM records {where}", params)
@@ -692,6 +697,12 @@ def get_aging_report(pid=None):
         if r["col_key"] == "expectedReplyDate": dt_has_exp_a.add(r["dt_id"])
         elif r["col_key"] == "status":          dt_has_status_a.add(r["dt_id"])
     dt_with_exp = dt_has_exp_a & dt_has_status_a
+    dt_rows = q("SELECT id, code, name FROM doc_types WHERE project_id=%s", (pid,)) if pid else q("SELECT id, code, name FROM doc_types")
+    dt_with_exp = {dt_id for dt_id in dt_with_exp
+                   if not _is_non_workflow_dt(
+                       next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),
+                       next((d["name"] for d in dt_rows if d["id"] == dt_id), "")
+                   )}
     rows = q(f"SELECT r.dt_id, r.data FROM records r {where}", params)
     buckets = {"1-7": 0, "8-14": 0, "15-21": 0, ">21": 0}
     for row in rows:
@@ -760,6 +771,12 @@ def get_overdue_records(pid=None):
         elif r["col_key"] == "status":          dt_has_status.add(r["dt_id"])
     # Must have BOTH to be considered overdue-eligible
     dt_with_exp = dt_has_exp & dt_has_status
+    dt_rows = q("SELECT id, code, name FROM doc_types WHERE project_id=%s", (pid,)) if pid else q("SELECT id, code, name FROM doc_types")
+    dt_with_exp = {dt_id for dt_id in dt_with_exp
+                   if not _is_non_workflow_dt(
+                       next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),
+                       next((d["name"] for d in dt_rows if d["id"] == dt_id), "")
+                   )}
     result = []
     for row in rows:
         if row["dt_id"] not in dt_with_exp: continue
