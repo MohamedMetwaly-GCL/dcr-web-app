@@ -1750,7 +1750,13 @@ function renderRows(){{
         if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">View</a>`;tr.appendChild(td);return;}}
       }}
       else val=String(row[key]||'');
-      td.textContent=val;tr.appendChild(td);
+      let displayVal=val;
+      if(typeof displayVal==='string'&&(k==='content'||k==='remarks'||k.includes('ms'))){{
+        displayVal=displayVal
+          .replaceAll(' / ','\n')
+          .replaceAll('/','\n');
+      }}
+      td.textContent=displayVal;tr.appendChild(td);
     }});
     const ta=document.createElement('td');ta.className='acts';
     if(CAN_EDIT)ta.innerHTML=`<button class="act" onclick="editRec('${{row._id}}')">✏</button> <button class="act del" onclick="delRec('${{row._id}}')">🗑</button>`;
@@ -2402,4 +2408,3 @@ async function doImport(){{
   finally{{btn.disabled=false;btn.textContent='Import';}}
 }}
 </script></body></html>"""
-
