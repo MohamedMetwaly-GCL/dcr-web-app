@@ -12,6 +12,8 @@ from html_render import render_login, render_dashboard, render_register
 from blueprints.projects import projects_bp
 from blueprints.doc_types import doc_types_bp
 from blueprints.columns import columns_bp
+from blueprints.records import records_bp
+from blueprints.analytics import analytics_bp
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -19,6 +21,8 @@ app.config.update(**SESSION_CONFIG)
 app.register_blueprint(projects_bp)
 app.register_blueprint(doc_types_bp)
 app.register_blueprint(columns_bp)
+app.register_blueprint(records_bp)
+app.register_blueprint(analytics_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, require_login, require_superadmin, can_edit
@@ -107,79 +111,6 @@ def api_save_holidays():
     return jsonify(ok=True, count=len(valid))
 
 # ── API: Records ──────────────────────────────────────────────
-@app.route("/api/records/<pid>/<dt_id>")
-def api_records(pid, dt_id):
-    search  = request.args.get("search","")
-    records = db.get_records(pid, dt_id, search=search)
-    cols    = db.get_columns(pid, dt_id)
-    date_col_keys = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
-    has_exp_reply = any(c["col_key"] == "expectedReplyDate" for c in cols)
-    has_status    = any(c["col_key"] == "status" for c in cols)
-    for row in records:
-        row["_expectedReplyDate"] = format_date(
-            compute_expected_reply(row.get("issuedDate"), row.get("docNo"))) if has_exp_reply else ""
-        issued   = row.get("issuedDate","")
-        actual   = row.get("actualReplyDate","")
-        dur = compute_duration(issued, actual)
-        row["_duration"] = str(dur) if dur is not None else ""
-        row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply)
-        row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
-        # Format ALL date columns (any col_type=date)
-        for dk in date_col_keys:
-            if dk in row and row[dk]:
-                row["_fmt_" + dk] = format_date(row[dk])
-        # Standard aliases
-        row["_issuedFmt"]  = format_date(row.get("issuedDate",""))
-        row["_replyFmt"]   = format_date(row.get("actualReplyDate",""))
-    return jsonify(records=records, columns=cols, count=db.count_records(pid, dt_id))
-
-@app.route("/api/records/<pid>/<dt_id>", methods=["POST"])
-def api_save_record(pid, dt_id):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
-    u      = current_user()
-    uname  = u["username"] if u else "unknown"
-    data   = request.get_json(silent=True) or {}
-    rec_id = data.pop("_id", None)
-    clean  = {k:v for k,v in data.items() if not k.startswith("_")}
-    if rec_id:
-        full_row = db.get_record_by_id(rec_id) or {}
-        # Extract only stored document fields for diff (exclude _ meta keys)
-        old_data = {k: v for k, v in full_row.items() if not k.startswith("_")}
-        db.save_record(pid, dt_id, rec_id, clean)
-        for field, new_val in clean.items():
-            old_val = old_data.get(field,"")
-            if str(old_val).strip() != str(new_val or "").strip():
-                db.log_action(uname,"EDIT",pid,dt_id,rec_id,
-                    clean.get("docNo",""),field,
-                    str(old_val)[:200],str(new_val)[:200])
-    else:
-        rec_id = str(uuid.uuid4())
-        db.save_record(pid, dt_id, rec_id, clean)
-        db.log_action(uname,"ADD",pid,dt_id,rec_id,
-            clean.get("docNo",""),detail="New document added")
-    return jsonify(ok=True, id=rec_id)
-
-@app.route("/api/records/<rec_id>", methods=["DELETE"])
-def api_delete_record(rec_id):
-    u = current_user()
-    if not u:
-        return jsonify(error="LOGIN_REQUIRED"), 403
-    full_row = db.get_record_by_id(rec_id)
-    if not full_row:
-        return jsonify(error="Not found"), 404
-    pid   = full_row.get("_project_id", "")
-    dt_id = full_row.get("_dt_id", "")
-    doc_no = full_row.get("docNo", "")
-    if not can_edit(pid):
-        return jsonify(error="Forbidden"), 403
-    db.delete_record(rec_id)
-    db.log_action(
-        u["username"], "DELETE",
-        pid or None, dt_id or None, rec_id,
-        doc_no, detail=f"Deleted: {doc_no}"
-    )
-    return jsonify(ok=True)
-
 @app.route("/api/counts/<pid>")
 def api_counts(pid):
     dts = db.get_doc_types(pid)
@@ -800,26 +731,6 @@ def api_import(pid, dt_id):
     return jsonify(ok=True, imported=imported)
 
 # ── Phase 2 — Analytics APIs ─────────────────────────────────
-@app.route("/api/analytics/trend")
-def api_trend():
-    pid = request.args.get("pid")
-    return jsonify(db.get_monthly_trend(pid))
-
-@app.route("/api/analytics/aging")
-def api_aging():
-    pid = request.args.get("pid")
-    return jsonify(db.get_aging_report(pid))
-
-@app.route("/api/analytics/quality")
-def api_quality():
-    pid = request.args.get("pid")
-    return jsonify(db.get_quality_report(pid))
-
-@app.route("/api/analytics/overdue")
-def api_overdue_list():
-    pid = request.args.get("pid")
-    return jsonify(db.get_overdue_records(pid))
-
 # ── Phase 3 — Overdue Digest API ─────────────────────────────
 @app.route("/api/overdue_digest")
 def api_overdue_digest():
@@ -907,4 +818,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"[DCR Flask] Running on http://localhost:{port}")
     app.run(host="0.0.0.0", port=port, debug=not IS_RENDER)
-
