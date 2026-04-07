@@ -1,11 +1,8 @@
 """app.py - DCR Flask v1"""
-import os, json, uuid, io, base64, datetime
-from flask import (Flask, request, session, redirect, url_for,
-                   jsonify, make_response, send_file, g)
+import os, datetime
+from flask import Flask, request, redirect, jsonify, make_response
 import db
-from utils import (compute_expected_reply, compute_duration, is_overdue,
-                   format_date, get_next_doc_no, extract_rev, STATUS_COLORS,
-                   REJECTED_STATUSES, invalidate_holidays_cache)
+from utils import get_next_doc_no
 
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
 from html_render import render_login, render_dashboard, render_register
@@ -35,7 +32,7 @@ app.register_blueprint(users_bp)
 app.register_blueprint(exporting_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
-from auth import current_user, require_login, require_superadmin, can_edit
+from auth import current_user, can_edit
 
 # ── Pages ─────────────────────────────────────────────────────
 @app.route("/ping")
@@ -153,18 +150,6 @@ def api_next_doc_no(pid, dt_id):
         prefix = f"{proj_code}-{dt_code}"
     return jsonify(next=get_next_doc_no(prefix, records))
 
-# ── API: Dropdown Lists ───────────────────────────────────────
-# ── API: Logos ────────────────────────────────────────────────
-# ── API: Users ────────────────────────────────────────────────
-# ── Export Excel ──────────────────────────────────────────────
-
-
-# ── PDF Export ────────────────────────────────────────────────
-
-
-
-# ── Phase 2 — Analytics APIs ─────────────────────────────────
-# ── Phase 3 — Overdue Digest API ─────────────────────────────
 # ── Audit Log API ─────────────────────────────────────────────
 @app.route("/api/audit")
 def api_audit():
