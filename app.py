@@ -14,6 +14,7 @@ from blueprints.doc_types import doc_types_bp
 from blueprints.columns import columns_bp
 from blueprints.records import records_bp
 from blueprints.analytics import analytics_bp
+from blueprints.lists import lists_bp
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -23,6 +24,7 @@ app.register_blueprint(doc_types_bp)
 app.register_blueprint(columns_bp)
 app.register_blueprint(records_bp)
 app.register_blueprint(analytics_bp)
+app.register_blueprint(lists_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, require_login, require_superadmin, can_edit
@@ -144,38 +146,6 @@ def api_next_doc_no(pid, dt_id):
     return jsonify(next=get_next_doc_no(prefix, records))
 
 # ── API: Dropdown Lists ───────────────────────────────────────
-@app.route("/api/lists/<pid>")
-def api_lists(pid):
-    return jsonify(db.get_lists(pid))
-
-@app.route("/api/lists/<pid>", methods=["POST"])
-def api_add_list_item(pid):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
-    data = request.get_json(silent=True) or {}
-    db.add_list_item(pid, data.get("list_name",""), data.get("item",""))
-    return jsonify(ok=True)
-
-@app.route("/api/lists/<pid>", methods=["DELETE"])
-def api_remove_list_item(pid):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
-    data = request.get_json(silent=True) or {}
-    db.remove_list_item(pid, data.get("list_name",""), data.get("item",""))
-    return jsonify(ok=True)
-
-@app.route("/api/lists_meta/<pid>")
-def api_lists_meta(pid):
-    return jsonify(db.get_lists_with_meta(pid))
-
-@app.route("/api/lists_meta/<pid>", methods=["POST"])
-def api_set_list_meta(pid):
-    u = current_user()
-    if not u or u.get("role") not in ("superadmin","admin"):
-        return jsonify(error="Admin only"), 403
-    data = request.get_json(silent=True) or {}
-    db.set_list_item_meta(pid, data.get("list_name",""),
-                         data.get("item_value",""), data.get("meta","pending"))
-    return jsonify(ok=True)
-
 # ── API: Logos ────────────────────────────────────────────────
 @app.route("/api/logo/<pid>/<key>")
 def api_get_logo(pid, key):
