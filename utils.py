@@ -109,7 +109,14 @@ def get_next_doc_no(prefix, records):
 
 def compute_expected_reply(issued_date, doc_no):
     if not issued_date: return None
-    return add_working_days(issued_date, 14 if extract_rev(doc_no) == 0 else 7)
+    try:
+        rev = extract_rev(doc_no)
+    except Exception:
+        rev = 0
+    try:
+        return add_working_days(issued_date, 14 if rev == 0 else 7)
+    except Exception:
+        return None
 
 def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True):
     """Returns True only if the doc type has an Expected Reply column and is past due."""

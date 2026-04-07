@@ -27,8 +27,18 @@ def api_records(pid, dt_id):
     has_exp_reply = any(c["col_key"] == "expectedReplyDate" for c in cols)
     has_status    = any(c["col_key"] == "status" for c in cols)
     for row in records:
-        row["_expectedReplyDate"] = format_date(
-            compute_expected_reply(row.get("issuedDate"), row.get("docNo"))) if has_exp_reply else ""
+        if has_exp_reply:
+            issued_date = row.get("issuedDate")
+            doc_no = row.get("docNo")
+            exp = None
+            if issued_date and doc_no:
+                try:
+                    exp = compute_expected_reply(issued_date, doc_no)
+                except Exception as e:
+                    print(f"[WARN] expectedReply calc failed for rec {row.get('_id','')}: {e}")
+            row["_expectedReplyDate"] = format_date(exp) if exp else ""
+        else:
+            row["_expectedReplyDate"] = ""
         issued   = row.get("issuedDate","")
         actual   = row.get("actualReplyDate","")
         dur = compute_duration(issued, actual)
