@@ -17,6 +17,7 @@ from blueprints.analytics import analytics_bp
 from blueprints.lists import lists_bp
 from blueprints.summary import summary_bp
 from blueprints.logos import logos_bp
+from blueprints.users import users_bp
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -29,6 +30,7 @@ app.register_blueprint(analytics_bp)
 app.register_blueprint(lists_bp)
 app.register_blueprint(summary_bp)
 app.register_blueprint(logos_bp)
+app.register_blueprint(users_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, require_login, require_superadmin, can_edit
@@ -152,63 +154,6 @@ def api_next_doc_no(pid, dt_id):
 # ── API: Dropdown Lists ───────────────────────────────────────
 # ── API: Logos ────────────────────────────────────────────────
 # ── API: Users ────────────────────────────────────────────────
-@app.route("/api/users")
-@require_superadmin
-def api_users():
-    return jsonify(db.get_all_users())
-
-@app.route("/api/users", methods=["POST"])
-@require_superadmin
-def api_users_action():
-    data   = request.get_json(silent=True) or {}
-    action = data.get("action")
-    if action == "add":
-        uname = data.get("username","").strip().lower()
-        pw    = data.get("password","")
-        role  = data.get("role","viewer")
-        if not uname or not pw:
-            return jsonify(ok=False, error="Username and password required"), 400
-        db.add_user(uname, pw, role)
-        return jsonify(ok=True)
-    if action == "delete":
-        uname = data.get("username","")
-        if uname == "admin":
-            return jsonify(ok=False, error="Cannot delete super admin"), 400
-        db.delete_user(uname)
-        return jsonify(ok=True)
-    if action == "change_password":
-        db.change_pw(data.get("username",""), data.get("password",""))
-        return jsonify(ok=True)
-    if action == "assign":
-        db.assign_project(data.get("username",""), data.get("project_id",""))
-        return jsonify(ok=True)
-    if action == "unassign":
-        db.unassign_project(data.get("username",""), data.get("project_id",""))
-        return jsonify(ok=True)
-    return jsonify(ok=False, error="Unknown action"), 400
-
-@app.route("/api/users/<username>/projects")
-@require_superadmin
-def api_user_projects(username):
-    return jsonify(db.get_user_projects(username))
-
-@app.route("/api/whoami")
-def api_whoami():
-    u = current_user()
-    if not u: return jsonify(username="guest", role="guest", projects=[])
-    projs = [] if u["role"] == "superadmin" else db.get_user_projects(u["username"])
-    return jsonify(username=u["username"], role=u["role"], projects=projs)
-
-@app.route("/api/change_password", methods=["POST"])
-def api_change_own_pw():
-    u = current_user()
-    if not u: return jsonify(error="LOGIN_REQUIRED"), 403
-    data = request.get_json(silent=True) or {}
-    pw   = data.get("password","")
-    if len(pw) < 4: return jsonify(ok=False, error="Min 4 characters"), 400
-    db.change_pw(u["username"], pw)
-    return jsonify(ok=True)
-
 # ── Export Excel ──────────────────────────────────────────────
 @app.route("/api/export_all/<pid>")
 def api_export_all(pid):
