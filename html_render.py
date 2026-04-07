@@ -1752,9 +1752,11 @@ function renderRows(){{
       else val=String(row[key]||'');
       let displayVal=val;
       if(typeof displayVal==='string'&&(k==='content'||k==='remarks'||k.includes('ms'))){{
+        const NL=String.fromCharCode(10);
         displayVal=displayVal
-          .replaceAll(' / ','\n')
-          .replaceAll('/','\n');
+          .replaceAll(' / ',NL)
+          .replaceAll(' /',NL)
+          .replaceAll('/ ',NL);
       }}
       td.textContent=displayVal;tr.appendChild(td);
     }});
