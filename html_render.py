@@ -1724,8 +1724,9 @@ function renderRows(){{
     state.cols.forEach(col=>{{
       const td=document.createElement('td');const key=col.col_key;let val='';
       const k=key.toLowerCase();
+      const longTextMeta=getLongTextMeta(col);
       console.log('COLUMN KEY:',key);
-      if(k==='content'||k==='remarks'||k.includes('ms'))td.classList.add('mlcell');
+      if(longTextMeta)td.classList.add('mlcell');
       if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}
       else if(key==='duration')val=row._duration||'';
       else if(col.col_type==='duration_calc'){{
@@ -1751,7 +1752,7 @@ function renderRows(){{
       }}
       else val=String(row[key]||'');
       let displayVal=val;
-      if(typeof displayVal==='string'&&(k==='content'||k==='remarks'||k.includes('ms'))){{
+      if(typeof displayVal==='string'&&longTextMeta){{
         const NL=String.fromCharCode(10);
         displayVal=displayVal
           .replaceAll(' / ',NL)
@@ -1778,6 +1779,34 @@ function calcWD(s,e){{
     let n=0,c=new Date(a);c.setDate(c.getDate()+1);
     while(c<=b){{if(c.getDay()!==5)n++;c.setDate(c.getDate()+1);}}return String(n);}}
   catch{{return'';}}
+}}
+
+function getLongTextMeta(col){{
+  const key=String(col?.col_key||'');
+  const label=String(col?.label||'');
+  const k=key.toLowerCase();
+  const l=label.toLowerCase();
+  const text=(k+' '+l).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
+  const isContentLike=['content','pr details','details','description'].some(v=>text.includes(v));
+  const isRemarksLike=['remarks','notes'].some(v=>text.includes(v));
+  const isMsLike=text.includes('ms ref')||text.includes('msref')||text.includes('ms reference')||
+    (/\\bms\\b/.test(text)&&(text.includes('ref')||text.includes('reference')||text.includes('no')));
+  if(isContentLike)return {{
+    rows:5,
+    style:'resize:vertical; min-height:120px',
+    placeholder:'Use Enter to put each item on a separate line'
+  }};
+  if(isRemarksLike)return {{
+    rows:3,
+    style:'resize:vertical; min-height:80px',
+    placeholder:'Use Enter for multiline remarks'
+  }};
+  if(isMsLike)return {{
+    rows:3,
+    style:'resize:vertical; min-height:80px',
+    placeholder:'Use Enter to put each MS on a separate line'
+  }};
+  return null;
 }}
 
 function sortBy(key){{
@@ -1854,8 +1883,8 @@ async function buildForm(row){{
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
-    const k=String(key||'').toLowerCase();
-    const full=['title','remarks','fileLocation','itemRef'].includes(key)||k.includes('content');
+    const longTextMeta=getLongTextMeta(col);
+    const full=['title','fileLocation','itemRef'].includes(key)||!!longTextMeta;
     const grp=document.createElement('div');grp.className='fg'+(full?' full':'');
     const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
     const val=row?.[key]||'';
@@ -1892,20 +1921,11 @@ async function buildForm(row){{
       inp.style.cssText='font-family:Consolas,monospace;font-weight:600';
       grp.appendChild(inp);
     }}
-    else if(
-      k==='remarks'||
-      k.includes('content')||
-      k==='msref'||
-      k==='ms_ref'||
-      k.includes('ms_ref')||
-      k.includes('msref')
-    ){{
+    else if(longTextMeta){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
-      if(k.includes('content')){{ta.rows=5;ta.style.cssText='resize:vertical; min-height:120px';}}
-      else{{ta.rows=3;ta.style.cssText='resize:vertical; min-height:80px';}}
-      if(k.includes('content'))ta.placeholder='Use Enter to put each item on a separate line';
-      else if(k==='remarks')ta.placeholder='Use Enter for multiline remarks';
-      else ta.placeholder='Use Enter to put each MS on a separate line';
+      ta.rows=longTextMeta.rows;
+      ta.style.cssText=longTextMeta.style;
+      ta.placeholder=longTextMeta.placeholder;
       grp.appendChild(ta);
     }}
     else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';grp.appendChild(inp);}}
