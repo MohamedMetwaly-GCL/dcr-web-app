@@ -15,6 +15,7 @@ changed from @app.route to @exporting_bp.route.
 import base64
 import datetime
 import io
+import re
 import uuid
 
 from flask import Blueprint, jsonify, request, send_file
@@ -24,6 +25,94 @@ from auth import current_user, can_edit
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 
 exporting_bp = Blueprint("exporting", __name__)
+
+
+def _normalize_sheet_name(name):
+    s = str(name or "").strip().lower()
+    s = re.sub(r"^\s*\d+\s*[\.\-)\]]*\s*", "", s)
+    s = re.sub(r"[(){}\[\],.:;_]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip(" -_/")
+    return s
+
+
+def _sheet_aliases(dt):
+    vals = {
+        str(dt.get("id", "")).strip().lower(),
+        str(dt.get("code", "")).strip().lower(),
+        str(dt.get("name", "")).strip().lower(),
+        _normalize_sheet_name(dt.get("id", "")),
+        _normalize_sheet_name(dt.get("code", "")),
+        _normalize_sheet_name(dt.get("name", "")),
+    }
+    code = str(dt.get("code", "")).strip().lower()
+    name = _normalize_sheet_name(dt.get("name", ""))
+    if code == "ltr" or "letter" in name:
+        vals.update({"letter", "letters"})
+    if code == "pr" or "requisition" in name:
+        vals.update({"purchase requisition", "purchase requisitions"})
+    return {v for v in vals if v}
+
+
+def _match_sheet_to_dt(sheet_name, dts):
+    raw = str(sheet_name or "").strip()
+    low = raw.lower()
+    norm = _normalize_sheet_name(raw)
+    no_paren = _normalize_sheet_name(re.sub(r"\([^)]*\)", " ", raw))
+    no_prefix = _normalize_sheet_name(re.sub(r"^\s*\d+\s*[\.\-)\]]*\s*", "", raw))
+    paren_code = ""
+    m = re.search(r"\(([A-Za-z0-9_-]+)\)", raw)
+    if m:
+        paren_code = m.group(1).strip().lower()
+
+    def exact_match(field):
+        for dt in dts:
+            if str(dt.get(field, "")).strip().lower() == low:
+                return dt
+        return None
+
+    for field in ("id", "code", "name"):
+        dt = exact_match(field)
+        if dt:
+            return dt
+
+    for dt in dts:
+        aliases = _sheet_aliases(dt)
+        if norm in aliases or no_paren in aliases or no_prefix in aliases:
+            return dt
+
+    if paren_code:
+        for field in ("id", "code"):
+            for dt in dts:
+                if str(dt.get(field, "")).strip().lower() == paren_code:
+                    return dt
+
+    return None
+
+
+def _import_excel_worksheet(pid, dt_id, ws, cols):
+    import datetime as _dt
+
+    col_map = {c["label"]: c["col_key"] for c in cols}
+    header = None
+    imported = 0
+    for row in ws.iter_rows(values_only=True):
+        vals = []
+        for v in row:
+            if v is None: vals.append("")
+            elif isinstance(v, (_dt.datetime, _dt.date)):
+                vals.append((v.date() if isinstance(v, _dt.datetime) else v).strftime("%Y-%m-%d"))
+            else: vals.append(str(v).strip())
+        if not any(vals): continue
+        if header is None:
+            if any(v in col_map or v in ("Sr.","Document No.") for v in vals):
+                header = [col_map.get(v.strip(), v.strip()) for v in vals]
+            continue
+        row_data = {header[i]: v for i, v in enumerate(vals)
+                    if i < len(header) and header[i] and header[i] not in ("Sr.","sr","")}
+        if any(row_data.values()):
+            db.save_record(pid, dt_id, str(uuid.uuid4()), row_data)
+            imported += 1
+    return imported, header is not None
 
 
 @exporting_bp.route("/api/export_all/<pid>")
@@ -460,25 +549,10 @@ def api_import(pid, dt_id):
 
     try:
         if ext in ("xlsx","xls"):
-            import openpyxl, datetime as _dt
+            import openpyxl
             wb  = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
-            ws  = wb.active; header = None
-            for row in ws.iter_rows(values_only=True):
-                vals = []
-                for v in row:
-                    if v is None: vals.append("")
-                    elif isinstance(v, (_dt.datetime,_dt.date)):
-                        vals.append((v.date() if isinstance(v,_dt.datetime) else v).strftime("%Y-%m-%d"))
-                    else: vals.append(str(v).strip())
-                if not any(vals): continue
-                if header is None:
-                    if any(v in col_map or v in ("Sr.","Document No.") for v in vals):
-                        header = [col_map.get(v.strip(),v.strip()) for v in vals]
-                    continue
-                row_data = {header[i]:v for i,v in enumerate(vals)
-                            if i<len(header) and header[i] and header[i] not in ("Sr.","sr","")}
-                if any(row_data.values()):
-                    db.save_record(pid, dt_id, str(uuid.uuid4()), row_data); imported+=1
+            ws  = wb.active
+            imported, _ = _import_excel_worksheet(pid, dt_id, ws, cols)
         else:
             import csv, datetime as _dt
             text   = base64.b64decode(b64).decode("utf-8","ignore")
@@ -505,3 +579,56 @@ def api_import(pid, dt_id):
         return jsonify(ok=False, error=str(e)), 500
 
     return jsonify(ok=True, imported=imported)
+
+
+@exporting_bp.route("/api/import_project/<pid>", methods=["POST"])
+def api_import_project(pid):
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    b64  = data.get("file_b64","")
+    ext  = data.get("ext","xlsx")
+    if "," in b64: b64 = b64.split(",",1)[1]
+    if ext not in ("xlsx","xls"):
+        return jsonify(ok=False, error="Only Excel workbooks are supported"), 400
+
+    try:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
+        dts = db.get_doc_types(pid)
+        imported_total = 0
+        matched_sheets = []
+        skipped_sheets = []
+        errors = []
+
+        for ws in wb.worksheets:
+            dt = _match_sheet_to_dt(ws.title, dts)
+            if not dt:
+                skipped_sheets.append({"sheet": ws.title, "reason": "No matching document type"})
+                continue
+            try:
+                cols = db.get_columns(pid, dt["id"])
+                imported, has_header = _import_excel_worksheet(pid, dt["id"], ws, cols)
+                if not has_header:
+                    skipped_sheets.append({"sheet": ws.title, "reason": "No valid header row"})
+                    continue
+                imported_total += imported
+                matched_sheets.append({
+                    "sheet": ws.title,
+                    "dt_id": dt["id"],
+                    "dt_name": dt["name"],
+                    "imported": imported,
+                })
+            except Exception as e:
+                errors.append({"sheet": ws.title, "error": str(e)})
+
+        return jsonify(
+            ok=True,
+            project_id=pid,
+            imported_total=imported_total,
+            matched_sheets=matched_sheets,
+            skipped_sheets=skipped_sheets,
+            errors=errors,
+        )
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)), 500

@@ -1443,11 +1443,12 @@ tr.alt td{{background:#fafbfd}}
     <div class="mhdr"><span>📤 Import Excel / CSV</span>
       <button class="xbtn" onclick="closeM('import-modal')">✕</button></div>
     <div class="mbody">
-      <p style="font-size:12px;color:var(--mu);margin-bottom:12px">Select .xlsx or .csv file. Headers must match register columns.</p>
+      <p style="font-size:12px;color:var(--mu);margin-bottom:12px">Select .xlsx or .csv file. Headers must match register columns. For full-workbook import, Excel sheets will be matched to document types automatically.</p>
       <input type="file" id="imp-file" accept=".csv,.xlsx,.xls" style="font-size:12px">
     </div>
     <div class="mfoot">
       <button class="btn btn-sc" onclick="closeM('import-modal')">Cancel</button>
+      <button class="btn btn-sc" id="imp-project-btn" onclick="doImportProject()">Import Full Workbook</button>
       <button class="btn btn-pr" onclick="doImport()">Import</button>
     </div>
   </div>
@@ -2433,5 +2434,20 @@ async function doImport(){{
     closeM('import-modal');switchTab(state.tab);await loadDTs();toast('✔ Imported '+r.imported+' records','ok');
   }}catch(e){{toast('Error: '+e.message,'er');}}
   finally{{btn.disabled=false;btn.textContent='Import';}}
+}}
+async function doImportProject(){{
+  const file=document.getElementById('imp-file').files[0];if(!file)return;
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(!['xlsx','xls'].includes(ext)){{toast('Full workbook import supports Excel only','er');return;}}
+  const btn=document.getElementById('imp-project-btn');
+  btn.disabled=true;btn.textContent='⏳ Importing...';
+  try{{
+    const b64=await new Promise((res,rej)=>{{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(file);}});
+    const r=await apiFetch('/api/import_project/'+PID,{{method:'POST',body:JSON.stringify({{file_b64:b64,ext}})}});
+    if(r===null)return;
+    closeM('import-modal');switchTab(state.tab);await loadDTs();
+    toast('✔ Imported '+r.imported_total+' records from '+(r.matched_sheets||[]).length+' sheet(s)','ok');
+  }}catch(e){{toast('Error: '+e.message,'er');}}
+  finally{{btn.disabled=false;btn.textContent='Import Full Workbook';}}
 }}
 </script></body></html>"""
