@@ -16,6 +16,7 @@ from blueprints.records import records_bp
 from blueprints.analytics import analytics_bp
 from blueprints.lists import lists_bp
 from blueprints.summary import summary_bp
+from blueprints.logos import logos_bp
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -27,6 +28,7 @@ app.register_blueprint(records_bp)
 app.register_blueprint(analytics_bp)
 app.register_blueprint(lists_bp)
 app.register_blueprint(summary_bp)
+app.register_blueprint(logos_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, require_login, require_superadmin, can_edit
@@ -149,20 +151,6 @@ def api_next_doc_no(pid, dt_id):
 
 # ── API: Dropdown Lists ───────────────────────────────────────
 # ── API: Logos ────────────────────────────────────────────────
-@app.route("/api/logo/<pid>/<key>")
-def api_get_logo(pid, key):
-    data = db.get_logo(pid, key)
-    if not data: return "", 404
-    raw = base64.b64decode(data)
-    return send_file(io.BytesIO(raw), mimetype="image/png")
-
-@app.route("/api/logo/<pid>/<key>", methods=["POST"])
-def api_save_logo(pid, key):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
-    data = request.get_json(silent=True) or {}
-    db.save_logo(pid, key, data.get("data",""))
-    return jsonify(ok=True)
-
 # ── API: Users ────────────────────────────────────────────────
 @app.route("/api/users")
 @require_superadmin
