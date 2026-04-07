@@ -15,6 +15,7 @@ from blueprints.columns import columns_bp
 from blueprints.records import records_bp
 from blueprints.analytics import analytics_bp
 from blueprints.lists import lists_bp
+from blueprints.summary import summary_bp
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -25,6 +26,7 @@ app.register_blueprint(columns_bp)
 app.register_blueprint(records_bp)
 app.register_blueprint(analytics_bp)
 app.register_blueprint(lists_bp)
+app.register_blueprint(summary_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, require_login, require_superadmin, can_edit
@@ -702,64 +704,6 @@ def api_import(pid, dt_id):
 
 # ── Phase 2 — Analytics APIs ─────────────────────────────────
 # ── Phase 3 — Overdue Digest API ─────────────────────────────
-@app.route("/api/overdue_digest")
-def api_overdue_digest():
-    """Returns overdue summary for email/display."""
-    u = current_user()
-    if not u: return jsonify(error="LOGIN_REQUIRED"), 403
-    records = db.get_overdue_records()
-    return jsonify({
-        "total": len(records),
-        "records": records[:50],
-        "generated_at": datetime.datetime.now().isoformat()
-    })
-
-# ── Phase 4 — Date range filter for records ──────────────────
-@app.route("/api/records_range/<pid>/<dt_id>")
-def api_records_range(pid, dt_id):
-    """Filter records by issued date range."""
-    from_date = request.args.get("from")
-    to_date   = request.args.get("to")
-    records = db.get_records(pid, dt_id)
-    if from_date:
-        records = [r for r in records if (r.get("issuedDate") or "") >= from_date]
-    if to_date:
-        records = [r for r in records if (r.get("issuedDate") or "") <= to_date]
-    return jsonify(records)
-
-# ── Phase 4 — Executive Summary ──────────────────────────────
-@app.route("/api/executive_summary")
-def api_executive_summary():
-    """One-page executive summary data."""
-    stats  = db.get_dashboard_stats()
-    aging  = db.get_aging_report()
-    quality= db.get_quality_report()
-    overdue= db.get_overdue_records()
-    total_docs = sum(p["total"]    for p in stats)
-    total_ap   = sum(p["approved"] for p in stats)
-    total_pe   = sum(p["pending"]  for p in stats)
-    total_rj   = sum(p["rejected"] for p in stats)
-    total_ov   = sum(p["overdue"]  for p in stats)
-    return jsonify({
-        "summary": {
-            "total": total_docs, "approved": total_ap,
-            "pending": total_pe, "rejected": total_rj,
-            "overdue": total_ov,
-            "completion_pct": round(total_ap/total_docs*100) if total_docs else 0,
-            "projects": len(stats),
-        },
-        "projects": [{"name":p["name"],"code":p["code"],"total":p["total"],
-                      "approved":p["approved"],"pct":p["pct"],"overdue":p["overdue"]}
-                     for p in stats],
-        "aging":   aging,
-        "quality": quality,
-        "top_overdue": overdue[:10],
-        "generated_at": datetime.datetime.now().strftime("%d-%m-%Y %H:%M"),
-    })
-
-
-
-
 # ── Audit Log API ─────────────────────────────────────────────
 @app.route("/api/audit")
 def api_audit():
