@@ -1854,7 +1854,8 @@ async function buildForm(row){{
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
-    const full=['title','remarks','fileLocation','itemRef'].includes(key);
+    const k=String(key||'').toLowerCase();
+    const full=['title','remarks','fileLocation','itemRef'].includes(key)||k.includes('content');
     const grp=document.createElement('div');grp.className='fg'+(full?' full':'');
     const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
     const val=row?.[key]||'';
@@ -1891,11 +1892,19 @@ async function buildForm(row){{
       inp.style.cssText='font-family:Consolas,monospace;font-weight:600';
       grp.appendChild(inp);
     }}
-    else if(key==='remarks'||key==='content'||key==='msRef'||key==='ms_ref'||key.toLowerCase().includes('ms_ref')||key.toLowerCase().includes('msref')){{
+    else if(
+      k==='remarks'||
+      k.includes('content')||
+      k==='msref'||
+      k==='ms_ref'||
+      k.includes('ms_ref')||
+      k.includes('msref')
+    ){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
-      ta.rows=(key==='content')?3:2;ta.style.cssText='resize:vertical';
-      if(key==='content')ta.placeholder='Use Enter to put each item on a separate line';
-      else if(key==='remarks')ta.placeholder='Use Enter for multiline remarks';
+      if(k.includes('content')){{ta.rows=5;ta.style.cssText='resize:vertical; min-height:120px';}}
+      else{{ta.rows=3;ta.style.cssText='resize:vertical; min-height:80px';}}
+      if(k.includes('content'))ta.placeholder='Use Enter to put each item on a separate line';
+      else if(k==='remarks')ta.placeholder='Use Enter for multiline remarks';
       else ta.placeholder='Use Enter to put each MS on a separate line';
       grp.appendChild(ta);
     }}
