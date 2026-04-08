@@ -275,6 +275,20 @@ canvas{{max-height:200px}}
 .dt-tbl td{{padding:6px 10px;border-bottom:1px solid #edf0f5}}
 .dt-tbl tr:hover td{{background:#f0f4f8}}
 .dt-tbl .alt td{{background:#fafbfd}}
+.pr-toggle{{padding:2px 7px;border:1px solid var(--bd);background:#fff;border-radius:3px;cursor:pointer;font-size:11px}}
+.pr-toggle:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
+.pr-items-row{{display:none}}
+.pr-items-row.open{{display:table-row}}
+.pr-items-row td{{padding:0;border-bottom:1px solid #edf0f5}}
+.pr-items-wrap{{padding:10px 12px;background:#f8fafc}}
+.pr-items-table{{width:100%;border-collapse:collapse;font-size:11px}}
+.pr-items-table th{{background:#e2e8f0;color:#334155;padding:6px 8px;text-align:left;font-weight:700}}
+.pr-items-table td{{padding:6px 8px;border-bottom:1px solid #e5e7eb}}
+.pr-items-empty{{color:var(--mu);font-size:11px;padding:6px 0}}
+.pr-items-editor table{{width:100%;border-collapse:collapse;font-size:11px}}
+.pr-items-editor th{{background:#e2e8f0;color:#334155;padding:6px 8px;text-align:left;font-weight:700}}
+.pr-items-editor td{{padding:6px 8px;border-bottom:1px solid #e5e7eb}}
+.pr-items-editor input{{width:100%;padding:6px 8px;border:1.5px solid var(--bd);border-radius:var(--rd);font-family:inherit;font-size:12px}}
 
 /* ── Overdue panel ── */
 .ov-row{{display:flex;align-items:center;gap:8px;padding:7px 10px;
@@ -1470,7 +1484,43 @@ const SC={sc_json};
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
   ['client','Client'],['landlord','Landlord'],['pmo','PMO'],['mainConsultant','Consultant'],
   ['mepConsultant','MEP'],['contractor','Contractor']];
-const state={{tab:null,cols:[],recs:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,lists:{{}}}};
+const state={{tab:null,cols:[],recs:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,lists:{{}},prItemsCache:{{}}}};
+
+function isPRTab(){{
+  const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
+  const code=(dt.code||dt.id||'').toString().toUpperCase();
+  const name=(dt.name||'').toString().toLowerCase();
+  return code==='PR' || name.includes('requisition') || name.includes('purchase request');
+}}
+
+function getPrDetailsColKey(){{
+  const cols=state.cols||[];
+  const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  for(const c of cols){{
+    const key=String(c.col_key||'');
+    const label=String(c.label||'').trim();
+    if(label==='PR Details'||key==='prDetails'||key==='pr_details')return c.col_key;
+  }}
+  for(const c of cols){{
+    const nk=norm(c.col_key),nl=norm(c.label);
+    if(nk==='prdetails'||nl==='prdetails')return c.col_key;
+  }}
+  for(const c of cols){{
+    const nk=norm(c.col_key),nl=norm(c.label);
+    if(nk.includes('pr')&&nk.includes('detail'))return c.col_key;
+    if(nl.includes('pr')&&nl.includes('detail'))return c.col_key;
+  }}
+  return null;
+}}
+
+function escHtml(v){{
+  return String(v==null?'':v)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'",'&#39;');
+}}
 
 // Init
 (async()=>{{
@@ -1565,6 +1615,7 @@ async function loadRecords(){{
   ]);
   if(!data)return;
   state.recs=data.records; state.cols=data.columns.filter(c=>c.visible);
+  state.prItemsCache={{}};
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
   buildHead(); requestAnimationFrame(()=>initRz()); renderRows();
@@ -1684,6 +1735,8 @@ function checkGap(docNo,recs,editId){{
 
 function renderRows(){{
   const body=document.getElementById('tbody');body.innerHTML='';
+  const isPrTab=isPRTab();
+  const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   let rows=state.recs.filter(r=>{{
     for(const[k,v]of Object.entries(state.filters)){{if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;}}
     return true;
@@ -1722,7 +1775,6 @@ function renderRows(){{
       const td=document.createElement('td');const key=col.col_key;let val='';
       const k=key.toLowerCase();
       const longTextMeta=getLongTextMeta(col);
-      console.log('COLUMN KEY:',key);
       if(longTextMeta)td.classList.add('mlcell');
       if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}
       else if(key==='duration')val=row._duration||'';
@@ -1747,6 +1799,7 @@ function renderRows(){{
         const url=row[key]||'';
         if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">View</a>`;tr.appendChild(td);return;}}
       }}
+      else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val='';
       else val=String(row[key]||'');
       let displayVal=val;
       if(typeof displayVal==='string'&&longTextMeta){{
@@ -1759,8 +1812,11 @@ function renderRows(){{
       td.textContent=displayVal;tr.appendChild(td);
     }});
     const ta=document.createElement('td');ta.className='acts';
-    if(CAN_EDIT)ta.innerHTML=`<button class="act" onclick="editRec('${{row._id}}')">✏</button> <button class="act del" onclick="delRec('${{row._id}}')">🗑</button>`;
-    else ta.innerHTML='<span style="color:var(--mu);font-size:10px">—</span>';
+    let acts='';
+    if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
+    if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')">✏</button> <button class="act del" onclick="delRec('${{row._id}}')">🗑</button>`;
+    else if(!acts)acts='<span style="color:var(--mu);font-size:10px">—</span>';
+    ta.innerHTML=acts;
     tr.appendChild(ta);body.appendChild(tr);
     if(!row._isRev)sr++;
   }});
@@ -1784,7 +1840,7 @@ function getLongTextMeta(col){{
   const k=key.toLowerCase();
   const l=label.toLowerCase();
   const text=(k+' '+l).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
-  const isContentLike=['content','pr details','details','description'].some(v=>text.includes(v));
+  const isContentLike=['content','description'].some(v=>text.includes(v));
   const isRemarksLike=['remarks','notes'].some(v=>text.includes(v));
   const isMsLike=text.includes('ms ref')||text.includes('msref')||text.includes('ms reference')||
     (/\\bms\\b/.test(text)&&(text.includes('ref')||text.includes('reference')||text.includes('no')));
@@ -1809,6 +1865,62 @@ function getLongTextMeta(col){{
 function sortBy(key){{
   state.sortDir=state.sortCol===key?(state.sortDir==='asc'?'desc':'asc'):'asc';
   state.sortCol=key;buildHead();renderRows();
+}}
+
+async function fetchPrItems(recordId){{
+  if(Object.prototype.hasOwnProperty.call(state.prItemsCache,recordId))return state.prItemsCache[recordId];
+  try{{
+    const r=await apiFetch('/api/pr_items/'+recordId);
+    state.prItemsCache[recordId]=(r&&r.ok&&Array.isArray(r.items))?r.items:[];
+  }}catch(e){{
+    console.warn('PR items load failed for',recordId,e);
+    state.prItemsCache[recordId]=[];
+  }}
+  return state.prItemsCache[recordId];
+}}
+
+function renderPrItemsTable(items, legacyText){{
+  if(!items||!items.length){{
+    const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
+    return `<div class="pr-items-empty">No items added</div>${{legacy}}`;
+  }}
+  const rows=items.map(it=>`<tr>
+    <td>${{escHtml(it.item_name||'')}}</td>
+    <td>${{escHtml(it.unit||'')}}</td>
+    <td>${{escHtml(it.quantity??'')}}</td>
+    <td>${{escHtml(it.remarks||'')}}</td>
+  </tr>`).join('');
+  return `<table class="pr-items-table">
+    <thead><tr><th>Item</th><th>Unit</th><th>Qty</th><th>Remarks</th></tr></thead>
+    <tbody>${{rows}}</tbody>
+  </table>`;
+}}
+
+async function togglePrItems(recordId, btn){{
+  const tr=btn.closest('tr');
+  if(!tr)return;
+  let nxt=tr.nextElementSibling;
+  if(!nxt||!nxt.classList||!nxt.classList.contains('pr-items-row')||nxt.dataset.id!==recordId){{
+    const colSpan=state.cols.length+3; // chk + sr + actions
+    const wrap=document.createElement('div');wrap.className='pr-items-wrap';
+    wrap.innerHTML='<div class="pr-items-empty">Loading...</div>';
+    const td=document.createElement('td');td.colSpan=colSpan;td.appendChild(wrap);
+    const row=document.createElement('tr');row.className='pr-items-row';row.dataset.id=recordId;row.appendChild(td);
+    tr.parentNode.insertBefore(row, tr.nextSibling);
+    nxt=row;
+  }}
+  const open=!nxt.classList.contains('open');
+  if(open){{
+    const items=await fetchPrItems(recordId);
+    const legacyKey=getPrDetailsColKey();
+    const legacyText=legacyKey?String((state.recs.find(r=>r._id===recordId)||{{}})[legacyKey]||'').trim():'';
+    nxt.querySelector('.pr-items-wrap').innerHTML=renderPrItemsTable(items, legacyText);
+    nxt.classList.add('open');
+    btn.textContent='Hide';
+  }}else{{
+    nxt.classList.remove('open');
+    btn.textContent='Items';
+  }}
 }}
 
 let _rzDrag=null;
@@ -1877,9 +1989,19 @@ async function buildForm(row){{
   const grid=document.getElementById('rec-form');grid.innerHTML='';
   let nextNo='';
   if(!row){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
+  const isPrTab=isPRTab();
+  const prevCols=state.cols;
+  state.cols=allCols.filter(c=>c.visible);
+  const prDetailsKey=isPrTab?getPrDetailsColKey():null;
+  state.cols=prevCols;
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
+    if(isPrTab&&prDetailsKey&&key===prDetailsKey){{
+      const hid=document.createElement('input');hid.type='hidden';hid.id='f-'+key;hid.value=row?.[key]||'';
+      grid.appendChild(hid);
+      continue;
+    }}
     const longTextMeta=getLongTextMeta(col);
     const full=['title','fileLocation','itemRef'].includes(key)||!!longTextMeta;
     const grp=document.createElement('div');grp.className='fg'+(full?' full':'');
@@ -1928,6 +2050,70 @@ async function buildForm(row){{
     else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';grp.appendChild(inp);}}
     grid.appendChild(grp);
   }}
+  if(isPrTab){{
+    const grp=document.createElement('div');grp.className='fg full pr-items-editor';
+    const lbl=document.createElement('label');lbl.textContent='PR Items';grp.appendChild(lbl);
+    const wrap=document.createElement('div');wrap.id='pr-items-editor';
+    wrap.innerHTML=`
+      <table>
+        <thead><tr><th>Item Name</th><th>Unit</th><th>Qty</th><th>Remarks</th><th></th></tr></thead>
+        <tbody id="pr-items-body"></tbody>
+      </table>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Row</button>
+        <div id="pr-legacy" style="font-size:11px;color:var(--mu);white-space:pre-line;display:none"></div>
+      </div>`;
+    grp.appendChild(wrap);grid.appendChild(grp);
+    const legacyText=prDetailsKey?String(row?.[prDetailsKey]||'').trim():'';
+    initPrItemsEditor([], legacyText);
+    if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
+  }}
+}}
+
+function addPrItemRow(item={{}}){{
+  const body=document.getElementById('pr-items-body');if(!body)return;
+  const tr=document.createElement('tr');
+  tr.innerHTML=`
+    <td><input class="pri-item"></td>
+    <td><input class="pri-unit"></td>
+    <td><input class="pri-qty"></td>
+    <td><input class="pri-remarks"></td>
+    <td><button type="button" class="btn btn-er btn-sm">✕</button></td>`;
+  tr.querySelector('.pri-item').value=item.item_name||'';
+  tr.querySelector('.pri-unit').value=item.unit||'';
+  tr.querySelector('.pri-qty').value=item.quantity??'';
+  tr.querySelector('.pri-remarks').value=item.remarks||'';
+  tr.querySelector('button').onclick=()=>tr.remove();
+  body.appendChild(tr);
+}}
+
+function initPrItemsEditor(items, legacyText){{
+  const body=document.getElementById('pr-items-body');if(!body)return;
+  body.innerHTML='';
+  if(items&&items.length)items.forEach(it=>addPrItemRow(it));
+  else addPrItemRow();
+  const legacy=document.getElementById('pr-legacy');
+  if(legacy){{
+    legacy.textContent=legacyText?('Legacy Details:\\n'+legacyText):'';
+    legacy.style.display=(!items||!items.length)&&legacyText?'block':'none';
+  }}
+}}
+
+async function loadPrItemsForEdit(recordId, legacyText){{
+  const items=await fetchPrItems(recordId);
+  initPrItemsEditor(items, legacyText);
+}}
+
+function getPrItemsFromEditor(){{
+  const body=document.getElementById('pr-items-body');if(!body)return [];
+  const rows=[...body.querySelectorAll('tr')];
+  return rows.map(r=>{{
+    const item_name=r.querySelector('.pri-item')?.value.trim()||'';
+    const unit=r.querySelector('.pri-unit')?.value.trim()||'';
+    const quantity=r.querySelector('.pri-qty')?.value.trim()||'';
+    const remarks=r.querySelector('.pri-remarks')?.value.trim()||'';
+    return {{item_name, unit, quantity, remarks}};
+  }}).filter(it=>it.item_name||it.unit||it.quantity||it.remarks);
 }}
 
 function buildMS(key,options,init){{
@@ -2005,7 +2191,20 @@ async function saveRecord(){{
   }}else if(valErr){{toast('⚠ '+valErr,'er');return;}}
   if(state.editId)data._id=state.editId;
   const r=await apiFetch('/api/records/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify(data)}});
-  if(r&&r.ok){{closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');}}
+  if(r&&r.ok){{
+    if(isPRTab()){{
+      const items=getPrItemsFromEditor();
+      const recId=r.id||state.editId;
+      try{{
+        const prRes=await apiFetch('/api/pr_items/'+recId,{{method:'POST',body:JSON.stringify({{items}})}});
+        if(prRes&&prRes.ok)state.prItemsCache[recId]=items;
+        else {{toast('Items save failed','er');return;}}
+      }}catch(e){{
+        toast('Items save failed: '+e.message,'er');return;
+      }}
+    }}
+    closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');
+  }}
   else toast('Error saving','er');
 }}
 

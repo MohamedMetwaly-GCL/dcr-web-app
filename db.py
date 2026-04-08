@@ -101,6 +101,18 @@ CREATE TABLE IF NOT EXISTS records (
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_records_proj_dt ON records(project_id, dt_id);
+CREATE TABLE IF NOT EXISTS pr_items (
+    id          TEXT PRIMARY KEY,
+    record_id   TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+    item_name   TEXT NOT NULL,
+    unit        TEXT,
+    quantity    NUMERIC,
+    remarks     TEXT,
+    sort_order  INTEGER DEFAULT 0,
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pr_items_record ON pr_items(record_id);
 CREATE TABLE IF NOT EXISTS app_settings (
     key        TEXT PRIMARY KEY,
     value      JSONB NOT NULL DEFAULT '{}'
@@ -454,6 +466,36 @@ def save_record(pid, dt_id, rec_id, data: dict):
 
 def delete_record(rec_id):
     exe("DELETE FROM records WHERE id=%s", (rec_id,))
+
+# ── PR Items ─────────────────────────────────────────────────
+def get_pr_items(record_id):
+    return q("""SELECT id, record_id, item_name, unit, quantity, remarks, sort_order
+                FROM pr_items
+                WHERE record_id=%s
+                ORDER BY sort_order, created_at, id""", (record_id,))
+
+def get_pr_items_for_records(record_ids):
+    if not record_ids: return {}
+    record_ids = [r for r in record_ids if r]
+    if not record_ids: return {}
+    rows = q("""SELECT id, record_id, item_name, unit, quantity, remarks, sort_order
+                FROM pr_items
+                WHERE record_id = ANY(%s)
+                ORDER BY record_id, sort_order, created_at, id""", (record_ids,))
+    out = {}
+    for r in rows:
+        out.setdefault(r["record_id"], []).append(r)
+    return out
+
+def save_pr_items(record_id, items):
+    exe("DELETE FROM pr_items WHERE record_id=%s", (record_id,))
+    if not items: return 0
+    for i, it in enumerate(items):
+        exe("""INSERT INTO pr_items(id,record_id,item_name,unit,quantity,remarks,sort_order,updated_at)
+               VALUES(%s,%s,%s,%s,%s,%s,%s,NOW())""",
+            (str(uuid.uuid4()), record_id, it.get("item_name",""),
+             it.get("unit"), it.get("quantity"), it.get("remarks"), i))
+    return len(items)
 
 # ── Dropdown Lists ────────────────────────────────────────────
 def get_lists(pid):

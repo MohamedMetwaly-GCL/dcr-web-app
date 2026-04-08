@@ -115,6 +115,58 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
     return imported, header is not None
 
 
+def _is_pr_dt(dt):
+    if not dt: return False
+    code = str(dt.get("code","")).strip().upper()
+    name = str(dt.get("name","")).strip().lower()
+    dt_id = str(dt.get("id","")).strip().upper()
+    return dt_id == "PR" or code == "PR" or "requisition" in name or "purchase request" in name
+
+
+def _pr_details_key(cols):
+    def _norm(v):
+        return re.sub(r"[^a-z0-9]+", "", str(v or "").strip().lower())
+    for c in cols:
+        key = str(c.get("col_key", ""))
+        label = str(c.get("label", "")).strip()
+        if label == "PR Details" or key in ("prDetails", "pr_details"):
+            return c.get("col_key")
+    for c in cols:
+        nk = _norm(c.get("col_key", ""))
+        nl = _norm(c.get("label", ""))
+        if nk == "prdetails" or nl == "prdetails":
+            return c.get("col_key")
+    for c in cols:
+        nk = _norm(c.get("col_key", ""))
+        nl = _norm(c.get("label", ""))
+        if "pr" in nk and "detail" in nk:
+            return c.get("col_key")
+        if "pr" in nl and "detail" in nl:
+            return c.get("col_key")
+    return None
+
+
+def _pr_items_text(items):
+    if not items: return ""
+    lines = []
+    for it in items:
+        name = str(it.get("item_name","") or "").strip()
+        unit = str(it.get("unit","") or "").strip()
+        qty  = it.get("quantity")
+        remarks = str(it.get("remarks","") or "").strip()
+        if qty is not None and qty != "":
+            qv = str(qty)
+        else:
+            qv = ""
+        parts = [p for p in [name, unit, qv] if p]
+        line = " | ".join(parts) if parts else ""
+        if remarks:
+            line = (line + " — " if line else "") + remarks
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 @exporting_bp.route("/api/export_all/<pid>")
 def api_export_all(pid):
     u = current_user()
@@ -148,6 +200,9 @@ def api_export_all(pid):
     for dt in dts:
         cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
         records = db.get_records(pid, dt["id"])
+        is_pr = _is_pr_dt(dt)
+        pr_details_key = _pr_details_key(cols) if is_pr else None
+        pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
         # always include tab (even if empty)
 
         ws = wb.create_sheet(title=dt["id"][:31])
@@ -206,6 +261,8 @@ def api_export_all(pid):
                     dur_val = compute_duration(row.get("issuedDate"),row.get("actualReplyDate"))
                     val = str(dur_val) if dur_val is not None else ""
                 elif key in ("issuedDate","actualReplyDate"): val = format_date(row.get(key,""))
+                elif pr_details_key and key == pr_details_key:
+                    val = _pr_items_text(pr_items_map.get(row.get("_id"), [])) or str(row.get(key,"") or "")
                 else:                            val = str(row.get(key,"") or "")
                 if key == "fileLocation" and val and val.startswith("http"):
                     c = ws.cell(row=rn, column=ci)
@@ -248,6 +305,9 @@ def api_export(pid, dt_id):
     records = db.get_records(pid, dt_id)
     dts     = db.get_doc_types(pid)
     dt      = next((d for d in dts if d["id"] == dt_id), None)
+    is_pr = _is_pr_dt(dt)
+    pr_details_key = _pr_details_key(cols) if is_pr else None
+    pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
 
     PRIMARY = "1A3A5C"; PL = "2563A8"; WHITE = "FFFFFF"
     ALT = "F8FAFC"; OV = "FFF5F5"; MUTED = "9CA3AF"
@@ -326,6 +386,8 @@ def api_export(pid, dt_id):
                 val = str(dur_val) if dur_val is not None else ""
             elif key=="issuedDate":         val = format_date(row.get(key,""))
             elif key=="actualReplyDate":    val = format_date(row.get(key,""))
+            elif pr_details_key and key == pr_details_key:
+                val = _pr_items_text(pr_items_map.get(row.get("_id"), [])) or str(row.get(key,"") or "")
             else:                           val = str(row.get(key,"") or "")
 
             # fileLocation → hyperlink "View"
@@ -380,6 +442,9 @@ def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
     records = db.get_records(pid, dt_id)
     dts     = db.get_doc_types(pid)
     dt      = next((d for d in dts if d["id"] == dt_id), {"name": dt_id, "code": dt_id})
+    is_pr = _is_pr_dt(dt)
+    pr_details_key = _pr_details_key(cols) if is_pr else None
+    pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
 
     PAGE = landscape(A4)
     doc = SimpleDocTemplate(buf, pagesize=PAGE,
@@ -443,6 +508,8 @@ def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
                 val = str(compute_duration(row.get("issuedDate"), row.get("actualReplyDate")) or "")
             elif key in ("issuedDate","actualReplyDate"):
                 val = format_date(row.get(key,""))
+            elif pr_details_key and key == pr_details_key:
+                val = _pr_items_text(pr_items_map.get(row.get("_id"), [])) or str(row.get(key,"") or "")
             else:
                 val = str(row.get(key,"") or "")
             cells.append(Paragraph(val, pstyle))

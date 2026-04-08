@@ -17,6 +17,17 @@ from utils import compute_expected_reply, compute_duration, is_overdue, format_d
 
 records_bp = Blueprint("records", __name__)
 
+def _is_pr_doc_type(pid, dt_id):
+    if str(dt_id or "").upper() == "PR":
+        return True
+    dts = db.get_doc_types(pid)
+    dt = next((d for d in dts if d["id"] == dt_id), None)
+    if not dt:
+        return False
+    code = str(dt.get("code","")).strip().upper()
+    name = str(dt.get("name","")).strip().lower()
+    return code == "PR" or "requisition" in name or "purchase request" in name
+
 
 @records_bp.route("/api/records/<pid>/<dt_id>")
 def api_records(pid, dt_id):
@@ -102,3 +113,59 @@ def api_delete_record(rec_id):
         doc_no, detail=f"Deleted: {doc_no}"
     )
     return jsonify(ok=True)
+
+
+@records_bp.route("/api/pr_items/<record_id>")
+def api_get_pr_items(record_id):
+    full_row = db.get_record_by_id(record_id)
+    if not full_row:
+        return jsonify(error="Not found"), 404
+    pid   = full_row.get("_project_id", "")
+    dt_id = full_row.get("_dt_id", "")
+    if not _is_pr_doc_type(pid, dt_id):
+        return jsonify(error="Not a PR document"), 400
+    items = db.get_pr_items(record_id)
+    return jsonify(ok=True, items=items)
+
+
+@records_bp.route("/api/pr_items/<record_id>", methods=["POST","PUT"])
+def api_save_pr_items(record_id):
+    full_row = db.get_record_by_id(record_id)
+    if not full_row:
+        return jsonify(error="Not found"), 404
+    pid   = full_row.get("_project_id", "")
+    dt_id = full_row.get("_dt_id", "")
+    if not _is_pr_doc_type(pid, dt_id):
+        return jsonify(error="Not a PR document"), 400
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    items = data.get("items") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return jsonify(ok=False, error="Invalid items"), 400
+    clean = []
+    from decimal import Decimal, InvalidOperation
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        item_name = str(it.get("item_name","")).strip()
+        unit = str(it.get("unit","")).strip() if it.get("unit") is not None else ""
+        remarks = str(it.get("remarks","")).strip() if it.get("remarks") is not None else ""
+        qty_raw = it.get("quantity", "")
+        qty = None
+        if qty_raw not in (None, ""):
+            try:
+                qty = Decimal(str(qty_raw).strip())
+            except (InvalidOperation, ValueError):
+                qty = None
+        if not item_name and not unit and not remarks and qty is None:
+            continue
+        if not item_name:
+            continue
+        clean.append({
+            "item_name": item_name,
+            "unit": unit or None,
+            "quantity": qty,
+            "remarks": remarks or None,
+        })
+    saved = db.save_pr_items(record_id, clean)
+    return jsonify(ok=True, saved=saved)
