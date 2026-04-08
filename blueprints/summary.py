@@ -73,3 +73,18 @@ def api_executive_summary():
         "top_overdue": overdue[:10],
         "generated_at": datetime.datetime.now().strftime("%d-%m-%Y %H:%M"),
     })
+
+
+@summary_bp.route("/api/data_quality_summary")
+def api_data_quality_summary():
+    return jsonify(db.get_data_quality_summary())
+
+
+@summary_bp.route("/api/action_required_summary")
+def api_action_required_summary():
+    return jsonify(db.get_action_required_summary())
+
+
+@summary_bp.route("/api/pr_analytics_summary")
+def api_pr_analytics_summary():
+    return jsonify(db.get_pr_analytics_summary())

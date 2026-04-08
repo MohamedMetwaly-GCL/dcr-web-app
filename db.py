@@ -689,6 +689,233 @@ def get_dashboard_stats():
     return result
 
 
+def get_data_quality_summary():
+    dt_rows = q("SELECT project_id, id, code, name FROM doc_types")
+    if not dt_rows:
+        return {
+            "total_records": 0,
+            "issued_date_count": 0,
+            "issued_date_pct": 0,
+            "workflow_records": 0,
+            "status_count": 0,
+            "status_pct": 0,
+            "actual_reply_count": 0,
+            "actual_reply_pct": 0,
+            "pr_records": 0,
+            "pr_structured_count": 0,
+            "pr_structured_pct": 0,
+        }
+
+    dt_meta = {(d["project_id"], d["id"]): d for d in dt_rows}
+    col_rows = q("""
+        SELECT project_id, dt_id, col_key
+        FROM columns_config
+        WHERE visible=TRUE AND col_key IN ('expectedReplyDate','status')
+    """)
+    dt_has_exp = set()
+    dt_has_status = set()
+    for r in col_rows:
+        key = (r["project_id"], r["dt_id"])
+        if r["col_key"] == "expectedReplyDate":
+            dt_has_exp.add(key)
+        elif r["col_key"] == "status":
+            dt_has_status.add(key)
+
+    workflow_dt_keys = set()
+    pr_dt_keys = set()
+    for key, dt in dt_meta.items():
+        if key in dt_has_exp and key in dt_has_status and not _is_non_workflow_dt(dt.get("code",""), dt.get("name","")):
+            workflow_dt_keys.add(key)
+        code = str(dt.get("code","")).strip().upper()
+        name = str(dt.get("name","")).strip().lower()
+        if code == "PR" or "requisition" in name or "purchase request" in name:
+            pr_dt_keys.add(key)
+
+    recs = q("SELECT id, project_id, dt_id, data FROM records")
+    total_records = len(recs)
+    issued_date_count = 0
+    workflow_records = 0
+    status_count = 0
+    actual_reply_count = 0
+    pr_record_ids = []
+
+    for r in recs:
+        data = r["data"] if isinstance(r["data"], dict) else {}
+        if data.get("issuedDate"):
+            issued_date_count += 1
+        dt_key = (r["project_id"], r["dt_id"])
+        if dt_key in workflow_dt_keys:
+            workflow_records += 1
+            if data.get("status"):
+                status_count += 1
+            if data.get("actualReplyDate"):
+                actual_reply_count += 1
+        if dt_key in pr_dt_keys:
+            pr_record_ids.append(r["id"])
+
+    pr_structured_count = 0
+    if pr_record_ids:
+        row = q("SELECT COUNT(DISTINCT record_id) as c FROM pr_items WHERE record_id = ANY(%s)", (pr_record_ids,), one=True)
+        pr_structured_count = row["c"] if row and row.get("c") is not None else 0
+
+    def pct(part, whole):
+        return round(part / whole * 100) if whole else 0
+
+    return {
+        "total_records": total_records,
+        "issued_date_count": issued_date_count,
+        "issued_date_pct": pct(issued_date_count, total_records),
+        "workflow_records": workflow_records,
+        "status_count": status_count,
+        "status_pct": pct(status_count, workflow_records),
+        "actual_reply_count": actual_reply_count,
+        "actual_reply_pct": pct(actual_reply_count, workflow_records),
+        "pr_records": len(pr_record_ids),
+        "pr_structured_count": pr_structured_count,
+        "pr_structured_pct": pct(pr_structured_count, len(pr_record_ids)),
+    }
+
+
+def get_action_required_summary(limit=10, pending_threshold=14):
+    from utils import compute_duration
+
+    projects = get_projects()
+    project_codes = {p["id"]: p["code"] for p in projects}
+
+    overdue_rows = get_overdue_records()[:limit]
+    top_overdue = [
+        {**r, "project_code": project_codes.get(r["project_id"], r["project_id"])}
+        for r in overdue_rows
+    ]
+
+    dt_rows = q("SELECT project_id, id, code, name FROM doc_types")
+    dt_meta = {(d["project_id"], d["id"]): d for d in dt_rows}
+
+    meta_rows = q("SELECT project_id, item_value, meta FROM dropdown_lists WHERE list_name LIKE %s AND meta IS NOT NULL", ("status%",))
+    meta_map = {}
+    for r in meta_rows:
+        meta_map.setdefault(r["project_id"], {})[r["item_value"]] = r["meta"]
+
+    col_rows = q("""
+        SELECT project_id, dt_id, col_key
+        FROM columns_config
+        WHERE visible=TRUE AND col_key IN ('expectedReplyDate','status')
+    """)
+    dt_has_exp = set()
+    dt_has_status = set()
+    for r in col_rows:
+        key = (r["project_id"], r["dt_id"])
+        if r["col_key"] == "expectedReplyDate":
+            dt_has_exp.add(key)
+        elif r["col_key"] == "status":
+            dt_has_status.add(key)
+
+    workflow_dt_keys = {
+        key for key, dt in dt_meta.items()
+        if key in dt_has_exp and key in dt_has_status and not _is_non_workflow_dt(dt.get("code",""), dt.get("name",""))
+    }
+
+    rows = q("SELECT id, project_id, dt_id, data, created_at FROM records ORDER BY created_at DESC")
+    pending_longest = []
+    recent_rejected = []
+
+    for row in rows:
+        dt_key = (row["project_id"], row["dt_id"])
+        if dt_key not in workflow_dt_keys:
+            continue
+        d = row["data"] if isinstance(row["data"], dict) else {}
+        status = d.get("status", "")
+        meta = meta_map.get(row["project_id"], {}).get(status) or DEFAULT_STATUS_META.get(status) or "pending"
+        if meta == "cancelled":
+            continue
+        dt = dt_meta.get(dt_key, {})
+        base = {
+            "project_id": row["project_id"],
+            "project_code": project_codes.get(row["project_id"], row["project_id"]),
+            "dt_id": row["dt_id"],
+            "dt_code": dt.get("code", row["dt_id"]),
+            "docNo": d.get("docNo", ""),
+            "title": d.get("title", ""),
+            "discipline": d.get("discipline", ""),
+            "status": status,
+            "created_at": str(row.get("created_at") or ""),
+        }
+        if meta == "pending" and not d.get("actualReplyDate") and d.get("issuedDate"):
+            days_delay = compute_duration(d.get("issuedDate"), None) or 0
+            if days_delay > pending_threshold:
+                pending_longest.append({**base, "issuedDate": d.get("issuedDate", ""), "days_delay": days_delay})
+        elif meta == "rejected":
+            recent_rejected.append(base)
+
+    pending_longest.sort(key=lambda x: x["days_delay"], reverse=True)
+    recent_rejected.sort(key=lambda x: x["created_at"], reverse=True)
+
+    return {
+        "top_overdue": top_overdue,
+        "pending_longest": pending_longest[:limit],
+        "recent_rejected": recent_rejected[:limit],
+        "pending_threshold": pending_threshold,
+    }
+
+
+def get_pr_analytics_summary(limit=5):
+    projects = get_projects()
+    project_map = {p["id"]: p for p in projects}
+
+    pr_rows = q("""
+        SELECT r.id, r.project_id, r.data, d.code, d.name
+        FROM records r
+        JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
+        WHERE UPPER(COALESCE(d.code, ''))='PR'
+           OR LOWER(COALESCE(d.name, '')) LIKE %s
+           OR LOWER(COALESCE(d.name, '')) LIKE %s
+    """, ("%requisition%", "%purchase request%"))
+
+    total_pr_records = len(pr_rows)
+    if not total_pr_records:
+        return {
+            "total_pr_records": 0,
+            "total_pr_items": 0,
+            "avg_items_per_pr": 0,
+            "prs_without_items": 0,
+            "top_projects": [],
+        }
+
+    pr_ids = [r["id"] for r in pr_rows]
+    item_rows = q("""
+        SELECT record_id, COUNT(*) AS item_count
+        FROM pr_items
+        WHERE record_id = ANY(%s)
+        GROUP BY record_id
+    """, (pr_ids,))
+    item_count_map = {r["record_id"]: int(r["item_count"]) for r in item_rows}
+
+    total_pr_items = sum(item_count_map.values())
+    prs_without_items = sum(1 for r in pr_rows if item_count_map.get(r["id"], 0) == 0)
+
+    project_counts = {}
+    for row in pr_rows:
+        pid = row["project_id"]
+        project_counts[pid] = project_counts.get(pid, 0) + 1
+
+    top_projects = []
+    for pid, pr_count in sorted(project_counts.items(), key=lambda x: x[1], reverse=True)[:limit]:
+        proj = project_map.get(pid, {})
+        top_projects.append({
+            "project_id": pid,
+            "project_code": proj.get("code", pid),
+            "project_name": proj.get("name", pid),
+            "pr_count": pr_count,
+        })
+
+    return {
+        "total_pr_records": total_pr_records,
+        "total_pr_items": total_pr_items,
+        "avg_items_per_pr": round(total_pr_items / total_pr_records, 1) if total_pr_records else 0,
+        "prs_without_items": prs_without_items,
+        "top_projects": top_projects,
+    }
+
 
 def get_monthly_trend(pid=None):
     """Returns last 6 months of submission counts per month."""
