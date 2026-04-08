@@ -89,30 +89,54 @@ def _match_sheet_to_dt(sheet_name, dts):
     return None
 
 
+def _has_meaningful_values(row_data):
+    for v in row_data.values():
+        if v is None:
+            continue
+        if isinstance(v, str):
+            if v.strip():
+                return True
+        elif str(v).strip():
+            return True
+    return False
+
+
 def _import_excel_worksheet(pid, dt_id, ws, cols):
     import datetime as _dt
 
     col_map = {c["label"]: c["col_key"] for c in cols}
     header = None
     imported = 0
-    for row in ws.iter_rows(values_only=True):
+    skipped_blank = 0
+    skipped_invalid = 0
+    warnings = []
+    for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
         vals = []
         for v in row:
             if v is None: vals.append("")
             elif isinstance(v, (_dt.datetime, _dt.date)):
                 vals.append((v.date() if isinstance(v, _dt.datetime) else v).strftime("%Y-%m-%d"))
             else: vals.append(str(v).strip())
-        if not any(vals): continue
+        if not any(vals):
+            skipped_blank += 1
+            continue
         if header is None:
             if any(v in col_map or v in ("Sr.","Document No.") for v in vals):
                 header = [col_map.get(v.strip(), v.strip()) for v in vals]
             continue
         row_data = {header[i]: v for i, v in enumerate(vals)
                     if i < len(header) and header[i] and header[i] not in ("Sr.","sr","")}
-        if any(row_data.values()):
+        if not _has_meaningful_values(row_data):
+            skipped_blank += 1
+            continue
+        try:
             db.save_record(pid, dt_id, str(uuid.uuid4()), row_data)
             imported += 1
-    return imported, header is not None
+        except Exception as e:
+            skipped_invalid += 1
+            if len(warnings) < 20:
+                warnings.append({"row": row_idx, "error": str(e)})
+    return imported, header is not None, skipped_blank, skipped_invalid, warnings
 
 
 def _is_pr_dt(dt):
@@ -613,24 +637,29 @@ def api_import(pid, dt_id):
     cols    = db.get_columns(pid, dt_id)
     col_map = {c["label"]: c["col_key"] for c in cols}
     imported = 0
+    skipped_blank = 0
+    skipped_invalid = 0
+    warnings = []
 
     try:
         if ext in ("xlsx","xls"):
             import openpyxl
             wb  = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
             ws  = wb.active
-            imported, _ = _import_excel_worksheet(pid, dt_id, ws, cols)
+            imported, _, skipped_blank, skipped_invalid, warnings = _import_excel_worksheet(pid, dt_id, ws, cols)
         else:
             import csv, datetime as _dt
             text   = base64.b64decode(b64).decode("utf-8","ignore")
             header = None
             date_cols = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
-            for line in csv.reader(io.StringIO(text)):
+            for row_idx, line in enumerate(csv.reader(io.StringIO(text)), start=1):
                 if not header:
                     if any(c in line for c in ["Document No.","Sr.","docNo"]):
                         header = [col_map.get(h.strip(),h.strip()) for h in line]
                     continue
-                if not any(line): continue
+                if not any(line):
+                    skipped_blank += 1
+                    continue
                 row_data = {}
                 for i,val in enumerate(line):
                     if i<len(header) and header[i] and header[i] not in ("sr","Sr.","Sr",""):
@@ -640,12 +669,26 @@ def api_import(pid, dt_id):
                                 try: v = _dt.datetime.strptime(v,fmt).strftime("%Y-%m-%d"); break
                                 except: pass
                         row_data[header[i]] = v
-                if any(row_data.values()):
-                    db.save_record(pid, dt_id, str(uuid.uuid4()), row_data); imported+=1
+                if not _has_meaningful_values(row_data):
+                    skipped_blank += 1
+                    continue
+                try:
+                    db.save_record(pid, dt_id, str(uuid.uuid4()), row_data)
+                    imported += 1
+                except Exception as e:
+                    skipped_invalid += 1
+                    if len(warnings) < 20:
+                        warnings.append({"row": row_idx, "error": str(e)})
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
 
-    return jsonify(ok=True, imported=imported)
+    return jsonify(
+        ok=True,
+        imported=imported,
+        skipped_blank=skipped_blank,
+        skipped_invalid=skipped_invalid,
+        warnings=warnings,
+    )
 
 
 @exporting_bp.route("/api/import_project/<pid>", methods=["POST"])
@@ -664,9 +707,12 @@ def api_import_project(pid):
         wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
         dts = db.get_doc_types(pid)
         imported_total = 0
+        skipped_blank_total = 0
+        skipped_invalid_total = 0
         matched_sheets = []
         skipped_sheets = []
         errors = []
+        warnings = []
 
         for ws in wb.worksheets:
             dt = _match_sheet_to_dt(ws.title, dts)
@@ -675,17 +721,26 @@ def api_import_project(pid):
                 continue
             try:
                 cols = db.get_columns(pid, dt["id"])
-                imported, has_header = _import_excel_worksheet(pid, dt["id"], ws, cols)
+                imported, has_header, skipped_blank, skipped_invalid, sheet_warnings = _import_excel_worksheet(pid, dt["id"], ws, cols)
                 if not has_header:
                     skipped_sheets.append({"sheet": ws.title, "reason": "No valid header row"})
                     continue
                 imported_total += imported
+                skipped_blank_total += skipped_blank
+                skipped_invalid_total += skipped_invalid
                 matched_sheets.append({
                     "sheet": ws.title,
                     "dt_id": dt["id"],
                     "dt_name": dt["name"],
                     "imported": imported,
+                    "skipped_blank": skipped_blank,
+                    "skipped_invalid": skipped_invalid,
                 })
+                if sheet_warnings and len(warnings) < 20:
+                    for w in sheet_warnings:
+                        warnings.append({"sheet": ws.title, **w})
+                        if len(warnings) >= 20:
+                            break
             except Exception as e:
                 errors.append({"sheet": ws.title, "error": str(e)})
 
@@ -693,9 +748,12 @@ def api_import_project(pid):
             ok=True,
             project_id=pid,
             imported_total=imported_total,
+            skipped_blank_total=skipped_blank_total,
+            skipped_invalid_total=skipped_invalid_total,
             matched_sheets=matched_sheets,
             skipped_sheets=skipped_sheets,
             errors=errors,
+            warnings=warnings,
         )
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
