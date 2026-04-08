@@ -106,11 +106,11 @@ function toast(msg,type=''){
 }
 function openM(id){document.getElementById(id).classList.remove('hidden')}
 function closeM(id){document.getElementById(id).classList.add('hidden')}
-async function apiFetch(url,opts={{}}){
-  const r=await fetch(url,{{credentials:'include',headers:{{'Content-Type':'application/json'}},...opts}});
-  if(r.status===403){{const d=await r.json().catch(()=>({{}}));
+async function apiFetch(url,opts={}){
+  const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},...opts});
+  if(r.status===403){const d=await r.json().catch(()=>({}));
     if(d.error==='LOGIN_REQUIRED'){window.location='/login';return null;}
-    throw new Error(d.error||'Forbidden');}}
+    throw new Error(d.error||'Forbidden');}
   if(!r.ok)throw new Error(await r.text());
   return r.json();
 }
