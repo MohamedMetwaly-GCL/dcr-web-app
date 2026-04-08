@@ -1929,6 +1929,13 @@ async function togglePrItems(recordId, btn){{
   const open=!nxt.classList.contains('open');
   if(open){{
     const items=await fetchPrItems(recordId);
+    const rowData=state.recs.find(r=>r._id===recordId)||{};
+    const detailsKey=getPrDetailsColKey();
+    const colIdx=state.cols.findIndex(c=>c.col_key===detailsKey);
+    if(colIdx>=0){{
+      const summaryCell=tr.children[2+colIdx];
+      if(summaryCell)summaryCell.textContent=getPrSummary(rowData);
+    }}
     const legacyKey=getPrDetailsColKey();
     const legacyText=legacyKey?String((state.recs.find(r=>r._id===recordId)||{{}})[legacyKey]||'').trim():'';
     nxt.querySelector('.pr-items-wrap').innerHTML=renderPrItemsTable(items, legacyText);
