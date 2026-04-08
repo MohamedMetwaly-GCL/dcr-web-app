@@ -402,18 +402,6 @@ canvas{{max-height:200px}}
       <div class="stitle">🗂 Projects</div>
       <div class="pgrid" id="pgrid"></div>
       <div class="panel" style="padding:12px 14px;margin-bottom:12px">
-        <div class="panel-title" style="margin-bottom:10px">Action Required</div>
-        <div id="ar-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
-          <div style="font-size:11px;color:var(--mu)">Loading...</div>
-        </div>
-      </div>
-      <div class="panel" style="padding:12px 14px;margin-bottom:12px">
-        <div class="panel-title" style="margin-bottom:10px">Data Confidence</div>
-        <div id="dq-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
-          <div style="font-size:11px;color:var(--mu)">Loading...</div>
-        </div>
-      </div>
-      <div class="panel" style="padding:12px 14px;margin-bottom:12px">
         <div class="panel-title" style="margin-bottom:10px">PR Analytics</div>
         <div id="pr-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
           <div style="font-size:11px;color:var(--mu)">Loading...</div>
@@ -589,7 +577,7 @@ canvas{{max-height:200px}}
 <script>
 const ROLE='{role}';
 let STATS=[],OVERDUE_DATA=[],EXEC_DATA=null;
-let QUALITY_SUMMARY=null,ACTION_REQUIRED=null,PR_ANALYTICS=null;
+let PR_ANALYTICS=null;
 let pChart,sChart,tChart,aChart,qChart,arChart;
 let _currentDisc='',_currentPid='';
 
@@ -652,16 +640,7 @@ function filterDisc(disc){{_currentDisc=disc;renderAll(_currentPid,disc);}}
 
 async function refreshOverviewPanels(pid){{
   const qs=pid?`?project_id=${{encodeURIComponent(pid)}}`:'';
-  const [quality, actions, prAnalytics]=await Promise.all([
-    apiFetch('/api/data_quality_summary'+qs).catch(()=>null),
-    apiFetch('/api/action_required_summary'+qs).catch(()=>null),
-    apiFetch('/api/pr_analytics_summary'+qs).catch(()=>null)
-  ]);
-  QUALITY_SUMMARY=quality;
-  ACTION_REQUIRED=actions;
-  PR_ANALYTICS=prAnalytics;
-  renderActionRequired(ACTION_REQUIRED);
-  renderDataQuality(QUALITY_SUMMARY);
+  PR_ANALYTICS=await apiFetch('/api/pr_analytics_summary'+qs).catch(()=>null);
   renderPrAnalytics(PR_ANALYTICS);
 }}
 
@@ -692,46 +671,7 @@ function renderAll(pid,disc){{
   updateKPIs(d);renderCards(d,pid);renderCharts(d);renderDTTable(d);renderDiscTable(d);
 }}
 
-function renderDataQuality(q){{
-  const el=document.getElementById('dq-panel');
-  if(!el)return;
-  if(!q||!q.total_records){{
-    el.innerHTML='<div style="font-size:11px;color:var(--mu)">No records yet</div>';
-    return;
-  }}
-  const items=[
-    ['Issued Date', q.issued_date_pct+'%', `${{q.issued_date_count}} / ${{q.total_records}} records`],
-    ['Workflow Status', q.status_pct+'%', `${{q.status_count}} / ${{q.workflow_records}} workflow records`],
-    ['Actual Reply', q.actual_reply_pct+'%', `${{q.actual_reply_count}} / ${{q.workflow_records}} workflow records`],
-    ['Structured PR', q.pr_structured_pct+'%', `${{q.pr_structured_count}} / ${{q.pr_records}} PR records`],
-  ];
-  el.innerHTML=items.map(([label,val,sub])=>`<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
-    <div style="font-size:20px;font-weight:800;color:var(--pr);line-height:1">${{val}}</div>
-    <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-top:4px">${{label}}</div>
-    <div style="font-size:10px;color:var(--mu);margin-top:2px">${{sub}}</div>
-  </div>`).join('');
-}}
-
 // ── KPIs ──────────────────────────────────────────────────
-function renderActionRequired(data){{
-  const el=document.getElementById('ar-panel');
-  if(!el)return;
-  const sections=[
-    ['Top Overdue', data?.top_overdue||[], r=>`${{r.project_code}} | ${{r.dt_code}} | ${{r.docNo||'—'}}`, r=>`${{r.days_overdue}}d overdue`],
-    ['Pending Beyond Threshold', data?.pending_longest||[], r=>`${{r.project_code}} | ${{r.dt_code}} | ${{r.docNo||'—'}}`, r=>`${{r.days_delay}}d pending`],
-    ['Recent Rejected', data?.recent_rejected||[], r=>`${{r.project_code}} | ${{r.dt_code}} | ${{r.docNo||'—'}}`, r=>`${{r.status||'Rejected'}}`],
-  ];
-  el.innerHTML=sections.map(([title,rows,headline,meta])=>`<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
-    <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">${{title}}</div>
-    ${{rows.length?rows.map(r=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd)">
-      <div style="font-size:11px;font-weight:700;color:var(--pr);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{headline(r)}}</div>
-      <div style="font-size:10px;color:var(--mu);display:flex;justify-content:space-between;gap:8px">
-        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.title||'No title'}}</span>
-        <span style="white-space:nowrap">${{meta(r)}}</span>
-      </div>
-    </div>`).join(''):`<div style="font-size:11px;color:var(--mu)">No items</div>`}}
-  </div>`).join('');
-}}
 
 function renderPrAnalytics(data){{
   const el=document.getElementById('pr-panel');
