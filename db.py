@@ -902,6 +902,11 @@ def get_pr_analytics_summary(pid=None, limit=5):
             "total_pr_records": 0,
             "top_projects": [],
             "top_trades": [],
+            "top_project_name": "",
+            "top_project_count": 0,
+            "top_trade_name": "",
+            "top_trade_count": 0,
+            "trade_count_total": 0,
         }
 
     project_counts = {}
@@ -928,10 +933,18 @@ def get_pr_analytics_summary(pid=None, limit=5):
         for trade, pr_count in sorted(trade_counts.items(), key=lambda x: (-x[1], x[0]))[:limit]
     ]
 
+    top_project = top_projects[0] if top_projects else {}
+    top_trade = top_trades[0] if top_trades else {}
+
     return {
         "total_pr_records": total_pr_records,
         "top_projects": top_projects,
         "top_trades": top_trades,
+        "top_project_name": top_project.get("project_name", ""),
+        "top_project_count": top_project.get("pr_count", 0),
+        "top_trade_name": top_trade.get("trade", ""),
+        "top_trade_count": top_trade.get("pr_count", 0),
+        "trade_count_total": len(trade_counts),
     }
 
 

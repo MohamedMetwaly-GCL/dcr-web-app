@@ -403,7 +403,7 @@ canvas{{max-height:200px}}
       <div class="pgrid" id="pgrid"></div>
       <div class="panel" style="padding:12px 14px;margin-bottom:12px">
         <div class="panel-title" style="margin-bottom:10px">PR Analytics</div>
-        <div id="pr-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
+        <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:12px">
           <div style="font-size:11px;color:var(--mu)">Loading...</div>
         </div>
       </div>
@@ -720,6 +720,88 @@ function renderPrAnalytics(data){{
       plugins:{{
         legend:{{display:false}}
       }},
+      scales:{{
+        x:{{beginAtZero:true,ticks:{{precision:0}}}},
+        y:{{grid:{{display:false}}}}
+      }}
+    }}
+  }});
+}}
+
+function renderPrAnalytics(data){{
+  const el=document.getElementById('pr-panel');
+  if(!el)return;
+  if(!data){{
+    el.innerHTML='<div style="font-size:11px;color:var(--mu)">Unavailable</div>';
+    if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
+    return;
+  }}
+  const topProjects=(data.top_projects||[]).length
+    ? (data.top_projects||[]).map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd)">
+        <span style="font-size:11px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{p.project_name}}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--pr);white-space:nowrap">${{p.pr_count}}</span>
+      </div>`).join('')
+    : `<div style="font-size:11px;color:var(--mu)">No project data</div>`;
+  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+    <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Total PRs</div>
+      <div style="font-size:30px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:6px">${{data.total_pr_records||0}}</div>
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Top Project PR Count</div>
+      <div style="font-size:20px;font-weight:800;color:var(--pr);line-height:1.15;margin-top:6px">${{data.top_project_count||0}}</div>
+      <div style="font-size:11px;color:var(--mu);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{data.top_project_name||'No project data'}}</div>
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Top Trade PR Count</div>
+      <div style="font-size:20px;font-weight:800;color:var(--pr);line-height:1.15;margin-top:6px">${{data.top_trade_count||0}}</div>
+      <div style="font-size:11px;color:var(--mu);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{data.top_trade_name||'No trade data'}}</div>
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Trades with PRs</div>
+      <div style="font-size:20px;font-weight:800;color:var(--pr);line-height:1.15;margin-top:6px">${{data.trade_count_total||0}}</div>
+      <div style="font-size:11px;color:var(--mu);margin-top:4px">Distinct trades represented</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
+    <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Top Projects</div>
+      ${{topProjects}}
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Top Trades by PR Count</div>
+          <div style="font-size:18px;font-weight:800;color:var(--pr);line-height:1.15;margin-top:6px">${{data.top_trade_name||'No trade data'}}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:18px;font-weight:800;color:var(--pr);line-height:1">${{data.top_trade_count||0}}</div>
+          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{data.trade_count_total||0}} trades</div>
+        </div>
+      </div>
+      <div style="height:260px"><canvas id="pr-trades-chart"></canvas></div>
+    </div>
+  </div>`;
+  const tradeCanvas=document.getElementById('pr-trades-chart');
+  if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
+  if(!tradeCanvas)return;
+  const trades=data.top_trades||[];
+  prTradeChart=new Chart(tradeCanvas,{{
+    type:'bar',
+    data:{{
+      labels:trades.map(t=>t.trade),
+      datasets:[{{
+        label:'PR Count',
+        data:trades.map(t=>t.pr_count),
+        backgroundColor:'#2563a8',
+        borderRadius:4
+      }}]
+    }},
+    options:{{
+      responsive:true,
+      maintainAspectRatio:false,
+      indexAxis:'y',
+      plugins:{{legend:{{display:false}}}},
       scales:{{
         x:{{beginAtZero:true,ticks:{{precision:0}}}},
         y:{{grid:{{display:false}}}}
