@@ -578,7 +578,7 @@ canvas{{max-height:200px}}
 const ROLE='{role}';
 let STATS=[],OVERDUE_DATA=[],EXEC_DATA=null;
 let PR_ANALYTICS=null;
-let pChart,sChart,tChart,aChart,qChart,arChart;
+let pChart,sChart,tChart,aChart,qChart,arChart,prTradeChart;
 let _currentDisc='',_currentPid='';
 
 // ── Dark mode ──────────────────────────────────────────────
@@ -678,28 +678,54 @@ function renderPrAnalytics(data){{
   if(!el)return;
   if(!data){{
     el.innerHTML='<div style="font-size:11px;color:var(--mu)">Unavailable</div>';
+    if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
     return;
   }}
-  const cards=[
-    ['PR Records', data.total_pr_records||0, 'Parent PR documents'],
-    ['PR Items', data.total_pr_items||0, 'Structured child items'],
-    ['Avg Items / PR', data.avg_items_per_pr||0, 'Average request size'],
-    ['Without Items', data.prs_without_items||0, 'Legacy or incomplete PRs'],
-  ];
   const topProjects=(data.top_projects||[]).length
-    ? `<div style="grid-column:1/-1;background:var(--bg);border-radius:8px;padding:10px 12px">
-        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Top Projects by PR Volume</div>
-        ${{(data.top_projects||[]).map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)">
-          <span style="font-size:11px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{p.project_name}} (${{p.project_code}})</span>
-          <span style="font-size:11px;font-weight:700;color:var(--pr);white-space:nowrap">${{p.pr_count}}</span>
-        </div>`).join('')}}
-      </div>`
-    : `<div style="grid-column:1/-1;font-size:11px;color:var(--mu)">No PR records yet</div>`;
-  el.innerHTML=cards.map(([label,val,sub])=>`<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
-    <div style="font-size:20px;font-weight:800;color:var(--pr);line-height:1">${{val}}</div>
-    <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-top:4px">${{label}}</div>
-    <div style="font-size:10px;color:var(--mu);margin-top:2px">${{sub}}</div>
-  </div>`).join('')+topProjects;
+    ? (data.top_projects||[]).map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)">
+        <span style="font-size:11px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{p.project_name}} — ${{p.pr_count}}</span>
+      </div>`).join('')
+    : `<div style="font-size:11px;color:var(--mu)">No project data</div>`;
+  el.innerHTML=`<div style="grid-column:1/-1;background:var(--bg);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Total PRs</div>
+      <div style="font-size:30px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:6px">${{data.total_pr_records||0}}</div>
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:10px 12px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Top Projects</div>
+      ${topProjects}
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:10px 12px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Top Trades by PR Count</div>
+      <div style="height:180px"><canvas id="pr-trades-chart"></canvas></div>
+    </div>`;
+  const tradeCanvas=document.getElementById('pr-trades-chart');
+  if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
+  if(!tradeCanvas)return;
+  const trades=data.top_trades||[];
+  prTradeChart=new Chart(tradeCanvas,{{
+    type:'bar',
+    data:{{
+      labels:trades.map(t=>t.trade),
+      datasets:[{{
+        label:'PR Count',
+        data:trades.map(t=>t.pr_count),
+        backgroundColor:'#2563a8',
+        borderRadius:4
+      }}]
+    }},
+    options:{{
+      responsive:true,
+      maintainAspectRatio:false,
+      indexAxis:'y',
+      plugins:{{
+        legend:{{display:false}}
+      }},
+      scales:{{
+        x:{{beginAtZero:true,ticks:{{precision:0}}}},
+        y:{{grid:{{display:false}}}}
+      }}
+    }}
+  }});
 }}
 
 function updateKPIs(d){{

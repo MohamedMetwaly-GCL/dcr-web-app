@@ -215,6 +215,11 @@ def _is_non_workflow_dt(dt_code="", dt_name=""):
     name = str(dt_name or "").strip().lower()
     return code in ("pr", "ltr") or "requisition" in name or "letter" in name
 
+def _is_pr_dt(dt_code="", dt_name=""):
+    code = str(dt_code or "").strip().lower()
+    name = str(dt_name or "").strip().lower()
+    return code == "pr" or "requisition" in name or "purchase request" in name
+
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
     for stmt in stmts:
@@ -618,6 +623,7 @@ def get_dashboard_stats():
             t=ap=pe=ov=rj = 0
             disc_map = {}
             dt_is_non_workflow = _is_non_workflow_dt(dt.get("code",""), dt.get("name",""))
+            dt_is_pr = _is_pr_dt(dt.get("code",""), dt.get("name",""))
 
             # ── Approach 1: group by base doc, use LATEST rev status ──
             # Collect ALL revisions per base document first
@@ -674,9 +680,10 @@ def get_dashboard_stats():
             disc_list = [{"disc":k,"total":v["total"],"approved":v["approved"],
                           "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"]}
                          for k,v in sorted(disc_map.items())]
-            dt_stats.append({"id":dt["id"],"code":dt["code"],"name":dt["name"],
-                             "total":t,"approved":ap,"pending":pe,"overdue":ov,"rejected":rj,
-                             "disc_breakdown":disc_list})
+            if not dt_is_pr:
+                dt_stats.append({"id":dt["id"],"code":dt["code"],"name":dt["name"],
+                                 "total":t,"approved":ap,"pending":pe,"overdue":ov,"rejected":rj,
+                                 "disc_breakdown":disc_list})
             total+=t; approved+=ap; pending+=pe; overdue_cnt+=ov; total_rj+=rj
 
         pct = round(approved / total * 100) if total else 0
@@ -893,45 +900,38 @@ def get_pr_analytics_summary(pid=None, limit=5):
     if not total_pr_records:
         return {
             "total_pr_records": 0,
-            "total_pr_items": 0,
-            "avg_items_per_pr": 0,
-            "prs_without_items": 0,
             "top_projects": [],
+            "top_trades": [],
         }
 
-    pr_ids = [r["id"] for r in pr_rows]
-    item_rows = q("""
-        SELECT record_id, COUNT(*) AS item_count
-        FROM pr_items
-        WHERE record_id = ANY(%s)
-        GROUP BY record_id
-    """, (pr_ids,))
-    item_count_map = {r["record_id"]: int(r["item_count"]) for r in item_rows}
-
-    total_pr_items = sum(item_count_map.values())
-    prs_without_items = sum(1 for r in pr_rows if item_count_map.get(r["id"], 0) == 0)
-
     project_counts = {}
+    trade_counts = {}
     for row in pr_rows:
-        pid = row["project_id"]
-        project_counts[pid] = project_counts.get(pid, 0) + 1
+        row_pid = row["project_id"]
+        project_counts[row_pid] = project_counts.get(row_pid, 0) + 1
+        data = row["data"] if isinstance(row["data"], dict) else {}
+        trade = str(data.get("discipline") or "").strip() or "Unspecified"
+        trade_counts[trade] = trade_counts.get(trade, 0) + 1
 
     top_projects = []
-    for pid, pr_count in sorted(project_counts.items(), key=lambda x: x[1], reverse=True)[:limit]:
-        proj = project_map.get(pid, {})
+    for row_pid, pr_count in sorted(project_counts.items(), key=lambda x: (-x[1], x[0]))[:limit]:
+        proj = project_map.get(row_pid, {})
         top_projects.append({
-            "project_id": pid,
-            "project_code": proj.get("code", pid),
-            "project_name": proj.get("name", pid),
+            "project_id": row_pid,
+            "project_code": proj.get("code", row_pid),
+            "project_name": proj.get("name", row_pid),
             "pr_count": pr_count,
         })
 
+    top_trades = [
+        {"trade": trade, "pr_count": pr_count}
+        for trade, pr_count in sorted(trade_counts.items(), key=lambda x: (-x[1], x[0]))[:limit]
+    ]
+
     return {
         "total_pr_records": total_pr_records,
-        "total_pr_items": total_pr_items,
-        "avg_items_per_pr": round(total_pr_items / total_pr_records, 1) if total_pr_records else 0,
-        "prs_without_items": prs_without_items,
         "top_projects": top_projects,
+        "top_trades": top_trades,
     }
 
 
