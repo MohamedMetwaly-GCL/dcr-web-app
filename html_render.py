@@ -686,13 +686,13 @@ function renderPrAnalytics(data){{
         <span style="font-size:11px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{p.project_name}} — ${{p.pr_count}}</span>
       </div>`).join('')
     : `<div style="font-size:11px;color:var(--mu)">No project data</div>`;
-  el.innerHTML=`<div style="grid-column:1/-1;background:var(--bg);border-radius:8px;padding:12px 14px">
+    el.innerHTML=`<div style="grid-column:1/-1;background:var(--bg);border-radius:8px;padding:12px 14px">
       <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Total PRs</div>
       <div style="font-size:30px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:6px">${{data.total_pr_records||0}}</div>
     </div>
     <div style="background:var(--bg);border-radius:8px;padding:10px 12px">
       <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Top Projects</div>
-      ${topProjects}
+      ${{topProjects}}
     </div>
     <div style="background:var(--bg);border-radius:8px;padding:10px 12px">
       <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Top Trades by PR Count</div>
