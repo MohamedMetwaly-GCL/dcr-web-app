@@ -25,6 +25,11 @@ from auth import can_edit, current_user
 columns_bp = Blueprint("columns", __name__)
 
 
+def _col_project_id(col_id):
+    row = db.q("SELECT project_id FROM columns_config WHERE id=%s", (col_id,), one=True)
+    return row["project_id"] if row else None
+
+
 @columns_bp.route("/api/columns/<pid>/<dt_id>")
 def api_columns(pid, dt_id):
     return jsonify(db.get_columns(pid, dt_id))
@@ -40,18 +45,26 @@ def api_add_column(pid, dt_id):
 
 @columns_bp.route("/api/columns/visibility/<int:col_id>", methods=["POST"])
 def api_col_visibility(col_id):
+    pid = _col_project_id(col_id)
+    if not pid: return jsonify(error="Column not found"), 404
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
     db.set_col_visible(col_id, data.get("visible", True))
     return jsonify(ok=True)
 
 @columns_bp.route("/api/columns/<int:col_id>", methods=["DELETE"])
 def api_delete_col(col_id):
+    pid = _col_project_id(col_id)
+    if not pid: return jsonify(error="Column not found"), 404
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     db.delete_col(col_id)
     return jsonify(ok=True)
 
 @columns_bp.route("/api/columns/rename/<int:col_id>", methods=["POST"])
 def api_rename_col(col_id):
-    if not current_user(): return jsonify(error="LOGIN_REQUIRED"), 403
+    pid = _col_project_id(col_id)
+    if not pid: return jsonify(error="Column not found"), 404
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
     label = data.get("label","").strip()
     if not label: return jsonify(error="Label required"), 400
