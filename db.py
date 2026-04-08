@@ -1,4 +1,5 @@
 """db.py - DCR Flask - Clean PostgreSQL database layer"""
+import logging
 import os, json, uuid, datetime, hashlib, secrets
 import bcrypt as _bcrypt
 import psycopg2
@@ -7,6 +8,7 @@ from psycopg2.pool import ThreadedConnectionPool
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 _pool = None
+logger = logging.getLogger(__name__)
 
 def get_pool():
     global _pool
@@ -220,7 +222,7 @@ def init():
             with DB() as cur: cur.execute(stmt)
         except Exception as e:
             if "already exists" not in str(e).lower():
-                print(f"[DB] Schema note: {e}")
+                logger.warning("db_schema_note error=%s", e)
     _ensure_admin()
 
 def _ensure_admin():
@@ -861,7 +863,8 @@ def log_action(username, action, project_id=None, dt_id=None, record_id=None,
              str(new_value)[:500] if new_value is not None else None,
              str(detail)[:500] if detail else None))
     except Exception as e:
-        print(f"[Audit] log error: {e}")
+        logger.error("audit_log_failed action=%s project_id=%s dt_id=%s record_id=%s error=%s",
+                     action, project_id, dt_id, record_id, e)
 
 def get_audit_log(project_id=None, username=None, action=None,
                   limit=200, offset=0):

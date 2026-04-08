@@ -15,6 +15,7 @@ changed from @app.route to @exporting_bp.route.
 import base64
 import datetime
 import io
+import logging
 import re
 import uuid
 
@@ -25,6 +26,7 @@ from auth import current_user, can_edit
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 
 exporting_bp = Blueprint("exporting", __name__)
+logger = logging.getLogger(__name__)
 
 
 def _normalize_sheet_name(name):
@@ -134,6 +136,8 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
             imported += 1
         except Exception as e:
             skipped_invalid += 1
+            logger.warning("import_row_skipped pid=%s dt_id=%s row=%s error=%s",
+                           pid, dt_id, row_idx, e)
             if len(warnings) < 20:
                 warnings.append({"row": row_idx, "error": str(e)})
     return imported, header is not None, skipped_blank, skipped_invalid, warnings
@@ -677,9 +681,12 @@ def api_import(pid, dt_id):
                     imported += 1
                 except Exception as e:
                     skipped_invalid += 1
+                    logger.warning("import_csv_row_skipped pid=%s dt_id=%s row=%s error=%s",
+                                   pid, dt_id, row_idx, e)
                     if len(warnings) < 20:
                         warnings.append({"row": row_idx, "error": str(e)})
     except Exception as e:
+        logger.error("import_failed pid=%s dt_id=%s ext=%s error=%s", pid, dt_id, ext, e)
         return jsonify(ok=False, error=str(e)), 500
 
     return jsonify(
@@ -717,12 +724,16 @@ def api_import_project(pid):
         for ws in wb.worksheets:
             dt = _match_sheet_to_dt(ws.title, dts)
             if not dt:
+                logger.warning("import_project_sheet_skipped pid=%s sheet=%s reason=no_matching_document_type",
+                               pid, ws.title)
                 skipped_sheets.append({"sheet": ws.title, "reason": "No matching document type"})
                 continue
             try:
                 cols = db.get_columns(pid, dt["id"])
                 imported, has_header, skipped_blank, skipped_invalid, sheet_warnings = _import_excel_worksheet(pid, dt["id"], ws, cols)
                 if not has_header:
+                    logger.warning("import_project_sheet_skipped pid=%s dt_id=%s sheet=%s reason=no_valid_header",
+                                   pid, dt["id"], ws.title)
                     skipped_sheets.append({"sheet": ws.title, "reason": "No valid header row"})
                     continue
                 imported_total += imported
@@ -742,6 +753,8 @@ def api_import_project(pid):
                         if len(warnings) >= 20:
                             break
             except Exception as e:
+                logger.error("import_project_sheet_failed pid=%s dt_id=%s sheet=%s error=%s",
+                             pid, dt.get("id",""), ws.title, e)
                 errors.append({"sheet": ws.title, "error": str(e)})
 
         return jsonify(
@@ -756,4 +769,5 @@ def api_import_project(pid):
             warnings=warnings,
         )
     except Exception as e:
+        logger.error("import_project_failed pid=%s ext=%s error=%s", pid, ext, e)
         return jsonify(ok=False, error=str(e)), 500

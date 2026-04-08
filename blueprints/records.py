@@ -7,6 +7,7 @@ Step 7A of the incremental refactor.
 Logic is identical to the original app.py route — only the decorator
 changed from @app.route to @records_bp.route.
 """
+import logging
 import uuid
 
 from flask import Blueprint, jsonify, request
@@ -16,6 +17,7 @@ from auth import current_user, can_edit
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 
 records_bp = Blueprint("records", __name__)
+logger = logging.getLogger(__name__)
 
 def _is_pr_doc_type(pid, dt_id):
     if str(dt_id or "").upper() == "PR":
@@ -46,7 +48,8 @@ def api_records(pid, dt_id):
                 try:
                     exp = compute_expected_reply(issued_date, doc_no)
                 except Exception as e:
-                    print(f"[WARN] expectedReply calc failed for rec {row.get('_id','')}: {e}")
+                    logger.warning("expected_reply_calc_failed pid=%s dt_id=%s record_id=%s error=%s",
+                                   pid, dt_id, row.get("_id",""), e)
             row["_expectedReplyDate"] = format_date(exp) if exp else ""
         else:
             row["_expectedReplyDate"] = ""
