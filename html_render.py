@@ -1799,7 +1799,7 @@ function renderRows(){{
         const url=row[key]||'';
         if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">View</a>`;tr.appendChild(td);return;}}
       }}
-      else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val='';
+      else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val=getPrSummary(row);
       else val=String(row[key]||'');
       let displayVal=val;
       if(typeof displayVal==='string'&&longTextMeta){{
@@ -1879,6 +1879,22 @@ async function fetchPrItems(recordId){{
   return state.prItemsCache[recordId];
 }}
 
+function getPrSummary(row){{
+  const items=state.prItemsCache[row?._id]||[];
+  if(items.length){{
+    const names=items.map(it=>String(it?.item_name||'').trim()).filter(Boolean);
+    if(names.length){{
+      let summary=names.slice(0,2).join(', ');
+      if(names.length>2)summary+=' ...';
+      return summary;
+    }}
+  }}
+  const legacyKey=getPrDetailsColKey();
+  const legacy=legacyKey?String(row?.[legacyKey]||'').replace(/\\s+/g,' ').trim():'';
+  if(!legacy)return '';
+  return legacy.length>80?legacy.slice(0,77)+'...':legacy;
+}}
+
 function renderPrItemsTable(items, legacyText){{
   if(!items||!items.length){{
     const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
@@ -1901,11 +1917,12 @@ async function togglePrItems(recordId, btn){{
   if(!tr)return;
   let nxt=tr.nextElementSibling;
   if(!nxt||!nxt.classList||!nxt.classList.contains('pr-items-row')||nxt.dataset.id!==recordId){{
-    const colSpan=state.cols.length+3; // chk + sr + actions
+    const colSpan=state.cols.length+1;
     const wrap=document.createElement('div');wrap.className='pr-items-wrap';
     wrap.innerHTML='<div class="pr-items-empty">Loading...</div>';
     const td=document.createElement('td');td.colSpan=colSpan;td.appendChild(wrap);
     const row=document.createElement('tr');row.className='pr-items-row';row.dataset.id=recordId;row.appendChild(td);
+    row.style.display='none';
     tr.parentNode.insertBefore(row, tr.nextSibling);
     nxt=row;
   }}
@@ -1915,10 +1932,12 @@ async function togglePrItems(recordId, btn){{
     const legacyKey=getPrDetailsColKey();
     const legacyText=legacyKey?String((state.recs.find(r=>r._id===recordId)||{{}})[legacyKey]||'').trim():'';
     nxt.querySelector('.pr-items-wrap').innerHTML=renderPrItemsTable(items, legacyText);
+    nxt.style.display='table-row';
     nxt.classList.add('open');
     btn.textContent='Hide';
   }}else{{
     nxt.classList.remove('open');
+    nxt.style.display='none';
     btn.textContent='Items';
   }}
 }}
