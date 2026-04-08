@@ -689,8 +689,8 @@ def get_dashboard_stats():
     return result
 
 
-def get_data_quality_summary():
-    dt_rows = q("SELECT project_id, id, code, name FROM doc_types")
+def get_data_quality_summary(pid=None):
+    dt_rows = q("SELECT project_id, id, code, name FROM doc_types WHERE project_id=%s", (pid,)) if pid else q("SELECT project_id, id, code, name FROM doc_types")
     if not dt_rows:
         return {
             "total_records": 0,
@@ -708,6 +708,10 @@ def get_data_quality_summary():
 
     dt_meta = {(d["project_id"], d["id"]): d for d in dt_rows}
     col_rows = q("""
+        SELECT project_id, dt_id, col_key
+        FROM columns_config
+        WHERE visible=TRUE AND col_key IN ('expectedReplyDate','status')
+    """ + (" AND project_id=%s" if pid else ""), (pid,)) if pid else q("""
         SELECT project_id, dt_id, col_key
         FROM columns_config
         WHERE visible=TRUE AND col_key IN ('expectedReplyDate','status')
@@ -731,7 +735,7 @@ def get_data_quality_summary():
         if code == "PR" or "requisition" in name or "purchase request" in name:
             pr_dt_keys.add(key)
 
-    recs = q("SELECT id, project_id, dt_id, data FROM records")
+    recs = q("SELECT id, project_id, dt_id, data FROM records WHERE project_id=%s", (pid,)) if pid else q("SELECT id, project_id, dt_id, data FROM records")
     total_records = len(recs)
     issued_date_count = 0
     workflow_records = 0
@@ -776,27 +780,31 @@ def get_data_quality_summary():
     }
 
 
-def get_action_required_summary(limit=10, pending_threshold=14):
+def get_action_required_summary(pid=None, limit=10, pending_threshold=14):
     from utils import compute_duration
 
     projects = get_projects()
     project_codes = {p["id"]: p["code"] for p in projects}
 
-    overdue_rows = get_overdue_records()[:limit]
+    overdue_rows = get_overdue_records(pid)[:limit]
     top_overdue = [
         {**r, "project_code": project_codes.get(r["project_id"], r["project_id"])}
         for r in overdue_rows
     ]
 
-    dt_rows = q("SELECT project_id, id, code, name FROM doc_types")
+    dt_rows = q("SELECT project_id, id, code, name FROM doc_types WHERE project_id=%s", (pid,)) if pid else q("SELECT project_id, id, code, name FROM doc_types")
     dt_meta = {(d["project_id"], d["id"]): d for d in dt_rows}
 
-    meta_rows = q("SELECT project_id, item_value, meta FROM dropdown_lists WHERE list_name LIKE %s AND meta IS NOT NULL", ("status%",))
+    meta_rows = q("SELECT project_id, item_value, meta FROM dropdown_lists WHERE project_id=%s AND list_name LIKE %s AND meta IS NOT NULL", (pid, "status%")) if pid else q("SELECT project_id, item_value, meta FROM dropdown_lists WHERE list_name LIKE %s AND meta IS NOT NULL", ("status%",))
     meta_map = {}
     for r in meta_rows:
         meta_map.setdefault(r["project_id"], {})[r["item_value"]] = r["meta"]
 
     col_rows = q("""
+        SELECT project_id, dt_id, col_key
+        FROM columns_config
+        WHERE project_id=%s AND visible=TRUE AND col_key IN ('expectedReplyDate','status')
+    """, (pid,)) if pid else q("""
         SELECT project_id, dt_id, col_key
         FROM columns_config
         WHERE visible=TRUE AND col_key IN ('expectedReplyDate','status')
@@ -815,7 +823,7 @@ def get_action_required_summary(limit=10, pending_threshold=14):
         if key in dt_has_exp and key in dt_has_status and not _is_non_workflow_dt(dt.get("code",""), dt.get("name",""))
     }
 
-    rows = q("SELECT id, project_id, dt_id, data, created_at FROM records ORDER BY created_at DESC")
+    rows = q("SELECT id, project_id, dt_id, data, created_at FROM records WHERE project_id=%s ORDER BY created_at DESC", (pid,)) if pid else q("SELECT id, project_id, dt_id, data, created_at FROM records ORDER BY created_at DESC")
     pending_longest = []
     recent_rejected = []
 
@@ -858,11 +866,21 @@ def get_action_required_summary(limit=10, pending_threshold=14):
     }
 
 
-def get_pr_analytics_summary(limit=5):
+def get_pr_analytics_summary(pid=None, limit=5):
     projects = get_projects()
     project_map = {p["id"]: p for p in projects}
 
     pr_rows = q("""
+        SELECT r.id, r.project_id, r.data, d.code, d.name
+        FROM records r
+        JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
+        WHERE r.project_id=%s
+          AND (
+               UPPER(COALESCE(d.code, ''))='PR'
+            OR LOWER(COALESCE(d.name, '')) LIKE %s
+            OR LOWER(COALESCE(d.name, '')) LIKE %s
+          )
+    """, (pid, "%requisition%", "%purchase request%")) if pid else q("""
         SELECT r.id, r.project_id, r.data, d.code, d.name
         FROM records r
         JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id

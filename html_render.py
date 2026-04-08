@@ -397,17 +397,19 @@ canvas{{max-height:200px}}
     {audit_btn}
   </div>
 
-  <!-- TAB: OVERVIEW -->
+    <!-- TAB: OVERVIEW -->
     <div id="tab-overview" class="tab-pane active">
+      <div class="stitle">🗂 Projects</div>
+      <div class="pgrid" id="pgrid"></div>
       <div class="panel" style="padding:12px 14px;margin-bottom:12px">
-        <div class="panel-title" style="margin-bottom:10px">Data Confidence</div>
-        <div id="dq-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+        <div class="panel-title" style="margin-bottom:10px">Action Required</div>
+        <div id="ar-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
           <div style="font-size:11px;color:var(--mu)">Loading...</div>
         </div>
       </div>
       <div class="panel" style="padding:12px 14px;margin-bottom:12px">
-        <div class="panel-title" style="margin-bottom:10px">Action Required</div>
-        <div id="ar-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+        <div class="panel-title" style="margin-bottom:10px">Data Confidence</div>
+        <div id="dq-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
           <div style="font-size:11px;color:var(--mu)">Loading...</div>
         </div>
       </div>
@@ -417,8 +419,6 @@ canvas{{max-height:200px}}
           <div style="font-size:11px;color:var(--mu)">Loading...</div>
         </div>
       </div>
-      <div class="stitle">🗂 Projects</div>
-      <div class="pgrid" id="pgrid"></div>
 
     <div class="charts-grid">
       <div class="ccard"><div class="clbl">📊 Documents by Project</div><canvas id="cProj"></canvas></div>
@@ -619,37 +619,29 @@ function showTab(name){{
 // ── Init ──────────────────────────────────────────────────
   async function init(){{
     try{{
-    const [stats, quality, actions, prAnalytics]=await Promise.all([
+    const [stats]=await Promise.all([
         apiFetch('/api/dashboard_stats'),
-        apiFetch('/api/data_quality_summary').catch(()=>null),
-      apiFetch('/api/action_required_summary').catch(()=>null),
-      apiFetch('/api/pr_analytics_summary').catch(()=>null)
       ]);
       STATS=stats;
-      QUALITY_SUMMARY=quality;
-      ACTION_REQUIRED=actions;
-      PR_ANALYTICS=prAnalytics;
       if(!STATS)return;
-    // Populate project filter
-    document.getElementById('proj-sel').innerHTML=
-      '<option value="">All Projects</option>'+
+      // Populate project filter
+      document.getElementById('proj-sel').innerHTML=
+        '<option value="">All Projects</option>'+
       STATS.map(p=>`<option value="${{p.id}}">${{p.name}} (${{p.code}})</option>`).join('');
     // Populate discipline filter
     const discs=new Set();
     STATS.forEach(p=>(p.dt_stats||[]).forEach(dt=>
       (dt.disc_breakdown||[]).forEach(d=>discs.add(d.disc))));
-      document.getElementById('disc-sel').innerHTML=
-        '<option value="">All Disciplines</option>'+
-        [...discs].sort().map(d=>`<option value="${{d}}">${{d}}</option>`).join('');
-      renderDataQuality(QUALITY_SUMMARY);
-      renderActionRequired(ACTION_REQUIRED);
-      renderPrAnalytics(PR_ANALYTICS);
-      renderAll('','');
+        document.getElementById('disc-sel').innerHTML=
+          '<option value="">All Disciplines</option>'+
+          [...discs].sort().map(d=>`<option value="${{d}}">${{d}}</option>`).join('');
+        await refreshOverviewPanels('');
+        renderAll('','');
     }}finally{{document.getElementById('ld').style.display='none';}}
   }}
 
 function filterProject(pid){{
-  _currentPid=pid;renderAll(pid,_currentDisc);
+  _currentPid=pid;refreshOverviewPanels(pid);renderAll(pid,_currentDisc);
   // Reload analytics/overdue if their tab is active
   const activeTab=document.querySelector('.tab-pane.active');
   if(activeTab?.id==='tab-analytics'){{analyticsLoaded=false;loadAnalytics();}}
@@ -657,6 +649,21 @@ function filterProject(pid){{
   if(activeTab?.id==='tab-executive'){{EXEC_DATA=null;loadExecutive();}}
 }}
 function filterDisc(disc){{_currentDisc=disc;renderAll(_currentPid,disc);}}
+
+async function refreshOverviewPanels(pid){{
+  const qs=pid?`?project_id=${{encodeURIComponent(pid)}}`:'';
+  const [quality, actions, prAnalytics]=await Promise.all([
+    apiFetch('/api/data_quality_summary'+qs).catch(()=>null),
+    apiFetch('/api/action_required_summary'+qs).catch(()=>null),
+    apiFetch('/api/pr_analytics_summary'+qs).catch(()=>null)
+  ]);
+  QUALITY_SUMMARY=quality;
+  ACTION_REQUIRED=actions;
+  PR_ANALYTICS=prAnalytics;
+  renderActionRequired(ACTION_REQUIRED);
+  renderDataQuality(QUALITY_SUMMARY);
+  renderPrAnalytics(PR_ANALYTICS);
+}}
 
 function getFiltered(pid,disc){{
   let d=pid?STATS.filter(s=>s.id===pid):STATS;

@@ -77,14 +77,17 @@ def api_executive_summary():
 
 @summary_bp.route("/api/data_quality_summary")
 def api_data_quality_summary():
-    return jsonify(db.get_data_quality_summary())
+    pid = request.args.get("project_id") or None
+    return jsonify(db.get_data_quality_summary(pid))
 
 
 @summary_bp.route("/api/action_required_summary")
 def api_action_required_summary():
-    return jsonify(db.get_action_required_summary())
+    pid = request.args.get("project_id") or None
+    return jsonify(db.get_action_required_summary(pid))
 
 
 @summary_bp.route("/api/pr_analytics_summary")
 def api_pr_analytics_summary():
-    return jsonify(db.get_pr_analytics_summary())
+    pid = request.args.get("project_id") or None
+    return jsonify(db.get_pr_analytics_summary(pid))
