@@ -106,6 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_records_proj_dt ON records(project_id, dt_id);
 CREATE TABLE IF NOT EXISTS pr_items (
     id          TEXT PRIMARY KEY,
     record_id   TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+    row_type    TEXT NOT NULL DEFAULT 'item',
     item_name   TEXT NOT NULL,
     unit        TEXT,
     quantity    NUMERIC,
@@ -114,6 +115,7 @@ CREATE TABLE IF NOT EXISTS pr_items (
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS row_type TEXT NOT NULL DEFAULT 'item';
 CREATE INDEX IF NOT EXISTS idx_pr_items_record ON pr_items(record_id);
 CREATE TABLE IF NOT EXISTS app_settings (
     key        TEXT PRIMARY KEY,
@@ -476,7 +478,7 @@ def delete_record(rec_id):
 
 # ── PR Items ─────────────────────────────────────────────────
 def get_pr_items(record_id):
-    return q("""SELECT id, record_id, item_name, unit, quantity, remarks, sort_order
+    return q("""SELECT id, record_id, row_type, item_name, unit, quantity, remarks, sort_order
                 FROM pr_items
                 WHERE record_id=%s
                 ORDER BY sort_order, created_at, id""", (record_id,))
@@ -485,7 +487,7 @@ def get_pr_items_for_records(record_ids):
     if not record_ids: return {}
     record_ids = [r for r in record_ids if r]
     if not record_ids: return {}
-    rows = q("""SELECT id, record_id, item_name, unit, quantity, remarks, sort_order
+    rows = q("""SELECT id, record_id, row_type, item_name, unit, quantity, remarks, sort_order
                 FROM pr_items
                 WHERE record_id = ANY(%s)
                 ORDER BY record_id, sort_order, created_at, id""", (record_ids,))
@@ -498,10 +500,10 @@ def save_pr_items(record_id, items):
     exe("DELETE FROM pr_items WHERE record_id=%s", (record_id,))
     if not items: return 0
     for i, it in enumerate(items):
-        exe("""INSERT INTO pr_items(id,record_id,item_name,unit,quantity,remarks,sort_order,updated_at)
-               VALUES(%s,%s,%s,%s,%s,%s,%s,NOW())""",
-            (str(uuid.uuid4()), record_id, it.get("item_name",""),
-             it.get("unit"), it.get("quantity"), it.get("remarks"), i))
+        exe("""INSERT INTO pr_items(id,record_id,row_type,item_name,unit,quantity,remarks,sort_order,updated_at)
+               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,NOW())""",
+            (str(uuid.uuid4()), record_id, it.get("row_type","item"),
+             it.get("item_name",""), it.get("unit"), it.get("quantity"), it.get("remarks"), i))
     return len(items)
 
 # ── Dropdown Lists ────────────────────────────────────────────

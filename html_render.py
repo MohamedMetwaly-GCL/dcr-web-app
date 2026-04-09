@@ -284,11 +284,14 @@ canvas{{max-height:200px}}
 .pr-items-table{{width:100%;border-collapse:collapse;font-size:11px}}
 .pr-items-table th{{background:#e2e8f0;color:#334155;padding:6px 8px;text-align:left;font-weight:700}}
 .pr-items-table td{{padding:6px 8px;border-bottom:1px solid #e5e7eb}}
+.pr-items-table .pr-section td{{background:#e8eef6;color:var(--pr);font-weight:800;text-transform:uppercase;letter-spacing:.35px}}
 .pr-items-empty{{color:var(--mu);font-size:11px;padding:6px 0}}
 .pr-items-editor table{{width:100%;border-collapse:collapse;font-size:11px}}
 .pr-items-editor th{{background:#e2e8f0;color:#334155;padding:6px 8px;text-align:left;font-weight:700}}
 .pr-items-editor td{{padding:6px 8px;border-bottom:1px solid #e5e7eb}}
 .pr-items-editor input{{width:100%;padding:6px 8px;border:1.5px solid var(--bd);border-radius:var(--rd);font-family:inherit;font-size:12px}}
+.pr-items-editor tr.pr-head-edit td{{background:#f8fafc}}
+.pr-items-editor .pr-head-label{{font-size:10px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.35px;margin-bottom:4px}}
 
 /* ── Overdue panel ── */
 .ov-row{{display:flex;align-items:center;gap:8px;padding:7px 10px;
@@ -1602,6 +1605,35 @@ function getPrDetailsColKey(){{
   return null;
 }}
 
+function getPrManualDetails(row){{
+  const detailsKey=getPrDetailsColKey();
+  return detailsKey?String(row?.[detailsKey]||'').replace(/\s+/g,' ').trim():'';
+}}
+
+function getPrAutoSummary(row){{
+  const items=state.prItemsCache[row?._id]||[];
+  if(items.length){{
+    const names=items
+      .filter(it=>String(it?.row_type||'item').toLowerCase()!=='header')
+      .map(it=>String(it?.item_name||'').trim())
+      .filter(Boolean);
+    if(names.length){{
+      let summary=names.slice(0,2).join(', ');
+      if(names.length>2)summary+=' ...';
+      return summary;
+    }}
+  }}
+  return '';
+}}
+
+function getPrSummary(row){{
+  const manual=getPrManualDetails(row);
+  if(manual)return manual;
+  const auto=getPrAutoSummary(row);
+  if(!auto)return '';
+  return auto.length>80?auto.slice(0,77)+'...':auto;
+}}
+
 function escHtml(v){{
   return String(v==null?'':v)
     .replaceAll('&','&amp;')
@@ -1968,33 +2000,19 @@ async function fetchPrItems(recordId){{
   return state.prItemsCache[recordId];
 }}
 
-function getPrSummary(row){{
-  const items=state.prItemsCache[row?._id]||[];
-  if(items.length){{
-    const names=items.map(it=>String(it?.item_name||'').trim()).filter(Boolean);
-    if(names.length){{
-      let summary=names.slice(0,2).join(', ');
-      if(names.length>2)summary+=' ...';
-      return summary;
-    }}
-  }}
-  const legacyKey=getPrDetailsColKey();
-  const legacy=legacyKey?String(row?.[legacyKey]||'').replace(/\\s+/g,' ').trim():'';
-  if(!legacy)return '';
-  return legacy.length>80?legacy.slice(0,77)+'...':legacy;
-}}
-
 function renderPrItemsTable(items, legacyText){{
   if(!items||!items.length){{
     const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
     return `<div class="pr-items-empty">No items added</div>${{legacy}}`;
   }}
-  const rows=items.map(it=>`<tr>
-    <td>${{escHtml(it.item_name||'')}}</td>
-    <td>${{escHtml(it.unit||'')}}</td>
-    <td>${{escHtml(it.quantity??'')}}</td>
-    <td>${{escHtml(it.remarks||'')}}</td>
-  </tr>`).join('');
+  const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
+    ? `<tr class="pr-section"><td colspan="4">${{escHtml(it.item_name||'')}}</td></tr>`
+    : `<tr>
+        <td>${{escHtml(it.item_name||'')}}</td>
+        <td>${{escHtml(it.unit||'')}}</td>
+        <td>${{escHtml(it.quantity??'')}}</td>
+        <td>${{escHtml(it.remarks||'')}}</td>
+      </tr>`).join('');
   return `<table class="pr-items-table">
     <thead><tr><th>Item</th><th>Unit</th><th>Qty</th><th>Remarks</th></tr></thead>
     <tbody>${{rows}}</tbody>
@@ -2112,16 +2130,24 @@ async function buildForm(row){{
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
-    if(isPrTab&&prDetailsKey&&key===prDetailsKey){{
-      const hid=document.createElement('input');hid.type='hidden';hid.id='f-'+key;hid.value=row?.[key]||'';
-      grid.appendChild(hid);
-      continue;
-    }}
     const longTextMeta=getLongTextMeta(col);
     const full=['title','fileLocation','itemRef'].includes(key)||!!longTextMeta;
     const grp=document.createElement('div');grp.className='fg'+(full?' full':'');
     const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
     const val=row?.[key]||'';
+    if(isPrTab&&prDetailsKey&&key===prDetailsKey){{
+      const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
+      ta.rows=3;
+      ta.style.cssText='resize:vertical;min-height:80px';
+      ta.placeholder='Leave blank to auto-generate from items';
+      grp.appendChild(ta);
+      const hint=document.createElement('div');
+      hint.style.cssText='font-size:10px;color:var(--mu);margin-top:4px';
+      hint.textContent='Leave blank to auto-generate from PR items.';
+      grp.appendChild(hint);
+      grid.appendChild(grp);
+      continue;
+    }}
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
     else if(col.col_type==='dropdown'&&col.list_name){{
       // Add free-text input below multiselect
@@ -2175,7 +2201,8 @@ async function buildForm(row){{
         <tbody id="pr-items-body"></tbody>
       </table>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-        <button class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Row</button>
+        <button class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Item</button>
+        <button class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
         <div id="pr-legacy" style="font-size:11px;color:var(--mu);white-space:pre-line;display:none"></div>
       </div>`;
     grp.appendChild(wrap);grid.appendChild(grp);
@@ -2188,6 +2215,7 @@ async function buildForm(row){{
 function addPrItemRow(item={{}}){{
   const body=document.getElementById('pr-items-body');if(!body)return;
   const tr=document.createElement('tr');
+  tr.dataset.rowType='item';
   tr.innerHTML=`
     <td><input class="pri-item"></td>
     <td><input class="pri-unit"></td>
@@ -2202,10 +2230,26 @@ function addPrItemRow(item={{}}){{
   body.appendChild(tr);
 }}
 
+function addPrHeaderRow(item={{}}){{
+  const body=document.getElementById('pr-items-body');if(!body)return;
+  const tr=document.createElement('tr');
+  tr.className='pr-head-edit';
+  tr.dataset.rowType='header';
+  tr.innerHTML=`
+    <td colspan="4">
+      <div class="pr-head-label">Section Header</div>
+      <input class="pri-header" placeholder="Section title / description">
+    </td>
+    <td><button type="button" class="btn btn-er btn-sm">✕</button></td>`;
+  tr.querySelector('.pri-header').value=item.item_name||'';
+  tr.querySelector('button').onclick=()=>tr.remove();
+  body.appendChild(tr);
+}}
+
 function initPrItemsEditor(items, legacyText){{
   const body=document.getElementById('pr-items-body');if(!body)return;
   body.innerHTML='';
-  if(items&&items.length)items.forEach(it=>addPrItemRow(it));
+  if(items&&items.length)items.forEach(it=>String(it?.row_type||'item').toLowerCase()==='header'?addPrHeaderRow(it):addPrItemRow(it));
   else addPrItemRow();
   const legacy=document.getElementById('pr-legacy');
   if(legacy){{
@@ -2223,12 +2267,17 @@ function getPrItemsFromEditor(){{
   const body=document.getElementById('pr-items-body');if(!body)return [];
   const rows=[...body.querySelectorAll('tr')];
   return rows.map(r=>{{
+    const row_type=(r.dataset.rowType||'item').toLowerCase();
+    if(row_type==='header'){{
+      const item_name=r.querySelector('.pri-header')?.value.trim()||'';
+      return {{row_type:'header', item_name}};
+    }}
     const item_name=r.querySelector('.pri-item')?.value.trim()||'';
     const unit=r.querySelector('.pri-unit')?.value.trim()||'';
     const quantity=r.querySelector('.pri-qty')?.value.trim()||'';
     const remarks=r.querySelector('.pri-remarks')?.value.trim()||'';
-    return {{item_name, unit, quantity, remarks}};
-  }}).filter(it=>it.item_name||it.unit||it.quantity||it.remarks);
+    return {{row_type:'item', item_name, unit, quantity, remarks}};
+  }}).filter(it=>it.row_type==='header'?it.item_name:(it.item_name||it.unit||it.quantity||it.remarks));
 }}
 
 function buildMS(key,options,init){{

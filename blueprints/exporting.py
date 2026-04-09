@@ -178,7 +178,12 @@ def _pr_items_text(items):
     if not items: return ""
     lines = []
     for it in items:
+        row_type = str(it.get("row_type","item") or "item").strip().lower()
         name = str(it.get("item_name","") or "").strip()
+        if row_type == "header":
+            if name:
+                lines.append(name)
+            continue
         unit = str(it.get("unit","") or "").strip()
         qty  = it.get("quantity")
         remarks = str(it.get("remarks","") or "").strip()
@@ -193,6 +198,13 @@ def _pr_items_text(items):
         if line:
             lines.append(line)
     return "\n".join(lines)
+
+
+def _resolve_pr_details_value(row, pr_items_map, pr_details_key):
+    manual = str(row.get(pr_details_key, "") or "").strip() if pr_details_key else ""
+    if manual:
+        return manual
+    return _pr_items_text(pr_items_map.get(row.get("_id"), []))
 
 
 @exporting_bp.route("/api/export_all/<pid>")
@@ -290,7 +302,7 @@ def api_export_all(pid):
                     val = str(dur_val) if dur_val is not None else ""
                 elif key in ("issuedDate","actualReplyDate"): val = format_date(row.get(key,""))
                 elif pr_details_key and key == pr_details_key:
-                    val = _pr_items_text(pr_items_map.get(row.get("_id"), [])) or str(row.get(key,"") or "")
+                    val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
                 else:                            val = str(row.get(key,"") or "")
                 if key == "fileLocation" and val and val.startswith("http"):
                     c = ws.cell(row=rn, column=ci)
@@ -415,7 +427,7 @@ def api_export(pid, dt_id):
             elif key=="issuedDate":         val = format_date(row.get(key,""))
             elif key=="actualReplyDate":    val = format_date(row.get(key,""))
             elif pr_details_key and key == pr_details_key:
-                val = _pr_items_text(pr_items_map.get(row.get("_id"), [])) or str(row.get(key,"") or "")
+                val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
             else:                           val = str(row.get(key,"") or "")
 
             # fileLocation → hyperlink "View"
@@ -537,7 +549,7 @@ def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
             elif key in ("issuedDate","actualReplyDate"):
                 val = format_date(row.get(key,""))
             elif pr_details_key and key == pr_details_key:
-                val = _pr_items_text(pr_items_map.get(row.get("_id"), [])) or str(row.get(key,"") or "")
+                val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
             else:
                 val = str(row.get(key,"") or "")
             cells.append(Paragraph(val, pstyle))

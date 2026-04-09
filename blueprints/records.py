@@ -150,9 +150,23 @@ def api_save_pr_items(record_id):
     for it in items:
         if not isinstance(it, dict):
             continue
+        row_type = str(it.get("row_type", "item")).strip().lower()
+        if row_type not in ("header", "item"):
+            row_type = "item"
         item_name = str(it.get("item_name","")).strip()
         unit = str(it.get("unit","")).strip() if it.get("unit") is not None else ""
         remarks = str(it.get("remarks","")).strip() if it.get("remarks") is not None else ""
+        if row_type == "header":
+            if not item_name:
+                continue
+            clean.append({
+                "row_type": "header",
+                "item_name": item_name,
+                "unit": None,
+                "quantity": None,
+                "remarks": None,
+            })
+            continue
         qty_raw = it.get("quantity", "")
         qty = None
         if qty_raw not in (None, ""):
@@ -165,6 +179,7 @@ def api_save_pr_items(record_id):
         if not item_name:
             continue
         clean.append({
+            "row_type": "item",
             "item_name": item_name,
             "unit": unit or None,
             "quantity": qty,
