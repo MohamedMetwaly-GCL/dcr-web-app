@@ -224,47 +224,77 @@ def _pick_first(row, keys):
 def _build_pr_excel(record, proj, pr_items, pr_details):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.worksheet.table import Table, TableStyleInfo
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "PR Summary"
     raw_ws = wb.create_sheet("PR Items Raw")
     ws.sheet_view.showGridLines = False
+    raw_ws.sheet_view.showGridLines = False
 
     PRIMARY = "1A3A5C"
     ACCENT = "2563A8"
     LIGHT = "F0F4F8"
     SECTION = "E8EEF6"
     LABEL = "E2E8F0"
+    SUBTLE = "F8FAFC"
     WHITE = "FFFFFF"
     MUTED = "64748B"
+    TEXT = "1E2A3A"
 
     thin_side = Side(style="thin", color="DDE3ED")
     thin = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    top_rule = Border(top=thin_side)
 
     def fill(color):
         return PatternFill("solid", fgColor=color)
 
+    def style_cell(cell, *, font=None, fill_color=None, border=None, align=None):
+        if font: cell.font = font
+        if fill_color: cell.fill = fill(fill_color)
+        if border: cell.border = border
+        if align: cell.alignment = align
+
     for col, width in {"A": 6, "B": 46, "C": 12, "D": 10, "E": 24}.items():
         ws.column_dimensions[col].width = width
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.print_options.horizontalCentered = False
+    ws.oddFooter.right.text = "Page &[Page] of &[Pages]"
+    ws.oddFooter.left.text = "Generated from DCR System"
 
     ws.merge_cells("A1:E1")
     c = ws["A1"]
     c.value = "PURCHASE REQUISITION"
-    c.font = Font(name="Arial", size=16, bold=True, color=PRIMARY)
-    c.alignment = Alignment(horizontal="center", vertical="center")
-    c.fill = fill(LIGHT)
-    c.border = thin
-    ws.row_dimensions[1].height = 28
+    style_cell(
+        c,
+        font=Font(name="Arial", size=16, bold=True, color=PRIMARY),
+        fill_color=LIGHT,
+        border=thin,
+        align=Alignment(horizontal="center", vertical="center"),
+    )
+    ws.row_dimensions[1].height = 30
 
     ws.merge_cells("A2:E2")
     c = ws["A2"]
     c.value = "Document Control Register"
-    c.font = Font(name="Arial", size=10, italic=True, color=MUTED)
-    c.alignment = Alignment(horizontal="center", vertical="center")
-    c.fill = fill(LIGHT)
-    c.border = thin
+    style_cell(
+        c,
+        font=Font(name="Arial", size=10, italic=True, color=MUTED),
+        fill_color=LIGHT,
+        border=thin,
+        align=Alignment(horizontal="center", vertical="center"),
+    )
     ws.row_dimensions[2].height = 18
+    ws.merge_cells("A3:E3")
+    c = ws["A3"]
+    c.value = ""
+    c.fill = fill(WHITE)
+    c.border = Border(bottom=thin_side)
+    ws.row_dimensions[3].height = 6
 
     pr_number = _pick_first(record, ("docNo", "prNo", "prNumber")) or f"PR-{str(record.get('_id',''))[:8]}"
     pr_date = format_date(_pick_first(record, ("issuedDate", "prDate", "date")))
@@ -282,32 +312,46 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
         ("Requested By", requested_by),
     ]
     meta_fields = [(k, v) for k, v in meta_fields if str(v or "").strip()]
-    row_no = 4
+    row_no = 5
     for i in range(0, len(meta_fields), 2):
         left = meta_fields[i]
         right = meta_fields[i + 1] if i + 1 < len(meta_fields) else None
         ws[f"A{row_no}"] = left[0]
-        ws[f"A{row_no}"].font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
-        ws[f"A{row_no}"].fill = fill(LABEL)
-        ws[f"A{row_no}"].border = thin
-        ws[f"A{row_no}"].alignment = Alignment(vertical="center")
+        style_cell(
+            ws[f"A{row_no}"],
+            font=Font(name="Arial", size=10, bold=True, color=PRIMARY),
+            fill_color=LABEL,
+            border=thin,
+            align=Alignment(vertical="center"),
+        )
         ws.merge_cells(f"B{row_no}:C{row_no}")
         ws[f"B{row_no}"] = left[1]
-        ws[f"B{row_no}"].font = Font(name="Arial", size=10)
-        ws[f"B{row_no}"].border = thin
-        ws[f"B{row_no}"].alignment = Alignment(vertical="center", wrap_text=True)
+        style_cell(
+            ws[f"B{row_no}"],
+            font=Font(name="Arial", size=10, color=TEXT),
+            fill_color=WHITE,
+            border=thin,
+            align=Alignment(vertical="center", wrap_text=True),
+        )
         for cell in (f"C{row_no}",):
             ws[cell].border = thin
         if right:
             ws[f"D{row_no}"] = right[0]
-            ws[f"D{row_no}"].font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
-            ws[f"D{row_no}"].fill = fill(LABEL)
-            ws[f"D{row_no}"].border = thin
-            ws[f"D{row_no}"].alignment = Alignment(vertical="center")
+            style_cell(
+                ws[f"D{row_no}"],
+                font=Font(name="Arial", size=10, bold=True, color=PRIMARY),
+                fill_color=LABEL,
+                border=thin,
+                align=Alignment(vertical="center"),
+            )
             ws[f"E{row_no}"] = right[1]
-            ws[f"E{row_no}"].font = Font(name="Arial", size=10)
-            ws[f"E{row_no}"].border = thin
-            ws[f"E{row_no}"].alignment = Alignment(vertical="center", wrap_text=True)
+            style_cell(
+                ws[f"E{row_no}"],
+                font=Font(name="Arial", size=10, color=TEXT),
+                fill_color=WHITE,
+                border=thin,
+                align=Alignment(vertical="center", wrap_text=True),
+            )
         else:
             ws[f"D{row_no}"].border = thin
             ws[f"E{row_no}"].border = thin
@@ -317,10 +361,13 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     ws.merge_cells(f"A{row_no}:E{row_no}")
     c = ws[f"A{row_no}"]
     c.value = "PR DETAILS"
-    c.font = Font(name="Arial", size=11, bold=True, color=WHITE)
-    c.fill = fill(PRIMARY)
-    c.border = thin
-    c.alignment = Alignment(horizontal="left", vertical="center")
+    style_cell(
+        c,
+        font=Font(name="Arial", size=11, bold=True, color=WHITE),
+        fill_color=PRIMARY,
+        border=thin,
+        align=Alignment(horizontal="left", vertical="center"),
+    )
     ws.row_dimensions[row_no].height = 20
     row_no += 1
 
@@ -328,10 +375,13 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     ws.merge_cells(f"A{row_no}:E{row_no}")
     c = ws[f"A{row_no}"]
     c.value = pr_details or ""
-    c.font = Font(name="Arial", size=10)
-    c.fill = fill(WHITE)
-    c.border = thin
-    c.alignment = Alignment(vertical="top", wrap_text=True)
+    style_cell(
+        c,
+        font=Font(name="Arial", size=10, color=TEXT),
+        fill_color=SUBTLE,
+        border=thin,
+        align=Alignment(vertical="top", wrap_text=True),
+    )
     ws.row_dimensions[row_no].height = detail_lines * 16
     row_no += 2
 
@@ -339,10 +389,13 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     headers = ["No.", "Item / Description", "Unit", "Qty", "Remarks"]
     for idx, label in enumerate(headers, start=1):
         c = ws.cell(row=table_header_row, column=idx, value=label)
-        c.font = Font(name="Arial", size=10, bold=True, color=WHITE)
-        c.fill = fill(PRIMARY)
-        c.border = thin
-        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        style_cell(
+            c,
+            font=Font(name="Arial", size=10, bold=True, color=WHITE),
+            fill_color=PRIMARY,
+            border=thin,
+            align=Alignment(horizontal="center", vertical="center", wrap_text=True),
+        )
     ws.row_dimensions[table_header_row].height = 22
     ws.freeze_panes = f"A{table_header_row + 1}"
     ws.print_title_rows = f"{table_header_row}:{table_header_row}"
@@ -353,16 +406,19 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
         for it in pr_items:
             row_type = str(it.get("row_type", "item") or "item").strip().lower()
             if row_type == "header":
-                ws.cell(row=data_row, column=1, value="")
-                ws.cell(row=data_row, column=2, value=str(it.get("item_name", "") or "").strip())
-                ws.merge_cells(start_row=data_row, start_column=2, end_row=data_row, end_column=5)
-                for col in range(1, 6):
-                    cell = ws.cell(row=data_row, column=col)
-                    cell.border = thin
-                    cell.fill = fill(SECTION)
-                    cell.alignment = Alignment(vertical="center", wrap_text=True)
-                ws.cell(row=data_row, column=2).font = Font(name="Arial", size=11, bold=True, color=PRIMARY)
-                ws.row_dimensions[data_row].height = 22
+                ws.merge_cells(start_row=data_row, start_column=1, end_row=data_row, end_column=5)
+                cell = ws.cell(row=data_row, column=1, value=str(it.get("item_name", "") or "").strip())
+                style_cell(
+                    cell,
+                    font=Font(name="Arial", size=11, bold=True, color=PRIMARY),
+                    fill_color=SECTION,
+                    border=thin,
+                    align=Alignment(vertical="center", wrap_text=True),
+                )
+                for col in range(2, 6):
+                    ws.cell(row=data_row, column=col).border = thin
+                    ws.cell(row=data_row, column=col).fill = fill(SECTION)
+                ws.row_dimensions[data_row].height = 24
             else:
                 values = [
                     item_no,
@@ -373,11 +429,16 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
                 ]
                 for col, val in enumerate(values, start=1):
                     cell = ws.cell(row=data_row, column=col, value=val)
-                    cell.border = thin
-                    cell.alignment = Alignment(
-                        horizontal="center" if col in (1, 3, 4) else "left",
-                        vertical="top",
-                        wrap_text=True,
+                    style_cell(
+                        cell,
+                        font=Font(name="Arial", size=10, color=TEXT),
+                        fill_color=WHITE if item_no % 2 else SUBTLE,
+                        border=thin,
+                        align=Alignment(
+                            horizontal="center" if col in (1, 3, 4) else "left",
+                            vertical="top",
+                            wrap_text=True,
+                        ),
                     )
                 ws.row_dimensions[data_row].height = 20
                 item_no += 1
@@ -397,13 +458,14 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
         ws.merge_cells(f"{start_col}{sig_row}:{end_col}{sig_row}")
         top = ws[f"{start_col}{sig_row}"]
         top.value = ""
-        top.border = Border(top=thin_side)
+        top.border = top_rule
         top.alignment = Alignment(horizontal="center")
         ws.merge_cells(f"{start_col}{sig_row+1}:{end_col}{sig_row+1}")
         lbl = ws[f"{start_col}{sig_row+1}"]
         lbl.value = label
         lbl.font = Font(name="Arial", size=9, bold=True, color=MUTED)
         lbl.alignment = Alignment(horizontal="center")
+        lbl.fill = fill(SUBTLE)
     ws.row_dimensions[sig_row].height = 22
     ws.row_dimensions[sig_row + 1].height = 18
 
@@ -441,6 +503,17 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
             c = raw_ws.cell(row=idx, column=col, value=val)
             c.border = thin
             c.alignment = Alignment(vertical="top", wrap_text=True)
+
+    if pr_items:
+        raw_tbl = Table(displayName="PRItemsRaw", ref=f"A1:G{len(pr_items)+1}")
+        raw_tbl.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
+        raw_ws.add_table(raw_tbl)
 
     buf = io.BytesIO()
     wb.save(buf)
