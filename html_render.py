@@ -2006,7 +2006,11 @@ function renderPrItemsTable(items, legacyText){{
     return `<div class="pr-items-empty">No items added</div>${{legacy}}`;
   }}
   const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
-    ? `<tr class="pr-section"><td colspan="4">${{escHtml(it.item_name||'')}}</td></tr>`
+    ? `<tr class="pr-section"><td colspan="4" style="padding:8px 8px;border-bottom:1px solid #d7dee8">
+        <div style="font-weight:800;font-size:12px;color:var(--pr);background:#e8eef6;padding:8px 10px;border-radius:4px;letter-spacing:.3px">
+          ${{escHtml(it.item_name||'')}}
+        </div>
+      </td></tr>`
     : `<tr>
         <td>${{escHtml(it.item_name||'')}}</td>
         <td>${{escHtml(it.unit||'')}}</td>
