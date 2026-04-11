@@ -224,7 +224,6 @@ def _pick_first(row, keys):
 def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.worksheet.table import Table, TableStyleInfo
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -540,15 +539,6 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
 
     if raw_row > 3:
         raw_ws.auto_filter.ref = f"A2:H{raw_row-1}"
-        raw_tbl = Table(displayName="PRItemsRaw", ref=f"A2:H{raw_row-1}")
-        raw_tbl.tableStyleInfo = TableStyleInfo(
-            name="TableStyleMedium2",
-            showFirstColumn=False,
-            showLastColumn=False,
-            showRowStripes=True,
-            showColumnStripes=False,
-        )
-        raw_ws.add_table(raw_tbl)
 
     buf = io.BytesIO()
     wb.save(buf)
