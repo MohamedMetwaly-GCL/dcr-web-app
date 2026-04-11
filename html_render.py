@@ -1984,8 +1984,9 @@ function isItemRefField(col){{
 function formatDisplayValue(col,val){{
   let text=String(val??'');
   if(!text)return '';
-  if(isFloorField(col))return text.split(',').map(s=>s.trim()).filter(Boolean).join('\n');
-  if(isItemRefField(col))return text.replace(/\\r\\n/g,'\\n').replace(/\\r/g,'\\n');
+  const NL=String.fromCharCode(10);
+  if(isFloorField(col))return text.split(',').map(s=>s.trim()).filter(Boolean).join(NL);
+  if(isItemRefField(col))return text.replace(/\\r\\n/g,NL).replace(/\\r/g,NL);
   return text;
 }}
 
@@ -2390,7 +2391,7 @@ async function saveRecord(){{
     if(AUTO.has(col.col_key))continue;
     const el=document.getElementById('f-'+col.col_key);if(!el)continue;
     if(el.classList.contains('ms-con'))data[col.col_key]=el.dataset.value||'';
-    else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\\r\\n/g,'\\n').replace(/\\r/g,'\\n');
+    else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\\r\\n/g,String.fromCharCode(10)).replace(/\\r/g,String.fromCharCode(10));
     else data[col.col_key]=el.value.trim();
   }}
   if(!data.docNo){{toast('Document No. required','er');return;}}
