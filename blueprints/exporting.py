@@ -255,7 +255,7 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
         if border: cell.border = border
         if align: cell.alignment = align
 
-    for col, width in {"A": 6, "B": 22, "C": 13, "D": 18, "E": 18, "F": 56}.items():
+    for col, width in {"A": 6, "B": 22, "C": 13, "D": 18, "E": 64, "F": 14}.items():
         ws.column_dimensions[col].width = width
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.orientation = "landscape"
@@ -486,8 +486,8 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     c.alignment = Alignment(horizontal="right")
     c.border = Border(top=thin_side)
 
-    raw_headers = ["pr_number", "sort_order", "row_type", "description", "unit", "qty", "remarks"]
-    raw_ws.merge_cells("A1:G1")
+    raw_headers = ["sort_order", "row_type", "description", "unit", "qty", "remarks"]
+    raw_ws.merge_cells("A1:F1")
     c = raw_ws["A1"]
     c.value = "PR ITEMS RAW"
     style_cell(
@@ -504,15 +504,26 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
         c.fill = fill(LABEL)
         c.border = thin
         c.alignment = Alignment(horizontal="center")
-    for col, width in {1: 18, 2: 12, 3: 12, 4: 46, 5: 12, 6: 10, 7: 24}.items():
+    for col, width in {1: 12, 2: 12, 3: 52, 4: 12, 5: 10, 6: 24}.items():
         raw_ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
     raw_ws.freeze_panes = "A3"
     raw_row = 3
-    for rec_idx, row in enumerate(records):
+    for row in records:
         pr_number = _pick_first(row, ("docNo", "prNo", "prNumber")) or f"PR-{str(row.get('_id',''))[:8]}"
         items = pr_items_map.get(row.get("_id"), [])
+        raw_ws.merge_cells(start_row=raw_row, start_column=1, end_row=raw_row, end_column=6)
+        c = raw_ws.cell(row=raw_row, column=1, value=pr_number)
+        c.border = thin
+        c.alignment = Alignment(horizontal="left", vertical="center")
+        c.font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
+        c.fill = fill(LABEL)
+        for col in range(2, 7):
+            raw_ws.cell(row=raw_row, column=col).border = thin
+            raw_ws.cell(row=raw_row, column=col).fill = fill(LABEL)
+        raw_ws.row_dimensions[raw_row].height = 20
+        raw_row += 1
         if not items:
-            values = [pr_number, "", "item", "No PR items", "", "", ""]
+            values = ["", "item", "No PR items", "", "", ""]
             for col, val in enumerate(values, start=1):
                 c = raw_ws.cell(row=raw_row, column=col, value=val)
                 c.border = thin
@@ -524,7 +535,6 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
                 row_type = str(it.get("row_type", "item") or "item").strip().lower()
                 is_header = row_type == "header"
                 values = [
-                    pr_number,
                     "" if is_header else item_sort,
                     row_type,
                     str(it.get("item_name", "") or "").strip(),
@@ -545,19 +555,8 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
                     item_sort += 1
                 raw_row += 1
 
-        if rec_idx < len(records) - 1:
-            sep_vals = ["", "", "", f"Next PR", "", "", ""]
-            for col, val in enumerate(sep_vals, start=1):
-                c = raw_ws.cell(row=raw_row, column=col, value=val)
-                c.border = thin
-                c.alignment = Alignment(horizontal="center" if col == 4 else "left", vertical="center")
-                c.font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
-                c.fill = fill(LABEL)
-            raw_ws.row_dimensions[raw_row].height = 18
-            raw_row += 1
-
     if raw_row > 3:
-        raw_ws.auto_filter.ref = f"A2:G{raw_row-1}"
+        raw_ws.auto_filter.ref = f"A2:F{raw_row-1}"
 
     buf = io.BytesIO()
     wb.save(buf)
