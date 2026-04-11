@@ -1873,11 +1873,25 @@ function renderRows(){{
   const emptyEl=document.getElementById('empty');
   const tblEl=document.getElementById('regtbl');
   if(rows.length===0){{
-    emptyEl.style.display='block';
-    tblEl.style.display='none';
+    emptyEl.style.display='none';
+    tblEl.style.display='';
+    const tr=document.createElement('tr');
+    const td=document.createElement('td');
+    td.colSpan=state.cols.length+3;
+    td.style.cssText='padding:28px 12px;text-align:center;color:var(--mu);font-size:12px';
+    td.textContent=(state.recs&&state.recs.length)?'No records found':'No records found';
+    tr.appendChild(td);
+    body.appendChild(tr);
   }}else{{
     emptyEl.style.display='none';
     tblEl.style.display='';
+  }}
+  if(rows.length===0){{
+    const ov=state.recs.filter(r=>r._overdue).length;
+    document.getElementById('s-total').textContent='Total: '+state.recs.length;
+    document.getElementById('s-show').textContent='Showing: 0';
+    document.getElementById('s-ov').textContent='Overdue: '+ov;
+    return;
   }}
   let sr=1;
   rows.forEach((row,idx)=>{{
