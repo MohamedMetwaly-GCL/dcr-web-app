@@ -396,7 +396,7 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     row_no += 2
 
     table_header_row = row_no
-    headers = ["No.", "PR Number", "PR Date", "Discipline / Trade", "Requested By", "PR Details"]
+    headers = ["No.", "PR Number", "PR Date", "Discipline / Trade", "PR Title", "Prepared By"]
     for idx, label in enumerate(headers, start=1):
         c = ws.cell(row=table_header_row, column=idx, value=label)
         style_cell(
@@ -420,9 +420,9 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
             discipline = _pick_first(row, ("discipline",))
             trade = _pick_first(row, ("trade",))
             disc_trade = " / ".join([v for v in [discipline, trade] if v]) or "Unspecified"
-            requested_by = _pick_first(row, ("requestedBy", "requester", "preparedBy", "prepared_by", "requested_by"))
-            pr_details = _resolve_pr_details_value(row, pr_items_map, pr_details_key)
-            values = [item_no, pr_number, pr_date, disc_trade, requested_by, pr_details]
+            pr_title = _pick_first(row, ("title", "subject", "description", "docTitle")) or _resolve_pr_details_value(row, pr_items_map, pr_details_key)
+            prepared_by = _pick_first(row, ("preparedBy", "prepared_by", "requestedBy", "requester", "requested_by"))
+            values = [item_no, pr_number, pr_date, disc_trade, pr_title, prepared_by]
             row_fill = WHITE if item_no % 2 else SUBTLE
             for col, val in enumerate(values, start=1):
                 cell = ws.cell(row=data_row, column=col, value=val)
@@ -437,7 +437,7 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
                         wrap_text=True,
                     ),
                 )
-            ws.row_dimensions[data_row].height = 34 if len(str(pr_details or "")) > 80 else 22
+            ws.row_dimensions[data_row].height = 34 if len(str(pr_title or "")) > 80 else 22
             item_no += 1
             data_row += 1
     else:
@@ -486,8 +486,8 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     c.alignment = Alignment(horizontal="right")
     c.border = Border(top=thin_side)
 
-    raw_headers = ["record_id", "pr_number", "sort_order", "row_type", "description", "unit", "qty", "remarks"]
-    raw_ws.merge_cells("A1:H1")
+    raw_headers = ["pr_number", "sort_order", "row_type", "description", "unit", "qty", "remarks"]
+    raw_ws.merge_cells("A1:G1")
     c = raw_ws["A1"]
     c.value = "PR ITEMS RAW"
     style_cell(
@@ -504,41 +504,60 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
         c.fill = fill(LABEL)
         c.border = thin
         c.alignment = Alignment(horizontal="center")
-    for col, width in {1: 40, 2: 18, 3: 12, 4: 12, 5: 46, 6: 12, 7: 10, 8: 24}.items():
+    for col, width in {1: 18, 2: 12, 3: 12, 4: 46, 5: 12, 6: 10, 7: 24}.items():
         raw_ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
     raw_ws.freeze_panes = "A3"
     raw_row = 3
-    for row in records:
+    for rec_idx, row in enumerate(records):
         pr_number = _pick_first(row, ("docNo", "prNo", "prNumber")) or f"PR-{str(row.get('_id',''))[:8]}"
         items = pr_items_map.get(row.get("_id"), [])
         if not items:
-            values = [row.get("_id", ""), pr_number, "", "item", "", "", "", ""]
+            values = [pr_number, "", "item", "No PR items", "", "", ""]
             for col, val in enumerate(values, start=1):
                 c = raw_ws.cell(row=raw_row, column=col, value=val)
                 c.border = thin
                 c.alignment = Alignment(vertical="top", wrap_text=True)
             raw_row += 1
-            continue
-        for it in items:
-            row_type = str(it.get("row_type", "item") or "item").strip().lower()
-            values = [
-                row.get("_id", ""),
-                pr_number,
-                it.get("sort_order", raw_row - 3),
-                row_type,
-                str(it.get("item_name", "") or "").strip(),
-                "" if row_type == "header" else str(it.get("unit", "") or "").strip(),
-                "" if row_type == "header" else it.get("quantity", ""),
-                "" if row_type == "header" else str(it.get("remarks", "") or "").strip(),
-            ]
-            for col, val in enumerate(values, start=1):
+        else:
+            item_sort = 1
+            for it in items:
+                row_type = str(it.get("row_type", "item") or "item").strip().lower()
+                is_header = row_type == "header"
+                values = [
+                    pr_number,
+                    "" if is_header else item_sort,
+                    row_type,
+                    str(it.get("item_name", "") or "").strip(),
+                    "" if is_header else str(it.get("unit", "") or "").strip(),
+                    "" if is_header else it.get("quantity", ""),
+                    "" if is_header else str(it.get("remarks", "") or "").strip(),
+                ]
+                for col, val in enumerate(values, start=1):
+                    c = raw_ws.cell(row=raw_row, column=col, value=val)
+                    c.border = thin
+                    c.alignment = Alignment(vertical="top", wrap_text=True)
+                    if is_header:
+                        c.font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
+                        c.fill = fill(SECTION)
+                if is_header:
+                    raw_ws.row_dimensions[raw_row].height = 22
+                else:
+                    item_sort += 1
+                raw_row += 1
+
+        if rec_idx < len(records) - 1:
+            sep_vals = ["", "", "", f"Next PR", "", "", ""]
+            for col, val in enumerate(sep_vals, start=1):
                 c = raw_ws.cell(row=raw_row, column=col, value=val)
                 c.border = thin
-                c.alignment = Alignment(vertical="top", wrap_text=True)
+                c.alignment = Alignment(horizontal="center" if col == 4 else "left", vertical="center")
+                c.font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
+                c.fill = fill(LABEL)
+            raw_ws.row_dimensions[raw_row].height = 18
             raw_row += 1
 
     if raw_row > 3:
-        raw_ws.auto_filter.ref = f"A2:H{raw_row-1}"
+        raw_ws.auto_filter.ref = f"A2:G{raw_row-1}"
 
     buf = io.BytesIO()
     wb.save(buf)
