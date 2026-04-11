@@ -1934,7 +1934,7 @@ function renderRows(){{
     }});
     const ta=document.createElement('td');ta.className='acts';
     let acts='';
-    if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
+    if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> <button class="act" onclick="exportPrRecord('${{row._id}}')">XLS</button> `;
     if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')">✏</button> <button class="act del" onclick="delRec('${{row._id}}')">🗑</button>`;
     else if(!acts)acts='<span style="color:var(--mu);font-size:10px">—</span>';
     ta.innerHTML=acts;
@@ -2717,6 +2717,7 @@ async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)retur
 
 // Export/Import
 function doExport(){{if(state.tab)window.location='/api/export/'+PID+'/'+state.tab;}}
+function exportPrRecord(id){{if(id)window.location='/api/export_pr/'+id;}}
 function doExportPDF(){{if(state.tab)window.location='/api/export_pdf/'+PID+'/'+state.tab;}}
 function doExportAllPDF(){{window.location='/api/export_pdf_all/'+PID;}}
 function toggleExpDD(e){{e.stopPropagation();document.getElementById('exp-menu').classList.toggle('hidden');}}
