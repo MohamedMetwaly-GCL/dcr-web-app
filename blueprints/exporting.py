@@ -296,6 +296,18 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     c.border = Border(bottom=thin_side)
     ws.row_dimensions[3].height = 6
 
+    ws.merge_cells("A4:E4")
+    c = ws["A4"]
+    c.value = "PROJECT / PR INFORMATION"
+    style_cell(
+        c,
+        font=Font(name="Arial", size=11, bold=True, color=WHITE),
+        fill_color=ACCENT,
+        border=thin,
+        align=Alignment(horizontal="left", vertical="center"),
+    )
+    ws.row_dimensions[4].height = 20
+
     pr_number = _pick_first(record, ("docNo", "prNo", "prNumber")) or f"PR-{str(record.get('_id',''))[:8]}"
     pr_date = format_date(_pick_first(record, ("issuedDate", "prDate", "date")))
     discipline = _pick_first(record, ("discipline",))
@@ -353,7 +365,9 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
                 align=Alignment(vertical="center", wrap_text=True),
             )
         else:
+            ws[f"D{row_no}"].fill = fill(WHITE)
             ws[f"D{row_no}"].border = thin
+            ws[f"E{row_no}"].fill = fill(WHITE)
             ws[f"E{row_no}"].border = thin
         ws.row_dimensions[row_no].height = 20
         row_no += 1
@@ -399,6 +413,7 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     ws.row_dimensions[table_header_row].height = 22
     ws.freeze_panes = f"A{table_header_row + 1}"
     ws.print_title_rows = f"{table_header_row}:{table_header_row}"
+    ws.sheet_view.zoomScale = 90
 
     item_no = 1
     data_row = table_header_row + 1
@@ -413,7 +428,7 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
                     font=Font(name="Arial", size=11, bold=True, color=PRIMARY),
                     fill_color=SECTION,
                     border=thin,
-                    align=Alignment(vertical="center", wrap_text=True),
+                    align=Alignment(horizontal="left", vertical="center", wrap_text=True),
                 )
                 for col in range(2, 6):
                     ws.cell(row=data_row, column=col).border = thin
@@ -454,11 +469,23 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
 
     sig_row = data_row + 2
     signatures = [("Prepared By", "A", "B"), ("Reviewed By", "C", "D"), ("Approved By", "E", "E")]
+    ws.merge_cells(f"A{sig_row-1}:E{sig_row-1}")
+    c = ws[f"A{sig_row-1}"]
+    c.value = "SIGNATURES"
+    style_cell(
+        c,
+        font=Font(name="Arial", size=11, bold=True, color=WHITE),
+        fill_color=ACCENT,
+        border=thin,
+        align=Alignment(horizontal="left", vertical="center"),
+    )
+    ws.row_dimensions[sig_row-1].height = 20
     for label, start_col, end_col in signatures:
         ws.merge_cells(f"{start_col}{sig_row}:{end_col}{sig_row}")
         top = ws[f"{start_col}{sig_row}"]
         top.value = ""
         top.border = top_rule
+        top.fill = fill(WHITE)
         top.alignment = Alignment(horizontal="center")
         ws.merge_cells(f"{start_col}{sig_row+1}:{end_col}{sig_row+1}")
         lbl = ws[f"{start_col}{sig_row+1}"]
@@ -475,24 +502,36 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     c.value = f"Generated from DCR System | Export date: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}"
     c.font = Font(name="Arial", size=8, italic=True, color=MUTED)
     c.alignment = Alignment(horizontal="right")
+    c.border = Border(top=thin_side)
 
     raw_headers = ["record_id", "sort_order", "row_type", "description", "unit", "qty", "remarks"]
+    raw_ws.merge_cells("A1:G1")
+    c = raw_ws["A1"]
+    c.value = "PR ITEMS RAW"
+    style_cell(
+        c,
+        font=Font(name="Arial", size=12, bold=True, color=PRIMARY),
+        fill_color=LIGHT,
+        border=thin,
+        align=Alignment(horizontal="center", vertical="center"),
+    )
+    raw_ws.row_dimensions[1].height = 22
     for idx, label in enumerate(raw_headers, start=1):
-        c = raw_ws.cell(row=1, column=idx, value=label)
+        c = raw_ws.cell(row=2, column=idx, value=label)
         c.font = Font(name="Arial", size=10, bold=True)
         c.fill = fill(LABEL)
         c.border = thin
         c.alignment = Alignment(horizontal="center")
     for col, width in {1: 40, 2: 12, 3: 12, 4: 46, 5: 12, 6: 10, 7: 24}.items():
         raw_ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
-    raw_ws.freeze_panes = "A2"
-    raw_ws.auto_filter.ref = f"A1:G{max(2, len(pr_items) + 1)}"
+    raw_ws.freeze_panes = "A3"
+    raw_ws.auto_filter.ref = f"A2:G{max(3, len(pr_items) + 2)}"
 
-    for idx, it in enumerate(pr_items, start=2):
+    for idx, it in enumerate(pr_items, start=3):
         row_type = str(it.get("row_type", "item") or "item").strip().lower()
         values = [
             record.get("_id", ""),
-            it.get("sort_order", idx - 2),
+            it.get("sort_order", idx - 3),
             row_type,
             str(it.get("item_name", "") or "").strip(),
             "" if row_type == "header" else str(it.get("unit", "") or "").strip(),
@@ -505,7 +544,7 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
             c.alignment = Alignment(vertical="top", wrap_text=True)
 
     if pr_items:
-        raw_tbl = Table(displayName="PRItemsRaw", ref=f"A1:G{len(pr_items)+1}")
+        raw_tbl = Table(displayName="PRItemsRaw", ref=f"A2:G{len(pr_items)+2}")
         raw_tbl.tableStyleInfo = TableStyleInfo(
             name="TableStyleMedium2",
             showFirstColumn=False,
