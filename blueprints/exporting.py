@@ -221,7 +221,7 @@ def _pick_first(row, keys):
     return ""
 
 
-def _build_pr_excel(record, proj, pr_items, pr_details):
+def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -256,7 +256,7 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
         if border: cell.border = border
         if align: cell.alignment = align
 
-    for col, width in {"A": 6, "B": 46, "C": 12, "D": 10, "E": 24}.items():
+    for col, width in {"A": 6, "B": 22, "C": 13, "D": 18, "E": 18, "F": 56}.items():
         ws.column_dimensions[col].width = width
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.orientation = "landscape"
@@ -266,9 +266,9 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     ws.oddFooter.right.text = "Page &[Page] of &[Pages]"
     ws.oddFooter.left.text = "Generated from DCR System"
 
-    ws.merge_cells("A1:E1")
+    ws.merge_cells("A1:F1")
     c = ws["A1"]
-    c.value = "PURCHASE REQUISITION"
+    c.value = "PURCHASE REQUISITION REGISTER"
     style_cell(
         c,
         font=Font(name="Arial", size=16, bold=True, color=PRIMARY),
@@ -278,7 +278,7 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     )
     ws.row_dimensions[1].height = 30
 
-    ws.merge_cells("A2:E2")
+    ws.merge_cells("A2:F2")
     c = ws["A2"]
     c.value = "Document Control Register"
     style_cell(
@@ -289,14 +289,14 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
         align=Alignment(horizontal="center", vertical="center"),
     )
     ws.row_dimensions[2].height = 18
-    ws.merge_cells("A3:E3")
+    ws.merge_cells("A3:F3")
     c = ws["A3"]
     c.value = ""
     c.fill = fill(WHITE)
     c.border = Border(bottom=thin_side)
     ws.row_dimensions[3].height = 6
 
-    ws.merge_cells("A4:E4")
+    ws.merge_cells("A4:F4")
     c = ws["A4"]
     c.value = "PROJECT / PR INFORMATION"
     style_cell(
@@ -308,20 +308,12 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     )
     ws.row_dimensions[4].height = 20
 
-    pr_number = _pick_first(record, ("docNo", "prNo", "prNumber")) or f"PR-{str(record.get('_id',''))[:8]}"
-    pr_date = format_date(_pick_first(record, ("issuedDate", "prDate", "date")))
-    discipline = _pick_first(record, ("discipline",))
-    trade = _pick_first(record, ("trade",))
-    disc_trade = " / ".join([v for v in [discipline, trade] if v])
-    requested_by = _pick_first(record, ("requestedBy", "requester", "preparedBy", "prepared_by", "requested_by"))
-
     meta_fields = [
         ("Project Name", proj.get("name", "")),
         ("Project Code", proj.get("code", "")),
-        ("PR Number", pr_number),
-        ("PR Date", pr_date),
-        ("Discipline / Trade", disc_trade),
-        ("Requested By", requested_by),
+        ("Register", str(dt.get("name", "") or dt.get("id", "PR")).strip()),
+        ("Exported", datetime.datetime.now().strftime("%d-%m-%Y %H:%M")),
+        ("Total PRs", str(len(records))),
     ]
     meta_fields = [(k, v) for k, v in meta_fields if str(v or "").strip()]
     row_no = 5
@@ -372,9 +364,9 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
         ws.row_dimensions[row_no].height = 20
         row_no += 1
 
-    ws.merge_cells(f"A{row_no}:E{row_no}")
+    ws.merge_cells(f"A{row_no}:F{row_no}")
     c = ws[f"A{row_no}"]
-    c.value = "PR DETAILS"
+    c.value = "REQUISITION SUMMARY"
     style_cell(
         c,
         font=Font(name="Arial", size=11, bold=True, color=WHITE),
@@ -385,10 +377,15 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     ws.row_dimensions[row_no].height = 20
     row_no += 1
 
-    detail_lines = max(3, min(8, len(str(pr_details or "").splitlines()) + 1))
-    ws.merge_cells(f"A{row_no}:E{row_no}")
+    summary_text = (
+        f"Total requisitions: {len(records)}\n"
+        f"Project: {proj.get('name', '')} ({proj.get('code', '')})\n"
+        f"Generated from DCR System on {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}"
+    )
+    detail_lines = max(3, min(8, len(str(summary_text).splitlines()) + 1))
+    ws.merge_cells(f"A{row_no}:F{row_no}")
     c = ws[f"A{row_no}"]
-    c.value = pr_details or ""
+    c.value = summary_text
     style_cell(
         c,
         font=Font(name="Arial", size=10, color=TEXT),
@@ -400,7 +397,7 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     row_no += 2
 
     table_header_row = row_no
-    headers = ["No.", "Item / Description", "Unit", "Qty", "Remarks"]
+    headers = ["No.", "PR Number", "PR Date", "Discipline / Trade", "Requested By", "PR Details"]
     for idx, label in enumerate(headers, start=1):
         c = ws.cell(row=table_header_row, column=idx, value=label)
         style_cell(
@@ -417,50 +414,36 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
 
     item_no = 1
     data_row = table_header_row + 1
-    if pr_items:
-        for it in pr_items:
-            row_type = str(it.get("row_type", "item") or "item").strip().lower()
-            if row_type == "header":
-                ws.merge_cells(start_row=data_row, start_column=1, end_row=data_row, end_column=5)
-                cell = ws.cell(row=data_row, column=1, value=str(it.get("item_name", "") or "").strip())
+    if records:
+        for row in records:
+            pr_number = _pick_first(row, ("docNo", "prNo", "prNumber")) or f"PR-{str(row.get('_id',''))[:8]}"
+            pr_date = format_date(_pick_first(row, ("issuedDate", "prDate", "date")))
+            discipline = _pick_first(row, ("discipline",))
+            trade = _pick_first(row, ("trade",))
+            disc_trade = " / ".join([v for v in [discipline, trade] if v]) or "Unspecified"
+            requested_by = _pick_first(row, ("requestedBy", "requester", "preparedBy", "prepared_by", "requested_by"))
+            pr_details = _resolve_pr_details_value(row, pr_items_map, pr_details_key)
+            values = [item_no, pr_number, pr_date, disc_trade, requested_by, pr_details]
+            row_fill = WHITE if item_no % 2 else SUBTLE
+            for col, val in enumerate(values, start=1):
+                cell = ws.cell(row=data_row, column=col, value=val)
                 style_cell(
                     cell,
-                    font=Font(name="Arial", size=11, bold=True, color=PRIMARY),
-                    fill_color=SECTION,
+                    font=Font(name="Arial", size=10, color=TEXT),
+                    fill_color=row_fill,
                     border=thin,
-                    align=Alignment(horizontal="left", vertical="center", wrap_text=True),
+                    align=Alignment(
+                        horizontal="center" if col in (1, 3) else "left",
+                        vertical="top",
+                        wrap_text=True,
+                    ),
                 )
-                for col in range(2, 6):
-                    ws.cell(row=data_row, column=col).border = thin
-                    ws.cell(row=data_row, column=col).fill = fill(SECTION)
-                ws.row_dimensions[data_row].height = 24
-            else:
-                values = [
-                    item_no,
-                    str(it.get("item_name", "") or "").strip(),
-                    str(it.get("unit", "") or "").strip(),
-                    it.get("quantity", ""),
-                    str(it.get("remarks", "") or "").strip(),
-                ]
-                for col, val in enumerate(values, start=1):
-                    cell = ws.cell(row=data_row, column=col, value=val)
-                    style_cell(
-                        cell,
-                        font=Font(name="Arial", size=10, color=TEXT),
-                        fill_color=WHITE if item_no % 2 else SUBTLE,
-                        border=thin,
-                        align=Alignment(
-                            horizontal="center" if col in (1, 3, 4) else "left",
-                            vertical="top",
-                            wrap_text=True,
-                        ),
-                    )
-                ws.row_dimensions[data_row].height = 20
-                item_no += 1
+            ws.row_dimensions[data_row].height = 34 if len(str(pr_details or "")) > 80 else 22
+            item_no += 1
             data_row += 1
     else:
-        ws.merge_cells(start_row=data_row, start_column=1, end_row=data_row, end_column=5)
-        c = ws.cell(row=data_row, column=1, value="No PR items")
+        ws.merge_cells(start_row=data_row, start_column=1, end_row=data_row, end_column=6)
+        c = ws.cell(row=data_row, column=1, value="No requisitions in this register")
         c.font = Font(name="Arial", size=10, italic=True, color=MUTED)
         c.alignment = Alignment(horizontal="center", vertical="center")
         c.border = thin
@@ -468,8 +451,8 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
         data_row += 1
 
     sig_row = data_row + 2
-    signatures = [("Prepared By", "A", "B"), ("Reviewed By", "C", "D"), ("Approved By", "E", "E")]
-    ws.merge_cells(f"A{sig_row-1}:E{sig_row-1}")
+    signatures = [("Prepared By", "A", "B"), ("Reviewed By", "C", "D"), ("Approved By", "E", "F")]
+    ws.merge_cells(f"A{sig_row-1}:F{sig_row-1}")
     c = ws[f"A{sig_row-1}"]
     c.value = "SIGNATURES"
     style_cell(
@@ -497,15 +480,15 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     ws.row_dimensions[sig_row + 1].height = 18
 
     footer_row = sig_row + 3
-    ws.merge_cells(f"A{footer_row}:E{footer_row}")
+    ws.merge_cells(f"A{footer_row}:F{footer_row}")
     c = ws[f"A{footer_row}"]
     c.value = f"Generated from DCR System | Export date: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}"
     c.font = Font(name="Arial", size=8, italic=True, color=MUTED)
     c.alignment = Alignment(horizontal="right")
     c.border = Border(top=thin_side)
 
-    raw_headers = ["record_id", "sort_order", "row_type", "description", "unit", "qty", "remarks"]
-    raw_ws.merge_cells("A1:G1")
+    raw_headers = ["record_id", "pr_number", "sort_order", "row_type", "description", "unit", "qty", "remarks"]
+    raw_ws.merge_cells("A1:H1")
     c = raw_ws["A1"]
     c.value = "PR ITEMS RAW"
     style_cell(
@@ -522,29 +505,42 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
         c.fill = fill(LABEL)
         c.border = thin
         c.alignment = Alignment(horizontal="center")
-    for col, width in {1: 40, 2: 12, 3: 12, 4: 46, 5: 12, 6: 10, 7: 24}.items():
+    for col, width in {1: 40, 2: 18, 3: 12, 4: 12, 5: 46, 6: 12, 7: 10, 8: 24}.items():
         raw_ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
     raw_ws.freeze_panes = "A3"
-    raw_ws.auto_filter.ref = f"A2:G{max(3, len(pr_items) + 2)}"
+    raw_row = 3
+    for row in records:
+        pr_number = _pick_first(row, ("docNo", "prNo", "prNumber")) or f"PR-{str(row.get('_id',''))[:8]}"
+        items = pr_items_map.get(row.get("_id"), [])
+        if not items:
+            values = [row.get("_id", ""), pr_number, "", "item", "", "", "", ""]
+            for col, val in enumerate(values, start=1):
+                c = raw_ws.cell(row=raw_row, column=col, value=val)
+                c.border = thin
+                c.alignment = Alignment(vertical="top", wrap_text=True)
+            raw_row += 1
+            continue
+        for it in items:
+            row_type = str(it.get("row_type", "item") or "item").strip().lower()
+            values = [
+                row.get("_id", ""),
+                pr_number,
+                it.get("sort_order", raw_row - 3),
+                row_type,
+                str(it.get("item_name", "") or "").strip(),
+                "" if row_type == "header" else str(it.get("unit", "") or "").strip(),
+                "" if row_type == "header" else it.get("quantity", ""),
+                "" if row_type == "header" else str(it.get("remarks", "") or "").strip(),
+            ]
+            for col, val in enumerate(values, start=1):
+                c = raw_ws.cell(row=raw_row, column=col, value=val)
+                c.border = thin
+                c.alignment = Alignment(vertical="top", wrap_text=True)
+            raw_row += 1
 
-    for idx, it in enumerate(pr_items, start=3):
-        row_type = str(it.get("row_type", "item") or "item").strip().lower()
-        values = [
-            record.get("_id", ""),
-            it.get("sort_order", idx - 3),
-            row_type,
-            str(it.get("item_name", "") or "").strip(),
-            "" if row_type == "header" else str(it.get("unit", "") or "").strip(),
-            "" if row_type == "header" else it.get("quantity", ""),
-            "" if row_type == "header" else str(it.get("remarks", "") or "").strip(),
-        ]
-        for col, val in enumerate(values, start=1):
-            c = raw_ws.cell(row=idx, column=col, value=val)
-            c.border = thin
-            c.alignment = Alignment(vertical="top", wrap_text=True)
-
-    if pr_items:
-        raw_tbl = Table(displayName="PRItemsRaw", ref=f"A2:G{len(pr_items)+2}")
+    if raw_row > 3:
+        raw_ws.auto_filter.ref = f"A2:H{raw_row-1}"
+        raw_tbl = Table(displayName="PRItemsRaw", ref=f"A2:H{raw_row-1}")
         raw_tbl.tableStyleInfo = TableStyleInfo(
             name="TableStyleMedium2",
             showFirstColumn=False,
@@ -558,35 +554,6 @@ def _build_pr_excel(record, proj, pr_items, pr_details):
     wb.save(buf)
     buf.seek(0)
     return buf
-
-
-@exporting_bp.route("/api/export_pr/<record_id>")
-def api_export_pr(record_id):
-    full_row = db.get_record_by_id(record_id)
-    if not full_row:
-        return jsonify(error="Not found"), 404
-
-    pid = full_row.get("_project_id", "")
-    dt_id = full_row.get("_dt_id", "")
-    dts = db.get_doc_types(pid)
-    dt = next((d for d in dts if d["id"] == dt_id), None)
-    if not _is_pr_dt(dt):
-        return jsonify(error="Not a PR document"), 400
-
-    proj = db.get_project(pid) or {}
-    cols = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
-    pr_details_key = _pr_details_key(cols)
-    pr_items = db.get_pr_items(record_id)
-    pr_details = _resolve_pr_details_value(full_row, {record_id: pr_items}, pr_details_key)
-
-    if current_user():
-        db.log_action(current_user()["username"], "EXPORT_EXCEL", pid, dt_id, record_id, full_row.get("docNo", ""), detail="Export PR workbook")
-
-    pr_number = _pick_first(full_row, ("docNo", "prNo", "prNumber")) or f"PR-{record_id[:8]}"
-    fname = f"PR_{_safe_excel_name_part(proj.get('code','DCR'), 'DCR')}_{_safe_excel_name_part(pr_number, 'PR_Record')}.xlsx"
-    buf = _build_pr_excel(full_row, proj, pr_items, pr_details)
-    return send_file(buf, as_attachment=True, download_name=fname,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @exporting_bp.route("/api/export_all/<pid>")
@@ -730,6 +697,16 @@ def api_export(pid, dt_id):
     is_pr = _is_pr_dt(dt)
     pr_details_key = _pr_details_key(cols) if is_pr else None
     pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
+
+    if is_pr:
+        buf = _build_pr_register_excel(proj, dt or {"id": dt_id, "name": dt_id}, records, pr_items_map, pr_details_key)
+        fname = f"{_safe_excel_name_part(proj.get('code','DCR'), 'DCR')}_{_safe_excel_name_part(dt_id, 'PR')}_Register.xlsx"
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=fname,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     PRIMARY = "1A3A5C"; PL = "2563A8"; WHITE = "FFFFFF"
     ALT = "F8FAFC"; OV = "FFF5F5"; MUTED = "9CA3AF"
