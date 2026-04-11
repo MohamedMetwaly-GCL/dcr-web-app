@@ -119,6 +119,41 @@ def api_delete_record(rec_id):
     return jsonify(ok=True)
 
 
+@records_bp.route("/api/records/bulk_delete", methods=["POST"])
+def api_bulk_delete_records():
+    u = current_user()
+    if not u:
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids") if isinstance(data, dict) else None
+    if not isinstance(ids, list):
+        return jsonify(ok=False, error="Invalid ids"), 400
+    ids = [str(i).strip() for i in ids if str(i).strip()]
+    if not ids:
+        return jsonify(ok=True, deleted=0)
+
+    recs = db.get_records_meta(ids)
+    if not recs:
+        return jsonify(ok=True, deleted=0)
+
+    blocked = next((r for r in recs if not can_edit(r.get("project_id", ""))), None)
+    if blocked:
+        return jsonify(error="Forbidden"), 403
+
+    deleted = db.delete_records_bulk([r["id"] for r in recs])
+    by_scope = {}
+    for r in recs:
+        key = (r.get("project_id") or None, r.get("dt_id") or None)
+        by_scope.setdefault(key, []).append(r.get("doc_no") or r.get("id"))
+    for (pid, dt_id), doc_nos in by_scope.items():
+        db.log_action(
+            u["username"], "DELETE",
+            pid, dt_id, None, "",
+            detail=f"Bulk deleted {len(doc_nos)} record(s)"
+        )
+    return jsonify(ok=True, deleted=deleted)
+
+
 @records_bp.route("/api/pr_items/<record_id>")
 def api_get_pr_items(record_id):
     full_row = db.get_record_by_id(record_id)

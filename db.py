@@ -476,6 +476,26 @@ def save_record(pid, dt_id, rec_id, data: dict):
 def delete_record(rec_id):
     exe("DELETE FROM records WHERE id=%s", (rec_id,))
 
+
+def get_records_meta(record_ids):
+    record_ids = [r for r in (record_ids or []) if r]
+    if not record_ids:
+        return []
+    return q("""
+        SELECT id, project_id, dt_id, COALESCE(data->>'docNo','') AS doc_no
+        FROM records
+        WHERE id = ANY(%s)
+    """, (record_ids,))
+
+
+def delete_records_bulk(record_ids):
+    record_ids = [r for r in (record_ids or []) if r]
+    if not record_ids:
+        return 0
+    with DB() as cur:
+        cur.execute("DELETE FROM records WHERE id = ANY(%s)", (record_ids,))
+        return cur.rowcount or 0
+
 # ── PR Items ─────────────────────────────────────────────────
 def get_pr_items(record_id):
     return q("""SELECT id, record_id, row_type, item_name, unit, quantity, remarks, sort_order

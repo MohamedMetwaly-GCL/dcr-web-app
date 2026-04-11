@@ -2438,8 +2438,10 @@ function clearSel(){{document.querySelectorAll('.chkcell input').forEach(cb=>cb.
 async function bulkDel(){{
   const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
   if(!ids.length||!confirm('Delete '+ids.length+' records?'))return;
-  let ok=0;for(const id of ids){{const r=await apiFetch('/api/records/'+id,{{method:'DELETE'}});if(r&&r.ok)ok++;}}
-  clearSel();await loadRecords();await refreshCounts();toast('✔ Deleted '+ok,'ok');
+  const r=await apiFetch('/api/records/bulk_delete',{{method:'POST',body:JSON.stringify({{ids}})}});
+  if(r&&r.ok){{
+    clearSel();await loadRecords();await refreshCounts();toast('✔ Deleted '+(r.deleted||0),'ok');
+  }}
 }}
 
 // Project Modal
