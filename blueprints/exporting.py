@@ -221,6 +221,29 @@ def _pick_first(row, keys):
     return ""
 
 
+def _is_floor_field(col_key, label=""):
+    key = str(col_key or "").strip().lower()
+    lbl = str(label or "").strip().lower()
+    return key == "floor" or lbl in ("floor", "floors")
+
+
+def _is_item_ref_field(col_key, label=""):
+    key = str(col_key or "").strip().lower()
+    lbl = re.sub(r"[_./-]+", " ", str(label or "").strip().lower())
+    return key == "itemref" or ("item ref" in lbl and "dwg" in lbl)
+
+
+def _format_multiline_display_value(col_key, label, value):
+    text = str(value or "")
+    if not text:
+        return ""
+    if _is_floor_field(col_key, label):
+        return "\n".join([p.strip() for p in text.split(",") if p.strip()])
+    if _is_item_ref_field(col_key, label):
+        return text.replace("\r\n", "\n").replace("\r", "\n")
+    return text
+
+
 def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -661,6 +684,7 @@ def api_export_all(pid):
                 elif pr_details_key and key == pr_details_key:
                     val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
                 else:                            val = str(row.get(key,"") or "")
+                val = _format_multiline_display_value(key, col["label"], val)
                 if key == "fileLocation" and val and val.startswith("http"):
                     c = ws.cell(row=rn, column=ci)
                     c.value = "View"
@@ -796,6 +820,7 @@ def api_export(pid, dt_id):
             elif pr_details_key and key == pr_details_key:
                 val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
             else:                           val = str(row.get(key,"") or "")
+            val = _format_multiline_display_value(key, col["label"], val)
 
             # fileLocation → hyperlink "View"
             if key == "fileLocation" and val and val.startswith("http"):
@@ -843,6 +868,7 @@ def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.lib import colors as rl_colors
+    from xml.sax.saxutils import escape as xml_escape
 
     buf = buf or io.BytesIO()
     cols    = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
@@ -919,7 +945,8 @@ def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
                 val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
             else:
                 val = str(row.get(key,"") or "")
-            cells.append(Paragraph(val, pstyle))
+            val = _format_multiline_display_value(key, c["label"], val)
+            cells.append(Paragraph(xml_escape(val).replace("\n", "<br/>"), pstyle))
         data.append(cells)
         if ov:     row_meta.append(OV_COL)
         elif is_rev: row_meta.append(REV_COL)

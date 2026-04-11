@@ -1910,7 +1910,7 @@ function renderRows(){{
       const td=document.createElement('td');const key=col.col_key;let val='';
       const k=key.toLowerCase();
       const longTextMeta=getLongTextMeta(col);
-      if(longTextMeta)td.classList.add('mlcell');
+      if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
       if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}
       else if(key==='duration')val=row._duration||'';
       else if(col.col_type==='duration_calc'){{
@@ -1936,7 +1936,7 @@ function renderRows(){{
       }}
       else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val=getPrSummary(row);
       else val=String(row[key]||'');
-      let displayVal=val;
+      let displayVal=formatDisplayValue(col,val);
       if(typeof displayVal==='string'&&longTextMeta){{
         const NL=String.fromCharCode(10);
         displayVal=displayVal
@@ -1969,6 +1969,26 @@ function calcWD(s,e){{
   catch{{return'';}}
 }}
 
+function isFloorField(col){{
+  const key=String(col?.col_key||'').toLowerCase();
+  const label=String(col?.label||'').toLowerCase();
+  return key==='floor'||label==='floor'||label==='floors';
+}}
+
+function isItemRefField(col){{
+  const key=String(col?.col_key||'').toLowerCase();
+  const label=String(col?.label||'').toLowerCase().replace(/[_./-]+/g,' ');
+  return key==='itemref'||(label.includes('item ref')&&label.includes('dwg'));
+}}
+
+function formatDisplayValue(col,val){{
+  let text=String(val??'');
+  if(!text)return '';
+  if(isFloorField(col))return text.split(',').map(s=>s.trim()).filter(Boolean).join('\n');
+  if(isItemRefField(col))return text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  return text;
+}}
+
 function getLongTextMeta(col){{
   const key=String(col?.col_key||'');
   const label=String(col?.label||'');
@@ -1979,6 +1999,7 @@ function getLongTextMeta(col){{
   const isRemarksLike=['remarks','notes'].some(v=>text.includes(v));
   const isMsLike=text.includes('ms ref')||text.includes('msref')||text.includes('ms reference')||
     (/\\bms\\b/.test(text)&&(text.includes('ref')||text.includes('reference')||text.includes('no')));
+  const isItemRefLike=isItemRefField(col);
   if(isContentLike)return {{
     rows:5,
     style:'resize:vertical; min-height:120px',
@@ -1993,6 +2014,11 @@ function getLongTextMeta(col){{
     rows:3,
     style:'resize:vertical; min-height:80px',
     placeholder:'Use Enter to put each MS on a separate line'
+  }};
+  if(isItemRefLike)return {{
+    rows:3,
+    style:'resize:vertical; min-height:80px',
+    placeholder:'Use Enter to put each item reference / DWG No. on a separate line'
   }};
   return null;
 }}
@@ -2363,7 +2389,9 @@ async function saveRecord(){{
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;
     const el=document.getElementById('f-'+col.col_key);if(!el)continue;
-    data[col.col_key]=el.classList.contains('ms-con')?el.dataset.value||'':el.tagName==='TEXTAREA'?el.value.trim():el.value.trim();
+    if(el.classList.contains('ms-con'))data[col.col_key]=el.dataset.value||'';
+    else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+    else data[col.col_key]=el.value.trim();
   }}
   if(!data.docNo){{toast('Document No. required','er');return;}}
     // Duration is computed server-side automatically
