@@ -1736,7 +1736,7 @@ async function loadRecords(){{
   ]);
   if(!data)return;
   state.recs=data.records; state.cols=data.columns.filter(c=>c.visible);
-  state.prItemsCache={{}};
+  state.prItemsCache=data.pr_items_map||{{}};
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
   buildHead(); requestAnimationFrame(()=>initRz()); renderRows();

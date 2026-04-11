@@ -36,6 +36,7 @@ def api_records(pid, dt_id):
     search  = request.args.get("search","")
     records = db.get_records(pid, dt_id, search=search)
     cols    = db.get_columns(pid, dt_id)
+    pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if _is_pr_doc_type(pid, dt_id) else {}
     date_col_keys = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
     has_exp_reply = any(c["col_key"] == "expectedReplyDate" for c in cols)
     has_status    = any(c["col_key"] == "status" for c in cols)
@@ -66,7 +67,7 @@ def api_records(pid, dt_id):
         # Standard aliases
         row["_issuedFmt"]  = format_date(row.get("issuedDate",""))
         row["_replyFmt"]   = format_date(row.get("actualReplyDate",""))
-    return jsonify(records=records, columns=cols, count=db.count_records(pid, dt_id))
+    return jsonify(records=records, columns=cols, count=db.count_records(pid, dt_id), pr_items_map=pr_items_map)
 
 
 @records_bp.route("/api/records/<pid>/<dt_id>", methods=["POST"])
