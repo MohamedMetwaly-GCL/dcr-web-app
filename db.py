@@ -473,6 +473,46 @@ def save_record(pid, dt_id, rec_id, data: dict):
            ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data, updated_at=NOW()""",
         (rec_id, pid, dt_id, jdata))
 
+def get_record_by_doc_no(pid, dt_id, doc_no):
+    norm = str(doc_no or "").strip()
+    if not norm:
+        return None
+    r = q("""
+        SELECT id, project_id, dt_id, data, updated_at
+        FROM records
+        WHERE project_id=%s
+          AND dt_id=%s
+          AND LOWER(BTRIM(COALESCE(data->>'docNo',''))) = LOWER(BTRIM(%s))
+        ORDER BY created_at
+        LIMIT 1
+    """, (pid, dt_id, norm), one=True)
+    if not r:
+        return None
+    data = r["data"] if isinstance(r["data"], dict) else {}
+    return {
+        "_id":         r["id"],
+        "_project_id": r["project_id"],
+        "_dt_id":      r["dt_id"],
+        "_updated_at": str(r["updated_at"] or ""),
+        **data,
+    }
+
+def merge_record_data(existing_data: dict, incoming_data: dict):
+    merged = {k: v for k, v in (existing_data or {}).items() if not str(k).startswith("_")}
+    for key, value in (incoming_data or {}).items():
+        if str(key).startswith("_"):
+            continue
+        if value is None:
+            continue
+        if isinstance(value, str):
+            if not value.strip():
+                continue
+            merged[key] = value
+            continue
+        if str(value).strip():
+            merged[key] = value
+    return merged
+
 def delete_record(rec_id):
     exe("DELETE FROM records WHERE id=%s", (rec_id,))
 

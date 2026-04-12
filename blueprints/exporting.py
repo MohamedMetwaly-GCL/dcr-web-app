@@ -103,12 +103,29 @@ def _has_meaningful_values(row_data):
     return False
 
 
+def _normalize_match_value(value):
+    return str(value or "").strip().lower()
+
+
+def _save_import_row(pid, dt_id, row_data):
+    doc_no = str(row_data.get("docNo", "") or "").strip()
+    existing = db.get_record_by_doc_no(pid, dt_id, doc_no) if _normalize_match_value(doc_no) else None
+    if existing:
+        merged = db.merge_record_data(existing, row_data)
+        db.save_record(pid, dt_id, existing["_id"], merged)
+        return "updated"
+    db.save_record(pid, dt_id, str(uuid.uuid4()), row_data)
+    return "created"
+
+
 def _import_excel_worksheet(pid, dt_id, ws, cols):
     import datetime as _dt
 
     col_map = {c["label"]: c["col_key"] for c in cols}
     header = None
     imported = 0
+    created = 0
+    updated = 0
     skipped_blank = 0
     skipped_invalid = 0
     warnings = []
@@ -132,15 +149,19 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
             skipped_blank += 1
             continue
         try:
-            db.save_record(pid, dt_id, str(uuid.uuid4()), row_data)
+            action = _save_import_row(pid, dt_id, row_data)
             imported += 1
+            if action == "updated":
+                updated += 1
+            else:
+                created += 1
         except Exception as e:
             skipped_invalid += 1
             logger.warning("import_row_skipped pid=%s dt_id=%s row=%s error=%s",
                            pid, dt_id, row_idx, e)
             if len(warnings) < 20:
                 warnings.append({"row": row_idx, "error": str(e)})
-    return imported, header is not None, skipped_blank, skipped_invalid, warnings
+    return imported, created, updated, header is not None, skipped_blank, skipped_invalid, warnings
 
 
 def _is_pr_dt(dt):
@@ -1047,6 +1068,8 @@ def api_import(pid, dt_id):
     cols    = db.get_columns(pid, dt_id)
     col_map = {c["label"]: c["col_key"] for c in cols}
     imported = 0
+    created = 0
+    updated = 0
     skipped_blank = 0
     skipped_invalid = 0
     warnings = []
@@ -1056,7 +1079,7 @@ def api_import(pid, dt_id):
             import openpyxl
             wb  = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
             ws  = wb.active
-            imported, _, skipped_blank, skipped_invalid, warnings = _import_excel_worksheet(pid, dt_id, ws, cols)
+            imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_excel_worksheet(pid, dt_id, ws, cols)
         else:
             import csv, datetime as _dt
             text   = base64.b64decode(b64).decode("utf-8","ignore")
@@ -1083,8 +1106,12 @@ def api_import(pid, dt_id):
                     skipped_blank += 1
                     continue
                 try:
-                    db.save_record(pid, dt_id, str(uuid.uuid4()), row_data)
+                    action = _save_import_row(pid, dt_id, row_data)
                     imported += 1
+                    if action == "updated":
+                        updated += 1
+                    else:
+                        created += 1
                 except Exception as e:
                     skipped_invalid += 1
                     logger.warning("import_csv_row_skipped pid=%s dt_id=%s row=%s error=%s",
@@ -1098,6 +1125,8 @@ def api_import(pid, dt_id):
     return jsonify(
         ok=True,
         imported=imported,
+        created=created,
+        updated=updated,
         skipped_blank=skipped_blank,
         skipped_invalid=skipped_invalid,
         warnings=warnings,
@@ -1120,6 +1149,8 @@ def api_import_project(pid):
         wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
         dts = db.get_doc_types(pid)
         imported_total = 0
+        created_total = 0
+        updated_total = 0
         skipped_blank_total = 0
         skipped_invalid_total = 0
         matched_sheets = []
@@ -1136,13 +1167,15 @@ def api_import_project(pid):
                 continue
             try:
                 cols = db.get_columns(pid, dt["id"])
-                imported, has_header, skipped_blank, skipped_invalid, sheet_warnings = _import_excel_worksheet(pid, dt["id"], ws, cols)
+                imported, created, updated, has_header, skipped_blank, skipped_invalid, sheet_warnings = _import_excel_worksheet(pid, dt["id"], ws, cols)
                 if not has_header:
                     logger.warning("import_project_sheet_skipped pid=%s dt_id=%s sheet=%s reason=no_valid_header",
                                    pid, dt["id"], ws.title)
                     skipped_sheets.append({"sheet": ws.title, "reason": "No valid header row"})
                     continue
                 imported_total += imported
+                created_total += created
+                updated_total += updated
                 skipped_blank_total += skipped_blank
                 skipped_invalid_total += skipped_invalid
                 matched_sheets.append({
@@ -1150,6 +1183,8 @@ def api_import_project(pid):
                     "dt_id": dt["id"],
                     "dt_name": dt["name"],
                     "imported": imported,
+                    "created": created,
+                    "updated": updated,
                     "skipped_blank": skipped_blank,
                     "skipped_invalid": skipped_invalid,
                 })
@@ -1167,6 +1202,8 @@ def api_import_project(pid):
             ok=True,
             project_id=pid,
             imported_total=imported_total,
+            created_total=created_total,
+            updated_total=updated_total,
             skipped_blank_total=skipped_blank_total,
             skipped_invalid_total=skipped_invalid_total,
             matched_sheets=matched_sheets,
