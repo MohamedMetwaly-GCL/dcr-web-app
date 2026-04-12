@@ -185,6 +185,35 @@ DEFAULT_COLS = [
     ("fileLocation","File Location","link",None,12),
 ]
 
+NOC_STATUS_VALUES = [
+    "Accepted & to proceed with Part C",
+    "Rejected",
+    "Cancelled",
+    "Under Review",
+    "Information Required",
+    "Pending",
+]
+
+NOC_COLS = [
+    ("docNo", "NOC No", "docno", None, 0, True),
+    ("title", "NOC Subject", "text", None, 1, True),
+    ("nocDescription", "NOC Description", "text", None, 2, False),
+    ("originatingDocument", "Originating Document", "text", None, 3, True),
+    ("remarks", "Remarks", "text", None, 4, False),
+    ("partAIssueDate", "Part A Issue Date", "date", None, 5, False),
+    ("partBReturnDate", "Part B Return Date", "date", None, 6, False),
+    ("partBStatus", "Part B Status", "dropdown", "noc_part_b_status", 7, True),
+    ("partCIssueDate", "Part C Issue Date", "date", None, 8, True),
+    ("submittedCost", "Submitted Cost (EGP)", "number", None, 9, True),
+    ("partDReturnDate", "Part D Return Date", "date", None, 10, True),
+    ("partDStatus", "Part D Status", "dropdown", "noc_part_d_status", 11, True),
+    ("finalApprovedCost", "Final Approved Cost (EGP)", "number", None, 12, True),
+    ("voNo", "VO No", "text", None, 13, True),
+    ("voIssueDate", "VO Issue Date", "date", None, 14, False),
+    ("voBaseValue", "VO Base Value (EGP)", "number", None, 15, False),
+    ("voValueWithSIAndVAT", "VO Value (EGP) Including SI & VAT", "number", None, 16, True),
+]
+
 # Default meta categories for known status values
 DEFAULT_STATUS_META = {
     "A - Approved":              "approved",
@@ -222,6 +251,55 @@ def _is_pr_dt(dt_code="", dt_name=""):
     name = str(dt_name or "").strip().lower()
     return code == "pr" or "requisition" in name or "purchase request" in name
 
+def _is_noc_dt(dt_code="", dt_name=""):
+    code = str(dt_code or "").strip().lower()
+    name = str(dt_name or "").strip().lower()
+    return code == "noc" or "notice of change" in name
+
+def _doc_type_col_specs(dt_code="", dt_name=""):
+    if _is_noc_dt(dt_code, dt_name):
+        return NOC_COLS
+    return [(ck, lbl, ct, ln, so, True) for ck, lbl, ct, ln, so in DEFAULT_COLS]
+
+def _ensure_noc_lists(pid):
+    for ln in ("noc_part_b_status", "noc_part_d_status"):
+        for i, item in enumerate(NOC_STATUS_VALUES):
+            meta = DEFAULT_STATUS_META.get(item, "pending" if item in ("Under Review", "Information Required", "Pending") else ("cancelled" if item == "Cancelled" else ("approved" if item == "Accepted & to proceed with Part C" else "rejected")))
+            exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
+                " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
+                " DO UPDATE SET sort_order=EXCLUDED.sort_order, meta=EXCLUDED.meta",
+                (pid, ln, item, i, meta))
+
+def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
+    exe("INSERT INTO doc_types(id,project_id,name,code,sort_order)"
+        " VALUES(%s,%s,%s,%s,COALESCE((SELECT sort_order FROM doc_types WHERE id=%s AND project_id=%s),14))"
+        " ON CONFLICT(id,project_id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code",
+        (dt_id, pid, dt_name, "NOC", dt_id, pid))
+    specs = _doc_type_col_specs("NOC", dt_name)
+    keep_keys = {ck for ck, *_ in specs}
+    for ck, lbl, ct, ln, so, visible in specs:
+        exe("""
+            INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT(project_id,dt_id,col_key) DO UPDATE
+            SET label=EXCLUDED.label,
+                col_type=EXCLUDED.col_type,
+                list_name=EXCLUDED.list_name,
+                visible=EXCLUDED.visible,
+                sort_order=EXCLUDED.sort_order
+        """, (pid, dt_id, ck, lbl, ct, ln, visible, so))
+    exe("DELETE FROM columns_config WHERE project_id=%s AND dt_id=%s AND col_key<>ALL(%s)",
+        (pid, dt_id, list(keep_keys)))
+    _ensure_noc_lists(pid)
+
+def _sync_all_noc_doc_types():
+    projects = q("SELECT id FROM projects")
+    for p in projects:
+        pid = p["id"]
+        dt = q("SELECT id, name, code FROM doc_types WHERE project_id=%s AND (UPPER(code)='NOC' OR UPPER(id)='NOC') LIMIT 1", (pid,), one=True)
+        if dt:
+            _sync_noc_doc_type(pid, dt["id"], dt.get("name", "Notice of Change"))
+
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
     for stmt in stmts:
@@ -231,6 +309,7 @@ def init():
             if "already exists" not in str(e).lower():
                 logger.warning("db_schema_note error=%s", e)
     _ensure_admin()
+    _sync_all_noc_doc_types()
 
 def _ensure_admin():
     r = q("SELECT COUNT(*) as c FROM users", one=True)
@@ -364,10 +443,10 @@ def _seed_project(pid):
     for code, name, order in DEFAULT_DOC_TYPES:
         exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
             (code, pid, name, code, order))
-        for ck, lbl, ct, ln, so in DEFAULT_COLS:
+        for ck, lbl, ct, ln, so, visible in _doc_type_col_specs(code, name):
             exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
-                   VALUES(%s,%s,%s,%s,%s,%s,true,%s) ON CONFLICT DO NOTHING""",
-                (pid, code, ck, lbl, ct, ln, so))
+                   VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                (pid, code, ck, lbl, ct, ln, visible, so))
     for ln, items in DEFAULT_LISTS.items():
         for i, item in enumerate(items):
             meta = DEFAULT_STATUS_META.get(item) if ln == "status" else None
@@ -375,6 +454,8 @@ def _seed_project(pid):
                 " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
                 " DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
                 (pid, ln, item, i, meta))
+    _ensure_noc_lists(pid)
+    _sync_all_noc_doc_types()
 
 # ── Logos ─────────────────────────────────────────────────────
 def get_logo(pid, key):
@@ -395,10 +476,12 @@ def add_doc_type(pid, code, name):
     order = r["n"] if r else 0
     exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
         (code, pid, name, code, order))
-    for ck, lbl, ct, ln, so in DEFAULT_COLS:
+    for ck, lbl, ct, ln, so, visible in _doc_type_col_specs(code, name):
         exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
-               VALUES(%s,%s,%s,%s,%s,%s,true,%s) ON CONFLICT DO NOTHING""",
-            (pid, code, ck, lbl, ct, ln, so))
+               VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+            (pid, code, ck, lbl, ct, ln, visible, so))
+    if _is_noc_dt(code, name):
+        _sync_noc_doc_type(pid, code, name)
 
 def delete_doc_type(pid, dt_id):
     exe("DELETE FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid))

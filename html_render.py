@@ -1573,7 +1573,14 @@ tr.alt td{{background:#fafbfd}}
 {SHARED_JS}
 <script>
 const PID='{pid}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
-const SC={sc_json};
+const SC={{...{sc_json},
+  'Accepted & to proceed with Part C':['bbf7d0','166534'],
+  'Rejected':['fecaca','7f1d1d'],
+  'Cancelled':['e5e7eb','475569'],
+  'Under Review':['fef9c3','854d0e'],
+  'Information Required':['fde68a','92400e'],
+  'Pending':['e0e7ff','312e81']
+}};
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
   ['client','Client'],['landlord','Landlord'],['pmo','PMO'],['mainConsultant','Consultant'],
   ['mepConsultant','MEP'],['contractor','Contractor']];
@@ -1584,6 +1591,13 @@ function isPRTab(){{
   const code=(dt.code||dt.id||'').toString().toUpperCase();
   const name=(dt.name||'').toString().toLowerCase();
   return code==='PR' || name.includes('requisition') || name.includes('purchase request');
+}}
+
+function isNOCTab(){{
+  const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
+  const code=(dt.code||dt.id||'').toString().toUpperCase();
+  const name=(dt.name||'').toString().toLowerCase();
+  return code==='NOC' || name.includes('notice of change');
 }}
 
 function getPrDetailsColKey(){{
@@ -1939,7 +1953,7 @@ function renderRows(){{
       else if(col.col_type==='date'||col.col_type==='auto_date'){{
         val=row['_fmt_'+key]||row[key]||'';  // use pre-formatted version
       }}
-      else if(key==='status'){{
+      else if(key==='status'||isStatusLikeField(col)){{
         val=row[key]||'';
         if(val){{
           td.innerHTML=val.split(',').map(s=>{{s=s.trim();const[bg,fg]=SC[s]||['e5e7eb','374151'];
@@ -2000,12 +2014,50 @@ function isItemRefField(col){{
   return key==='itemref'||(label.includes('item ref')&&label.includes('dwg'));
 }}
 
+function isStatusLikeField(col){{
+  const key=String(col?.col_key||'').toLowerCase();
+  const label=String(col?.label||'').toLowerCase();
+  return key==='status'||key.includes('status')||label.includes('status');
+}}
+
+function isCurrencyField(col){{
+  const key=String(col?.col_key||'').toLowerCase();
+  const label=String(col?.label||'').toLowerCase();
+  return key.includes('cost')||key.includes('value')||label.includes('(egp)');
+}}
+
+function formatCurrencyValue(val){{
+  const raw=String(val??'').trim();
+  if(!raw)return '';
+  const num=Number(raw.toString().replace(/,/g,''));
+  if(Number.isNaN(num))return raw;
+  return new Intl.NumberFormat('en-US',{{minimumFractionDigits:2,maximumFractionDigits:2}}).format(num)+' EGP';
+}}
+
+function getNocStageProgress(data){{
+  const d=data||{{}};
+  if(d.partDReturnDate||d.partDStatus||d.finalApprovedCost||d.voNo||d.voIssueDate||d.voValueWithSIAndVAT)return 'Stage D';
+  if(d.partCIssueDate||d.submittedCost)return 'Stage C';
+  if(d.partBReturnDate||d.partBStatus)return 'Stage B';
+  if(d.partAIssueDate||d.docNo||d.title||d.nocDescription||d.originatingDocument)return 'Stage A';
+  return 'Not Started';
+}}
+
+function getNocAutoBaseValue(data){{
+  const finalVal=String(data?.voValueWithSIAndVAT??'').trim();
+  if(!finalVal)return '';
+  const num=Number(finalVal.replace(/,/g,''));
+  if(Number.isNaN(num))return '';
+  return (num/1.05).toFixed(2);
+}}
+
 function formatDisplayValue(col,val){{
   let text=String(val??'');
   if(!text)return '';
   const NL=String.fromCharCode(10);
   if(isFloorField(col))return text.split(',').map(s=>s.trim()).filter(Boolean).join(NL);
   if(isItemRefField(col))return text.replace(/\\r\\n/g,NL).replace(/\\r/g,NL);
+  if(isCurrencyField(col))return formatCurrencyValue(text);
   return text;
 }}
 
@@ -2216,13 +2268,37 @@ async function buildForm(row){{
   let nextNo='';
   if(!row){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
   const isPrTab=isPRTab();
+  const isNocTab=isNOCTab();
   const prevCols=state.cols;
   state.cols=allCols.filter(c=>c.visible);
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   state.cols=prevCols;
+  const nocSections={{
+    'Basic Info':['docNo','title','nocDescription','originatingDocument','remarks'],
+    'Part A':['partAIssueDate'],
+    'Part B':['partBReturnDate','partBStatus'],
+    'Part C':['partCIssueDate','submittedCost'],
+    'Part D':['partDReturnDate','partDStatus','finalApprovedCost'],
+    'Variation Order':['voNo','voIssueDate','voBaseValue','voValueWithSIAndVAT'],
+  }};
+  const nocSectionForKey=(key)=>Object.entries(nocSections).find(([,keys])=>keys.includes(key))?.[0]||null;
+  const renderedSections=new Set();
+  let nocStageInp=null,nocBaseInp=null,nocTotalInp=null;
+  if(isNocTab){{
+    const sf=makeReadOnlyField('Stage Progress',getNocStageProgress(row||{{}}));
+    nocStageInp=sf.inp;
+    grid.appendChild(sf.grp);
+  }}
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
+    if(isNocTab){{
+      const section=nocSectionForKey(key);
+      if(section&&!renderedSections.has(section)){{
+        appendSectionTitle(grid,section);
+        renderedSections.add(section);
+      }}
+    }}
     const longTextMeta=getLongTextMeta(col);
     const full=['title','fileLocation','itemRef'].includes(key)||!!longTextMeta;
     const grp=document.createElement('div');grp.className='fg'+(full?' full':'');
@@ -2277,6 +2353,13 @@ async function buildForm(row){{
       bindDirectionalInput(inp);
       grp.appendChild(inp);
     }}
+    else if(col.col_type==='number'){{
+      const inp=document.createElement('input');inp.type='number';inp.step='0.01';inp.id='f-'+key;inp.value=val;
+      if(isCurrencyField(col))inp.placeholder='0.00';
+      grp.appendChild(inp);
+      if(key==='voBaseValue')nocBaseInp=inp;
+      if(key==='voValueWithSIAndVAT')nocTotalInp=inp;
+    }}
     else if(longTextMeta){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
       ta.rows=longTextMeta.rows;
@@ -2286,7 +2369,23 @@ async function buildForm(row){{
       grp.appendChild(ta);
     }}
     else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';bindDirectionalInput(inp);grp.appendChild(inp);}}
+    if(isNocTab&&isCurrencyField(col))grp.style.gridColumn='span 1';
     grid.appendChild(grp);
+  }}
+  if(isNocTab){{
+    const syncNoc=()=>{{
+      const data={{}};
+      allCols.forEach(c=>{{
+        const el=document.getElementById('f-'+c.col_key);
+        if(!el)return;
+        data[c.col_key]=el.classList?.contains?.('ms-con')?(el.dataset.value||''):el.value;
+      }});
+      if(nocStageInp)nocStageInp.value=getNocStageProgress(data);
+      if(nocBaseInp&&nocTotalInp&&!String(nocBaseInp.value||'').trim())nocBaseInp.value=getNocAutoBaseValue(data);
+    }};
+    grid.querySelectorAll('input, textarea, select').forEach(el=>el.addEventListener('input',syncNoc));
+    grid.querySelectorAll('input, textarea, select').forEach(el=>el.addEventListener('change',syncNoc));
+    syncNoc();
   }}
   if(isPrTab){{
     const grp=document.createElement('div');grp.className='fg full pr-items-editor';
@@ -2421,6 +2520,22 @@ function buildMS(key,options,init){{
   render();return con;
 }}
 
+function appendSectionTitle(grid,title){{
+  const st=document.createElement('div');
+  st.className='stitle';
+  st.textContent=title;
+  grid.appendChild(st);
+}}
+
+function makeReadOnlyField(label,value){{
+  const grp=document.createElement('div');grp.className='fg full';
+  const lbl=document.createElement('label');lbl.textContent=label;grp.appendChild(lbl);
+  const inp=document.createElement('input');inp.value=value||'';inp.readOnly=true;
+  inp.style.cssText='background:#f8fafc;font-weight:700;color:var(--pr)';
+  grp.appendChild(inp);
+  return {{grp,inp}};
+}}
+
 function durChoice(docNo){{
   return new Promise(resolve=>{{
     const ov=document.createElement('div');ov.className='overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
@@ -2449,6 +2564,10 @@ async function saveRecord(){{
     if(el.classList.contains('ms-con'))data[col.col_key]=el.dataset.value||'';
     else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\\r\\n/g,String.fromCharCode(10)).replace(/\\r/g,String.fromCharCode(10));
     else data[col.col_key]=el.value.trim();
+  }}
+  if(isNOCTab()&&!String(data.voBaseValue||'').trim()&&String(data.voValueWithSIAndVAT||'').trim()){{
+    const autoBase=getNocAutoBaseValue(data);
+    if(autoBase)data.voBaseValue=autoBase;
   }}
   if(!data.docNo){{toast('Document No. required','er');return;}}
     // Duration is computed server-side automatically
