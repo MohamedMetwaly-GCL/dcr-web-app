@@ -2574,9 +2574,9 @@ function renderNocSummary(rows){{
     ['VO Value Incl. SI & VAT', formatCurrencyValue(totals.voValueWithSIAndVAT), 'Visible total'],
   ];
   inner.innerHTML=items.map(([label,val,sub])=>`<div style="background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
-    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${label}</div>
-    <div style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${val}</div>
-    <div style="font-size:10px;color:var(--mu);margin-top:3px">${sub}</div>
+    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{label}}</div>
+    <div style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${{val}}</div>
+    <div style="font-size:10px;color:var(--mu);margin-top:3px">${{sub}}</div>
   </div>`).join('');
   wrap.style.display='';
 }}
