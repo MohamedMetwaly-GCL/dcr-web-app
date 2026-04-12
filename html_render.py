@@ -1430,6 +1430,9 @@ tr.alt td{{background:#fafbfd}}
     <table id="regtbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
     <div class="empty hidden" id="empty" style="display:none"><div style="font-size:48px;margin-bottom:10px">📁</div><p style="color:var(--mu)">No records yet — click ➕ Add to create one</p></div>
   </div>
+  <div id="noc-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);background:#f8fafc">
+    <div id="noc-summary-inner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px"></div>
+  </div>
 </div>
 
 <div id="sbar">
@@ -1923,6 +1926,7 @@ function renderRows(){{
     document.getElementById('s-total').textContent='Total: '+state.recs.length;
     document.getElementById('s-show').textContent='Showing: 0';
     document.getElementById('s-ov').textContent='Overdue: '+ov;
+    renderNocSummary(rows);
     return;
   }}
   let sr=1;
@@ -1993,6 +1997,7 @@ function renderRows(){{
   document.getElementById('s-total').textContent='Total: '+state.recs.length;
   document.getElementById('s-show').textContent='Showing: '+rows.length;
   document.getElementById('s-ov').textContent='Overdue: '+ov;
+  renderNocSummary(rows);
 }}
 
 function calcWD(s,e){{
@@ -2033,6 +2038,13 @@ function formatCurrencyValue(val){{
   const num=Number(raw.toString().replace(/,/g,''));
   if(Number.isNaN(num))return raw;
   return new Intl.NumberFormat('en-US',{{minimumFractionDigits:2,maximumFractionDigits:2}}).format(num)+' EGP';
+}}
+
+function parseSafeNumber(val){{
+  const raw=String(val??'').trim();
+  if(!raw)return null;
+  const num=Number(raw.replace(/,/g,''));
+  return Number.isFinite(num)?num:null;
 }}
 
 function getNocStageProgress(data){{
@@ -2535,6 +2547,38 @@ function makeReadOnlyField(label,value){{
   inp.style.cssText='background:#f8fafc;font-weight:700;color:var(--pr)';
   grp.appendChild(inp);
   return {{grp,inp}};
+}}
+
+function renderNocSummary(rows){{
+  const wrap=document.getElementById('noc-summary');
+  const inner=document.getElementById('noc-summary-inner');
+  if(!wrap||!inner)return;
+  if(!isNOCTab()){{wrap.style.display='none';inner.innerHTML='';return;}}
+  const totals={{
+    submittedCost:0,
+    finalApprovedCost:0,
+    voBaseValue:0,
+    voValueWithSIAndVAT:0,
+  }};
+  for(const row of (rows||[])){{
+    for(const key of Object.keys(totals)){{
+      const n=parseSafeNumber(row?.[key]);
+      if(n!==null)totals[key]+=n;
+    }}
+  }}
+  const items=[
+    ['Visible NOCs', String((rows||[]).length), 'Filtered rows'],
+    ['Submitted Cost', formatCurrencyValue(totals.submittedCost), 'Visible total'],
+    ['Final Approved Cost', formatCurrencyValue(totals.finalApprovedCost), 'Visible total'],
+    ['VO Base Value', formatCurrencyValue(totals.voBaseValue), 'Visible total'],
+    ['VO Value Incl. SI & VAT', formatCurrencyValue(totals.voValueWithSIAndVAT), 'Visible total'],
+  ];
+  inner.innerHTML=items.map(([label,val,sub])=>`<div style="background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
+    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${label}</div>
+    <div style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${val}</div>
+    <div style="font-size:10px;color:var(--mu);margin-top:3px">${sub}</div>
+  </div>`).join('');
+  wrap.style.display='';
 }}
 
 function durChoice(docNo){{
