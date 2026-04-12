@@ -1574,7 +1574,8 @@ tr.alt td{{background:#fafbfd}}
 <script>
 const PID='{pid}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
 const SC={{...{sc_json},
-  'Accepted & to proceed with Part C':['166534','ffffff'],
+  'Approved':['166534','ffffff'],
+  'Accepted & to proceed with Part C':['bbf7d0','166534'],
   'Rejected':['fecaca','7f1d1d'],
   'Cancelled':['e5e7eb','475569'],
   'Under Review':['fef9c3','854d0e'],
