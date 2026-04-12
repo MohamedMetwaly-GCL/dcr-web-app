@@ -602,6 +602,65 @@ def add_list_item(pid, list_name, item):
     exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
         (pid, list_name, item, r["n"] if r else 0))
 
+def rename_list_item(pid, list_name, old_item, new_item):
+    old_item = str(old_item or "").strip()
+    new_item = str(new_item or "").strip()
+    if not old_item or not new_item or old_item == new_item:
+        return 0
+    with DB() as cur:
+        cur.execute("""
+            UPDATE dropdown_lists
+            SET item_value=%s
+            WHERE project_id=%s AND list_name=%s AND item_value=%s
+        """, (new_item, pid, list_name, old_item))
+        renamed = cur.rowcount or 0
+        if not renamed:
+            return 0
+        cur.execute("""
+            SELECT DISTINCT dt_id, col_key
+            FROM columns_config
+            WHERE project_id=%s AND list_name=%s AND col_type='dropdown'
+        """, (pid, list_name))
+        targets = cur.fetchall() or []
+        for t in targets:
+            cur.execute("""
+                SELECT id, data
+                FROM records
+                WHERE project_id=%s AND dt_id=%s
+            """, (pid, t["dt_id"]))
+            rows = cur.fetchall() or []
+            for row in rows:
+                data = row["data"] if isinstance(row["data"], dict) else {}
+                raw = data.get(t["col_key"])
+                if raw is None:
+                    continue
+                tokens = [p.strip() for p in str(raw).split(",")]
+                changed = False
+                out = []
+                for tok in tokens:
+                    if tok == old_item:
+                        out.append(new_item)
+                        changed = True
+                    elif tok:
+                        out.append(tok)
+                if not changed:
+                    continue
+                data[t["col_key"]] = ", ".join(out)
+                cur.execute("""
+                    UPDATE records
+                    SET data=%s::jsonb, updated_at=NOW()
+                    WHERE id=%s
+                """, (json.dumps(data), row["id"]))
+        return renamed
+
+def reorder_list_items(pid, list_name, ordered_items):
+    for i, item in enumerate([str(v).strip() for v in (ordered_items or []) if str(v).strip()]):
+        exe("""
+            UPDATE dropdown_lists
+            SET sort_order=%s
+            WHERE project_id=%s AND list_name=%s AND item_value=%s
+        """, (i, pid, list_name, item))
+
 def remove_list_item(pid, list_name, item):
     exe("DELETE FROM dropdown_lists WHERE project_id=%s AND list_name=%s AND item_value=%s",
         (pid, list_name, item))

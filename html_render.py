@@ -1366,6 +1366,7 @@ tr.alt td{{background:#fafbfd}}
 .sitem button{{padding:2px 8px;font-size:10px;border:1px solid var(--bd);background:#fff;
   border-radius:3px;cursor:pointer}}
 .sitem button:hover{{background:var(--er);color:#fff;border-color:var(--er)}}
+.rtl-txt{{direction:rtl;text-align:right}}
 .addrow{{display:flex;gap:6px;margin-top:6px}}
 .addrow input{{flex:1;padding:5px 8px;border:1px solid var(--bd);border-radius:3px;
   font-size:11px;font-family:inherit;outline:none}}
@@ -1700,10 +1701,15 @@ function tabMenu(id,e){{
   m.style.cssText=`position:fixed;left:${{e.clientX}}px;top:${{e.clientY}}px;background:#fff;
     border:1px solid var(--bd);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:9999;min-width:140px;overflow:hidden`;
   const dt=state.dtList?.find(d=>d.id===id)||{{}};
+  const idx=(state.dtList||[]).findIndex(d=>d.id===id);
   m.innerHTML=`
     <div onclick="renameDT('${{id}}','${{dt.code||id}}','${{(dt.name||'').replace(/'/g,\"\\\\'\")}}')"
       style="padding:8px 14px;cursor:pointer;font-size:12px"
       onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''">✏ Rename</div>
+    <div onclick="moveDT('${{id}}',-1)" style="padding:8px 14px;cursor:${{idx>0?'pointer':'not-allowed'}};font-size:12px;opacity:${{idx>0?'1':'.45'}}"
+      onmouseover="if(${{idx>0}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">⬅ Move Left</div>
+    <div onclick="moveDT('${{id}}',1)" style="padding:8px 14px;cursor:${{idx>=0&&idx<(state.dtList||[]).length-1?'pointer':'not-allowed'}};font-size:12px;opacity:${{idx>=0&&idx<(state.dtList||[]).length-1?'1':'.45'}}"
+      onmouseover="if(${{idx>=0&&idx<(state.dtList||[]).length-1}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">➡ Move Right</div>
     <div onclick="delDT('${{id}}')" style="padding:8px 14px;cursor:pointer;font-size:12px;color:#ef4444"
       onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">🗑 Delete Type</div>`;
   document.body.appendChild(m);
@@ -1725,6 +1731,17 @@ async function delDT(id){{
   await apiFetch('/api/doc_types/'+PID+'/'+id,{{method:'DELETE'}});
   if(state.tab===id)state.tab=null;
   await loadDTs(); toast('Deleted','wa');
+}}
+
+async function moveDT(id,delta){{
+  const order=(state.dtList||[]).map(d=>d.id);
+  const idx=order.indexOf(id);
+  const next=idx+delta;
+  if(idx<0||next<0||next>=order.length)return;
+  [order[idx],order[next]]=[order[next],order[idx]];
+  await apiFetch('/api/doc_types/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{order}})}});
+  await loadDTs(true);
+  toast('✔ Tab order updated','ok');
 }}
 
 async function loadRecords(){{
@@ -1944,7 +1961,9 @@ function renderRows(){{
           .replaceAll(' /',NL)
           .replaceAll('/ ',NL);
       }}
-      td.textContent=displayVal;tr.appendChild(td);
+      td.textContent=displayVal;
+      applyDisplayDirection(td,displayVal);
+      tr.appendChild(td);
     }});
     const ta=document.createElement('td');ta.className='acts';
     let acts='';
@@ -1988,6 +2007,35 @@ function formatDisplayValue(col,val){{
   if(isFloorField(col))return text.split(',').map(s=>s.trim()).filter(Boolean).join(NL);
   if(isItemRefField(col))return text.replace(/\\r\\n/g,NL).replace(/\\r/g,NL);
   return text;
+}}
+
+function getTextDirectionMeta(val){{
+  const text=String(val??'').trim();
+  if(!text)return null;
+  const arabic=(text.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/g)||[]).length;
+  const latin=(text.match(/[A-Za-z]/g)||[]).length;
+  if(arabic&&arabic>=latin)return {{dir:'rtl',align:'right'}};
+  return null;
+}}
+
+function applyDisplayDirection(el,val){{
+  const meta=getTextDirectionMeta(val);
+  el.classList.remove('rtl-txt');
+  el.style.direction='';
+  el.style.textAlign='';
+  if(meta){{
+    el.classList.add('rtl-txt');
+    el.style.direction=meta.dir;
+    el.style.textAlign=meta.align;
+  }}
+}}
+
+function bindDirectionalInput(el){{
+  if(!el)return;
+  const sync=()=>applyDisplayDirection(el,el.value);
+  el.addEventListener('input',sync);
+  el.addEventListener('change',sync);
+  sync();
 }}
 
 function getLongTextMeta(col){{
@@ -2185,6 +2233,7 @@ async function buildForm(row){{
       ta.rows=3;
       ta.style.cssText='resize:vertical;min-height:80px';
       ta.placeholder='Leave blank to auto-generate from items';
+      bindDirectionalInput(ta);
       grp.appendChild(ta);
       const hint=document.createElement('div');
       hint.style.cssText='font-size:10px;color:var(--mu);margin-top:4px';
@@ -2202,6 +2251,7 @@ async function buildForm(row){{
       freeInp.id='f-free-'+key;freeInp.placeholder='Or type custom value...';
       freeInp.style.cssText='margin-top:4px;width:100%;padding:5px 8px;border:1px dashed var(--bd);border-radius:var(--rd);font-size:11px;color:var(--mu);outline:none';
       freeInp.title='Type a custom value not in the list';
+      bindDirectionalInput(freeInp);
       freeInp.onchange=()=>{{
         const v=freeInp.value.trim();
         if(!v)return;
@@ -2224,6 +2274,7 @@ async function buildForm(row){{
       if(row){{inp.value=val;}}
       else{{inp.value=nextNo;inp.placeholder=nextNo?'':state.tab+'-001 REV00';}}
       inp.style.cssText='font-family:Consolas,monospace;font-weight:600';
+      bindDirectionalInput(inp);
       grp.appendChild(inp);
     }}
     else if(longTextMeta){{
@@ -2231,9 +2282,10 @@ async function buildForm(row){{
       ta.rows=longTextMeta.rows;
       ta.style.cssText=longTextMeta.style;
       ta.placeholder=longTextMeta.placeholder;
+      bindDirectionalInput(ta);
       grp.appendChild(ta);
     }}
-    else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';grp.appendChild(inp);}}
+    else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';bindDirectionalInput(inp);grp.appendChild(inp);}}
     grid.appendChild(grp);
   }}
   if(isPrTab){{
@@ -2271,6 +2323,9 @@ function addPrItemRow(item={{}}){{
   tr.querySelector('.pri-unit').value=item.unit||'';
   tr.querySelector('.pri-qty').value=item.quantity??'';
   tr.querySelector('.pri-remarks').value=item.remarks||'';
+  bindDirectionalInput(tr.querySelector('.pri-item'));
+  bindDirectionalInput(tr.querySelector('.pri-unit'));
+  bindDirectionalInput(tr.querySelector('.pri-remarks'));
   tr.querySelector('button').onclick=()=>tr.remove();
   body.appendChild(tr);
 }}
@@ -2287,6 +2342,7 @@ function addPrHeaderRow(item={{}}){{
     </td>
     <td><button type="button" class="btn btn-er btn-sm">✕</button></td>`;
   tr.querySelector('.pri-header').value=item.item_name||'';
+  bindDirectionalInput(tr.querySelector('.pri-header'));
   tr.querySelector('button').onclick=()=>tr.remove();
   body.appendChild(tr);
 }}
@@ -2561,6 +2617,17 @@ async function openLists(){{
         }};
         li.appendChild(badge);li.appendChild(sel);
       }}
+      const idx=items.indexOf(item);
+      const ren=document.createElement('button');ren.textContent='Rename';
+      ren.onclick=()=>renameItem(ln,item);li.appendChild(ren);
+      const up=document.createElement('button');up.textContent='↑';
+      up.disabled=idx===0;
+      up.style.opacity=idx===0?'.45':'1';
+      up.onclick=()=>moveListItem(ln,item,-1);li.appendChild(up);
+      const down=document.createElement('button');down.textContent='↓';
+      down.disabled=idx===items.length-1;
+      down.style.opacity=idx===items.length-1?'.45':'1';
+      down.onclick=()=>moveListItem(ln,item,1);li.appendChild(down);
       const rb=document.createElement('button');rb.textContent='Remove';
       rb.onclick=()=>rmItem(ln,item,rb);li.appendChild(rb);
       ul.appendChild(li);
@@ -2593,6 +2660,22 @@ async function addItem(ln){{
     await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:val,meta:'pending'}})}});
   }}
   await loadLists(true);openLists();
+}}
+async function renameItem(ln,item){{
+  const next=prompt('Rename list item:',item);
+  if(next===null)return;
+  const new_item=next.trim();
+  if(!new_item||new_item===item)return;
+  await apiFetch('/api/lists/'+PID,{{method:'PATCH',body:JSON.stringify({{list_name:ln,old_item:item,new_item}})}});
+  await loadLists(true);openLists();toast('✔ Item renamed','ok');
+}}
+async function moveListItem(ln,item,delta){{
+  const items=[...(state.lists[ln]||[])];
+  const idx=items.indexOf(item),next=idx+delta;
+  if(idx<0||next<0||next>=items.length)return;
+  [items[idx],items[next]]=[items[next],items[idx]];
+  await apiFetch('/api/lists/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{list_name:ln,order:items}})}});
+  await loadLists(true);openLists();toast('✔ List order updated','ok');
 }}
 async function rmItem(ln,item,btn){{
   await apiFetch('/api/lists/'+PID,{{method:'DELETE',body:JSON.stringify({{list_name:ln,item}})}});

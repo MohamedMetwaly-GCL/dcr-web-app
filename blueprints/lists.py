@@ -32,6 +32,22 @@ def api_add_list_item(pid):
     return jsonify(ok=True)
 
 
+@lists_bp.route("/api/lists/<pid>", methods=["PATCH"])
+def api_rename_list_item(pid):
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    renamed = db.rename_list_item(pid, data.get("list_name",""), data.get("old_item",""), data.get("new_item",""))
+    return jsonify(ok=True, renamed=renamed)
+
+
+@lists_bp.route("/api/lists/<pid>/reorder", methods=["POST"])
+def api_reorder_list_items(pid):
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    db.reorder_list_items(pid, data.get("list_name",""), data.get("order", []))
+    return jsonify(ok=True)
+
+
 @lists_bp.route("/api/lists/<pid>", methods=["DELETE"])
 def api_remove_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
