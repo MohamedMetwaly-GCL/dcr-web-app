@@ -1574,12 +1574,12 @@ tr.alt td{{background:#fafbfd}}
 <script>
 const PID='{pid}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
 const SC={{...{sc_json},
-  'Accepted & to proceed with Part C':['bbf7d0','166534'],
+  'Accepted & to proceed with Part C':['166534','ffffff'],
   'Rejected':['fecaca','7f1d1d'],
   'Cancelled':['e5e7eb','475569'],
   'Under Review':['fef9c3','854d0e'],
-  'Information Required':['fde68a','92400e'],
-  'Pending':['e0e7ff','312e81']
+  'Information Required':['e0e7ff','312e81'],
+  'Pending':['fde68a','92400e']
 }};
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
   ['client','Client'],['landlord','Landlord'],['pmo','PMO'],['mainConsultant','Consultant'],
