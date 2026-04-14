@@ -3066,13 +3066,25 @@ async function openLists(){{
 }}
 
 async function addItem(ln){{
-  const inp=document.getElementById('new-'+ln);const val=inp?.value.trim();if(!val)return;
-  await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item:val}})}});
-  // Auto-assign pending meta for new status items
-  if(ln.toLowerCase().startsWith('status')){{
-    await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:val,meta:'pending'}})}});
+  const inp=document.getElementById('new-'+ln);
+  const val=inp?.value.trim();
+  if(!val){{toast('Enter an item value first','wa');return;}}
+  try{{
+    const r=await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item:val}})}});
+    if(!r||!r.ok||!r.added){{toast((r&&r.error)||'Unable to add item','er');return;}}
+    // Auto-assign pending meta for new status items
+    if(ln.toLowerCase().startsWith('status')){{
+      await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:val,meta:'pending'}})}});
+    }}
+    if(inp)inp.value='';
+    await loadLists(true);
+    openLists();
+    toast('✔ Item added','ok');
+  }}catch(err){{
+    let msg=err?.message||'Unable to add item';
+    try{{msg=(JSON.parse(msg).error)||msg;}}catch{{}}
+    toast(msg,'er');
   }}
-  await loadLists(true);openLists();
 }}
 async function renameItem(ln,item){{
   const next=prompt('Rename list item:',item);

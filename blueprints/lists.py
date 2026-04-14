@@ -38,10 +38,11 @@ def api_lists(pid):
 def api_add_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    if not db.is_allowed_list_name(pid, data.get("list_name","")):
-        return jsonify(error="Invalid list"), 400
-    db.add_list_item(pid, data.get("list_name",""), data.get("item",""))
-    return jsonify(ok=True)
+    result = db.add_list_item(pid, data.get("list_name",""), data.get("item",""))
+    if result.get("ok"):
+        return jsonify(ok=True, added=True)
+    status = 409 if result.get("error") == "Item already exists" else 400
+    return jsonify(ok=False, added=False, error=result.get("error", "Unable to add item")), status
 
 
 @lists_bp.route("/api/lists/<pid>", methods=["PATCH"])

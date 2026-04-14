@@ -815,13 +815,28 @@ def set_list_item_meta(pid, list_name, item_value, meta):
         (meta, pid, list_name, item_value))
 
 def add_list_item(pid, list_name, item):
+    list_name = str(list_name or "").strip()
+    item = str(item or "").strip()
     if not is_allowed_list_name(pid, list_name):
-        return 0
-    r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
-          (pid, list_name), one=True)
-    exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-        (pid, list_name, item, r["n"] if r else 0))
-    return 1
+        return {"ok": False, "added": False, "error": "Invalid list"}
+    if not item:
+        return {"ok": False, "added": False, "error": "Item value is required"}
+    with DB() as cur:
+        cur.execute(
+            "SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
+            (pid, list_name),
+        )
+        r = cur.fetchone()
+        cur.execute("""
+            INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order)
+            VALUES(%s,%s,%s,%s)
+            ON CONFLICT(project_id,list_name,item_value) DO NOTHING
+            RETURNING project_id
+        """, (pid, list_name, item, r["n"] if r else 0))
+        inserted = cur.fetchone()
+    if inserted:
+        return {"ok": True, "added": True}
+    return {"ok": False, "added": False, "error": "Item already exists"}
 
 def rename_list_item(pid, list_name, old_item, new_item):
     if not is_allowed_list_name(pid, list_name):
