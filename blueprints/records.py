@@ -30,6 +30,17 @@ def _is_pr_doc_type(pid, dt_id):
     name = str(dt.get("name","")).strip().lower()
     return code == "PR" or "requisition" in name or "purchase request" in name
 
+def _is_ltr_doc_type(pid, dt_id):
+    if str(dt_id or "").upper() == "LTR":
+        return True
+    dts = db.get_doc_types(pid)
+    dt = next((d for d in dts if d["id"] == dt_id), None)
+    if not dt:
+        return False
+    code = str(dt.get("code","")).strip().upper()
+    name = str(dt.get("name","")).strip().lower()
+    return code == "LTR" or "letter" in name or "correspondence" in name
+
 
 @records_bp.route("/api/records/<pid>/<dt_id>")
 def api_records(pid, dt_id):
@@ -78,6 +89,32 @@ def api_save_record(pid, dt_id):
     data   = request.get_json(silent=True) or {}
     rec_id = data.pop("_id", None)
     clean  = {k:v for k,v in data.items() if not k.startswith("_")}
+    if _is_ltr_doc_type(pid, dt_id):
+        direction = str(clean.get("direction","")).strip().lower()
+        issued = str(clean.get("issuedDate","")).strip()
+        received = str(clean.get("receivedDate","")).strip()
+        parent_id = str(clean.get("parentLetterId","")).strip()
+        if direction == "sent" and not issued:
+            return jsonify(error="Issue Date is required for Sent letters"), 400
+        if direction == "received" and not received:
+            return jsonify(error="Received Date is required for Received letters"), 400
+        if rec_id and parent_id and parent_id == rec_id:
+            return jsonify(error="A letter cannot reference itself as parent"), 400
+        if parent_id:
+            parent = db.get_record_by_id(parent_id)
+            if not parent or parent.get("_project_id") != pid or parent.get("_dt_id") != dt_id:
+                return jsonify(error="Selected parent letter is invalid"), 400
+            seen = set()
+            cur = parent
+            while cur and cur.get("_id") and cur.get("_id") not in seen:
+                if rec_id and cur.get("_id") == rec_id:
+                    return jsonify(error="Parent selection would create an invalid loop"), 400
+                seen.add(cur.get("_id"))
+                next_id = str(cur.get("parentLetterId","")).strip()
+                cur = db.get_record_by_id(next_id) if next_id else None
+            clean["parentLetterRef"] = str(parent.get("docNo","") or "").strip()
+        else:
+            clean["parentLetterRef"] = ""
     if rec_id:
         full_row = db.get_record_by_id(rec_id) or {}
         # Extract only stored document fields for diff (exclude _ meta keys)

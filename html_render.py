@@ -1403,9 +1403,9 @@ tr.alt td{{background:#fafbfd}}
   {'<button class="tab-add" onclick="addDocType()" title="Add Type">＋</button>' if editable else ''}
 </div>
 
-<div id="toolbar">
-  {edit_btns}
-  <div class="tool-dd" id="exp-dd">
+  <div id="toolbar">
+    {edit_btns}
+    <div class="tool-dd" id="exp-dd">
     <button class="tool-btn teal" onclick="toggleExpDD(event)">📥 Export ▾</button>
     <div class="tool-dd-menu hidden" id="exp-menu">
       <button onclick="doExport();closeExpDD()">📊 Excel — This Tab</button>
@@ -1415,11 +1415,18 @@ tr.alt td{{background:#fafbfd}}
     </div>
   </div>
   <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
-  {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
-  <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
-</div>
-
-<div id="bulkbar">
+    {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
+    <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
+  </div>
+  <div id="ltr-quickbar" style="display:none;padding:8px 10px;border-bottom:1px solid var(--bd);background:#f8fafc;gap:6px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Letter Views</span>
+    <button class="tool-btn" type="button" data-ltr-view="" onclick="setLTRQuickView('')">All</button>
+    <button class="tool-btn" type="button" data-ltr-view="sent" onclick="setLTRQuickView('sent')">Sent Letters</button>
+    <button class="tool-btn" type="button" data-ltr-view="received" onclick="setLTRQuickView('received')">Received Letters</button>
+    <button class="tool-btn" type="button" data-ltr-view="awaiting" onclick="setLTRQuickView('awaiting')">Awaiting Response</button>
+  </div>
+  
+  <div id="bulkbar">
   <span id="bulkcnt">0 selected</span>
   <button class="btn btn-er btn-sm" onclick="bulkDel()">🗑 Delete</button>
   <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="clearSel()">✕ Cancel</button>
@@ -1613,7 +1620,7 @@ function isLTRTab(){{
 
 function isHiddenSystemListName(name){{
   const ln=String(name||'').trim().toLowerCase();
-  return ['letter_direction','letter_status','letter_party'].includes(ln);
+  return ['letter_direction','letter_status'].includes(ln);
 }}
 
 function isLTRSingleSelectField(col){{
@@ -1626,6 +1633,34 @@ function isLTRInternalField(col){{
   if(!isLTRTab())return false;
   const key=String(col?.col_key||col||'').trim().toLowerCase();
   return ['parentletterid'].includes(key);
+}}
+
+function getLTRRegisterKeys(){{
+  return ['docNo','direction','fromParty','toParty','issuedDate','receivedDate','title','status','parentLetterRef'];
+}}
+
+function getLTRFormKeys(){{
+  return ['docNo','title','description','fileLocation','remarks','direction','fromParty','toParty','issuedDate','receivedDate','parentLetterId','parentLetterRef','status'];
+}}
+
+function updateLTRQuickBar(){{
+  const bar=document.getElementById('ltr-quickbar');
+  if(!bar)return;
+  const on=isLTRTab();
+  bar.style.display=on?'flex':'none';
+  if(!on)delete state.filters._ltrQuick;
+  bar.querySelectorAll('[data-ltr-view]').forEach(btn=>{{
+    const active=(state.filters._ltrQuick||'')===btn.dataset.ltrView;
+    btn.style.background=active?'var(--pr)':'';
+    btn.style.color=active?'#fff':'';
+    btn.style.borderColor=active?'var(--pr)':'';
+  }});
+}}
+
+function setLTRQuickView(view){{
+  state.filters._ltrQuick=view||'';
+  updateLTRQuickBar();
+  renderRows();
 }}
 
 function getPrDetailsColKey(){{
@@ -1734,6 +1769,7 @@ function switchTab(id){{
   state.tab=id;state.recs=null;state.filters={{}};state.sortCol=null;
   document.getElementById('srchbox').value='';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
+  updateLTRQuickBar();
   loadRecords();
 }}
 
@@ -1795,10 +1831,11 @@ async function loadRecords(){{
   ]);
   if(!data)return;
   state.recs=data.records; state.cols=data.columns.filter(c=>c.visible);
-  if(isLTRTab())state.cols=state.cols.filter(c=>!isLTRInternalField(c));
+  if(isLTRTab())state.cols=state.cols.filter(c=>getLTRRegisterKeys().includes(c.col_key)&&!isLTRInternalField(c));
   state.prItemsCache=data.pr_items_map||{{}};
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
+  updateLTRQuickBar();
   buildHead(); requestAnimationFrame(()=>initRz()); renderRows();
 }}
 
@@ -1917,9 +1954,18 @@ function checkGap(docNo,recs,editId){{
 function renderRows(){{
   const body=document.getElementById('tbody');body.innerHTML='';
   const isPrTab=isPRTab();
+  const isLtrTab=isLTRTab();
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   let rows=state.recs.filter(r=>{{
     for(const[k,v]of Object.entries(state.filters)){{if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;}}
+    if(isLtrTab){{
+      const quick=String(state.filters._ltrQuick||'').toLowerCase();
+      const direction=String(r.direction||'').toLowerCase();
+      const status=String(r.status||'').toLowerCase();
+      if(quick==='sent'&&direction!=='sent')return false;
+      if(quick==='received'&&direction!=='received')return false;
+      if(quick==='awaiting'&&status!=='awaiting response')return false;
+    }}
     return true;
   }});
   if(state.sortCol){{
@@ -2307,7 +2353,8 @@ async function buildForm(row){{
   if(!row){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
-  const formCols=isLTRTab()?allCols.filter(c=>!isLTRInternalField(c)):allCols;
+  const isLtrTab=isLTRTab();
+  const formCols=isLtrTab()?allCols.filter(c=>getLTRFormKeys().includes(c.col_key)):allCols;
   const prevCols=state.cols;
   state.cols=formCols.filter(c=>c.visible);
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
@@ -2320,7 +2367,15 @@ async function buildForm(row){{
     'Part D':['partDReturnDate','partDStatus','finalApprovedCost'],
     'Variation Order':['voNo','voIssueDate','voBaseValue','voValueWithSIAndVAT'],
   }};
+  const ltrSections={{
+    'Basic Info':['docNo','title','description','fileLocation','remarks'],
+    'Direction & Parties':['direction','fromParty','toParty'],
+    'Dates':['issuedDate','receivedDate'],
+    'Linking / Threading':['parentLetterRef'],
+    'Status':['status'],
+  }};
   const nocSectionForKey=(key)=>Object.entries(nocSections).find(([,keys])=>keys.includes(key))?.[0]||null;
+  const ltrSectionForKey=(key)=>Object.entries(ltrSections).find(([,keys])=>keys.includes(key))?.[0]||null;
   const renderedSections=new Set();
   let nocStageInp=null,nocBaseInp=null,nocTotalInp=null;
   if(isNocTab){{
@@ -2328,11 +2383,25 @@ async function buildForm(row){{
     nocStageInp=sf.inp;
     grid.appendChild(sf.grp);
   }}
+  if(isLtrTab){{
+    const hid=document.createElement('input');
+    hid.type='hidden';
+    hid.id='f-parentLetterId';
+    hid.value=row?.parentLetterId||'';
+    grid.appendChild(hid);
+  }}
   for(const col of formCols){{
     if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
     if(isNocTab){{
       const section=nocSectionForKey(key);
+      if(section&&!renderedSections.has(section)){{
+        appendSectionTitle(grid,section);
+        renderedSections.add(section);
+      }}
+    }}
+    if(isLtrTab){{
+      const section=ltrSectionForKey(key);
       if(section&&!renderedSections.has(section)){{
         appendSectionTitle(grid,section);
         renderedSections.add(section);
@@ -2357,13 +2426,40 @@ async function buildForm(row){{
       grid.appendChild(grp);
       continue;
     }}
+    if(isLtrTab&&key==='parentLetterRef'){{
+      const ref=document.createElement('input');ref.id='f-parentLetterRef';ref.value=val||'';ref.readOnly=true;
+      ref.placeholder='Auto-filled from selected parent';
+      ref.style.cssText='background:#f8fafc';
+      grp.appendChild(ref);
+      const sel=document.createElement('select');sel.id='f-parentLetterRef-select';
+      const currentParentId=row?.parentLetterId||'';
+      const options=sortByDocNo((state.recs||[]).filter(r=>r._id!==row?._id));
+      sel.innerHTML='<option value="">No parent letter</option>'+options.map(r=>`<option value="${{r._id}}" ${{r._id===currentParentId?'selected':''}}>${{escHtml(r.docNo||r.title||r._id)}}</option>`).join('');
+      sel.onchange=()=>{{
+        const picked=(state.recs||[]).find(r=>r._id===sel.value)||null;
+        document.getElementById('f-parentLetterId').value=picked?picked._id:'';
+        document.getElementById('f-parentLetterRef').value=picked?(picked.docNo||''):'';
+      }};
+      grp.appendChild(sel);
+      grid.appendChild(grp);
+      continue;
+    }}
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
     else if(col.col_type==='dropdown'&&col.list_name&&isLTRSingleSelectField(col)){{
       const sel=document.createElement('select');sel.id='f-'+key;
-      const opts=state.lists[col.list_name]||[];
+      const opts=[...(state.lists[col.list_name]||[])];
+      if(val&&!opts.includes(val))opts.push(val);
       sel.innerHTML='<option value=""></option>'+opts.map(o=>`<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
       sel.value=val||'';
       grp.appendChild(sel);
+    }}
+    else if(isLtrTab&&['title','description','remarks'].includes(key)){{
+      const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val||'';
+      ta.rows=key==='description'?5:3;
+      ta.style.cssText=key==='description'?'resize:vertical; min-height:120px':'resize:vertical; min-height:80px';
+      ta.placeholder=key==='title'?'Use Enter for a multiline subject':'Use Enter for multiline text';
+      bindDirectionalInput(ta);
+      grp.appendChild(ta);
     }}
     else if(col.col_type==='dropdown'&&col.list_name){{
       // Add free-text input below multiselect
@@ -2639,9 +2735,31 @@ async function saveRecord(){{
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;
     const el=document.getElementById('f-'+col.col_key);if(!el)continue;
-    if(el.classList.contains('ms-con'))data[col.col_key]=el.dataset.value||'';
-    else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\\r\\n/g,String.fromCharCode(10)).replace(/\\r/g,String.fromCharCode(10));
-    else data[col.col_key]=el.value.trim();
+      if(el.classList.contains('ms-con'))data[col.col_key]=el.dataset.value||'';
+      else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\\r\\n/g,String.fromCharCode(10)).replace(/\\r/g,String.fromCharCode(10));
+      else data[col.col_key]=el.value.trim();
+  }}
+  if(isLTRTab()){{
+    const direction=String(data.direction||'').trim().toLowerCase();
+    if(direction==='sent'&&!String(data.issuedDate||'').trim()){{toast('Issue Date is required for Sent letters','er');return;}}
+    if(direction==='received'&&!String(data.receivedDate||'').trim()){{toast('Received Date is required for Received letters','er');return;}}
+    const parentId=String(data.parentLetterId||'').trim();
+    if(state.editId&&parentId&&parentId===state.editId){{toast('A letter cannot reference itself as parent','er');return;}}
+    if(parentId){{
+      const parent=(state.recs||[]).find(r=>r._id===parentId)||null;
+      if(!parent){{toast('Selected parent letter is invalid','er');return;}}
+      const seen=new Set();
+      let cur=parent;
+      while(cur&&cur._id&&!seen.has(cur._id)){{
+        if(state.editId&&cur._id===state.editId){{toast('Parent selection would create a loop','er');return;}}
+        seen.add(cur._id);
+        const nextId=String(cur.parentLetterId||'').trim();
+        cur=nextId?(state.recs||[]).find(r=>r._id===nextId)||null:null;
+      }}
+      data.parentLetterRef=String(parent.docNo||'').trim();
+    }}else{{
+      data.parentLetterRef='';
+    }}
   }}
   if(isNOCTab()&&!String(data.voBaseValue||'').trim()&&String(data.voValueWithSIAndVAT||'').trim()){{
     const autoBase=getNocAutoBaseValue(data);
