@@ -25,17 +25,13 @@ logger = logging.getLogger(__name__)
 def api_lists(pid):
     logger.info("api_lists start pid=%s", pid)
     try:
-        db.cleanup_orphan_lists(pid)
-    except Exception as e:
-        logger.exception("api_lists cleanup failed pid=%s error=%s", pid, e)
-    try:
         logger.info("api_lists before get_lists pid=%s", pid)
         payload = db.get_lists(pid)
         logger.info("api_lists after get_lists pid=%s list_count=%s", pid, len(payload))
         return jsonify(payload)
     except Exception as e:
         logger.exception("api_lists get_lists failed pid=%s error=%s", pid, e)
-        raise
+        return jsonify({})
 
 
 @lists_bp.route("/api/lists/<pid>", methods=["POST"])
@@ -88,7 +84,16 @@ def api_lists_meta(pid):
         return jsonify(payload)
     except Exception as e:
         logger.exception("api_lists_meta failed pid=%s error=%s", pid, e)
-        raise
+        return jsonify({})
+
+
+@lists_bp.route("/api/lists_cleanup/<pid>", methods=["POST"])
+def api_lists_cleanup(pid):
+    u = current_user()
+    if not u or u.get("role") not in ("superadmin","admin"):
+        return jsonify(error="Admin only"), 403
+    db.cleanup_orphan_lists(pid)
+    return jsonify(ok=True)
 
 
 @lists_bp.route("/api/lists_meta/<pid>", methods=["POST"])
