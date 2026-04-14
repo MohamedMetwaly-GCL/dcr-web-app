@@ -21,6 +21,7 @@ lists_bp = Blueprint("lists", __name__)
 
 @lists_bp.route("/api/lists/<pid>")
 def api_lists(pid):
+    db.cleanup_orphan_lists(pid)
     return jsonify(db.get_lists(pid))
 
 
@@ -28,6 +29,8 @@ def api_lists(pid):
 def api_add_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
+    if not db.is_allowed_list_name(pid, data.get("list_name","")):
+        return jsonify(error="Invalid list"), 400
     db.add_list_item(pid, data.get("list_name",""), data.get("item",""))
     return jsonify(ok=True)
 
@@ -36,6 +39,8 @@ def api_add_list_item(pid):
 def api_rename_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
+    if not db.is_allowed_list_name(pid, data.get("list_name","")):
+        return jsonify(error="Invalid list"), 400
     renamed = db.rename_list_item(pid, data.get("list_name",""), data.get("old_item",""), data.get("new_item",""))
     return jsonify(ok=True, renamed=renamed)
 
@@ -44,6 +49,8 @@ def api_rename_list_item(pid):
 def api_reorder_list_items(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
+    if not db.is_allowed_list_name(pid, data.get("list_name","")):
+        return jsonify(error="Invalid list"), 400
     db.reorder_list_items(pid, data.get("list_name",""), data.get("order", []))
     return jsonify(ok=True)
 
@@ -52,6 +59,8 @@ def api_reorder_list_items(pid):
 def api_remove_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
+    if not db.is_allowed_list_name(pid, data.get("list_name","")):
+        return jsonify(error="Invalid list"), 400
     db.remove_list_item(pid, data.get("list_name",""), data.get("item",""))
     return jsonify(ok=True)
 
@@ -67,6 +76,8 @@ def api_set_list_meta(pid):
     if not u or u.get("role") not in ("superadmin","admin"):
         return jsonify(error="Admin only"), 403
     data = request.get_json(silent=True) or {}
+    if not db.is_allowed_list_name(pid, data.get("list_name","")):
+        return jsonify(error="Invalid list"), 400
     db.set_list_item_meta(pid, data.get("list_name",""),
                          data.get("item_value",""), data.get("meta","pending"))
     return jsonify(ok=True)

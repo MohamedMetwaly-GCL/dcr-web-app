@@ -725,24 +725,40 @@ def save_pr_items(record_id, items):
 
 # ── Dropdown Lists ────────────────────────────────────────────
 def get_lists(pid):
-    names = [r["list_name"] for r in q("""
-        SELECT list_name FROM (
-            SELECT DISTINCT list_name FROM dropdown_lists WHERE project_id=%s
-            UNION
-            SELECT DISTINCT list_name FROM columns_config WHERE project_id=%s AND list_name IS NOT NULL
-        ) t
-        ORDER BY list_name
-    """, (pid, pid))]
+    names = get_allowed_list_names(pid)
     return {n: [r["item_value"] for r in
                 q("SELECT item_value FROM dropdown_lists WHERE project_id=%s AND list_name=%s ORDER BY sort_order",
                   (pid, n))] for n in names}
 
+def get_allowed_list_names(pid):
+    return [r["list_name"] for r in q("""
+        SELECT DISTINCT list_name
+        FROM columns_config
+        WHERE project_id=%s AND list_name IS NOT NULL AND BTRIM(list_name) <> ''
+        ORDER BY list_name
+    """, (pid,))]
+
+def is_allowed_list_name(pid, list_name):
+    name = str(list_name or "").strip()
+    if not name:
+        return False
+    r = q("""
+        SELECT 1
+        FROM columns_config
+        WHERE project_id=%s AND list_name=%s
+        LIMIT 1
+    """, (pid, name), one=True)
+    return bool(r)
+
 def get_lists_with_meta(pid):
     """Return {list_name: [{value, meta}]} for status-aware lists."""
+    allowed = set(get_allowed_list_names(pid))
     rows = q("SELECT list_name, item_value, meta FROM dropdown_lists"
              " WHERE project_id=%s ORDER BY list_name, sort_order", (pid,))
     result = {}
     for r in rows:
+        if r["list_name"] not in allowed:
+            continue
         result.setdefault(r["list_name"], []).append(
             {"value": r["item_value"], "meta": r["meta"]})
     return result
@@ -760,12 +776,17 @@ def set_list_item_meta(pid, list_name, item_value, meta):
         (meta, pid, list_name, item_value))
 
 def add_list_item(pid, list_name, item):
+    if not is_allowed_list_name(pid, list_name):
+        return 0
     r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
           (pid, list_name), one=True)
     exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
         (pid, list_name, item, r["n"] if r else 0))
+    return 1
 
 def rename_list_item(pid, list_name, old_item, new_item):
+    if not is_allowed_list_name(pid, list_name):
+        return 0
     old_item = str(old_item or "").strip()
     new_item = str(new_item or "").strip()
     if not old_item or not new_item or old_item == new_item:
@@ -817,16 +838,33 @@ def rename_list_item(pid, list_name, old_item, new_item):
         return renamed
 
 def reorder_list_items(pid, list_name, ordered_items):
+    if not is_allowed_list_name(pid, list_name):
+        return 0
     for i, item in enumerate([str(v).strip() for v in (ordered_items or []) if str(v).strip()]):
         exe("""
             UPDATE dropdown_lists
             SET sort_order=%s
             WHERE project_id=%s AND list_name=%s AND item_value=%s
         """, (i, pid, list_name, item))
+    return 1
 
 def remove_list_item(pid, list_name, item):
+    if not is_allowed_list_name(pid, list_name):
+        return 0
     exe("DELETE FROM dropdown_lists WHERE project_id=%s AND list_name=%s AND item_value=%s",
         (pid, list_name, item))
+    return 1
+
+def cleanup_orphan_lists(pid):
+    allowed = get_allowed_list_names(pid)
+    if allowed:
+        exe("""
+            DELETE FROM dropdown_lists
+            WHERE project_id=%s
+              AND list_name <> ALL(%s)
+        """, (pid, allowed))
+    else:
+        exe("DELETE FROM dropdown_lists WHERE project_id=%s", (pid,))
 
 # ── Fast Dashboard Stats (single query) ──────────────────────
 def get_dashboard_stats():

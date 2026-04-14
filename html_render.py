@@ -3059,13 +3059,9 @@ async function openLists(){{
       hint.style.cssText='font-size:10px;color:#94a3b8;margin-top:4px';
       hint.textContent='🏷 Set category for each status — affects Dashboard counts';
       ar.appendChild(hint);
+      }}
+      body.appendChild(ar);
     }}
-    body.appendChild(ar);
-  }}
-  const nl=document.createElement('div');nl.className='stitle';nl.textContent='New List';
-  const nar=document.createElement('div');nar.className='addrow';
-  nar.innerHTML=`<input id="new-list" placeholder="List name"><button class="btn btn-pr btn-sm" onclick="mkList()">Create</button>`;
-  body.appendChild(nl);body.appendChild(nar);
   openM('lists-modal');
 }}
 
@@ -3097,11 +3093,6 @@ async function moveListItem(ln,item,delta){{
 async function rmItem(ln,item,btn){{
   await apiFetch('/api/lists/'+PID,{{method:'DELETE',body:JSON.stringify({{list_name:ln,item}})}});
   btn.closest('li').remove();await loadLists(true);
-}}
-async function mkList(){{
-  const name=document.getElementById('new-list')?.value.trim().toLowerCase().replace(/[\\s]+/g,'_');if(!name)return;
-  await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify({{list_name:name,item:'Item 1'}})}});
-  await loadLists(true);openLists();
 }}
 
 // Column drag-to-reorder
