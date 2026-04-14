@@ -214,25 +214,6 @@ NOC_COLS = [
     ("voValueWithSIAndVAT", "VO Value (EGP) Including SI & VAT", "number", None, 16, True),
 ]
 
-LTR_DIRECTION_VALUES = ["Sent", "Received"]
-LTR_STATUS_VALUES = ["Open", "Awaiting Response", "Replied", "Closed"]
-
-LTR_COLS = [
-    ("docNo", "Letter Ref", "docno", None, 0, True),
-    ("title", "Subject", "text", None, 1, True),
-    ("description", "Description", "text", None, 2, False),
-    ("fileLocation", "Attachment / File Location", "link", None, 3, False),
-    ("remarks", "Remarks", "text", None, 4, False),
-    ("direction", "Direction", "dropdown", "letter_direction", 5, True),
-    ("fromParty", "From Party", "dropdown", "letter_party", 6, True),
-    ("toParty", "To Party", "dropdown", "letter_party", 7, True),
-    ("issuedDate", "Issue Date", "date", None, 8, True),
-    ("receivedDate", "Received Date", "date", None, 9, True),
-    ("parentLetterId", "Parent Letter ID", "text", None, 10, False),
-    ("parentLetterRef", "Response Ref", "text", None, 11, True),
-    ("status", "Status", "dropdown", "letter_status", 12, True),
-]
-
 # Default meta categories for known status values
 DEFAULT_STATUS_META = {
     "A - Approved":              "approved",
@@ -275,16 +256,9 @@ def _is_noc_dt(dt_code="", dt_name=""):
     name = str(dt_name or "").strip().lower()
     return code == "noc" or "notice of change" in name
 
-def _is_ltr_dt(dt_code="", dt_name=""):
-    code = str(dt_code or "").strip().lower()
-    name = str(dt_name or "").strip().lower()
-    return code == "ltr" or "letter" in name or "correspondence" in name
-
 def _doc_type_col_specs(dt_code="", dt_name=""):
     if _is_noc_dt(dt_code, dt_name):
         return NOC_COLS
-    if _is_ltr_dt(dt_code, dt_name):
-        return LTR_COLS
     return [(ck, lbl, ct, ln, so, True) for ck, lbl, ct, ln, so in DEFAULT_COLS]
 
 def _ensure_noc_lists(pid):
@@ -295,19 +269,6 @@ def _ensure_noc_lists(pid):
                 " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
                 " DO UPDATE SET sort_order=EXCLUDED.sort_order, meta=EXCLUDED.meta",
                 (pid, ln, item, i, meta))
-
-def _ensure_ltr_lists(pid):
-    for i, item in enumerate(LTR_DIRECTION_VALUES):
-        exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
-            " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
-            " DO UPDATE SET sort_order=EXCLUDED.sort_order, meta=EXCLUDED.meta",
-            (pid, "letter_direction", item, i, None))
-    for i, item in enumerate(LTR_STATUS_VALUES):
-        meta = "pending" if item in ("Open", "Awaiting Response") else ("approved" if item in ("Replied", "Closed") else None)
-        exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
-            " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
-            " DO UPDATE SET sort_order=EXCLUDED.sort_order, meta=EXCLUDED.meta",
-            (pid, "letter_status", item, i, meta))
 
 def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
     exe("INSERT INTO doc_types(id,project_id,name,code,sort_order)"
@@ -331,28 +292,6 @@ def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
         (pid, dt_id, list(keep_keys)))
     _ensure_noc_lists(pid)
 
-def _sync_ltr_doc_type(pid, dt_id="LTR", dt_name="Letters"):
-    exe("INSERT INTO doc_types(id,project_id,name,code,sort_order)"
-        " VALUES(%s,%s,%s,%s,COALESCE((SELECT sort_order FROM doc_types WHERE id=%s AND project_id=%s),19))"
-        " ON CONFLICT(id,project_id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code",
-        (dt_id, pid, dt_name, "LTR", dt_id, pid))
-    specs = _doc_type_col_specs("LTR", dt_name)
-    keep_keys = {ck for ck, *_ in specs}
-    for ck, lbl, ct, ln, so, visible in specs:
-        exe("""
-            INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
-            VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT(project_id,dt_id,col_key) DO UPDATE
-            SET label=EXCLUDED.label,
-                col_type=EXCLUDED.col_type,
-                list_name=EXCLUDED.list_name,
-                visible=EXCLUDED.visible,
-                sort_order=EXCLUDED.sort_order
-        """, (pid, dt_id, ck, lbl, ct, ln, visible, so))
-    exe("DELETE FROM columns_config WHERE project_id=%s AND dt_id=%s AND col_key<>ALL(%s)",
-        (pid, dt_id, list(keep_keys)))
-    _ensure_ltr_lists(pid)
-
 def _sync_all_noc_doc_types():
     projects = q("SELECT id FROM projects")
     for p in projects:
@@ -360,14 +299,6 @@ def _sync_all_noc_doc_types():
         dt = q("SELECT id, name, code FROM doc_types WHERE project_id=%s AND (UPPER(code)='NOC' OR UPPER(id)='NOC') LIMIT 1", (pid,), one=True)
         if dt:
             _sync_noc_doc_type(pid, dt["id"], dt.get("name", "Notice of Change"))
-
-def _sync_all_ltr_doc_types():
-    projects = q("SELECT id FROM projects")
-    for p in projects:
-        pid = p["id"]
-        dt = q("SELECT id, name, code FROM doc_types WHERE project_id=%s AND (UPPER(code)='LTR' OR UPPER(id)='LTR') LIMIT 1", (pid,), one=True)
-        if dt:
-            _sync_ltr_doc_type(pid, dt["id"], dt.get("name", "Letters"))
 
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
@@ -379,7 +310,6 @@ def init():
                 logger.warning("db_schema_note error=%s", e)
     _ensure_admin()
     _sync_all_noc_doc_types()
-    _sync_all_ltr_doc_types()
 
 def _ensure_admin():
     r = q("SELECT COUNT(*) as c FROM users", one=True)
@@ -525,9 +455,7 @@ def _seed_project(pid):
                 " DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
                 (pid, ln, item, i, meta))
     _ensure_noc_lists(pid)
-    _ensure_ltr_lists(pid)
     _sync_all_noc_doc_types()
-    _sync_all_ltr_doc_types()
 
 # ── Logos ─────────────────────────────────────────────────────
 def get_logo(pid, key):
@@ -554,8 +482,6 @@ def add_doc_type(pid, code, name):
             (pid, code, ck, lbl, ct, ln, visible, so))
     if _is_noc_dt(code, name):
         _sync_noc_doc_type(pid, code, name)
-    if _is_ltr_dt(code, name):
-        _sync_ltr_doc_type(pid, code, name)
 
 def delete_doc_type(pid, dt_id):
     exe("DELETE FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid))
@@ -725,82 +651,21 @@ def save_pr_items(record_id, items):
 
 # ── Dropdown Lists ────────────────────────────────────────────
 def get_lists(pid):
-    logger.info("get_lists start pid=%s", pid)
-    try:
-        rows = q("""
-            SELECT list_name, item_value
-            FROM dropdown_lists
-            WHERE project_id=%s
-            ORDER BY list_name, sort_order, item_value
-        """, (pid,))
-        result = {}
-        for r in rows:
-            ln = str(r.get("list_name") or "").strip()
-            if not ln:
-                continue
-            result.setdefault(ln, []).append(r.get("item_value"))
-        logger.info("get_lists done pid=%s list_count=%s item_rows=%s", pid, len(result), len(rows))
-        return result
-    except Exception as e:
-        logger.exception("get_lists failed pid=%s error=%s", pid, e)
-        raise
-
-def get_allowed_list_names(pid):
-    return [r["list_name"] for r in q("""
-        SELECT DISTINCT list_name
-        FROM columns_config
-        WHERE project_id=%s
-          AND LOWER(BTRIM(col_type))='dropdown'
-          AND list_name IS NOT NULL
-          AND BTRIM(list_name) <> ''
-          AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
-        ORDER BY list_name
-    """, (pid,))]
-
-def is_allowed_list_name(pid, list_name):
-    name = str(list_name or "").strip()
-    if not name:
-        return False
-    if name.upper().startswith("CUSTOM_REC_"):
-        return False
-    r = q("""
-        SELECT 1
-        FROM (
-            SELECT list_name
-            FROM columns_config
-            WHERE project_id=%s
-              AND LOWER(BTRIM(col_type))='dropdown'
-              AND list_name IS NOT NULL
-              AND BTRIM(list_name) <> ''
-              AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
-            UNION
-            SELECT list_name
-            FROM dropdown_lists
-            WHERE project_id=%s
-              AND list_name IS NOT NULL
-              AND BTRIM(list_name) <> ''
-              AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
-        ) s
-        WHERE list_name=%s
-        LIMIT 1
-    """, (pid, pid, name), one=True)
-    return bool(r)
+    names = [r["list_name"] for r in
+             q("SELECT DISTINCT list_name FROM dropdown_lists WHERE project_id=%s ORDER BY list_name", (pid,))]
+    return {n: [r["item_value"] for r in
+                q("SELECT item_value FROM dropdown_lists WHERE project_id=%s AND list_name=%s ORDER BY sort_order",
+                  (pid, n))] for n in names}
 
 def get_lists_with_meta(pid):
     """Return {list_name: [{value, meta}]} for status-aware lists."""
-    logger.info("get_lists_with_meta start pid=%s", pid)
-    try:
-        rows = q("SELECT list_name, item_value, meta FROM dropdown_lists"
-                 " WHERE project_id=%s ORDER BY list_name, sort_order", (pid,))
-        result = {}
-        for r in rows:
-            result.setdefault(r["list_name"], []).append(
-                {"value": r["item_value"], "meta": r["meta"]})
-        logger.info("get_lists_with_meta done pid=%s list_count=%s", pid, len(result))
-        return result
-    except Exception as e:
-        logger.exception("get_lists_with_meta failed pid=%s error=%s", pid, e)
-        raise
+    rows = q("SELECT list_name, item_value, meta FROM dropdown_lists"
+             " WHERE project_id=%s ORDER BY list_name, sort_order", (pid,))
+    result = {}
+    for r in rows:
+        result.setdefault(r["list_name"], []).append(
+            {"value": r["item_value"], "meta": r["meta"]})
+    return result
 
 def get_status_meta_map(pid):
     """Return {status_value: meta} for all status lists in this project."""
@@ -815,41 +680,12 @@ def set_list_item_meta(pid, list_name, item_value, meta):
         (meta, pid, list_name, item_value))
 
 def add_list_item(pid, list_name, item):
-    list_name = str(list_name or "").strip()
-    item = str(item or "").strip()
-    if not is_allowed_list_name(pid, list_name):
-        return {"ok": False, "added": False, "error": "Invalid list", "status": 400}
-    if not item:
-        return {"ok": False, "added": False, "error": "Item value is required", "status": 400}
-    logger.info("add_list_item start pid=%s list_name=%s item=%s", pid, list_name, item)
-    try:
-        existing = q("""
-            SELECT 1
-            FROM dropdown_lists
-            WHERE project_id=%s AND list_name=%s AND item_value=%s
-            LIMIT 1
-        """, (pid, list_name, item), one=True)
-        if existing:
-            logger.info("add_list_item duplicate pid=%s list_name=%s item=%s", pid, list_name, item)
-            return {"ok": False, "added": False, "error": "Item already exists", "status": 409}
-        r = q(
-            "SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
-            (pid, list_name),
-            one=True,
-        )
-        exe(
-            "INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s)",
-            (pid, list_name, item, r["n"] if r else 0),
-        )
-        logger.info("add_list_item added pid=%s list_name=%s item=%s", pid, list_name, item)
-        return {"ok": True, "added": True, "status": 200}
-    except Exception as e:
-        logger.exception("add_list_item failed pid=%s list_name=%s item=%s error=%s", pid, list_name, item, e)
-        return {"ok": False, "added": False, "error": "Failed to add item", "status": 500}
+    r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
+          (pid, list_name), one=True)
+    exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+        (pid, list_name, item, r["n"] if r else 0))
 
 def rename_list_item(pid, list_name, old_item, new_item):
-    if not is_allowed_list_name(pid, list_name):
-        return 0
     old_item = str(old_item or "").strip()
     new_item = str(new_item or "").strip()
     if not old_item or not new_item or old_item == new_item:
@@ -901,70 +737,16 @@ def rename_list_item(pid, list_name, old_item, new_item):
         return renamed
 
 def reorder_list_items(pid, list_name, ordered_items):
-    if not is_allowed_list_name(pid, list_name):
-        return 0
     for i, item in enumerate([str(v).strip() for v in (ordered_items or []) if str(v).strip()]):
         exe("""
             UPDATE dropdown_lists
             SET sort_order=%s
             WHERE project_id=%s AND list_name=%s AND item_value=%s
         """, (i, pid, list_name, item))
-    return 1
 
 def remove_list_item(pid, list_name, item):
-    if not is_allowed_list_name(pid, list_name):
-        return 0
     exe("DELETE FROM dropdown_lists WHERE project_id=%s AND list_name=%s AND item_value=%s",
         (pid, list_name, item))
-    return 1
-
-def cleanup_orphan_lists(pid):
-    logger.info("cleanup_orphan_lists start pid=%s", pid)
-    def _run(step_no, step_name, sql, params):
-        logger.info("cleanup_orphan_lists pid=%s before step=%s name=%s", pid, step_no, step_name)
-        try:
-            exe(sql, params)
-            logger.info("cleanup_orphan_lists pid=%s after step=%s name=%s", pid, step_no, step_name)
-        except Exception as e:
-            logger.exception("cleanup_orphan_lists pid=%s failed step=%s name=%s error=%s", pid, step_no, step_name, e)
-            raise
-    _run(1, "fix_ltr_party_sources", """
-        UPDATE columns_config
-        SET list_name='letter_party'
-        WHERE project_id=%s
-          AND col_type='dropdown'
-          AND UPPER(dt_id)='LTR'
-          AND LOWER(col_key) IN ('fromparty','toparty')
-          AND (list_name IS NULL OR BTRIM(list_name)='' OR list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
-    """, (pid,))
-    _run(2, "null_invalid_custom_sources", """
-        UPDATE columns_config
-        SET list_name=NULL
-        WHERE project_id=%s
-          AND col_type='dropdown'
-          AND list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\'
-          AND NOT (UPPER(dt_id)='LTR' AND LOWER(col_key) IN ('fromparty','toparty'))
-    """, (pid,))
-    _run(3, "delete_custom_dropdown_rows", """
-        DELETE FROM dropdown_lists
-        WHERE project_id=%s
-          AND list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\'
-    """, (pid,))
-    _run(4, "delete_non_configured_dropdown_rows", """
-        DELETE FROM dropdown_lists
-        WHERE project_id=%s
-          AND NOT EXISTS (
-              SELECT 1
-              FROM columns_config cc
-              WHERE cc.project_id=dropdown_lists.project_id
-                AND LOWER(BTRIM(cc.col_type))='dropdown'
-                AND cc.list_name IS NOT NULL
-                AND BTRIM(cc.list_name) <> ''
-                AND NOT (cc.list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
-                AND cc.list_name=dropdown_lists.list_name
-          )
-    """, (pid,))
-    logger.info("cleanup_orphan_lists done pid=%s", pid)
 
 # ── Fast Dashboard Stats (single query) ──────────────────────
 def get_dashboard_stats():

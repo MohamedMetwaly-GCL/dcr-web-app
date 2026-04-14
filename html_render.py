@@ -1419,17 +1419,6 @@ tr.alt td{{background:#fafbfd}}
   <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
 </div>
 
-<div id="ltr-tools" style="display:none;padding:8px 12px;border-bottom:1px solid var(--bd);background:#fff;gap:8px;align-items:center;flex-wrap:wrap">
-  <button class="btn btn-sc btn-sm" onclick="setLetterQuickView('')">All</button>
-  <button class="btn btn-sc btn-sm" onclick="setLetterQuickView('sent')">Sent</button>
-  <button class="btn btn-sc btn-sm" onclick="setLetterQuickView('received')">Received</button>
-  <button class="btn btn-sc btn-sm" onclick="setLetterQuickView('awaiting')">Awaiting Response</button>
-  <span style="font-size:11px;color:var(--mu);margin-left:8px">Issue Date From</span>
-  <input type="date" id="ltr-date-from" onchange="renderRows()" style="padding:5px 8px;border:1px solid var(--bd);border-radius:4px">
-  <span style="font-size:11px;color:var(--mu)">To</span>
-  <input type="date" id="ltr-date-to" onchange="renderRows()" style="padding:5px 8px;border:1px solid var(--bd);border-radius:4px">
-</div>
-
 <div id="bulkbar">
   <span id="bulkcnt">0 selected</span>
   <button class="btn btn-er btn-sm" onclick="bulkDel()">🗑 Delete</button>
@@ -1443,9 +1432,6 @@ tr.alt td{{background:#fafbfd}}
   </div>
   <div id="noc-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);background:#f8fafc">
     <div id="noc-summary-inner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px"></div>
-  </div>
-  <div id="ltr-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);background:#f8fafc">
-    <div id="ltr-summary-inner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px"></div>
   </div>
 </div>
 
@@ -1618,19 +1604,6 @@ function isNOCTab(){{
   return code==='NOC' || name.includes('notice of change');
 }}
 
-function isLTRTab(){{
-  const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
-  const code=(dt.code||dt.id||'').toString().toUpperCase();
-  const name=(dt.name||'').toString().toLowerCase();
-  return code==='LTR' || name.includes('letter') || name.includes('correspondence');
-}}
-
-function isLetterSingleSelectField(col){{
-  if(!isLTRTab())return false;
-  const key=String(col?.col_key||'').toLowerCase();
-  return ['direction','fromparty','toparty','status'].includes(key);
-}}
-
 function getPrDetailsColKey(){{
   const cols=state.cols||[];
   const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
@@ -1737,20 +1710,7 @@ function switchTab(id){{
   state.tab=id;state.recs=null;state.filters={{}};state.sortCol=null;
   document.getElementById('srchbox').value='';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
-  updateLetterTools();
   loadRecords();
-}}
-
-function updateLetterTools(){{
-  const bar=document.getElementById('ltr-tools');
-  if(!bar)return;
-  bar.style.display=isLTRTab()?'flex':'none';
-  if(!isLTRTab()){{
-    const df=document.getElementById('ltr-date-from'),dt=document.getElementById('ltr-date-to');
-    if(df)df.value='';
-    if(dt)dt.value='';
-    delete state.filters._ltrQuick;
-  }}
 }}
 
 function tabMenu(id,e){{
@@ -1932,23 +1892,9 @@ function checkGap(docNo,recs,editId){{
 function renderRows(){{
   const body=document.getElementById('tbody');body.innerHTML='';
   const isPrTab=isPRTab();
-  const isLtrTab=isLTRTab();
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   let rows=state.recs.filter(r=>{{
     for(const[k,v]of Object.entries(state.filters)){{if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;}}
-    if(isLtrTab){{
-      const quick=state.filters._ltrQuick||'';
-      if(quick==='sent'&&String(r.direction||'').toLowerCase()!=='sent')return false;
-      if(quick==='received'&&String(r.direction||'').toLowerCase()!=='received')return false;
-      if(quick==='awaiting'&&String(r.status||'').toLowerCase()!=='awaiting response')return false;
-      const from=document.getElementById('ltr-date-from')?.value||'';
-      const to=document.getElementById('ltr-date-to')?.value||'';
-      const issue=String(r.issuedDate||'');
-      const recv=String(r.receivedDate||'');
-      const check=issue||recv;
-      if(from&&(!check||check<from))return false;
-      if(to&&(!check||check>to))return false;
-    }}
     return true;
   }});
   if(state.sortCol){{
@@ -1981,7 +1927,6 @@ function renderRows(){{
     document.getElementById('s-show').textContent='Showing: 0';
     document.getElementById('s-ov').textContent='Overdue: '+ov;
     renderNocSummary(rows);
-    renderLtrSummary(rows);
     return;
   }}
   let sr=1;
@@ -2025,17 +1970,6 @@ function renderRows(){{
         const url=row[key]||'';
         if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">View</a>`;tr.appendChild(td);return;}}
       }}
-      else if(isLtrTab&&key==='parentLetterRef'){{
-        val=String(row.parentLetterRef||'');
-        if(!val&&row.parentLetterId){{
-          const parent=(state.recs||[]).find(r=>r._id===row.parentLetterId);
-          val=String(parent?.docNo||'');
-        }}
-        if(val&&row.parentLetterId){{
-          td.innerHTML=`<a class="flink" href="#" onclick="event.preventDefault();scrollToLetter('${{row.parentLetterId}}')">${{escHtml(val)}}</a>`;
-          tr.appendChild(td);return;
-        }}
-      }}
       else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val=getPrSummary(row);
       else val=String(row[key]||'');
       let displayVal=formatDisplayValue(col,val);
@@ -2053,7 +1987,6 @@ function renderRows(){{
     const ta=document.createElement('td');ta.className='acts';
     let acts='';
     if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
-    if(isLtrTab)acts+=`<button class="pr-toggle" onclick="toggleLetterThread('${{row._id}}', this)">Thread</button> `;
     if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')">✏</button> <button class="act del" onclick="delRec('${{row._id}}')">🗑</button>`;
     else if(!acts)acts='<span style="color:var(--mu);font-size:10px">—</span>';
     ta.innerHTML=acts;
@@ -2065,7 +1998,6 @@ function renderRows(){{
   document.getElementById('s-show').textContent='Showing: '+rows.length;
   document.getElementById('s-ov').textContent='Overdue: '+ov;
   renderNocSummary(rows);
-  renderLtrSummary(rows);
 }}
 
 function calcWD(s,e){{
@@ -2178,7 +2110,6 @@ function getLongTextMeta(col){{
   const l=label.toLowerCase();
   const text=(k+' '+l).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
   const isContentLike=['content','description'].some(v=>text.includes(v));
-  const isSubjectLike=text.includes('subject');
   const isRemarksLike=['remarks','notes'].some(v=>text.includes(v));
   const isMsLike=text.includes('ms ref')||text.includes('msref')||text.includes('ms reference')||
     (/\\bms\\b/.test(text)&&(text.includes('ref')||text.includes('reference')||text.includes('no')));
@@ -2187,11 +2118,6 @@ function getLongTextMeta(col){{
     rows:5,
     style:'resize:vertical; min-height:120px',
     placeholder:'Use Enter to put each item on a separate line'
-  }};
-  if(isSubjectLike)return {{
-    rows:3,
-    style:'resize:vertical; min-height:80px',
-    placeholder:'Use Enter for a multiline subject'
   }};
   if(isRemarksLike)return {{
     rows:3,
@@ -2288,34 +2214,6 @@ async function togglePrItems(recordId, btn){{
   }}
 }}
 
-function toggleLetterThread(recordId, btn){{
-  const tr=btn.closest('tr');
-  if(!tr)return;
-  let nxt=tr.nextElementSibling;
-  if(!nxt||!nxt.classList||!nxt.classList.contains('pr-items-row')||nxt.dataset.id!==recordId){{
-    const colSpan=state.cols.length+3;
-    const wrap=document.createElement('div');wrap.className='pr-items-wrap';
-    wrap.innerHTML='<div class="pr-items-empty">Loading...</div>';
-    const td=document.createElement('td');td.colSpan=colSpan;td.appendChild(wrap);
-    const row=document.createElement('tr');row.className='pr-items-row';row.dataset.id=recordId;row.appendChild(td);
-    row.style.display='none';
-    tr.parentNode.insertBefore(row, tr.nextSibling);
-    nxt=row;
-  }}
-  const open=!nxt.classList.contains('open');
-  if(open){{
-    const rowData=state.recs.find(r=>r._id===recordId)||{{}};
-    nxt.querySelector('.pr-items-wrap').innerHTML=renderLetterThread(rowData);
-    nxt.style.display='table-row';
-    nxt.classList.add('open');
-    btn.textContent='Hide';
-  }}else{{
-    nxt.classList.remove('open');
-    nxt.style.display='none';
-    btn.textContent='Thread';
-  }}
-}}
-
 let _rzDrag=null;
 document.addEventListener('mousemove',e=>{{
   if(!_rzDrag)return;
@@ -2384,7 +2282,6 @@ async function buildForm(row){{
   if(!row){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
-  const isLtrTab=isLTRTab();
   const prevCols=state.cols;
   state.cols=allCols.filter(c=>c.visible);
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
@@ -2397,15 +2294,7 @@ async function buildForm(row){{
     'Part D':['partDReturnDate','partDStatus','finalApprovedCost'],
     'Variation Order':['voNo','voIssueDate','voBaseValue','voValueWithSIAndVAT'],
   }};
-  const ltrSections={{
-    'Basic Info':['docNo','title','description','fileLocation','remarks'],
-    'Direction & Parties':['direction','fromParty','toParty'],
-    'Dates':['issuedDate','receivedDate'],
-    'Threading / Linking':['parentLetterRef'],
-    'Status':['status'],
-  }};
   const nocSectionForKey=(key)=>Object.entries(nocSections).find(([,keys])=>keys.includes(key))?.[0]||null;
-  const ltrSectionForKey=(key)=>Object.entries(ltrSections).find(([,keys])=>keys.includes(key))?.[0]||null;
   const renderedSections=new Set();
   let nocStageInp=null,nocBaseInp=null,nocTotalInp=null;
   if(isNocTab){{
@@ -2418,14 +2307,6 @@ async function buildForm(row){{
     const key=col.col_key;
     if(isNocTab){{
       const section=nocSectionForKey(key);
-      if(section&&!renderedSections.has(section)){{
-        appendSectionTitle(grid,section);
-        renderedSections.add(section);
-      }}
-    }}
-    if(isLtrTab){{
-      if(key==='parentLetterId'){{const hid=document.createElement('input');hid.type='hidden';hid.id='f-parentLetterId';hid.value=row?.parentLetterId||'';grid.appendChild(hid);continue;}}
-      const section=ltrSectionForKey(key);
       if(section&&!renderedSections.has(section)){{
         appendSectionTitle(grid,section);
         renderedSections.add(section);
@@ -2451,29 +2332,10 @@ async function buildForm(row){{
       continue;
     }}
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
-    else if(isLtrTab&&key==='parentLetterRef'){{
-      const hid=document.createElement('input');hid.type='hidden';hid.id='f-parentLetterRef';hid.value=val;grp.appendChild(hid);
-      const sel=document.createElement('select');sel.id='f-parentLetterRef-select';
-      sel.innerHTML='<option value="">No parent letter</option>'+sortByDocNo((state.recs||[]).filter(r=>r._id!==row?._id)).map(r=>`<option value="${{r._id}}" ${{r._id===row?.parentLetterId?'selected':''}}>${{r.docNo||r.title||r._id}}</option>`).join('');
-      sel.onchange=()=>{{
-        const pick=(state.recs||[]).find(r=>r._id===sel.value)||null;
-        document.getElementById('f-parentLetterId').value=pick?pick._id:'';
-        document.getElementById('f-parentLetterRef').value=pick?(pick.docNo||''):'';
-      }};
-      grp.appendChild(sel);
-    }}
-      else if(col.col_type==='dropdown'&&col.list_name&&isLetterSingleSelectField(col)){{
-        const sel=document.createElement('select');
-        sel.id='f-'+key;
-        const opts=state.lists[col.list_name]||[];
-        sel.innerHTML='<option value=""></option>'+opts.map(o=>`<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
-        sel.value=val||'';
-        grp.appendChild(sel);
-      }}
-      else if(col.col_type==='dropdown'&&col.list_name){{
-        // Add free-text input below multiselect
-        const wrapper=document.createElement('div');
-        wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],val));
+    else if(col.col_type==='dropdown'&&col.list_name){{
+      // Add free-text input below multiselect
+      const wrapper=document.createElement('div');
+      wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],val));
       const freeInp=document.createElement('input');
       freeInp.id='f-free-'+key;freeInp.placeholder='Or type custom value...';
       freeInp.style.cssText='margin-top:4px;width:100%;padding:5px 8px;border:1px dashed var(--bd);border-radius:var(--rd);font-size:11px;color:var(--mu);outline:none';
@@ -2719,105 +2581,6 @@ function renderNocSummary(rows){{
   wrap.style.display='';
 }}
 
-function setLetterQuickView(mode){{
-  state.filters._ltrQuick=mode||'';
-  renderRows();
-}}
-
-function getLetterRootRecord(row){{
-  if(!row)return null;
-  if(row.parentLetterId){{
-    return (state.recs||[]).find(r=>r._id===row.parentLetterId)||row;
-  }}
-  if(row.parentLetterRef){{
-    return (state.recs||[]).find(r=>String(r.docNo||'').trim()===String(row.parentLetterRef||'').trim())||row;
-  }}
-  return row;
-}}
-
-function getLetterThreadRows(row){{
-  const root=getLetterRootRecord(row);
-  if(!root)return [];
-  const out=[];
-  const seen=new Set();
-  function walk(node,depth){{
-    if(!node||seen.has(node._id))return;
-    seen.add(node._id);
-    out.push({{...node,_depth:depth}});
-    (state.recs||[])
-      .filter(r=>r.parentLetterId===node._id||(r.parentLetterRef&&String(r.parentLetterRef).trim()===String(node.docNo||'').trim()))
-      .sort((a,b)=>String(a.issuedDate||a.receivedDate||'').localeCompare(String(b.issuedDate||b.receivedDate||''))||(a.docNo||'').localeCompare(b.docNo||''))
-      .forEach(ch=>walk(ch,depth+1));
-  }}
-  walk(root,0);
-  return out;
-}}
-
-function scrollToLetter(recordId){{
-  const row=[...document.querySelectorAll('#tbody tr')].find(tr=>tr.querySelector('.chkcell input[data-id="'+recordId+'"]'));
-  if(row){{
-    row.scrollIntoView({{behavior:'smooth',block:'center'}});
-    row.style.outline='2px solid var(--ac)';
-    setTimeout(()=>row.style.outline='',1200);
-  }}
-}}
-
-function renderLetterThread(row){{
-  const rows=getLetterThreadRows(row);
-  if(!rows.length)return '<div class="pr-items-empty">No thread yet</div>';
-  return `<div style="display:flex;flex-direction:column;gap:10px">
-    ${{rows.map(item=>`<div style="border:1px solid var(--bd);border-radius:8px;padding:10px 12px;background:${{item._depth?'#f8fafc':'#fff'}};margin-left:${{item._depth*18}}px">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-        <div>
-          <div style="font-size:12px;font-weight:800;color:var(--pr)">${{escHtml(item.docNo||'')}}</div>
-          <div style="font-size:11px;color:var(--mu);margin-top:2px">${{escHtml(item.direction||'—')}} · ${{escHtml(item.fromParty||'—')}} → ${{escHtml(item.toParty||'—')}}</div>
-        </div>
-        <button class="btn btn-sc btn-sm" type="button" onclick="scrollToLetter('${{item._id}}')">Open</button>
-      </div>
-      <div style="font-size:12px;margin-top:6px;white-space:pre-line">${{escHtml(item.title||'')}}</div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:10px;color:var(--mu)">
-        <span>Issue: ${{escHtml(item._issuedFmt||item.issuedDate||'—')}}</span>
-        <span>Received: ${{escHtml(item._fmt_receivedDate||item.receivedDate||'—')}}</span>
-        <span>Status: ${{escHtml(item.status||'—')}}</span>
-      </div>
-    </div>`).join('')}}
-  </div>`;
-}}
-
-function renderLtrSummary(rows){{
-  const wrap=document.getElementById('ltr-summary');
-  const inner=document.getElementById('ltr-summary-inner');
-  if(!wrap||!inner)return;
-  if(!isLTRTab()){{wrap.style.display='none';inner.innerHTML='';return;}}
-  const sent=rows.filter(r=>String(r.direction||'').toLowerCase()==='sent').length;
-  const received=rows.filter(r=>String(r.direction||'').toLowerCase()==='received').length;
-  const awaiting=rows.filter(r=>String(r.status||'').toLowerCase()==='awaiting response').length;
-  const repliedClosed=rows.filter(r=>['replied','closed'].includes(String(r.status||'').toLowerCase())).length;
-  const partyCounts={{}};
-  rows.forEach(r=>{{
-    [r.fromParty,r.toParty].forEach(p=>{{
-      const key=String(p||'').trim();
-      if(key)partyCounts[key]=(partyCounts[key]||0)+1;
-    }});
-  }});
-  const topParties=Object.entries(partyCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([p,c])=>`${{p}} (${{c}})`).join(' · ')||'No party activity';
-  const recent=(rows||[]).slice().sort((a,b)=>String(b.issuedDate||b.receivedDate||'').localeCompare(String(a.issuedDate||a.receivedDate||''))).slice(0,3).map(r=>r.docNo||'—').join(' · ')||'No recent letters';
-  const items=[
-    ['Visible Letters', String(rows.length), 'Filtered rows'],
-    ['Sent vs Received', `${{sent}} / ${{received}}`, 'Sent / Received'],
-    ['Awaiting Response', String(awaiting), 'Current open action'],
-    ['Replied / Closed', String(repliedClosed), 'Resolved correspondence'],
-    ['Top Parties', topParties, 'Most active in current view'],
-    ['Recent Activity', recent, 'Latest visible references'],
-  ];
-  inner.innerHTML=items.map(([label,val,sub])=>`<div style="background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
-    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{label}}</div>
-    <div style="font-size:16px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.3;white-space:pre-line">${{val}}</div>
-    <div style="font-size:10px;color:var(--mu);margin-top:3px">${{sub}}</div>
-  </div>`).join('');
-  wrap.style.display='';
-}}
-
 function durChoice(docNo){{
   return new Promise(resolve=>{{
     const ov=document.createElement('div');ov.className='overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
@@ -2846,22 +2609,6 @@ async function saveRecord(){{
     if(el.classList.contains('ms-con'))data[col.col_key]=el.dataset.value||'';
     else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\\r\\n/g,String.fromCharCode(10)).replace(/\\r/g,String.fromCharCode(10));
     else data[col.col_key]=el.value.trim();
-  }}
-  if(isLTRTab()){{
-    if(state.editId&&data.parentLetterId&&data.parentLetterId===state.editId){{
-      toast('A letter cannot reference itself as parent','er');return;
-    }}
-    if(data.parentLetterId){{
-      const parent=(state.recs||[]).find(r=>r._id===data.parentLetterId)||null;
-      if(parent){{
-        data.parentLetterRef=String(parent.docNo||'').trim();
-      }}else{{
-        data.parentLetterId='';
-        data.parentLetterRef='';
-      }}
-    }}else{{
-      data.parentLetterRef='';
-    }}
   }}
   if(isNOCTab()&&!String(data.voBaseValue||'').trim()&&String(data.voValueWithSIAndVAT||'').trim()){{
     const autoBase=getNocAutoBaseValue(data);
@@ -3059,32 +2806,24 @@ async function openLists(){{
       hint.style.cssText='font-size:10px;color:#94a3b8;margin-top:4px';
       hint.textContent='🏷 Set category for each status — affects Dashboard counts';
       ar.appendChild(hint);
-      }}
-      body.appendChild(ar);
     }}
+    body.appendChild(ar);
+  }}
+  const nl=document.createElement('div');nl.className='stitle';nl.textContent='New List';
+  const nar=document.createElement('div');nar.className='addrow';
+  nar.innerHTML=`<input id="new-list" placeholder="List name"><button class="btn btn-pr btn-sm" onclick="mkList()">Create</button>`;
+  body.appendChild(nl);body.appendChild(nar);
   openM('lists-modal');
 }}
 
 async function addItem(ln){{
-  const inp=document.getElementById('new-'+ln);
-  const val=inp?.value.trim();
-  if(!val){{toast('Enter an item value first','wa');return;}}
-  try{{
-    const r=await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item:val}})}});
-    if(!r||!r.ok||!r.added){{toast((r&&r.error)||'Unable to add item','er');return;}}
-    // Auto-assign pending meta for new status items
-    if(ln.toLowerCase().startsWith('status')){{
-      await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:val,meta:'pending'}})}});
-    }}
-    if(inp)inp.value='';
-    await loadLists(true);
-    openLists();
-    toast('✔ Item added','ok');
-  }}catch(err){{
-    let msg=err?.message||'Unable to add item';
-    try{{msg=(JSON.parse(msg).error)||msg;}}catch{{}}
-    toast(msg,'er');
+  const inp=document.getElementById('new-'+ln);const val=inp?.value.trim();if(!val)return;
+  await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item:val}})}});
+  // Auto-assign pending meta for new status items
+  if(ln.toLowerCase().startsWith('status')){{
+    await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:val,meta:'pending'}})}});
   }}
+  await loadLists(true);openLists();
 }}
 async function renameItem(ln,item){{
   const next=prompt('Rename list item:',item);
@@ -3105,6 +2844,11 @@ async function moveListItem(ln,item,delta){{
 async function rmItem(ln,item,btn){{
   await apiFetch('/api/lists/'+PID,{{method:'DELETE',body:JSON.stringify({{list_name:ln,item}})}});
   btn.closest('li').remove();await loadLists(true);
+}}
+async function mkList(){{
+  const name=document.getElementById('new-list')?.value.trim().toLowerCase().replace(/[\\s]+/g,'_');if(!name)return;
+  await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify({{list_name:name,item:'Item 1'}})}});
+  await loadLists(true);openLists();
 }}
 
 // Column drag-to-reorder

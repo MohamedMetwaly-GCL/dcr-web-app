@@ -11,50 +11,31 @@ Step 9 of the incremental refactor.
 Logic is identical to the original app.py routes — only the decorator
 changed from @app.route to @lists_bp.route.
 """
-import logging
 from flask import Blueprint, jsonify, request
 
 import db
 from auth import current_user, can_edit
 
 lists_bp = Blueprint("lists", __name__)
-logger = logging.getLogger(__name__)
 
 
 @lists_bp.route("/api/lists/<pid>")
 def api_lists(pid):
-    logger.info("api_lists start pid=%s", pid)
-    try:
-        logger.info("api_lists before get_lists pid=%s", pid)
-        payload = db.get_lists(pid)
-        logger.info("api_lists after get_lists pid=%s list_count=%s", pid, len(payload))
-        return jsonify(payload)
-    except Exception as e:
-        logger.exception("api_lists get_lists failed pid=%s error=%s", pid, e)
-        return jsonify({})
+    return jsonify(db.get_lists(pid))
 
 
 @lists_bp.route("/api/lists/<pid>", methods=["POST"])
 def api_add_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    logger.info("api_add_list_item start pid=%s list_name=%s", pid, data.get("list_name",""))
-    try:
-        result = db.add_list_item(pid, data.get("list_name",""), data.get("item",""))
-        if result.get("ok"):
-            return jsonify(ok=True, added=True)
-        return jsonify(ok=False, added=False, error=result.get("error", "Unable to add item")), result.get("status", 400)
-    except Exception as e:
-        logger.exception("api_add_list_item failed pid=%s list_name=%s error=%s", pid, data.get("list_name",""), e)
-        return jsonify(ok=False, added=False, error="Failed to add item"), 500
+    db.add_list_item(pid, data.get("list_name",""), data.get("item",""))
+    return jsonify(ok=True)
 
 
 @lists_bp.route("/api/lists/<pid>", methods=["PATCH"])
 def api_rename_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    if not db.is_allowed_list_name(pid, data.get("list_name","")):
-        return jsonify(error="Invalid list"), 400
     renamed = db.rename_list_item(pid, data.get("list_name",""), data.get("old_item",""), data.get("new_item",""))
     return jsonify(ok=True, renamed=renamed)
 
@@ -63,8 +44,6 @@ def api_rename_list_item(pid):
 def api_reorder_list_items(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    if not db.is_allowed_list_name(pid, data.get("list_name","")):
-        return jsonify(error="Invalid list"), 400
     db.reorder_list_items(pid, data.get("list_name",""), data.get("order", []))
     return jsonify(ok=True)
 
@@ -73,84 +52,13 @@ def api_reorder_list_items(pid):
 def api_remove_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    if not db.is_allowed_list_name(pid, data.get("list_name","")):
-        return jsonify(error="Invalid list"), 400
     db.remove_list_item(pid, data.get("list_name",""), data.get("item",""))
     return jsonify(ok=True)
 
 
 @lists_bp.route("/api/lists_meta/<pid>")
 def api_lists_meta(pid):
-    logger.info("api_lists_meta start pid=%s", pid)
-    try:
-        logger.info("api_lists_meta before get_lists_with_meta pid=%s", pid)
-        payload = db.get_lists_with_meta(pid)
-        logger.info("api_lists_meta after get_lists_with_meta pid=%s list_count=%s", pid, len(payload))
-        return jsonify(payload)
-    except Exception as e:
-        logger.exception("api_lists_meta failed pid=%s error=%s", pid, e)
-        return jsonify({})
-
-
-@lists_bp.route("/api/lists_cleanup/<pid>", methods=["POST"])
-def api_lists_cleanup(pid):
-    u = current_user()
-    if not u or u.get("role") not in ("superadmin","admin"):
-        return jsonify(error="Admin only"), 403
-    db.cleanup_orphan_lists(pid)
-    return jsonify(ok=True)
-
-
-@lists_bp.route("/api/lists_debug/<pid>")
-def api_lists_debug(pid):
-    u = current_user()
-    if not u or u.get("role") not in ("superadmin","admin"):
-        return jsonify(error="Admin only"), 403
-    configured = db.q("""
-        SELECT DISTINCT dt_id, col_key, label, col_type, list_name
-        FROM columns_config
-        WHERE project_id=%s
-          AND list_name IS NOT NULL
-          AND BTRIM(list_name) <> ''
-        ORDER BY list_name, dt_id, col_key
-    """, (pid,))
-    configured_dropdown = db.q("""
-        SELECT DISTINCT dt_id, col_key, label, col_type, list_name
-        FROM columns_config
-        WHERE project_id=%s
-          AND list_name IS NOT NULL
-          AND BTRIM(list_name) <> ''
-          AND LOWER(BTRIM(col_type))='dropdown'
-        ORDER BY list_name, dt_id, col_key
-    """, (pid,))
-    stored = db.q("""
-        SELECT DISTINCT list_name
-        FROM dropdown_lists
-        WHERE project_id=%s
-        ORDER BY list_name
-    """, (pid,))
-    stored_counts = db.q("""
-        SELECT list_name, COUNT(*) AS item_count
-        FROM dropdown_lists
-        WHERE project_id=%s
-        GROUP BY list_name
-        ORDER BY list_name
-    """, (pid,))
-    configured_names = sorted({str(r["list_name"]) for r in configured})
-    configured_dropdown_names = sorted({str(r["list_name"]) for r in configured_dropdown})
-    stored_names = [str(r["list_name"]) for r in stored]
-    orphan_names = [n for n in stored_names if n not in configured_names]
-    orphan_vs_dropdown_names = [n for n in stored_names if n not in configured_dropdown_names]
-    return jsonify(
-        configured=configured,
-        configured_dropdown=configured_dropdown,
-        configured_names=configured_names,
-        configured_dropdown_names=configured_dropdown_names,
-        stored_names=stored_names,
-        stored_counts=stored_counts,
-        orphan_names=orphan_names,
-        orphan_vs_dropdown_names=orphan_vs_dropdown_names,
-    )
+    return jsonify(db.get_lists_with_meta(pid))
 
 
 @lists_bp.route("/api/lists_meta/<pid>", methods=["POST"])
@@ -159,8 +67,6 @@ def api_set_list_meta(pid):
     if not u or u.get("role") not in ("superadmin","admin"):
         return jsonify(error="Admin only"), 403
     data = request.get_json(silent=True) or {}
-    if not db.is_allowed_list_name(pid, data.get("list_name","")):
-        return jsonify(error="Invalid list"), 400
     db.set_list_item_meta(pid, data.get("list_name",""),
                          data.get("item_value",""), data.get("meta","pending"))
     return jsonify(ok=True)
