@@ -727,11 +727,19 @@ def save_pr_items(record_id, items):
 def get_lists(pid):
     logger.info("get_lists start pid=%s", pid)
     try:
-        names = get_allowed_list_names(pid)
-        result = {n: [r["item_value"] for r in
-                    q("SELECT item_value FROM dropdown_lists WHERE project_id=%s AND list_name=%s ORDER BY sort_order",
-                      (pid, n))] for n in names}
-        logger.info("get_lists done pid=%s list_count=%s", pid, len(result))
+        rows = q("""
+            SELECT list_name, item_value
+            FROM dropdown_lists
+            WHERE project_id=%s
+            ORDER BY list_name, sort_order, item_value
+        """, (pid,))
+        result = {}
+        for r in rows:
+            ln = str(r.get("list_name") or "").strip()
+            if not ln:
+                continue
+            result.setdefault(ln, []).append(r.get("item_value"))
+        logger.info("get_lists done pid=%s list_count=%s item_rows=%s", pid, len(result), len(rows))
         return result
     except Exception as e:
         logger.exception("get_lists failed pid=%s error=%s", pid, e)
@@ -771,13 +779,10 @@ def get_lists_with_meta(pid):
     """Return {list_name: [{value, meta}]} for status-aware lists."""
     logger.info("get_lists_with_meta start pid=%s", pid)
     try:
-        allowed = set(get_allowed_list_names(pid))
         rows = q("SELECT list_name, item_value, meta FROM dropdown_lists"
                  " WHERE project_id=%s ORDER BY list_name, sort_order", (pid,))
         result = {}
         for r in rows:
-            if r["list_name"] not in allowed:
-                continue
             result.setdefault(r["list_name"], []).append(
                 {"value": r["item_value"], "meta": r["meta"]})
         logger.info("get_lists_with_meta done pid=%s list_count=%s", pid, len(result))

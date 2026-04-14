@@ -109,20 +109,42 @@ def api_lists_debug(pid):
           AND BTRIM(list_name) <> ''
         ORDER BY list_name, dt_id, col_key
     """, (pid,))
+    configured_dropdown = db.q("""
+        SELECT DISTINCT dt_id, col_key, label, col_type, list_name
+        FROM columns_config
+        WHERE project_id=%s
+          AND list_name IS NOT NULL
+          AND BTRIM(list_name) <> ''
+          AND LOWER(BTRIM(col_type))='dropdown'
+        ORDER BY list_name, dt_id, col_key
+    """, (pid,))
     stored = db.q("""
         SELECT DISTINCT list_name
         FROM dropdown_lists
         WHERE project_id=%s
         ORDER BY list_name
     """, (pid,))
+    stored_counts = db.q("""
+        SELECT list_name, COUNT(*) AS item_count
+        FROM dropdown_lists
+        WHERE project_id=%s
+        GROUP BY list_name
+        ORDER BY list_name
+    """, (pid,))
     configured_names = sorted({str(r["list_name"]) for r in configured})
+    configured_dropdown_names = sorted({str(r["list_name"]) for r in configured_dropdown})
     stored_names = [str(r["list_name"]) for r in stored]
     orphan_names = [n for n in stored_names if n not in configured_names]
+    orphan_vs_dropdown_names = [n for n in stored_names if n not in configured_dropdown_names]
     return jsonify(
         configured=configured,
+        configured_dropdown=configured_dropdown,
         configured_names=configured_names,
+        configured_dropdown_names=configured_dropdown_names,
         stored_names=stored_names,
+        stored_counts=stored_counts,
         orphan_names=orphan_names,
+        orphan_vs_dropdown_names=orphan_vs_dropdown_names,
     )
 
 
