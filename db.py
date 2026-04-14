@@ -734,7 +734,11 @@ def get_allowed_list_names(pid):
     return [r["list_name"] for r in q("""
         SELECT DISTINCT list_name
         FROM columns_config
-        WHERE project_id=%s AND list_name IS NOT NULL AND BTRIM(list_name) <> ''
+        WHERE project_id=%s
+          AND col_type='dropdown'
+          AND list_name IS NOT NULL
+          AND BTRIM(list_name) <> ''
+          AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
         ORDER BY list_name
     """, (pid,))]
 
@@ -856,6 +860,28 @@ def remove_list_item(pid, list_name, item):
     return 1
 
 def cleanup_orphan_lists(pid):
+    exe("""
+        UPDATE columns_config
+        SET list_name='letter_party'
+        WHERE project_id=%s
+          AND col_type='dropdown'
+          AND UPPER(dt_id)='LTR'
+          AND LOWER(col_key) IN ('fromparty','toparty')
+          AND (list_name IS NULL OR BTRIM(list_name)='' OR list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
+    """, (pid,))
+    exe("""
+        UPDATE columns_config
+        SET list_name=NULL
+        WHERE project_id=%s
+          AND col_type='dropdown'
+          AND list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\'
+          AND NOT (UPPER(dt_id)='LTR' AND LOWER(col_key) IN ('fromparty','toparty'))
+    """, (pid,))
+    exe("""
+        DELETE FROM dropdown_lists
+        WHERE project_id=%s
+          AND list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\'
+    """, (pid,))
     allowed = get_allowed_list_names(pid)
     if allowed:
         exe("""
@@ -864,7 +890,10 @@ def cleanup_orphan_lists(pid):
               AND list_name <> ALL(%s)
         """, (pid, allowed))
     else:
-        exe("DELETE FROM dropdown_lists WHERE project_id=%s", (pid,))
+        exe("""
+            DELETE FROM dropdown_lists
+            WHERE project_id=%s
+        """, (pid,))
 
 # ── Fast Dashboard Stats (single query) ──────────────────────
 def get_dashboard_stats():

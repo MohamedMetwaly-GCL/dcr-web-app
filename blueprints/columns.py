@@ -16,6 +16,7 @@ Logic is identical to the original app.py routes — only the decorator
 changed from @app.route to @columns_bp.route.
 """
 import uuid
+import re
 
 from flask import Blueprint, request, jsonify
 
@@ -38,9 +39,19 @@ def api_columns(pid, dt_id):
 def api_add_column(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
+    col_type = data.get("col_type","text")
+    list_name = data.get("list_name")
+    if col_type == "dropdown":
+        list_name = str(list_name or "").strip()
+        if not list_name:
+            return jsonify(error="Invalid dropdown source"), 400
+        if list_name.upper().startswith("CUSTOM_REC_"):
+            return jsonify(error="Invalid dropdown source"), 400
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", list_name):
+            return jsonify(error="Invalid dropdown source"), 400
     key  = "custom_" + data.get("label","").lower().replace(" ","_") + "_" + uuid.uuid4().hex[:6]
     db.add_column(pid, dt_id, key, data.get("label",""),
-                  data.get("col_type","text"), data.get("list_name"))
+                  col_type, list_name)
     return jsonify(ok=True)
 
 @columns_bp.route("/api/columns/visibility/<int:col_id>", methods=["POST"])
