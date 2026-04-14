@@ -214,6 +214,25 @@ NOC_COLS = [
     ("voValueWithSIAndVAT", "VO Value (EGP) Including SI & VAT", "number", None, 16, True),
 ]
 
+LTR_DIRECTION_VALUES = ["Sent", "Received"]
+LTR_STATUS_VALUES = ["Open", "Awaiting Response", "Replied", "Closed"]
+
+LTR_COLS = [
+    ("docNo", "Letter Ref", "docno", None, 0, True),
+    ("title", "Subject", "text", None, 1, True),
+    ("description", "Description", "text", None, 2, False),
+    ("fileLocation", "Attachment / File Location", "link", None, 3, False),
+    ("remarks", "Remarks", "text", None, 4, False),
+    ("direction", "Direction", "dropdown", "letter_direction", 5, True),
+    ("fromParty", "From Party", "dropdown", "letter_party", 6, True),
+    ("toParty", "To Party", "dropdown", "letter_party", 7, True),
+    ("issuedDate", "Issue Date", "date", None, 8, True),
+    ("receivedDate", "Received Date", "date", None, 9, True),
+    ("parentLetterId", "Parent Letter ID", "text", None, 10, False),
+    ("parentLetterRef", "Response Ref", "text", None, 11, True),
+    ("status", "Status", "dropdown", "letter_status", 12, True),
+]
+
 # Default meta categories for known status values
 DEFAULT_STATUS_META = {
     "A - Approved":              "approved",
@@ -256,9 +275,16 @@ def _is_noc_dt(dt_code="", dt_name=""):
     name = str(dt_name or "").strip().lower()
     return code == "noc" or "notice of change" in name
 
+def _is_ltr_dt(dt_code="", dt_name=""):
+    code = str(dt_code or "").strip().lower()
+    name = str(dt_name or "").strip().lower()
+    return code == "ltr" or "letter" in name or "correspondence" in name
+
 def _doc_type_col_specs(dt_code="", dt_name=""):
     if _is_noc_dt(dt_code, dt_name):
         return NOC_COLS
+    if _is_ltr_dt(dt_code, dt_name):
+        return LTR_COLS
     return [(ck, lbl, ct, ln, so, True) for ck, lbl, ct, ln, so in DEFAULT_COLS]
 
 def _ensure_noc_lists(pid):
@@ -269,6 +295,19 @@ def _ensure_noc_lists(pid):
                 " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
                 " DO UPDATE SET sort_order=EXCLUDED.sort_order, meta=EXCLUDED.meta",
                 (pid, ln, item, i, meta))
+
+def _ensure_ltr_lists(pid):
+    for i, item in enumerate(LTR_DIRECTION_VALUES):
+        exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
+            " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
+            " DO UPDATE SET sort_order=EXCLUDED.sort_order, meta=EXCLUDED.meta",
+            (pid, "letter_direction", item, i, None))
+    for i, item in enumerate(LTR_STATUS_VALUES):
+        meta = "pending" if item in ("Open", "Awaiting Response") else ("approved" if item in ("Replied", "Closed") else None)
+        exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
+            " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
+            " DO UPDATE SET sort_order=EXCLUDED.sort_order, meta=EXCLUDED.meta",
+            (pid, "letter_status", item, i, meta))
 
 def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
     exe("INSERT INTO doc_types(id,project_id,name,code,sort_order)"
@@ -292,6 +331,28 @@ def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
         (pid, dt_id, list(keep_keys)))
     _ensure_noc_lists(pid)
 
+def _sync_ltr_doc_type(pid, dt_id="LTR", dt_name="Letters"):
+    exe("INSERT INTO doc_types(id,project_id,name,code,sort_order)"
+        " VALUES(%s,%s,%s,%s,COALESCE((SELECT sort_order FROM doc_types WHERE id=%s AND project_id=%s),19))"
+        " ON CONFLICT(id,project_id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code",
+        (dt_id, pid, dt_name, "LTR", dt_id, pid))
+    specs = _doc_type_col_specs("LTR", dt_name)
+    keep_keys = {ck for ck, *_ in specs}
+    for ck, lbl, ct, ln, so, visible in specs:
+        exe("""
+            INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT(project_id,dt_id,col_key) DO UPDATE
+            SET label=EXCLUDED.label,
+                col_type=EXCLUDED.col_type,
+                list_name=EXCLUDED.list_name,
+                visible=EXCLUDED.visible,
+                sort_order=EXCLUDED.sort_order
+        """, (pid, dt_id, ck, lbl, ct, ln, visible, so))
+    exe("DELETE FROM columns_config WHERE project_id=%s AND dt_id=%s AND col_key<>ALL(%s)",
+        (pid, dt_id, list(keep_keys)))
+    _ensure_ltr_lists(pid)
+
 def _sync_all_noc_doc_types():
     projects = q("SELECT id FROM projects")
     for p in projects:
@@ -299,6 +360,14 @@ def _sync_all_noc_doc_types():
         dt = q("SELECT id, name, code FROM doc_types WHERE project_id=%s AND (UPPER(code)='NOC' OR UPPER(id)='NOC') LIMIT 1", (pid,), one=True)
         if dt:
             _sync_noc_doc_type(pid, dt["id"], dt.get("name", "Notice of Change"))
+
+def _sync_all_ltr_doc_types():
+    projects = q("SELECT id FROM projects")
+    for p in projects:
+        pid = p["id"]
+        dt = q("SELECT id, name, code FROM doc_types WHERE project_id=%s AND (UPPER(code)='LTR' OR UPPER(id)='LTR') LIMIT 1", (pid,), one=True)
+        if dt:
+            _sync_ltr_doc_type(pid, dt["id"], dt.get("name", "Letters"))
 
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
@@ -310,6 +379,7 @@ def init():
                 logger.warning("db_schema_note error=%s", e)
     _ensure_admin()
     _sync_all_noc_doc_types()
+    _sync_all_ltr_doc_types()
 
 def _ensure_admin():
     r = q("SELECT COUNT(*) as c FROM users", one=True)
@@ -455,7 +525,9 @@ def _seed_project(pid):
                 " DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
                 (pid, ln, item, i, meta))
     _ensure_noc_lists(pid)
+    _ensure_ltr_lists(pid)
     _sync_all_noc_doc_types()
+    _sync_all_ltr_doc_types()
 
 # ── Logos ─────────────────────────────────────────────────────
 def get_logo(pid, key):
@@ -482,6 +554,8 @@ def add_doc_type(pid, code, name):
             (pid, code, ck, lbl, ct, ln, visible, so))
     if _is_noc_dt(code, name):
         _sync_noc_doc_type(pid, code, name)
+    if _is_ltr_dt(code, name):
+        _sync_ltr_doc_type(pid, code, name)
 
 def delete_doc_type(pid, dt_id):
     exe("DELETE FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid))
@@ -651,8 +725,14 @@ def save_pr_items(record_id, items):
 
 # ── Dropdown Lists ────────────────────────────────────────────
 def get_lists(pid):
-    names = [r["list_name"] for r in
-             q("SELECT DISTINCT list_name FROM dropdown_lists WHERE project_id=%s ORDER BY list_name", (pid,))]
+    names = [r["list_name"] for r in q("""
+        SELECT list_name FROM (
+            SELECT DISTINCT list_name FROM dropdown_lists WHERE project_id=%s
+            UNION
+            SELECT DISTINCT list_name FROM columns_config WHERE project_id=%s AND list_name IS NOT NULL
+        ) t
+        ORDER BY list_name
+    """, (pid, pid))]
     return {n: [r["item_value"] for r in
                 q("SELECT item_value FROM dropdown_lists WHERE project_id=%s AND list_name=%s ORDER BY sort_order",
                   (pid, n))] for n in names}
