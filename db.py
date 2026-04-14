@@ -725,10 +725,17 @@ def save_pr_items(record_id, items):
 
 # ── Dropdown Lists ────────────────────────────────────────────
 def get_lists(pid):
-    names = get_allowed_list_names(pid)
-    return {n: [r["item_value"] for r in
-                q("SELECT item_value FROM dropdown_lists WHERE project_id=%s AND list_name=%s ORDER BY sort_order",
-                  (pid, n))] for n in names}
+    logger.info("get_lists start pid=%s", pid)
+    try:
+        names = get_allowed_list_names(pid)
+        result = {n: [r["item_value"] for r in
+                    q("SELECT item_value FROM dropdown_lists WHERE project_id=%s AND list_name=%s ORDER BY sort_order",
+                      (pid, n))] for n in names}
+        logger.info("get_lists done pid=%s list_count=%s", pid, len(result))
+        return result
+    except Exception as e:
+        logger.exception("get_lists failed pid=%s error=%s", pid, e)
+        raise
 
 def get_allowed_list_names(pid):
     return [r["list_name"] for r in q("""
@@ -746,26 +753,38 @@ def is_allowed_list_name(pid, list_name):
     name = str(list_name or "").strip()
     if not name:
         return False
+    if name.upper().startswith("CUSTOM_REC_"):
+        return False
     r = q("""
         SELECT 1
         FROM columns_config
-        WHERE project_id=%s AND list_name=%s
+        WHERE project_id=%s
+          AND col_type='dropdown'
+          AND list_name=%s
+          AND BTRIM(list_name) <> ''
+          AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
         LIMIT 1
     """, (pid, name), one=True)
     return bool(r)
 
 def get_lists_with_meta(pid):
     """Return {list_name: [{value, meta}]} for status-aware lists."""
-    allowed = set(get_allowed_list_names(pid))
-    rows = q("SELECT list_name, item_value, meta FROM dropdown_lists"
-             " WHERE project_id=%s ORDER BY list_name, sort_order", (pid,))
-    result = {}
-    for r in rows:
-        if r["list_name"] not in allowed:
-            continue
-        result.setdefault(r["list_name"], []).append(
-            {"value": r["item_value"], "meta": r["meta"]})
-    return result
+    logger.info("get_lists_with_meta start pid=%s", pid)
+    try:
+        allowed = set(get_allowed_list_names(pid))
+        rows = q("SELECT list_name, item_value, meta FROM dropdown_lists"
+                 " WHERE project_id=%s ORDER BY list_name, sort_order", (pid,))
+        result = {}
+        for r in rows:
+            if r["list_name"] not in allowed:
+                continue
+            result.setdefault(r["list_name"], []).append(
+                {"value": r["item_value"], "meta": r["meta"]})
+        logger.info("get_lists_with_meta done pid=%s list_count=%s", pid, len(result))
+        return result
+    except Exception as e:
+        logger.exception("get_lists_with_meta failed pid=%s error=%s", pid, e)
+        raise
 
 def get_status_meta_map(pid):
     """Return {status_value: meta} for all status lists in this project."""
@@ -861,8 +880,15 @@ def remove_list_item(pid, list_name, item):
 
 def cleanup_orphan_lists(pid):
     logger.info("cleanup_orphan_lists start pid=%s", pid)
-    logger.info("cleanup_orphan_lists pid=%s step=1 fix_ltr_party_sources", pid)
-    exe("""
+    def _run(step_no, step_name, sql, params):
+        logger.info("cleanup_orphan_lists pid=%s before step=%s name=%s", pid, step_no, step_name)
+        try:
+            exe(sql, params)
+            logger.info("cleanup_orphan_lists pid=%s after step=%s name=%s", pid, step_no, step_name)
+        except Exception as e:
+            logger.exception("cleanup_orphan_lists pid=%s failed step=%s name=%s error=%s", pid, step_no, step_name, e)
+            raise
+    _run(1, "fix_ltr_party_sources", """
         UPDATE columns_config
         SET list_name='letter_party'
         WHERE project_id=%s
@@ -871,8 +897,7 @@ def cleanup_orphan_lists(pid):
           AND LOWER(col_key) IN ('fromparty','toparty')
           AND (list_name IS NULL OR BTRIM(list_name)='' OR list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
     """, (pid,))
-    logger.info("cleanup_orphan_lists pid=%s step=2 null_invalid_custom_sources", pid)
-    exe("""
+    _run(2, "null_invalid_custom_sources", """
         UPDATE columns_config
         SET list_name=NULL
         WHERE project_id=%s
@@ -880,25 +905,23 @@ def cleanup_orphan_lists(pid):
           AND list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\'
           AND NOT (UPPER(dt_id)='LTR' AND LOWER(col_key) IN ('fromparty','toparty'))
     """, (pid,))
-    logger.info("cleanup_orphan_lists pid=%s step=3 delete_custom_dropdown_rows", pid)
-    exe("""
+    _run(3, "delete_custom_dropdown_rows", """
         DELETE FROM dropdown_lists
         WHERE project_id=%s
           AND list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\'
     """, (pid,))
-    logger.info("cleanup_orphan_lists pid=%s step=4 delete_non_configured_dropdown_rows", pid)
-    exe("""
-        DELETE FROM dropdown_lists dl
-        WHERE dl.project_id=%s
+    _run(4, "delete_non_configured_dropdown_rows", """
+        DELETE FROM dropdown_lists
+        WHERE project_id=%s
           AND NOT EXISTS (
               SELECT 1
               FROM columns_config cc
-              WHERE cc.project_id=dl.project_id
+              WHERE cc.project_id=dropdown_lists.project_id
                 AND cc.col_type='dropdown'
                 AND cc.list_name IS NOT NULL
                 AND BTRIM(cc.list_name) <> ''
                 AND NOT (cc.list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
-                AND cc.list_name=dl.list_name
+                AND cc.list_name=dropdown_lists.list_name
           )
     """, (pid,))
     logger.info("cleanup_orphan_lists done pid=%s", pid)
