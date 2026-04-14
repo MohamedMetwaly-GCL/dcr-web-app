@@ -860,6 +860,8 @@ def remove_list_item(pid, list_name, item):
     return 1
 
 def cleanup_orphan_lists(pid):
+    logger.info("cleanup_orphan_lists start pid=%s", pid)
+    logger.info("cleanup_orphan_lists pid=%s step=1 fix_ltr_party_sources", pid)
     exe("""
         UPDATE columns_config
         SET list_name='letter_party'
@@ -869,6 +871,7 @@ def cleanup_orphan_lists(pid):
           AND LOWER(col_key) IN ('fromparty','toparty')
           AND (list_name IS NULL OR BTRIM(list_name)='' OR list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
     """, (pid,))
+    logger.info("cleanup_orphan_lists pid=%s step=2 null_invalid_custom_sources", pid)
     exe("""
         UPDATE columns_config
         SET list_name=NULL
@@ -877,23 +880,28 @@ def cleanup_orphan_lists(pid):
           AND list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\'
           AND NOT (UPPER(dt_id)='LTR' AND LOWER(col_key) IN ('fromparty','toparty'))
     """, (pid,))
+    logger.info("cleanup_orphan_lists pid=%s step=3 delete_custom_dropdown_rows", pid)
     exe("""
         DELETE FROM dropdown_lists
         WHERE project_id=%s
           AND list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\'
     """, (pid,))
-    allowed = get_allowed_list_names(pid)
-    if allowed:
-        exe("""
-            DELETE FROM dropdown_lists
-            WHERE project_id=%s
-              AND list_name <> ALL(%s)
-        """, (pid, allowed))
-    else:
-        exe("""
-            DELETE FROM dropdown_lists
-            WHERE project_id=%s
-        """, (pid,))
+    logger.info("cleanup_orphan_lists pid=%s step=4 delete_non_configured_dropdown_rows", pid)
+    exe("""
+        DELETE FROM dropdown_lists dl
+        WHERE dl.project_id=%s
+          AND NOT EXISTS (
+              SELECT 1
+              FROM columns_config cc
+              WHERE cc.project_id=dl.project_id
+                AND cc.col_type='dropdown'
+                AND cc.list_name IS NOT NULL
+                AND BTRIM(cc.list_name) <> ''
+                AND NOT (cc.list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
+                AND cc.list_name=dl.list_name
+          )
+    """, (pid,))
+    logger.info("cleanup_orphan_lists done pid=%s", pid)
 
 # ── Fast Dashboard Stats (single query) ──────────────────────
 def get_dashboard_stats():
