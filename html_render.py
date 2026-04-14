@@ -1604,6 +1604,30 @@ function isNOCTab(){{
   return code==='NOC' || name.includes('notice of change');
 }}
 
+function isLTRTab(){{
+  const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
+  const code=(dt.code||dt.id||'').toString().toUpperCase();
+  const name=(dt.name||'').toString().toLowerCase();
+  return code==='LTR' || name.includes('letter');
+}}
+
+function isHiddenSystemListName(name){{
+  const ln=String(name||'').trim().toLowerCase();
+  return ['letter_direction','letter_status','letter_party'].includes(ln);
+}}
+
+function isLTRSingleSelectField(col){{
+  if(!isLTRTab())return false;
+  const key=String(col?.col_key||'').trim().toLowerCase();
+  return ['direction','fromparty','toparty','status'].includes(key);
+}}
+
+function isLTRInternalField(col){{
+  if(!isLTRTab())return false;
+  const key=String(col?.col_key||col||'').trim().toLowerCase();
+  return ['parentletterid'].includes(key);
+}}
+
 function getPrDetailsColKey(){{
   const cols=state.cols||[];
   const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
@@ -1771,6 +1795,7 @@ async function loadRecords(){{
   ]);
   if(!data)return;
   state.recs=data.records; state.cols=data.columns.filter(c=>c.visible);
+  if(isLTRTab())state.cols=state.cols.filter(c=>!isLTRInternalField(c));
   state.prItemsCache=data.pr_items_map||{{}};
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
@@ -2282,8 +2307,9 @@ async function buildForm(row){{
   if(!row){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
+  const formCols=isLTRTab()?allCols.filter(c=>!isLTRInternalField(c)):allCols;
   const prevCols=state.cols;
-  state.cols=allCols.filter(c=>c.visible);
+  state.cols=formCols.filter(c=>c.visible);
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   state.cols=prevCols;
   const nocSections={{
@@ -2302,7 +2328,7 @@ async function buildForm(row){{
     nocStageInp=sf.inp;
     grid.appendChild(sf.grp);
   }}
-  for(const col of allCols){{
+  for(const col of formCols){{
     if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
     if(isNocTab){{
@@ -2332,6 +2358,13 @@ async function buildForm(row){{
       continue;
     }}
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
+    else if(col.col_type==='dropdown'&&col.list_name&&isLTRSingleSelectField(col)){{
+      const sel=document.createElement('select');sel.id='f-'+key;
+      const opts=state.lists[col.list_name]||[];
+      sel.innerHTML='<option value=""></option>'+opts.map(o=>`<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
+      sel.value=val||'';
+      grp.appendChild(sel);
+    }}
     else if(col.col_type==='dropdown'&&col.list_name){{
       // Add free-text input below multiselect
       const wrapper=document.createElement('div');
@@ -2746,7 +2779,7 @@ async function openLists(){{
   const metaData=await apiFetch('/api/lists_meta/'+PID)||{{}};
   const META_LABELS={{approved:{{lbl:'Approved',bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:'Rejected',bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:'Pending',bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:'Cancelled',bg:'#f1f5f9',fg:'#94a3b8'}}}};
   const body=document.getElementById('lists-body');body.innerHTML='';
-  for(const[ln,items]of Object.entries(state.lists)){{
+  for(const[ln,items]of Object.entries(state.lists).filter(([ln])=>!isHiddenSystemListName(ln))){{
     const isStatus=ln.toLowerCase().startsWith('status');
     const t=document.createElement('div');t.className='stitle';
     t.textContent=ln.charAt(0).toUpperCase()+ln.slice(1)+(isStatus?' 🏷':'');
@@ -2922,7 +2955,7 @@ function onColType(v){{
 async function openAddCol(){{
   await loadLists();
   const ls=document.getElementById('col-list');
-  ls.innerHTML=Object.keys(state.lists).map(k=>`<option value="${{k}}">${{k}}</option>`).join('');
+  ls.innerHTML=Object.keys(state.lists).filter(k=>!isHiddenSystemListName(k)).map(k=>`<option value="${{k}}">${{k}}</option>`).join('');
   const all=await apiFetch('/api/columns/'+PID+'/'+state.tab);
   const dates=(all||[]).filter(c=>['date','auto_date'].includes(c.col_type));
   const dopts=dates.map(c=>`<option value="${{c.col_key}}">${{c.label}}</option>`).join('')||'<option value="issuedDate">Issued Date</option>';
