@@ -96,6 +96,36 @@ def api_lists_cleanup(pid):
     return jsonify(ok=True)
 
 
+@lists_bp.route("/api/lists_debug/<pid>")
+def api_lists_debug(pid):
+    u = current_user()
+    if not u or u.get("role") not in ("superadmin","admin"):
+        return jsonify(error="Admin only"), 403
+    configured = db.q("""
+        SELECT DISTINCT dt_id, col_key, label, col_type, list_name
+        FROM columns_config
+        WHERE project_id=%s
+          AND list_name IS NOT NULL
+          AND BTRIM(list_name) <> ''
+        ORDER BY list_name, dt_id, col_key
+    """, (pid,))
+    stored = db.q("""
+        SELECT DISTINCT list_name
+        FROM dropdown_lists
+        WHERE project_id=%s
+        ORDER BY list_name
+    """, (pid,))
+    configured_names = sorted({str(r["list_name"]) for r in configured})
+    stored_names = [str(r["list_name"]) for r in stored]
+    orphan_names = [n for n in stored_names if n not in configured_names]
+    return jsonify(
+        configured=configured,
+        configured_names=configured_names,
+        stored_names=stored_names,
+        orphan_names=orphan_names,
+    )
+
+
 @lists_bp.route("/api/lists_meta/<pid>", methods=["POST"])
 def api_set_list_meta(pid):
     u = current_user()

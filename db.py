@@ -742,7 +742,7 @@ def get_allowed_list_names(pid):
         SELECT DISTINCT list_name
         FROM columns_config
         WHERE project_id=%s
-          AND col_type='dropdown'
+          AND LOWER(BTRIM(col_type))='dropdown'
           AND list_name IS NOT NULL
           AND BTRIM(list_name) <> ''
           AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
@@ -759,7 +759,7 @@ def is_allowed_list_name(pid, list_name):
         SELECT 1
         FROM columns_config
         WHERE project_id=%s
-          AND col_type='dropdown'
+          AND LOWER(BTRIM(col_type))='dropdown'
           AND list_name=%s
           AND BTRIM(list_name) <> ''
           AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
@@ -917,7 +917,7 @@ def cleanup_orphan_lists(pid):
               SELECT 1
               FROM columns_config cc
               WHERE cc.project_id=dropdown_lists.project_id
-                AND cc.col_type='dropdown'
+                AND LOWER(BTRIM(cc.col_type))='dropdown'
                 AND cc.list_name IS NOT NULL
                 AND BTRIM(cc.list_name) <> ''
                 AND NOT (cc.list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
