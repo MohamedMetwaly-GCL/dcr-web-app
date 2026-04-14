@@ -818,25 +818,34 @@ def add_list_item(pid, list_name, item):
     list_name = str(list_name or "").strip()
     item = str(item or "").strip()
     if not is_allowed_list_name(pid, list_name):
-        return {"ok": False, "added": False, "error": "Invalid list"}
+        return {"ok": False, "added": False, "error": "Invalid list", "status": 400}
     if not item:
-        return {"ok": False, "added": False, "error": "Item value is required"}
-    with DB() as cur:
-        cur.execute(
+        return {"ok": False, "added": False, "error": "Item value is required", "status": 400}
+    logger.info("add_list_item start pid=%s list_name=%s item=%s", pid, list_name, item)
+    try:
+        existing = q("""
+            SELECT 1
+            FROM dropdown_lists
+            WHERE project_id=%s AND list_name=%s AND item_value=%s
+            LIMIT 1
+        """, (pid, list_name, item), one=True)
+        if existing:
+            logger.info("add_list_item duplicate pid=%s list_name=%s item=%s", pid, list_name, item)
+            return {"ok": False, "added": False, "error": "Item already exists", "status": 409}
+        r = q(
             "SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
             (pid, list_name),
+            one=True,
         )
-        r = cur.fetchone()
-        cur.execute("""
-            INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order)
-            VALUES(%s,%s,%s,%s)
-            ON CONFLICT(project_id,list_name,item_value) DO NOTHING
-            RETURNING project_id
-        """, (pid, list_name, item, r["n"] if r else 0))
-        inserted = cur.fetchone()
-    if inserted:
-        return {"ok": True, "added": True}
-    return {"ok": False, "added": False, "error": "Item already exists"}
+        exe(
+            "INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s)",
+            (pid, list_name, item, r["n"] if r else 0),
+        )
+        logger.info("add_list_item added pid=%s list_name=%s item=%s", pid, list_name, item)
+        return {"ok": True, "added": True, "status": 200}
+    except Exception as e:
+        logger.exception("add_list_item failed pid=%s list_name=%s item=%s error=%s", pid, list_name, item, e)
+        return {"ok": False, "added": False, "error": "Failed to add item", "status": 500}
 
 def rename_list_item(pid, list_name, old_item, new_item):
     if not is_allowed_list_name(pid, list_name):
