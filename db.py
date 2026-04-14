@@ -765,14 +765,25 @@ def is_allowed_list_name(pid, list_name):
         return False
     r = q("""
         SELECT 1
-        FROM columns_config
-        WHERE project_id=%s
-          AND LOWER(BTRIM(col_type))='dropdown'
-          AND list_name=%s
-          AND BTRIM(list_name) <> ''
-          AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
+        FROM (
+            SELECT list_name
+            FROM columns_config
+            WHERE project_id=%s
+              AND LOWER(BTRIM(col_type))='dropdown'
+              AND list_name IS NOT NULL
+              AND BTRIM(list_name) <> ''
+              AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
+            UNION
+            SELECT list_name
+            FROM dropdown_lists
+            WHERE project_id=%s
+              AND list_name IS NOT NULL
+              AND BTRIM(list_name) <> ''
+              AND NOT (list_name ILIKE 'CUSTOM_REC\\_%' ESCAPE '\\')
+        ) s
+        WHERE list_name=%s
         LIMIT 1
-    """, (pid, name), one=True)
+    """, (pid, pid, name), one=True)
     return bool(r)
 
 def get_lists_with_meta(pid):
