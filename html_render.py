@@ -1623,6 +1623,20 @@ function isHiddenSystemListName(name){{
   return ['letter_direction','letter_status'].includes(ln);
 }}
 
+function projectHasLTR(){{
+  return (state.dtList||[]).some(dt=>{{
+    const code=String(dt?.code||dt?.id||'').trim().toUpperCase();
+    const name=String(dt?.name||'').trim().toLowerCase();
+    return code==='LTR' || name.includes('letter') || name.includes('correspondence');
+  }});
+}}
+
+function ensureLTRProjectLists(){{
+  if(!projectHasLTR())return;
+  if(!state.lists||typeof state.lists!=='object')state.lists={{}};
+  if(!Object.prototype.hasOwnProperty.call(state.lists,'correspondence_parties'))state.lists.correspondence_parties=[];
+}}
+
 function isLTRSingleSelectField(col){{
   if(!isLTRTab())return false;
   const key=String(col?.col_key||'').trim().toLowerCase();
@@ -1797,6 +1811,7 @@ function updateClock(){{document.getElementById('s-clock').textContent=new Date(
 async function loadDTs(keepTab=false){{
   const dts=await apiFetch('/api/doc_types/'+PID); if(!dts)return;
   renderTabs(dts);
+  ensureLTRProjectLists();
   await refreshCounts();
   if(!keepTab){{
     const tab=new URLSearchParams(location.search).get('tab');
@@ -1812,6 +1827,7 @@ async function refreshCounts(){{
 async function loadLists(force=false){{
   if(!force&&Object.keys(state.lists).length) return;
   const d=await apiFetch('/api/lists/'+PID); if(d) state.lists=d;
+  ensureLTRProjectLists();
 }}
 
 function renderTabs(dts){{
@@ -2488,7 +2504,11 @@ async function buildForm(row){{
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
     else if(isLtrTab&&col.col_type==='dropdown'&&col.list_name){{
       const sel=document.createElement('select');sel.id='f-'+key;
-      const opts=[...(state.lists[col.list_name]||[])];
+      const ltrRole=getLTRFieldRole(col);
+      const listName=ltrRole==='fromParty'||ltrRole==='toParty'
+        ? 'correspondence_parties'
+        : (ltrRole==='direction' ? 'letter_direction' : (ltrRole==='status' ? 'letter_status' : col.list_name));
+      const opts=[...(state.lists[listName]||[])];
       if(val&&!opts.includes(val))opts.push(val);
       sel.innerHTML='<option value=""></option>'+opts.map(o=>`<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
       sel.value=val||'';
@@ -2923,6 +2943,7 @@ async function saveDocType(){{
 // Lists
 async function openLists(){{
   await loadLists(true);
+  ensureLTRProjectLists();
   const metaData=await apiFetch('/api/lists_meta/'+PID)||{{}};
   const META_LABELS={{approved:{{lbl:'Approved',bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:'Rejected',bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:'Pending',bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:'Cancelled',bg:'#f1f5f9',fg:'#94a3b8'}}}};
   const body=document.getElementById('lists-body');body.innerHTML='';
@@ -3101,6 +3122,7 @@ function onColType(v){{
 }}
 async function openAddCol(){{
   await loadLists();
+  ensureLTRProjectLists();
   const ls=document.getElementById('col-list');
   ls.innerHTML=Object.keys(state.lists).filter(k=>!isHiddenSystemListName(k)).map(k=>`<option value="${{k}}">${{k}}</option>`).join('');
   const all=await apiFetch('/api/columns/'+PID+'/'+state.tab);
