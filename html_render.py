@@ -1635,12 +1635,72 @@ function isLTRInternalField(col){{
   return ['parentletterid'].includes(key);
 }}
 
+function normLTRText(v){{
+  return String(v||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'');
+}}
+
+function getLTRFieldRole(col){{
+  const key=normLTRText(col?.col_key||'');
+  const label=normLTRText(col?.label||'');
+  if(key==='docno'||label==='letterref')return 'docNo';
+  if(key==='title'||key==='subject'||label==='subject')return 'title';
+  if(key==='description'||label==='description')return 'description';
+  if(key==='filelocation'||label.includes('attachment')||label.includes('filelocation'))return 'fileLocation';
+  if(key==='remarks'||label==='remarks')return 'remarks';
+  if(key==='direction'||label==='direction')return 'direction';
+  if(key==='fromparty'||key==='from'||label==='fromparty'||label==='from')return 'fromParty';
+  if(key==='toparty'||key==='to'||label==='toparty'||label==='to')return 'toParty';
+  if(key==='issueddate'||label==='issuedate')return 'issuedDate';
+  if(key==='receiveddate'||label==='receiveddate')return 'receivedDate';
+  if(key==='parentletterid'||label==='parentletterid')return 'parentLetterId';
+  if(key==='parentletterref'||key==='responseref'||label==='responseref'||label==='parentletter')return 'parentLetterRef';
+  if(key==='status'||label==='status')return 'status';
+  return '';
+}}
+
 function getLTRRegisterKeys(){{
   return ['docNo','direction','fromParty','toParty','issuedDate','receivedDate','title','status','parentLetterRef'];
 }}
 
 function getLTRFormKeys(){{
   return ['docNo','title','description','fileLocation','remarks','direction','fromParty','toParty','issuedDate','receivedDate','parentLetterId','parentLetterRef','status'];
+}}
+
+function getLTRColsByRole(cols, roles, visibleOnly=false){{
+  const out=[];
+  const used=new Set();
+  for(const role of roles){{
+    const col=(cols||[]).find(c=>{{
+      if(visibleOnly&&!c.visible)return false;
+      const r=getLTRFieldRole(c);
+      if(r!==role||used.has(c.col_key))return false;
+      return role!=='parentLetterId';
+    }});
+    if(col){{
+      out.push(col);
+      used.add(col.col_key);
+    }}
+  }}
+  return out;
+}}
+
+function getLTRColForRole(cols, role){{
+  return (cols||[]).find(c=>getLTRFieldRole(c)===role)||null;
+}}
+
+function getLTRValue(row, cols, role){{
+  const col=getLTRColForRole(cols, role);
+  return col?row?.[col.col_key]:'';
+}}
+
+function getLTRVisibleColsFallback(cols, roles){{
+  const picked=getLTRColsByRole(cols, roles, true);
+  return picked.length?picked:(cols||[]).filter(c=>c.visible&&!isLTRInternalField(c));
+}}
+
+function getLTRFormColsFallback(cols, roles){{
+  const picked=getLTRColsByRole(cols, roles, false);
+  return picked.length?picked:(cols||[]).filter(c=>!isLTRInternalField(c));
 }}
 
 function updateLTRQuickBar(){{
@@ -1830,8 +1890,8 @@ async function loadRecords(){{
     apiFetch('/api/col_width/'+PID+'/'+state.tab)
   ]);
   if(!data)return;
-  state.recs=data.records; state.cols=data.columns.filter(c=>c.visible);
-  if(isLTRTab())state.cols=state.cols.filter(c=>getLTRRegisterKeys().includes(c.col_key)&&!isLTRInternalField(c));
+  state.recs=data.records; state.allTabCols=data.columns||[]; state.cols=data.columns.filter(c=>c.visible);
+  if(isLTRTab())state.cols=getLTRVisibleColsFallback(state.allTabCols,getLTRRegisterKeys());
   state.prItemsCache=data.pr_items_map||{{}};
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
@@ -1960,8 +2020,8 @@ function renderRows(){{
     for(const[k,v]of Object.entries(state.filters)){{if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;}}
     if(isLtrTab){{
       const quick=String(state.filters._ltrQuick||'').toLowerCase();
-      const direction=String(r.direction||'').toLowerCase();
-      const status=String(r.status||'').toLowerCase();
+      const direction=String(getLTRValue(r,state.allTabCols,'direction')||'').toLowerCase();
+      const status=String(getLTRValue(r,state.allTabCols,'status')||'').toLowerCase();
       if(quick==='sent'&&direction!=='sent')return false;
       if(quick==='received'&&direction!=='received')return false;
       if(quick==='awaiting'&&status!=='awaiting response')return false;
@@ -2354,7 +2414,8 @@ async function buildForm(row){{
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
   const isLtrTab=isLTRTab();
-  const formCols=isLtrTab()?allCols.filter(c=>getLTRFormKeys().includes(c.col_key)):allCols;
+  const formCols=isLtrTab()?getLTRFormColsFallback(allCols,getLTRFormKeys()):allCols;
+  const ltrParentIdCol=isLtrTab?getLTRColForRole(allCols,'parentLetterId'):null;
   const prevCols=state.cols;
   state.cols=formCols.filter(c=>c.visible);
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
@@ -2386,8 +2447,8 @@ async function buildForm(row){{
   if(isLtrTab){{
     const hid=document.createElement('input');
     hid.type='hidden';
-    hid.id='f-parentLetterId';
-    hid.value=row?.parentLetterId||'';
+    hid.id='f-'+(ltrParentIdCol?.col_key||'parentLetterId');
+    hid.value=ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):'';
     grid.appendChild(hid);
   }}
   for(const col of formCols){{
@@ -2401,7 +2462,7 @@ async function buildForm(row){{
       }}
     }}
     if(isLtrTab){{
-      const section=ltrSectionForKey(key);
+      const section=ltrSectionForKey(getLTRFieldRole(col));
       if(section&&!renderedSections.has(section)){{
         appendSectionTitle(grid,section);
         renderedSections.add(section);
@@ -2426,18 +2487,20 @@ async function buildForm(row){{
       grid.appendChild(grp);
       continue;
     }}
-    if(isLtrTab&&key==='parentLetterRef'){{
+    if(isLtrTab&&getLTRFieldRole(col)==='parentLetterRef'){{
       const ref=document.createElement('input');ref.id='f-parentLetterRef';ref.value=val||'';ref.readOnly=true;
       ref.placeholder='Auto-filled from selected parent';
       ref.style.cssText='background:#f8fafc';
       grp.appendChild(ref);
       const sel=document.createElement('select');sel.id='f-parentLetterRef-select';
-      const currentParentId=row?.parentLetterId||'';
-      const options=sortByDocNo((state.recs||[]).filter(r=>r._id!==row?._id));
+      const currentParentId=ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):'';
+      const currentRowId=row?._id||'';
+      const options=sortByDocNo((state.recs||[]).filter(r=>r._id!==currentRowId));
       sel.innerHTML='<option value="">No parent letter</option>'+options.map(r=>`<option value="${{r._id}}" ${{r._id===currentParentId?'selected':''}}>${{escHtml(r.docNo||r.title||r._id)}}</option>`).join('');
       sel.onchange=()=>{{
         const picked=(state.recs||[]).find(r=>r._id===sel.value)||null;
-        document.getElementById('f-parentLetterId').value=picked?picked._id:'';
+        const hidEl=document.getElementById('f-'+(ltrParentIdCol?.col_key||'parentLetterId'));
+        if(hidEl)hidEl.value=picked?picked._id:'';
         document.getElementById('f-parentLetterRef').value=picked?(picked.docNo||''):'';
       }};
       grp.appendChild(sel);
@@ -2453,11 +2516,12 @@ async function buildForm(row){{
       sel.value=val||'';
       grp.appendChild(sel);
     }}
-    else if(isLtrTab&&['title','description','remarks'].includes(key)){{
+    else if(isLtrTab&&['title','description','remarks'].includes(getLTRFieldRole(col))){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val||'';
-      ta.rows=key==='description'?5:3;
-      ta.style.cssText=key==='description'?'resize:vertical; min-height:120px':'resize:vertical; min-height:80px';
-      ta.placeholder=key==='title'?'Use Enter for a multiline subject':'Use Enter for multiline text';
+      const role=getLTRFieldRole(col);
+      ta.rows=role==='description'?5:3;
+      ta.style.cssText=role==='description'?'resize:vertical; min-height:120px':'resize:vertical; min-height:80px';
+      ta.placeholder=role==='title'?'Use Enter for a multiline subject':'Use Enter for multiline text';
       bindDirectionalInput(ta);
       grp.appendChild(ta);
     }}
@@ -2740,10 +2804,13 @@ async function saveRecord(){{
       else data[col.col_key]=el.value.trim();
   }}
   if(isLTRTab()){{
-    const direction=String(data.direction||'').trim().toLowerCase();
-    if(direction==='sent'&&!String(data.issuedDate||'').trim()){{toast('Issue Date is required for Sent letters','er');return;}}
-    if(direction==='received'&&!String(data.receivedDate||'').trim()){{toast('Received Date is required for Received letters','er');return;}}
-    const parentId=String(data.parentLetterId||'').trim();
+    const direction=String(getLTRValue(data,allCols,'direction')||'').trim().toLowerCase();
+    const issued=String(getLTRValue(data,allCols,'issuedDate')||'').trim();
+    const received=String(getLTRValue(data,allCols,'receivedDate')||'').trim();
+    const parentId=String(getLTRValue(data,allCols,'parentLetterId')||'').trim();
+    const parentRefCol=getLTRColForRole(allCols,'parentLetterRef');
+    if(direction==='sent'&&!issued){{toast('Issue Date is required for Sent letters','er');return;}}
+    if(direction==='received'&&!received){{toast('Received Date is required for Received letters','er');return;}}
     if(state.editId&&parentId&&parentId===state.editId){{toast('A letter cannot reference itself as parent','er');return;}}
     if(parentId){{
       const parent=(state.recs||[]).find(r=>r._id===parentId)||null;
@@ -2753,12 +2820,12 @@ async function saveRecord(){{
       while(cur&&cur._id&&!seen.has(cur._id)){{
         if(state.editId&&cur._id===state.editId){{toast('Parent selection would create a loop','er');return;}}
         seen.add(cur._id);
-        const nextId=String(cur.parentLetterId||'').trim();
+        const nextId=String(getLTRValue(cur,state.allTabCols,'parentLetterId')||'').trim();
         cur=nextId?(state.recs||[]).find(r=>r._id===nextId)||null:null;
       }}
-      data.parentLetterRef=String(parent.docNo||'').trim();
+      if(parentRefCol)data[parentRefCol.col_key]=String(parent.docNo||'').trim();
     }}else{{
-      data.parentLetterRef='';
+      if(parentRefCol)data[parentRefCol.col_key]='';
     }}
   }}
   if(isNOCTab()&&!String(data.voBaseValue||'').trim()&&String(data.voValueWithSIAndVAT||'').trim()){{

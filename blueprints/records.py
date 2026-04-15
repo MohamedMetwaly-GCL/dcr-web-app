@@ -41,6 +41,33 @@ def _is_ltr_doc_type(pid, dt_id):
     name = str(dt.get("name","")).strip().lower()
     return code == "LTR" or "letter" in name or "correspondence" in name
 
+def _norm_ltr_text(v):
+    return "".join(ch for ch in str(v or "").strip().lower() if ch.isalnum())
+
+def _ltr_field_key(pid, dt_id, role):
+    cols = db.get_columns(pid, dt_id)
+    wanted = {
+        "docNo": {"docno", "letterref"},
+        "title": {"title", "subject"},
+        "description": {"description"},
+        "fileLocation": {"filelocation", "attachment"},
+        "remarks": {"remarks"},
+        "direction": {"direction"},
+        "fromParty": {"fromparty", "from"},
+        "toParty": {"toparty", "to"},
+        "issuedDate": {"issueddate"},
+        "receivedDate": {"receiveddate"},
+        "parentLetterId": {"parentletterid"},
+        "parentLetterRef": {"parentletterref", "responseref", "parentletter"},
+        "status": {"status"},
+    }.get(role, set())
+    for c in cols:
+        key = _norm_ltr_text(c.get("col_key"))
+        label = _norm_ltr_text(c.get("label"))
+        if key in wanted or label in wanted:
+            return c.get("col_key")
+    return role
+
 
 @records_bp.route("/api/records/<pid>/<dt_id>")
 def api_records(pid, dt_id):
@@ -90,10 +117,15 @@ def api_save_record(pid, dt_id):
     rec_id = data.pop("_id", None)
     clean  = {k:v for k,v in data.items() if not k.startswith("_")}
     if _is_ltr_doc_type(pid, dt_id):
-        direction = str(clean.get("direction","")).strip().lower()
-        issued = str(clean.get("issuedDate","")).strip()
-        received = str(clean.get("receivedDate","")).strip()
-        parent_id = str(clean.get("parentLetterId","")).strip()
+        direction_key = _ltr_field_key(pid, dt_id, "direction")
+        issued_key = _ltr_field_key(pid, dt_id, "issuedDate")
+        received_key = _ltr_field_key(pid, dt_id, "receivedDate")
+        parent_id_key = _ltr_field_key(pid, dt_id, "parentLetterId")
+        parent_ref_key = _ltr_field_key(pid, dt_id, "parentLetterRef")
+        direction = str(clean.get(direction_key,"")).strip().lower()
+        issued = str(clean.get(issued_key,"")).strip()
+        received = str(clean.get(received_key,"")).strip()
+        parent_id = str(clean.get(parent_id_key,"")).strip()
         if direction == "sent" and not issued:
             return jsonify(error="Issue Date is required for Sent letters"), 400
         if direction == "received" and not received:
@@ -110,11 +142,11 @@ def api_save_record(pid, dt_id):
                 if rec_id and cur.get("_id") == rec_id:
                     return jsonify(error="Parent selection would create an invalid loop"), 400
                 seen.add(cur.get("_id"))
-                next_id = str(cur.get("parentLetterId","")).strip()
+                next_id = str(cur.get(parent_id_key,"")).strip()
                 cur = db.get_record_by_id(next_id) if next_id else None
-            clean["parentLetterRef"] = str(parent.get("docNo","") or "").strip()
+            clean[parent_ref_key] = str(parent.get("docNo","") or "").strip()
         else:
-            clean["parentLetterRef"] = ""
+            clean[parent_ref_key] = ""
     if rec_id:
         full_row = db.get_record_by_id(rec_id) or {}
         # Extract only stored document fields for diff (exclude _ meta keys)
