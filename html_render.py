@@ -1912,7 +1912,7 @@ async function loadRecords(){{
   ]);
   if(!data)return;
   state.recs=data.records; state.allTabCols=data.columns||[]; state.cols=data.columns.filter(c=>c.visible);
-  if(isLTRTab())state.cols=getLTRVisibleColsFallback(state.allTabCols,getLTRRegisterKeys());
+  if(isLTRTab())state.cols=state.cols.filter(c=>!isLTRInternalField(c));
   state.prItemsCache=data.pr_items_map||{{}};
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
@@ -1952,7 +1952,11 @@ function buildHead(){{
     if(['auto_date','auto_num'].includes(col.col_type)){{fr.appendChild(th);return;}}
     if(col.col_type==='dropdown'&&col.list_name){{
       const sel=document.createElement('select');
-      sel.innerHTML='<option value="">All</option>'+(state.lists[col.list_name]||[]).map(o=>`<option ${{state.filters[col.col_key]===o?'selected':''}}>${{o}}</option>`).join('');
+      const ltrRole=isLTRTab()?getLTRFieldRole(col):'';
+      const listName=ltrRole==='fromParty'||ltrRole==='toParty'
+        ? 'correspondence_parties'
+        : (ltrRole==='direction' ? 'letter_direction' : (ltrRole==='status' ? 'letter_status' : col.list_name));
+      sel.innerHTML='<option value="">All</option>'+(state.lists[listName]||[]).map(o=>`<option ${{state.filters[col.col_key]===o?'selected':''}}>${{o}}</option>`).join('');
       sel.onchange=()=>{{state.filters[col.col_key]=sel.value;renderRows();}};
       th.appendChild(sel);
     }}else{{
@@ -2096,6 +2100,7 @@ function renderRows(){{
     tsr.textContent=row._isRev?'':sr;tr.appendChild(tsr);
     state.cols.forEach(col=>{{
       const td=document.createElement('td');const key=col.col_key;let val='';
+      const ltrRole=isLtrTab?getLTRFieldRole(col):'';
       const k=key.toLowerCase();
       const longTextMeta=getLongTextMeta(col);
       if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
@@ -2111,7 +2116,7 @@ function renderRows(){{
         val=row['_fmt_'+key]||row[key]||'';  // use pre-formatted version
       }}
       else if(key==='status'||isStatusLikeField(col)){{
-        val=row[key]||'';
+        val=row[key]||((isLtrTab&&ltrRole)?getLTRValue(row,state.allTabCols,ltrRole):'');
         if(val){{
           td.innerHTML=val.split(',').map(s=>{{s=s.trim();const[bg,fg]=SC[s]||['e5e7eb','374151'];
             return `<span class="sbadge" style="background:#${{bg}};color:#${{fg}}">${{s}}</span>`;}}).join('');
@@ -2124,6 +2129,7 @@ function renderRows(){{
       }}
       else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val=getPrSummary(row);
       else val=String(row[key]||'');
+      if(isLtrTab&&ltrRole&&!String(val||'').trim())val=String(getLTRValue(row,state.allTabCols,ltrRole)||'');
       let displayVal=formatDisplayValue(col,val);
       if(typeof displayVal==='string'&&longTextMeta){{
         const NL=String.fromCharCode(10);
@@ -2478,7 +2484,8 @@ async function buildForm(row){{
     const full=['title','fileLocation','itemRef'].includes(key)||!!longTextMeta;
     const grp=document.createElement('div');grp.className='fg'+(full?' full':'');
     const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
-    const val=row?.[key]||'';
+    const ltrRole=isLtrTab?getLTRFieldRole(col):'';
+    const val=(isLtrTab&&ltrRole)?(row?.[key]||getLTRValue(row,allCols,ltrRole)||''):(row?.[key]||'');
     if(isPrTab&&prDetailsKey&&key===prDetailsKey){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
       ta.rows=3;
