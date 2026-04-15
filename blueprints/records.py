@@ -136,14 +136,6 @@ def api_save_record(pid, dt_id):
             parent = db.get_record_by_id(parent_id)
             if not parent or parent.get("_project_id") != pid or parent.get("_dt_id") != dt_id:
                 return jsonify(error="Selected parent letter is invalid"), 400
-            seen = set()
-            cur = parent
-            while cur and cur.get("_id") and cur.get("_id") not in seen:
-                if rec_id and cur.get("_id") == rec_id:
-                    return jsonify(error="Parent selection would create an invalid loop"), 400
-                seen.add(cur.get("_id"))
-                next_id = str(cur.get(parent_id_key,"")).strip()
-                cur = db.get_record_by_id(next_id) if next_id else None
             clean[parent_ref_key] = str(parent.get("docNo","") or "").strip()
         else:
             clean[parent_ref_key] = ""

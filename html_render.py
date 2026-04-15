@@ -1689,8 +1689,13 @@ function getLTRColForRole(cols, role){{
 }}
 
 function getLTRValue(row, cols, role){{
-  const col=getLTRColForRole(cols, role);
-  return col?row?.[col.col_key]:'';
+  const matches=(cols||[]).filter(c=>getLTRFieldRole(c)===role);
+  for(const col of matches){{
+    const val=row?.[col.col_key];
+    if(String(val??'').trim())return val;
+  }}
+  const first=matches[0];
+  return first?row?.[first.col_key]:'';
 }}
 
 function getLTRVisibleColsFallback(cols, roles){{
@@ -2414,7 +2419,7 @@ async function buildForm(row){{
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
   const isLtrTab=isLTRTab();
-  const formCols=isLtrTab()?getLTRFormColsFallback(allCols,getLTRFormKeys()):allCols;
+  const formCols=isLtrTab?allCols.filter(c=>c.visible&&!isLTRInternalField(c)):allCols;
   const ltrParentIdCol=isLtrTab?getLTRColForRole(allCols,'parentLetterId'):null;
   const prevCols=state.cols;
   state.cols=formCols.filter(c=>c.visible);
@@ -2428,15 +2433,7 @@ async function buildForm(row){{
     'Part D':['partDReturnDate','partDStatus','finalApprovedCost'],
     'Variation Order':['voNo','voIssueDate','voBaseValue','voValueWithSIAndVAT'],
   }};
-  const ltrSections={{
-    'Basic Info':['docNo','title','description','fileLocation','remarks'],
-    'Direction & Parties':['direction','fromParty','toParty'],
-    'Dates':['issuedDate','receivedDate'],
-    'Linking / Threading':['parentLetterRef'],
-    'Status':['status'],
-  }};
   const nocSectionForKey=(key)=>Object.entries(nocSections).find(([,keys])=>keys.includes(key))?.[0]||null;
-  const ltrSectionForKey=(key)=>Object.entries(ltrSections).find(([,keys])=>keys.includes(key))?.[0]||null;
   const renderedSections=new Set();
   let nocStageInp=null,nocBaseInp=null,nocTotalInp=null;
   if(isNocTab){{
@@ -2456,13 +2453,6 @@ async function buildForm(row){{
     const key=col.col_key;
     if(isNocTab){{
       const section=nocSectionForKey(key);
-      if(section&&!renderedSections.has(section)){{
-        appendSectionTitle(grid,section);
-        renderedSections.add(section);
-      }}
-    }}
-    if(isLtrTab){{
-      const section=ltrSectionForKey(getLTRFieldRole(col));
       if(section&&!renderedSections.has(section)){{
         appendSectionTitle(grid,section);
         renderedSections.add(section);
@@ -2488,27 +2478,15 @@ async function buildForm(row){{
       continue;
     }}
     if(isLtrTab&&getLTRFieldRole(col)==='parentLetterRef'){{
-      const ref=document.createElement('input');ref.id='f-parentLetterRef';ref.value=val||'';ref.readOnly=true;
-      ref.placeholder='Auto-filled from selected parent';
+      const ref=document.createElement('input');ref.id='f-'+key;ref.value=val||'';ref.readOnly=true;
+      ref.placeholder='Parent letter reference';
       ref.style.cssText='background:#f8fafc';
       grp.appendChild(ref);
-      const sel=document.createElement('select');sel.id='f-parentLetterRef-select';
-      const currentParentId=ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):'';
-      const currentRowId=row?._id||'';
-      const options=sortByDocNo((state.recs||[]).filter(r=>r._id!==currentRowId));
-      sel.innerHTML='<option value="">No parent letter</option>'+options.map(r=>`<option value="${{r._id}}" ${{r._id===currentParentId?'selected':''}}>${{escHtml(r.docNo||r.title||r._id)}}</option>`).join('');
-      sel.onchange=()=>{{
-        const picked=(state.recs||[]).find(r=>r._id===sel.value)||null;
-        const hidEl=document.getElementById('f-'+(ltrParentIdCol?.col_key||'parentLetterId'));
-        if(hidEl)hidEl.value=picked?picked._id:'';
-        document.getElementById('f-parentLetterRef').value=picked?(picked.docNo||''):'';
-      }};
-      grp.appendChild(sel);
       grid.appendChild(grp);
       continue;
     }}
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
-    else if(col.col_type==='dropdown'&&col.list_name&&isLTRSingleSelectField(col)){{
+    else if(isLtrTab&&col.col_type==='dropdown'&&col.list_name){{
       const sel=document.createElement('select');sel.id='f-'+key;
       const opts=[...(state.lists[col.list_name]||[])];
       if(val&&!opts.includes(val))opts.push(val);
@@ -2808,25 +2786,9 @@ async function saveRecord(){{
     const issued=String(getLTRValue(data,allCols,'issuedDate')||'').trim();
     const received=String(getLTRValue(data,allCols,'receivedDate')||'').trim();
     const parentId=String(getLTRValue(data,allCols,'parentLetterId')||'').trim();
-    const parentRefCol=getLTRColForRole(allCols,'parentLetterRef');
     if(direction==='sent'&&!issued){{toast('Issue Date is required for Sent letters','er');return;}}
     if(direction==='received'&&!received){{toast('Received Date is required for Received letters','er');return;}}
     if(state.editId&&parentId&&parentId===state.editId){{toast('A letter cannot reference itself as parent','er');return;}}
-    if(parentId){{
-      const parent=(state.recs||[]).find(r=>r._id===parentId)||null;
-      if(!parent){{toast('Selected parent letter is invalid','er');return;}}
-      const seen=new Set();
-      let cur=parent;
-      while(cur&&cur._id&&!seen.has(cur._id)){{
-        if(state.editId&&cur._id===state.editId){{toast('Parent selection would create a loop','er');return;}}
-        seen.add(cur._id);
-        const nextId=String(getLTRValue(cur,state.allTabCols,'parentLetterId')||'').trim();
-        cur=nextId?(state.recs||[]).find(r=>r._id===nextId)||null:null;
-      }}
-      if(parentRefCol)data[parentRefCol.col_key]=String(parent.docNo||'').trim();
-    }}else{{
-      if(parentRefCol)data[parentRefCol.col_key]='';
-    }}
   }}
   if(isNOCTab()&&!String(data.voBaseValue||'').trim()&&String(data.voValueWithSIAndVAT||'').trim()){{
     const autoBase=getNocAutoBaseValue(data);
