@@ -136,6 +136,26 @@ def api_next_doc_no(pid, dt_id):
     dts    = db.get_doc_types(pid)
     dt     = next((d for d in dts if d["id"] == dt_id), None)
     records = db.get_records(pid, dt_id)
+    dt_code = str((dt or {}).get("code", dt_id) or dt_id).strip().upper()
+    dt_name = str((dt or {}).get("name", "") or "").strip().lower()
+    is_ltr = dt_code == "LTR" or "letter" in dt_name or "correspondence" in dt_name
+    if is_ltr:
+        import re as _re
+        doc_nos = [str(r.get("docNo","") or "").strip() for r in records if str(r.get("docNo","") or "").strip()]
+        if doc_nos:
+            def _ltr_num_parts(doc_no):
+                m = _re.match(r"^(.*?)(\d+)$", doc_no)
+                if not m:
+                    return None
+                prefix = m.group(1)
+                num_txt = m.group(2)
+                return prefix, int(num_txt), len(num_txt)
+            parsed = [p for p in (_ltr_num_parts(d) for d in doc_nos) if p]
+            if parsed:
+                prefix, num, width = max(parsed, key=lambda t: (t[1], t[2], t[0]))
+                return jsonify(next=f"{prefix}{str(num + 1).zfill(width)}")
+            last_doc = max(doc_nos)
+            return jsonify(next=last_doc + "-001")
     # Auto-detect prefix from existing records or build from project+dt codes
     if records:
         first_doc = next((r.get("docNo","") for r in records if r.get("docNo","")), "")

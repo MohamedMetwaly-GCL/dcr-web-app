@@ -2042,7 +2042,10 @@ function renderRows(){{
   const isLtrTab=isLTRTab();
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   let rows=state.recs.filter(r=>{{
-    for(const[k,v]of Object.entries(state.filters)){{if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;}}
+    for(const[k,v]of Object.entries(state.filters)){{
+      if(k.startsWith('_'))continue;
+      if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;
+    }}
     if(isLtrTab){{
       const quick=String(state.filters._ltrQuick||'').toLowerCase();
       const direction=String(getLTRValue(r,state.allTabCols,'direction')||'').toLowerCase();
