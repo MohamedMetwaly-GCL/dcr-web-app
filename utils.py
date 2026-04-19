@@ -1,6 +1,8 @@
 """utils.py - Date calculations and document numbering"""
 import datetime, re
 
+NON_REV_DOC_TYPE_CODES = {"SI"}
+
 DEFAULT_HOLIDAYS = {
     "2025-01-07","2025-01-25","2025-03-30","2025-03-31","2025-04-01","2025-04-02",
     "2025-04-21","2025-04-25","2025-05-01","2025-06-06","2025-06-07","2025-06-08",
@@ -106,6 +108,41 @@ def get_next_doc_no(prefix, records):
     if max_num == 0:
         return build_doc_no(prefix, 1, 0)   # first doc
     return build_doc_no(prefix, max_num + 1, 0)
+
+def extract_plain_seq(doc_no, prefix):
+    m = re.match(rf'^{re.escape(prefix)}-(\d+)$', doc_no or '', re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+def build_plain_doc_no(prefix, num, width=3):
+    return f"{prefix}-{num:0{width}d}"
+
+def get_next_plain_doc_no(prefix, records):
+    """Find highest existing plain numeric suffix and return next one without REV."""
+    max_num = 0
+    max_width = 3
+    tail_re = re.compile(rf'^{re.escape(prefix)}-(\d+)$', re.IGNORECASE)
+    for r in records:
+        doc_no = str(r.get('docNo', '') or '').strip()
+        m = tail_re.match(doc_no)
+        if not m:
+            continue
+        num_txt = m.group(1)
+        max_num = max(max_num, int(num_txt))
+        max_width = max(max_width, len(num_txt))
+    if max_num == 0:
+        return build_plain_doc_no(prefix, 1, max_width)
+    return build_plain_doc_no(prefix, max_num + 1, max_width)
+
+def doc_type_uses_revision(dt_code, records=None):
+    code = str(dt_code or "").strip().upper()
+    if code in NON_REV_DOC_TYPE_CODES:
+        return False
+    rows = records or []
+    if any("REV" in str(r.get("docNo", "") or "").upper() for r in rows):
+        return True
+    if rows:
+        return False
+    return True
 
 def compute_expected_reply(issued_date, doc_no):
     if not issued_date: return None

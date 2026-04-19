@@ -260,6 +260,71 @@ DEFAULT_LISTS = {
               "Cancelled","Open","Closed","Replied","Pending"],
 }
 
+def _normalize_status_text(value):
+    return " ".join(str(value or "").strip().lower().split())
+
+def _status_alias_meta_map(pid_meta=None):
+    alias_map = {}
+    sources = []
+    if pid_meta:
+        sources.extend(pid_meta.items())
+    sources.extend(DEFAULT_STATUS_META.items())
+    for raw_key, meta in sources:
+        key = str(raw_key or "").strip()
+        if not key:
+            continue
+        alias_map.setdefault(_normalize_status_text(key), meta)
+        m = re.match(r"^\s*([A-Za-z](?:\s*[,/&+]\s*[A-Za-z])*)\b", key)
+        if m:
+            lead = re.sub(r"[^A-Za-z]+", "", m.group(1)).lower()
+            if lead:
+                alias_map.setdefault(lead, meta)
+                chars = re.findall(r"[A-Za-z]", m.group(1))
+                for ch in chars:
+                    alias_map.setdefault(ch.lower(), meta)
+    return alias_map
+
+def _status_meta_from_tokens(status_value, pid_meta=None):
+    text = _normalize_status_text(status_value)
+    if not text:
+        return None
+    alias_map = _status_alias_meta_map(pid_meta)
+    token_texts = [t.strip() for t in re.split(r"\s*(?:&|,|/|\+|\band\b)\s*", text) if t.strip()]
+    metas = []
+    for token in token_texts:
+        compact = re.sub(r"[^a-z0-9]+", "", token)
+        meta = alias_map.get(token) or alias_map.get(compact)
+        if meta:
+            metas.append(meta)
+    if not metas:
+        return None
+    metas = set(metas)
+    for meta in ("cancelled", "rejected", "approved", "pending"):
+        if meta in metas:
+            return meta
+    return None
+
+def resolve_status_meta(status_value, pid_meta=None):
+    status = str(status_value or "").strip()
+    if not status:
+        return "pending"
+    if pid_meta and status in pid_meta:
+        return pid_meta[status]
+    if status in DEFAULT_STATUS_META:
+        return DEFAULT_STATUS_META[status]
+    normalized = _normalize_status_text(status)
+    if pid_meta:
+        for key, meta in pid_meta.items():
+            if _normalize_status_text(key) == normalized:
+                return meta
+    for key, meta in DEFAULT_STATUS_META.items():
+        if _normalize_status_text(key) == normalized:
+            return meta
+    token_meta = _status_meta_from_tokens(status, pid_meta)
+    if token_meta:
+        return token_meta
+    return "pending"
+
 def _is_non_workflow_dt(dt_code="", dt_name=""):
     code = str(dt_code or "").strip().lower()
     name = str(dt_name or "").strip().lower()
@@ -926,7 +991,7 @@ def get_dashboard_stats():
                         if is_ov: ds["overdue"] += 1
                     continue
                 # Resolve meta: DB first, then fallback to DEFAULT_STATUS_META
-                meta = pid_meta.get(status) or DEFAULT_STATUS_META.get(status) or "pending"
+                meta = resolve_status_meta(status, pid_meta)
                 if meta == "cancelled": continue   # skip cancelled entirely
                 t += 1
                 is_ap = (meta == "approved")
@@ -1111,7 +1176,7 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14):
             continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         status = d.get("status", "")
-        meta = meta_map.get(row["project_id"], {}).get(status) or DEFAULT_STATUS_META.get(status) or "pending"
+        meta = resolve_status_meta(status, meta_map.get(row["project_id"], {}))
         if meta == "cancelled":
             continue
         dt = dt_meta.get(dt_key, {})
@@ -1243,7 +1308,7 @@ def get_monthly_trend(pid=None):
         except: continue
         if key not in months: continue
         months[key]["submitted"] += 1
-        meta = DEFAULT_STATUS_META.get(d.get("status", ""), "pending")
+        meta = resolve_status_meta(d.get("status", ""))
         if meta == "approved":
             months[key]["approved"] += 1
     return [{"month": k, "submitted": v["submitted"], "approved": v["approved"]}

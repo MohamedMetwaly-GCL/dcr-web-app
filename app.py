@@ -2,7 +2,7 @@
 import os, datetime
 from flask import Flask, request, redirect, jsonify, make_response
 import db
-from utils import get_next_doc_no
+from utils import get_next_doc_no, get_next_plain_doc_no, doc_type_uses_revision
 
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
 from html_render import render_login, render_dashboard, render_register
@@ -168,6 +168,8 @@ def api_next_doc_no(pid, dt_id):
         proj_code = proj.get("code", pid).replace("-","")
         dt_code = dt["code"] if dt else dt_id
         prefix = f"{proj_code}-{dt_code}"
+    if not doc_type_uses_revision(dt_code, records):
+        return jsonify(next=get_next_plain_doc_no(prefix, records))
     return jsonify(next=get_next_doc_no(prefix, records))
 
 # ── Audit Log API ─────────────────────────────────────────────
