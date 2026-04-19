@@ -1,6 +1,6 @@
 """db.py - DCR Flask - Clean PostgreSQL database layer"""
 import logging
-import os, json, uuid, datetime, hashlib, secrets
+import os, json, uuid, datetime, hashlib, secrets, re
 import bcrypt as _bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -263,6 +263,16 @@ DEFAULT_LISTS = {
 def _normalize_status_text(value):
     return " ".join(str(value or "").strip().lower().split())
 
+def _normalize_meta_value(value):
+    text = _normalize_status_text(value)
+    if text in ("approved", "rejected", "pending", "cancelled"):
+        return text
+    if text in ("open", "under review", "not closed"):
+        return "pending"
+    if text in ("closed", "replied"):
+        return "approved"
+    return None
+
 def _status_alias_meta_map(pid_meta=None):
     alias_map = {}
     sources = []
@@ -271,17 +281,20 @@ def _status_alias_meta_map(pid_meta=None):
     sources.extend(DEFAULT_STATUS_META.items())
     for raw_key, meta in sources:
         key = str(raw_key or "").strip()
+        meta_value = _normalize_meta_value(meta)
         if not key:
             continue
-        alias_map.setdefault(_normalize_status_text(key), meta)
+        if not meta_value:
+            continue
+        alias_map.setdefault(_normalize_status_text(key), meta_value)
         m = re.match(r"^\s*([A-Za-z](?:\s*[,/&+]\s*[A-Za-z])*)\b", key)
         if m:
             lead = re.sub(r"[^A-Za-z]+", "", m.group(1)).lower()
             if lead:
-                alias_map.setdefault(lead, meta)
+                alias_map.setdefault(lead, meta_value)
                 chars = re.findall(r"[A-Za-z]", m.group(1))
                 for ch in chars:
-                    alias_map.setdefault(ch.lower(), meta)
+                    alias_map.setdefault(ch.lower(), meta_value)
     return alias_map
 
 def _status_meta_from_tokens(status_value, pid_meta=None):
@@ -308,19 +321,29 @@ def resolve_status_meta(status_value, pid_meta=None):
     status = str(status_value or "").strip()
     if not status:
         return "pending"
-    if pid_meta and status in pid_meta:
-        return pid_meta[status]
-    if status in DEFAULT_STATUS_META:
-        return DEFAULT_STATUS_META[status]
+    direct_meta = _normalize_meta_value(pid_meta[status]) if pid_meta and status in pid_meta else None
+    if direct_meta:
+        return direct_meta
+    default_meta = _normalize_meta_value(DEFAULT_STATUS_META.get(status))
+    if default_meta:
+        return default_meta
     normalized = _normalize_status_text(status)
     if pid_meta:
         for key, meta in pid_meta.items():
             if _normalize_status_text(key) == normalized:
-                return meta
+                normalized_meta = _normalize_meta_value(meta)
+                if normalized_meta:
+                    return normalized_meta
     for key, meta in DEFAULT_STATUS_META.items():
         if _normalize_status_text(key) == normalized:
-            return meta
-    token_meta = _status_meta_from_tokens(status, pid_meta)
+            normalized_meta = _normalize_meta_value(meta)
+            if normalized_meta:
+                return normalized_meta
+    try:
+        token_meta = _status_meta_from_tokens(status, pid_meta)
+    except Exception as e:
+        logger.warning("status_token_resolution_failed status=%r error=%s", status, e)
+        token_meta = None
     if token_meta:
         return token_meta
     return "pending"
