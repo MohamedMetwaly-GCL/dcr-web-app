@@ -141,10 +141,10 @@ body{{font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;align-it
   width:100%;max-width:392px;overflow:hidden;backdrop-filter:blur(6px)}}
 .brand-band{{height:10px;background:linear-gradient(90deg,#8BC34A,#2F4F64)}}
 .cbody{{padding:26px 26px 22px}}
-.logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:14px;padding:8px;background:transparent;border-radius:12px}}
-.logo-wrap img{{width:min(100%,176px);height:auto;display:block;background:transparent;filter:drop-shadow(0 8px 16px rgba(47,79,100,.1))}}
+.logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:10px;padding:8px;background:transparent;border-radius:12px}}
+.logo-wrap img{{width:min(100%,205px);height:auto;display:block;background:transparent;filter:drop-shadow(0 8px 16px rgba(47,79,100,.1))}}
 .title{{font-size:28px;font-weight:800;letter-spacing:.4px;color:#2F4F64;text-align:center;margin-bottom:6px}}
-.subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:20px}}
+.subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:16px}}
 .fld{{margin-bottom:14px}}
 .fld label{{display:block;font-size:11px;font-weight:700;color:#4f6370;text-transform:uppercase;letter-spacing:.55px;margin-bottom:7px}}
 .fld input{{width:100%;padding:13px 15px;border:1.5px solid #d9e2e8;border-radius:11px;font-family:inherit;font-size:14px;
