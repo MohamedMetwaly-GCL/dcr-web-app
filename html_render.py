@@ -2283,7 +2283,7 @@ function renderLetterThread(data){{
   }}
   body.innerHTML=items.map(it=>{{
     const isCurrent=it.id===currentId;
-    const margin=it.level*26;
+    const margin=it.level*42;
     const border=isCurrent?'#8BC34A':'#d7e0e6';
     const bg=isCurrent?'#f6fbef':'#fff';
     const shadow=isCurrent?'0 10px 26px rgba(139,195,74,.14)':'0 6px 18px rgba(15,23,42,.05)';
@@ -2297,12 +2297,18 @@ function renderLetterThread(data){{
     ].filter(Boolean);
     const currentBadge=isCurrent?'<span style="flex-shrink:0;background:#8BC34A;color:#17351b;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase">Current</span>':'';
     const subjectHtml=titleText||'<span style="color:var(--mu)">No subject</span>';
+    const connectorColor=isCurrent?'rgba(139,195,74,.55)':'#cbd5df';
+    const branchCue=it.level>0?'<span style="color:#7d8a95;font-weight:800;margin-right:8px">↳</span>':'';
+    const levelLabel=it.level>0?('Reply level '+it.level):'Root letter';
     const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
     return `<div style="margin-left:${{margin}}px;margin-bottom:10px;position:relative">
-      <div style="background:${{bg}};border:1px solid ${{border}};border-left:4px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
+      ${{it.level>0?`<div style="position:absolute;left:-24px;top:0;bottom:22px;width:2px;background:${{connectorColor}};border-radius:2px"></div>
+      <div style="position:absolute;left:-24px;top:24px;width:18px;height:2px;background:${{connectorColor}};border-radius:2px"></div>`:''}}
+      <div style="background:${{bg}};border:1px solid ${{border}};border-left:6px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
+        <div style="font-size:9px;color:#7d8a95;text-transform:uppercase;letter-spacing:.35px;margin-bottom:6px">${{levelLabel}}</div>
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
           <div style="min-width:0">
-            <div style="font-size:12px;font-weight:800;color:var(--pr)" dir="auto">${{refText}}</div>
+            <div style="font-size:12px;font-weight:800;color:var(--pr);display:flex;align-items:center" dir="auto">${{branchCue}}<span>${{refText}}</span></div>
             <div style="font-size:12px;color:var(--tx);margin-top:4px;line-height:1.45" dir="auto">${{subjectHtml}}</div>
           </div>
           ${{currentBadge}}
@@ -2339,13 +2345,14 @@ function renderLetterTimeline(data){{
     ].filter(Boolean);
     const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
     const badge=isCurrent?'<span style="flex-shrink:0;background:#8BC34A;color:#17351b;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase">Current</span>':'';
+    const dateBadge=dateText?'<div style="display:inline-flex;align-items:center;background:#eef4f8;color:#2F4F64;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:800;letter-spacing:.2px">'+dateText+'</div>':'';
     return `<div style="position:relative;padding-left:30px;margin-bottom:14px">
       <div style="position:absolute;left:8px;top:14px;width:12px;height:12px;border-radius:999px;background:${{isCurrent?'#8BC34A':'#2F4F64'}};border:3px solid #fff;box-shadow:0 0 0 2px ${{isCurrent?'rgba(139,195,74,.35)':'rgba(47,79,100,.18)'}}"></div>
       <div style="background:${{bg}};border:1px solid ${{border}};border-left:4px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
           <div style="min-width:0">
             <div style="font-size:12px;font-weight:800;color:var(--pr)" dir="auto">${{refText}}</div>
-            <div style="font-size:11px;color:var(--mu);margin-top:3px">${{dateText}}</div>
+            <div style="margin-top:5px">${{dateBadge}}</div>
             <div style="font-size:12px;color:var(--tx);margin-top:6px;line-height:1.45" dir="auto">${{subjectHtml}}</div>
           </div>
           ${{badge}}
