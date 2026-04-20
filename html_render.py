@@ -130,31 +130,47 @@ def render_login():
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:'Segoe UI',Arial,sans-serif;min-height:100vh;display:flex;align-items:center;
-  justify-content:center;background:linear-gradient(135deg,#0f2640,#1a3a5c 60%,#2563a8)}}
-.card{{background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.4);width:100%;max-width:400px;overflow:hidden}}
-.chdr{{background:linear-gradient(135deg,#1a3a5c,#2563a8);padding:32px;text-align:center}}
-.chdr h1{{color:#fff;font-size:20px;margin-top:8px}}
-.chdr p{{color:rgba(255,255,255,.6);font-size:12px;margin-top:4px}}
-.cbody{{padding:28px 32px 32px}}
-.fld{{margin-bottom:16px}}
-.fld label{{display:block;font-size:11px;font-weight:700;color:#6b7a94;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}}
-.fld input{{width:100%;padding:11px 14px;border:1.5px solid #dde3ed;border-radius:8px;font-family:inherit;font-size:13px;outline:none;transition:border-color .2s}}
-.fld input:focus{{border-color:#2563a8;box-shadow:0 0 0 3px rgba(37,99,168,.12)}}
-.err{{background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:9px 12px;border-radius:6px;font-size:12px;margin-bottom:14px;display:none}}
-.btn-login{{width:100%;padding:13px;background:linear-gradient(135deg,#1a3a5c,#2563a8);color:#fff;border:none;
-  border-radius:8px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s}}
-.btn-login:hover{{transform:translateY(-1px);box-shadow:0 4px 16px rgba(26,58,92,.4)}}
-.hint{{text-align:center;color:#9ca3af;font-size:11px;margin-top:16px}}
+  justify-content:center;padding:24px;background:linear-gradient(135deg,#8BC34A 0%,#5f9f56 24%,#2F4F64 100%)}}
+.shell{{width:100%;display:flex;align-items:center;justify-content:center}}
+.card{{background:rgba(255,255,255,.98);border-radius:16px;box-shadow:0 26px 70px rgba(18,34,46,.28);
+  width:100%;max-width:410px;overflow:hidden;backdrop-filter:blur(6px)}}
+.brand-band{{height:10px;background:linear-gradient(90deg,#8BC34A,#2F4F64)}}
+.cbody{{padding:34px 34px 30px}}
+.logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:18px}}
+.logo-wrap img{{width:min(100%,210px);height:auto;display:block;filter:drop-shadow(0 10px 18px rgba(47,79,100,.12))}}
+.title{{font-size:28px;font-weight:800;letter-spacing:.4px;color:#2F4F64;text-align:center;margin-bottom:6px}}
+.subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:26px}}
+.fld{{margin-bottom:18px}}
+.fld label{{display:block;font-size:11px;font-weight:700;color:#4f6370;text-transform:uppercase;letter-spacing:.55px;margin-bottom:7px}}
+.fld input{{width:100%;padding:13px 15px;border:1.5px solid #d9e2e8;border-radius:11px;font-family:inherit;font-size:14px;
+  outline:none;transition:border-color .2s, box-shadow .2s, background .2s;background:#fbfdff;color:#1f2f3b}}
+.fld input:focus{{border-color:#8BC34A;box-shadow:0 0 0 4px rgba(139,195,74,.18);background:#fff}}
+.err{{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:16px;display:none}}
+.btn-login{{width:100%;padding:14px 16px;background:#2F4F64;color:#fff;border:none;border-radius:11px;font-family:inherit;
+  font-size:14px;font-weight:800;letter-spacing:.25px;cursor:pointer;transition:transform .18s, box-shadow .18s, background .18s}}
+.btn-login:hover{{transform:translateY(-1px);box-shadow:0 12px 28px rgba(47,79,100,.26);background:#284355}}
+.btn-login:active{{transform:translateY(0)}}
+.hint{{text-align:center;color:#7d8a95;font-size:11px;margin-top:15px}}
+@media(max-width:480px){{
+  body{{padding:16px}}
+  .cbody{{padding:28px 22px 24px}}
+  .title{{font-size:24px}}
+  .logo-wrap img{{width:min(100%,185px)}}
+}}
 </style></head><body>
-<div class="card">
-  <div class="chdr"><div style="font-size:40px">📋</div>
-    <h1>Document Control Register</h1><p>Sign in to continue</p></div>
-  <div class="cbody">
-    <div class="err" id="err"></div>
-    <div class="fld"><label>Username</label><input id="un" type="text" autofocus autocomplete="username"></div>
-    <div class="fld"><label>Password</label><input id="pw" type="password" autocomplete="current-password"></div>
-    <button class="btn-login" onclick="login()">Sign In →</button>
-    <p class="hint">Contact your administrator for credentials</p>
+<div class="shell">
+  <div class="card">
+    <div class="brand-band"></div>
+    <div class="cbody">
+      <div class="logo-wrap"><img src="/static/logo.png" alt="Gas Chill"></div>
+      <div class="title">Document Control System</div>
+      <div class="subtitle">Secure Project Access</div>
+      <div class="err" id="err"></div>
+      <div class="fld"><label>Username</label><input id="un" type="text" autofocus autocomplete="username" placeholder="Enter your username"></div>
+      <div class="fld"><label>Password</label><input id="pw" type="password" autocomplete="current-password" placeholder="Enter your password"></div>
+      <button class="btn-login" onclick="login()">Sign In</button>
+      <p class="hint">Gas Chill Document Control Register</p>
+    </div>
   </div>
 </div>
 <script>
