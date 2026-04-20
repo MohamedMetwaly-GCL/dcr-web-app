@@ -837,19 +837,34 @@ def get_letter_parent_options(pid, exclude_id=None):
         })
     return out
 
-def get_letter_thread(pid, record_id):
+def _letter_sort_key(node):
+    data = node.get("data") if isinstance(node, dict) else {}
+    issued = str(data.get("issuedDate") or data.get("partAIssueDate") or "").strip()
+    received = str(data.get("receivedDate") or "").strip()
+    created = node.get("created_at")
+    created_txt = ""
+    if created:
+        created_txt = created.isoformat() if hasattr(created, "isoformat") else str(created)
+    primary = issued or received or created_txt or ""
+    has_explicit_date = 0 if (issued or received) else 1
+    doc_no = str(data.get("docNo") or "").strip()
+    return (has_explicit_date, primary, created_txt, doc_no, str(node.get("id") or ""))
+
+def _get_letter_family_context(pid):
     dt_id = _get_ltr_dt_id(pid)
     if not dt_id:
         return None
     cols = get_columns(pid, dt_id)
-    doc_key = _ltr_field_key_from_cols(cols, "docNo")
-    subject_key = _ltr_field_key_from_cols(cols, "title")
-    direction_key = _ltr_field_key_from_cols(cols, "direction")
-    from_key = _ltr_field_key_from_cols(cols, "fromParty")
-    to_key = _ltr_field_key_from_cols(cols, "toParty")
-    issued_key = _ltr_field_key_from_cols(cols, "issuedDate")
-    received_key = _ltr_field_key_from_cols(cols, "receivedDate")
-    parent_key = _ltr_field_key_from_cols(cols, "parentLetterId")
+    keys = {
+        "docNo": _ltr_field_key_from_cols(cols, "docNo"),
+        "title": _ltr_field_key_from_cols(cols, "title"),
+        "direction": _ltr_field_key_from_cols(cols, "direction"),
+        "fromParty": _ltr_field_key_from_cols(cols, "fromParty"),
+        "toParty": _ltr_field_key_from_cols(cols, "toParty"),
+        "issuedDate": _ltr_field_key_from_cols(cols, "issuedDate"),
+        "receivedDate": _ltr_field_key_from_cols(cols, "receivedDate"),
+        "parentLetterId": _ltr_field_key_from_cols(cols, "parentLetterId"),
+    }
     rows = q("""
         SELECT id, data, created_at
         FROM records
@@ -862,49 +877,104 @@ def get_letter_thread(pid, record_id):
     for row in rows:
         data = row["data"] if isinstance(row.get("data"), dict) else {}
         rec_id = row["id"]
-        nodes[rec_id] = {
+        node = {
             "id": rec_id,
             "data": data,
             "created_at": row.get("created_at"),
         }
-        parent_id = str(data.get(parent_key) or "").strip()
+        nodes[rec_id] = node
+        parent_id = str(data.get(keys["parentLetterId"]) or "").strip()
         if parent_id and parent_id != rec_id:
             parent_map[rec_id] = parent_id
-    if record_id not in nodes:
-        return None
     for child_id, parent_id in parent_map.items():
         if parent_id in nodes:
             children.setdefault(parent_id, []).append(child_id)
+    for parent_id, ids in children.items():
+        ids.sort(key=lambda rec_id: _letter_sort_key(nodes.get(rec_id, {})))
+    return {
+        "dt_id": dt_id,
+        "keys": keys,
+        "nodes": nodes,
+        "parent_map": parent_map,
+        "children": children,
+    }
+
+def _get_letter_thread_root(record_id, nodes, parent_map):
     root_id = record_id
     seen = set()
     while root_id in parent_map and parent_map[root_id] in nodes and root_id not in seen:
         seen.add(root_id)
         root_id = parent_map[root_id]
+    return root_id
+
+def _build_letter_payload(context, rec_id, level=0, current_id=None):
+    node = context["nodes"][rec_id]
+    data = node["data"]
+    keys = context["keys"]
+    issued = str(data.get(keys["issuedDate"]) or "").strip()
+    received = str(data.get(keys["receivedDate"]) or "").strip()
+    created = node.get("created_at")
+    created_txt = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+    return {
+        "id": rec_id,
+        "parent_id": context["parent_map"].get(rec_id, ""),
+        "doc_no": str(data.get(keys["docNo"]) or "").strip(),
+        "subject": str(data.get(keys["title"]) or "").strip(),
+        "direction": str(data.get(keys["direction"]) or "").strip(),
+        "from_party": str(data.get(keys["fromParty"]) or "").strip(),
+        "to_party": str(data.get(keys["toParty"]) or "").strip(),
+        "date": issued or received,
+        "created_at": created_txt,
+        "level": level,
+        "is_current": rec_id == current_id,
+    }
+
+def get_letter_thread(pid, record_id):
+    context = _get_letter_family_context(pid)
+    if not context:
+        return None
+    if record_id not in context["nodes"]:
+        return None
+    root_id = _get_letter_thread_root(record_id, context["nodes"], context["parent_map"])
     items = []
-    def _item_payload(rec_id, level):
-        row = nodes[rec_id]
-        data = row["data"]
-        issued = str(data.get(issued_key) or "").strip()
-        received = str(data.get(received_key) or "").strip()
-        return {
-            "id": rec_id,
-            "parent_id": parent_map.get(rec_id, ""),
-            "doc_no": str(data.get(doc_key) or "").strip(),
-            "subject": str(data.get(subject_key) or "").strip(),
-            "direction": str(data.get(direction_key) or "").strip(),
-            "from_party": str(data.get(from_key) or "").strip(),
-            "to_party": str(data.get(to_key) or "").strip(),
-            "date": issued or received,
-            "level": level,
-        }
     def _walk(rec_id, level, seen_ids):
         if rec_id in seen_ids:
             return
         seen_ids.add(rec_id)
-        items.append(_item_payload(rec_id, level))
-        for child_id in children.get(rec_id, []):
+        items.append(_build_letter_payload(context, rec_id, level, record_id))
+        for child_id in context["children"].get(rec_id, []):
             _walk(child_id, level + 1, seen_ids)
     _walk(root_id, 0, set())
+    return {
+        "root_id": root_id,
+        "current_id": record_id,
+        "items": items,
+    }
+
+def get_letter_timeline(pid, record_id):
+    context = _get_letter_family_context(pid)
+    if not context:
+        return None
+    if record_id not in context["nodes"]:
+        return None
+    root_id = _get_letter_thread_root(record_id, context["nodes"], context["parent_map"])
+    family_ids = []
+    def _collect(rec_id, seen_ids):
+        if rec_id in seen_ids:
+            return
+        seen_ids.add(rec_id)
+        family_ids.append(rec_id)
+        for child_id in context["children"].get(rec_id, []):
+            _collect(child_id, seen_ids)
+    _collect(root_id, set())
+    items = [_build_letter_payload(context, rec_id, 0, record_id) for rec_id in family_ids]
+    items.sort(key=lambda item: (
+        0 if item.get("date") else 1,
+        str(item.get("date") or item.get("created_at") or ""),
+        str(item.get("created_at") or ""),
+        str(item.get("doc_no") or ""),
+        str(item.get("id") or ""),
+    ))
     return {
         "root_id": root_id,
         "current_id": record_id,

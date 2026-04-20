@@ -1498,6 +1498,18 @@ tr.alt td{{background:#fafbfd}}
   </div>
 </div>
 
+<!-- LETTER TIMELINE -->
+<div class="overlay hidden" id="timeline-modal">
+  <div class="modal" style="max-width:760px">
+    <div class="mhdr"><span id="timeline-title">Letter Timeline</span>
+      <button class="xbtn" onclick="closeM('timeline-modal')">✕</button></div>
+    <div class="mbody" id="timeline-body"></div>
+    <div class="mfoot">
+      <button class="btn btn-sc" onclick="closeM('timeline-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- PROJECT MODAL -->
 <div class="overlay hidden" id="proj-modal">
   <div class="modal" style="max-width:820px">
@@ -2206,7 +2218,7 @@ function renderRows(){{
     const ta=document.createElement('td');ta.className='acts';
     let acts='';
     if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
-    if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">Thread</button> `;
+    if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">Thread</button> <button class="pr-toggle" onclick="openLetterTimeline('${{row._id}}')">Timeline</button> `;
     if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')">✏</button> <button class="act del" onclick="delRec('${{row._id}}')">🗑</button>`;
     else if(!acts)acts='<span style="color:var(--mu);font-size:10px">—</span>';
     ta.innerHTML=acts;
@@ -2252,6 +2264,12 @@ async function openLetterThread(id){{
   openM('thread-modal');
 }}
 
+async function openLetterTimeline(id){{
+  const data=await apiFetch('/api/letters/timeline/'+PID+'/'+id);if(!data)return;
+  renderLetterTimeline(data);
+  openM('timeline-modal');
+}}
+
 function renderLetterThread(data){{
   const body=document.getElementById('thread-body');
   const title=document.getElementById('thread-title');
@@ -2260,7 +2278,7 @@ function renderLetterThread(data){{
   const current=items.find(it=>it.id===currentId)||items[0]||null;
   title.textContent=current?.doc_no?('Letter Thread — '+current.doc_no):'Letter Thread';
   if(!items.length){{
-    body.innerHTML='<div style="padding:12px;color:var(--mu);font-size:12px">No thread items found.</div>';
+    body.innerHTML='<div style="padding:12px;color:var(--mu);font-size:12px">This letter has no linked thread yet.</div>';
     return;
   }}
   body.innerHTML=items.map(it=>{{
@@ -2293,6 +2311,53 @@ function renderLetterThread(data){{
       </div>
     </div>`;
   }}).join('');
+}}
+
+function renderLetterTimeline(data){{
+  const body=document.getElementById('timeline-body');
+  const title=document.getElementById('timeline-title');
+  const items=Array.isArray(data?.items)?data.items:[];
+  const currentId=String(data?.current_id||'').trim();
+  const current=items.find(it=>it.id===currentId)||items[0]||null;
+  title.textContent=current?.doc_no?('Letter Timeline — '+current.doc_no):'Letter Timeline';
+  if(!items.length){{
+    body.innerHTML='<div style="padding:12px;color:var(--mu);font-size:12px">This letter has no linked timeline yet.</div>';
+    return;
+  }}
+  const cards=items.map(it=>{{
+    const isCurrent=String(it.id||'')===currentId;
+    const border=isCurrent?'#8BC34A':'#d7e0e6';
+    const bg=isCurrent?'#f6fbef':'#fff';
+    const shadow=isCurrent?'0 10px 26px rgba(139,195,74,.14)':'0 6px 18px rgba(15,23,42,.05)';
+    const refText=escHtml(it.doc_no||'Untitled');
+    const subjectHtml=escHtml(it.subject||'')||'<span style="color:var(--mu)">No subject</span>';
+    const dateText=escHtml(it.date||it.created_at||'');
+    const metaParts=[
+      it.direction?escHtml(it.direction):'',
+      it.from_party?('From: '+escHtml(it.from_party)):'',
+      it.to_party?('To: '+escHtml(it.to_party)):''
+    ].filter(Boolean);
+    const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
+    const badge=isCurrent?'<span style="flex-shrink:0;background:#8BC34A;color:#17351b;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase">Current</span>':'';
+    return `<div style="position:relative;padding-left:30px;margin-bottom:14px">
+      <div style="position:absolute;left:8px;top:14px;width:12px;height:12px;border-radius:999px;background:${{isCurrent?'#8BC34A':'#2F4F64'}};border:3px solid #fff;box-shadow:0 0 0 2px ${{isCurrent?'rgba(139,195,74,.35)':'rgba(47,79,100,.18)'}}"></div>
+      <div style="background:${{bg}};border:1px solid ${{border}};border-left:4px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+          <div style="min-width:0">
+            <div style="font-size:12px;font-weight:800;color:var(--pr)" dir="auto">${{refText}}</div>
+            <div style="font-size:11px;color:var(--mu);margin-top:3px">${{dateText}}</div>
+            <div style="font-size:12px;color:var(--tx);margin-top:6px;line-height:1.45" dir="auto">${{subjectHtml}}</div>
+          </div>
+          ${{badge}}
+        </div>
+        ${{metaHtml}}
+      </div>
+    </div>`;
+  }}).join('');
+  body.innerHTML=`<div style="position:relative;padding-left:10px">
+    <div style="position:absolute;left:13px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,#d7e0e6,#c7d2da)"></div>
+    ${{cards}}
+  </div>`;
 }}
 
 function isCurrencyField(col){{
