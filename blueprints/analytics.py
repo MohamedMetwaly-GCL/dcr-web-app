@@ -13,6 +13,7 @@ changed from @app.route to @analytics_bp.route.
 from flask import Blueprint, jsonify, request
 
 import db
+from auth import current_user, get_allowed_project_ids
 
 analytics_bp = Blueprint("analytics", __name__)
 
@@ -20,22 +21,26 @@ analytics_bp = Blueprint("analytics", __name__)
 @analytics_bp.route("/api/analytics/trend")
 def api_trend():
     pid = request.args.get("pid")
-    return jsonify(db.get_monthly_trend(pid))
+    u = current_user()
+    return jsonify(db.get_monthly_trend(pid, project_ids=get_allowed_project_ids(u)))
 
 
 @analytics_bp.route("/api/analytics/aging")
 def api_aging():
     pid = request.args.get("pid")
-    return jsonify(db.get_aging_report(pid))
+    u = current_user()
+    return jsonify(db.get_aging_report(pid, project_ids=get_allowed_project_ids(u)))
 
 
 @analytics_bp.route("/api/analytics/quality")
 def api_quality():
     pid = request.args.get("pid")
-    return jsonify(db.get_quality_report(pid))
+    u = current_user()
+    return jsonify(db.get_quality_report(pid, project_ids=get_allowed_project_ids(u)))
 
 
 @analytics_bp.route("/api/analytics/overdue")
 def api_overdue_list():
     pid = request.args.get("pid")
-    return jsonify(db.get_overdue_records(pid))
+    u = current_user()
+    return jsonify(db.get_overdue_records(pid, project_ids=get_allowed_project_ids(u)))

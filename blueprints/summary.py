@@ -14,7 +14,7 @@ import datetime
 from flask import Blueprint, jsonify, request
 
 import db
-from auth import current_user
+from auth import current_user, get_allowed_project_ids
 
 summary_bp = Blueprint("summary", __name__)
 
@@ -24,7 +24,7 @@ def api_overdue_digest():
     """Returns overdue summary for email/display."""
     u = current_user()
     if not u: return jsonify(error="LOGIN_REQUIRED"), 403
-    records = db.get_overdue_records()
+    records = db.get_overdue_records(project_ids=get_allowed_project_ids(u))
     return jsonify({
         "total": len(records),
         "records": records[:50],
@@ -48,10 +48,12 @@ def api_records_range(pid, dt_id):
 @summary_bp.route("/api/executive_summary")
 def api_executive_summary():
     """One-page executive summary data."""
-    stats  = db.get_dashboard_stats()
-    aging  = db.get_aging_report()
-    quality= db.get_quality_report()
-    overdue= db.get_overdue_records()
+    u = current_user()
+    allowed_ids = get_allowed_project_ids(u)
+    stats  = db.get_dashboard_stats(project_ids=allowed_ids)
+    aging  = db.get_aging_report(project_ids=allowed_ids)
+    quality= db.get_quality_report(project_ids=allowed_ids)
+    overdue= db.get_overdue_records(project_ids=allowed_ids)
     total_docs = sum(p["total"]    for p in stats)
     total_ap   = sum(p["approved"] for p in stats)
     total_pe   = sum(p["pending"]  for p in stats)
@@ -78,16 +80,19 @@ def api_executive_summary():
 @summary_bp.route("/api/data_quality_summary")
 def api_data_quality_summary():
     pid = request.args.get("project_id") or None
-    return jsonify(db.get_data_quality_summary(pid))
+    u = current_user()
+    return jsonify(db.get_data_quality_summary(pid, project_ids=get_allowed_project_ids(u)))
 
 
 @summary_bp.route("/api/action_required_summary")
 def api_action_required_summary():
     pid = request.args.get("project_id") or None
-    return jsonify(db.get_action_required_summary(pid))
+    u = current_user()
+    return jsonify(db.get_action_required_summary(pid, project_ids=get_allowed_project_ids(u)))
 
 
 @summary_bp.route("/api/pr_analytics_summary")
 def api_pr_analytics_summary():
     pid = request.args.get("project_id") or None
-    return jsonify(db.get_pr_analytics_summary(pid))
+    u = current_user()
+    return jsonify(db.get_pr_analytics_summary(pid, project_ids=get_allowed_project_ids(u)))

@@ -51,6 +51,36 @@ def require_login(fn):
     return wrapper
 
 
+def get_allowed_project_ids(user=None):
+    """Return the project ids the given/current user may view."""
+    u = user or current_user()
+    if not u:
+        return []
+    if u["role"] in ("superadmin", "admin"):
+        return [p["id"] for p in db.get_projects()]
+    return db.get_user_projects(u["username"])
+
+
+def has_project_access(username, project_id, role=None):
+    """Return True if the user may view the project."""
+    if not username or not project_id:
+        return False
+    user_role = str(role or "").strip().lower()
+    if user_role in ("superadmin", "admin"):
+        return True
+    return project_id in db.get_user_projects(username)
+
+
+def can_view_project(project_id, user=None):
+    """Return True if the current/given user may view project_id."""
+    u = user or current_user()
+    if not u or not project_id:
+        return False
+    if u["role"] in ("superadmin", "admin"):
+        return True
+    return has_project_access(u["username"], project_id, u.get("role"))
+
+
 def require_superadmin(fn):
     """Decorator: allow only users with role == 'superadmin'.
 

@@ -22,7 +22,9 @@ projects_bp = Blueprint("projects", __name__)
 @projects_bp.route("/api/projects")
 def api_projects():
     u = current_user()
-    projects = db.get_projects()
+    if not u:
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    projects = db.get_projects_for_user(u["username"], u.get("role"))
     out = []
     for p in projects:
         try: data = p.get("data") or {}

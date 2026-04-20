@@ -32,7 +32,33 @@ app.register_blueprint(users_bp)
 app.register_blueprint(exporting_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
-from auth import current_user, can_edit
+from auth import current_user, can_edit, can_view_project, get_allowed_project_ids
+
+PUBLIC_ENDPOINTS = {"login", "logout", "static"}
+
+
+@app.before_request
+def enforce_login_and_project_scope():
+    endpoint = request.endpoint or ""
+    if endpoint in PUBLIC_ENDPOINTS or request.path.startswith("/static/"):
+        return None
+
+    u = current_user()
+    if not u:
+        if request.path.startswith("/api/"):
+            return jsonify(error="LOGIN_REQUIRED"), 403
+        return redirect("/login")
+
+    pid = ""
+    if request.view_args:
+        pid = str(request.view_args.get("pid") or "").strip()
+    if not pid:
+        pid = str(request.args.get("p") or request.args.get("project_id") or request.args.get("pid") or "").strip()
+    if pid and not can_view_project(pid, u):
+        if request.path.startswith("/api/"):
+            return jsonify(error="Forbidden"), 403
+        return "Forbidden", 403
+    return None
 
 # ── Pages ─────────────────────────────────────────────────────
 @app.route("/ping")
@@ -125,8 +151,8 @@ def api_counts(pid):
 
 @app.route("/api/dashboard_stats")
 def api_dashboard_stats():
-    stats = db.get_dashboard_stats()
     u = current_user()
+    stats = db.get_dashboard_stats(project_ids=get_allowed_project_ids(u))
     for s in stats:
         s["can_edit"] = can_edit(s["id"])
     return jsonify(stats)

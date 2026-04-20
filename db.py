@@ -556,9 +556,45 @@ def get_project_users(project_id):
     return [r["username"] for r in
             q("SELECT username FROM user_projects WHERE project_id=%s", (project_id,))]
 
+def _clean_project_ids(project_ids):
+    if project_ids is None:
+        return None
+    seen = set()
+    cleaned = []
+    for pid in project_ids:
+        val = str(pid or "").strip()
+        if not val or val in seen:
+            continue
+        seen.add(val)
+        cleaned.append(val)
+    return cleaned
+
+def _project_scope_clause(column, pid=None, project_ids=None):
+    if pid:
+        return f"WHERE {column}=%s", [pid]
+    ids = _clean_project_ids(project_ids)
+    if ids is None:
+        return "WHERE 1=1", []
+    if not ids:
+        return "WHERE 1=0", []
+    ph = ",".join(["%s"] * len(ids))
+    return f"WHERE {column} IN ({ph})", ids
+
 # ── Projects ──────────────────────────────────────────────────
-def get_projects():
-    return q("SELECT * FROM projects ORDER BY id")
+def get_projects(project_ids=None):
+    ids = _clean_project_ids(project_ids)
+    if ids is None:
+        return q("SELECT * FROM projects ORDER BY id")
+    if not ids:
+        return []
+    ph = ",".join(["%s"] * len(ids))
+    return q(f"SELECT * FROM projects WHERE id IN ({ph}) ORDER BY id", ids)
+
+def get_projects_for_user(username, role=None):
+    user_role = str(role or "").strip().lower()
+    if user_role in ("superadmin", "admin"):
+        return get_projects()
+    return get_projects(get_user_projects(username))
 
 def get_project(pid):
     r = q("SELECT * FROM projects WHERE id=%s", (pid,), one=True)
@@ -904,24 +940,28 @@ def remove_list_item(pid, list_name, item):
         (pid, list_name, item))
 
 # ── Fast Dashboard Stats (single query) ──────────────────────
-def get_dashboard_stats():
+def get_dashboard_stats(project_ids=None):
     """One big SQL call — replaces N×M individual queries."""
     import re, json as _json
-    # Pre-load status meta for all projects
-    meta_rows = q("SELECT project_id, item_value, meta FROM dropdown_lists"
-                  " WHERE list_name LIKE %s AND meta IS NOT NULL", ("status%",))
-    # meta_map[pid][status_value] = meta
-    meta_map = {}
-    for r in meta_rows:
-        meta_map.setdefault(r["project_id"], {})[r["item_value"]] = r["meta"]
-    from utils import is_overdue
-
-    projects = get_projects()
+    projects = get_projects(project_ids)
     if not projects:
         return []
 
     pids = [p["id"] for p in projects]
     ph   = ",".join(["%s"] * len(pids))
+
+    meta_rows = q(f"""
+        SELECT project_id, item_value, meta
+        FROM dropdown_lists
+        WHERE project_id IN ({ph})
+          AND list_name LIKE %s
+          AND meta IS NOT NULL
+    """, pids + ["status%"])
+    # meta_map[pid][status_value] = meta
+    meta_map = {}
+    for r in meta_rows:
+        meta_map.setdefault(r["project_id"], {})[r["item_value"]] = r["meta"]
+    from utils import is_overdue
 
     # All records in one query
     all_recs = q(f"""
@@ -1055,8 +1095,9 @@ def get_dashboard_stats():
     return result
 
 
-def get_data_quality_summary(pid=None):
-    dt_rows = q("SELECT project_id, id, code, name FROM doc_types WHERE project_id=%s", (pid,)) if pid else q("SELECT project_id, id, code, name FROM doc_types")
+def get_data_quality_summary(pid=None, project_ids=None):
+    where, params = _project_scope_clause("project_id", pid, project_ids)
+    dt_rows = q(f"SELECT project_id, id, code, name FROM doc_types {where}", params)
     if not dt_rows:
         return {
             "total_records": 0,
@@ -1073,15 +1114,12 @@ def get_data_quality_summary(pid=None):
         }
 
     dt_meta = {(d["project_id"], d["id"]): d for d in dt_rows}
-    col_rows = q("""
+    col_where, col_params = _project_scope_clause("project_id", pid, project_ids)
+    col_rows = q(f"""
         SELECT project_id, dt_id, col_key
         FROM columns_config
-        WHERE visible=TRUE AND col_key IN ('expectedReplyDate','status')
-    """ + (" AND project_id=%s" if pid else ""), (pid,)) if pid else q("""
-        SELECT project_id, dt_id, col_key
-        FROM columns_config
-        WHERE visible=TRUE AND col_key IN ('expectedReplyDate','status')
-    """)
+        {col_where} AND visible=TRUE AND col_key IN ('expectedReplyDate','status')
+    """, col_params)
     dt_has_exp = set()
     dt_has_status = set()
     for r in col_rows:
@@ -1101,7 +1139,8 @@ def get_data_quality_summary(pid=None):
         if code == "PR" or "requisition" in name or "purchase request" in name:
             pr_dt_keys.add(key)
 
-    recs = q("SELECT id, project_id, dt_id, data FROM records WHERE project_id=%s", (pid,)) if pid else q("SELECT id, project_id, dt_id, data FROM records")
+    rec_where, rec_params = _project_scope_clause("project_id", pid, project_ids)
+    recs = q(f"SELECT id, project_id, dt_id, data FROM records {rec_where}", rec_params)
     total_records = len(recs)
     issued_date_count = 0
     workflow_records = 0
@@ -1146,35 +1185,38 @@ def get_data_quality_summary(pid=None):
     }
 
 
-def get_action_required_summary(pid=None, limit=10, pending_threshold=14):
+def get_action_required_summary(pid=None, limit=10, pending_threshold=14, project_ids=None):
     from utils import compute_duration
 
-    projects = get_projects()
+    projects = get_projects(project_ids)
     project_codes = {p["id"]: p["code"] for p in projects}
 
-    overdue_rows = get_overdue_records(pid)[:limit]
+    overdue_rows = get_overdue_records(pid, project_ids=project_ids)[:limit]
     top_overdue = [
         {**r, "project_code": project_codes.get(r["project_id"], r["project_id"])}
         for r in overdue_rows
     ]
 
-    dt_rows = q("SELECT project_id, id, code, name FROM doc_types WHERE project_id=%s", (pid,)) if pid else q("SELECT project_id, id, code, name FROM doc_types")
+    dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
+    dt_rows = q(f"SELECT project_id, id, code, name FROM doc_types {dt_where}", dt_params)
     dt_meta = {(d["project_id"], d["id"]): d for d in dt_rows}
 
-    meta_rows = q("SELECT project_id, item_value, meta FROM dropdown_lists WHERE project_id=%s AND list_name LIKE %s AND meta IS NOT NULL", (pid, "status%")) if pid else q("SELECT project_id, item_value, meta FROM dropdown_lists WHERE list_name LIKE %s AND meta IS NOT NULL", ("status%",))
+    list_where, list_params = _project_scope_clause("project_id", pid, project_ids)
+    meta_rows = q(f"""
+        SELECT project_id, item_value, meta
+        FROM dropdown_lists
+        {list_where} AND list_name LIKE %s AND meta IS NOT NULL
+    """, list_params + ["status%"])
     meta_map = {}
     for r in meta_rows:
         meta_map.setdefault(r["project_id"], {})[r["item_value"]] = r["meta"]
 
-    col_rows = q("""
+    col_where, col_params = _project_scope_clause("project_id", pid, project_ids)
+    col_rows = q(f"""
         SELECT project_id, dt_id, col_key
         FROM columns_config
-        WHERE project_id=%s AND visible=TRUE AND col_key IN ('expectedReplyDate','status')
-    """, (pid,)) if pid else q("""
-        SELECT project_id, dt_id, col_key
-        FROM columns_config
-        WHERE visible=TRUE AND col_key IN ('expectedReplyDate','status')
-    """)
+        {col_where} AND visible=TRUE AND col_key IN ('expectedReplyDate','status')
+    """, col_params)
     dt_has_exp = set()
     dt_has_status = set()
     for r in col_rows:
@@ -1189,7 +1231,8 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14):
         if key in dt_has_exp and key in dt_has_status and not _is_non_workflow_dt(dt.get("code",""), dt.get("name",""))
     }
 
-    rows = q("SELECT id, project_id, dt_id, data, created_at FROM records WHERE project_id=%s ORDER BY created_at DESC", (pid,)) if pid else q("SELECT id, project_id, dt_id, data, created_at FROM records ORDER BY created_at DESC")
+    rec_where, rec_params = _project_scope_clause("project_id", pid, project_ids)
+    rows = q(f"SELECT id, project_id, dt_id, data, created_at FROM records {rec_where} ORDER BY created_at DESC", rec_params)
     pending_longest = []
     recent_rejected = []
 
@@ -1232,28 +1275,47 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14):
     }
 
 
-def get_pr_analytics_summary(pid=None, limit=5):
-    projects = get_projects()
+def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
+    projects = get_projects(project_ids)
     project_map = {p["id"]: p for p in projects}
-
-    pr_rows = q("""
-        SELECT r.id, r.project_id, r.data, d.code, d.name
-        FROM records r
-        JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
-        WHERE r.project_id=%s
-          AND (
-               UPPER(COALESCE(d.code, ''))='PR'
-            OR LOWER(COALESCE(d.name, '')) LIKE %s
-            OR LOWER(COALESCE(d.name, '')) LIKE %s
-          )
-    """, (pid, "%requisition%", "%purchase request%")) if pid else q("""
-        SELECT r.id, r.project_id, r.data, d.code, d.name
-        FROM records r
-        JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
-        WHERE UPPER(COALESCE(d.code, ''))='PR'
-           OR LOWER(COALESCE(d.name, '')) LIKE %s
-           OR LOWER(COALESCE(d.name, '')) LIKE %s
-    """, ("%requisition%", "%purchase request%"))
+    allowed_ids = _clean_project_ids(project_ids)
+    if pid:
+        pr_rows = q("""
+            SELECT r.id, r.project_id, r.data, d.code, d.name
+            FROM records r
+            JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
+            WHERE r.project_id=%s
+              AND (
+                   UPPER(COALESCE(d.code, ''))='PR'
+                OR LOWER(COALESCE(d.name, '')) LIKE %s
+                OR LOWER(COALESCE(d.name, '')) LIKE %s
+              )
+        """, (pid, "%requisition%", "%purchase request%"))
+    elif allowed_ids is not None:
+        if not allowed_ids:
+            pr_rows = []
+        else:
+            ph = ",".join(["%s"] * len(allowed_ids))
+            pr_rows = q(f"""
+                SELECT r.id, r.project_id, r.data, d.code, d.name
+                FROM records r
+                JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
+                WHERE r.project_id IN ({ph})
+                  AND (
+                       UPPER(COALESCE(d.code, ''))='PR'
+                    OR LOWER(COALESCE(d.name, '')) LIKE %s
+                    OR LOWER(COALESCE(d.name, '')) LIKE %s
+                  )
+            """, allowed_ids + ["%requisition%", "%purchase request%"])
+    else:
+        pr_rows = q("""
+            SELECT r.id, r.project_id, r.data, d.code, d.name
+            FROM records r
+            JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
+            WHERE UPPER(COALESCE(d.code, ''))='PR'
+               OR LOWER(COALESCE(d.name, '')) LIKE %s
+               OR LOWER(COALESCE(d.name, '')) LIKE %s
+        """, ("%requisition%", "%purchase request%"))
 
     total_pr_records = len(pr_rows)
     if not total_pr_records:
@@ -1307,11 +1369,10 @@ def get_pr_analytics_summary(pid=None, limit=5):
     }
 
 
-def get_monthly_trend(pid=None):
+def get_monthly_trend(pid=None, project_ids=None):
     """Returns last 6 months of submission counts per month."""
     import re as _re
-    where = "WHERE project_id=%s" if pid else "WHERE 1=1"
-    params = (pid,) if pid else ()
+    where, params = _project_scope_clause("project_id", pid, project_ids)
     rows = q(f"SELECT data FROM records {where}", params)
     months = {}
     import datetime
@@ -1338,27 +1399,23 @@ def get_monthly_trend(pid=None):
             for k, v in sorted(months.items())]
 
 
-def get_aging_report(pid=None):
+def get_aging_report(pid=None, project_ids=None):
     """Returns pending docs grouped by days lapsed — only for types with visible expectedReplyDate."""
     from utils import compute_duration
-    where = "WHERE r.project_id=%s" if pid else "WHERE 1=1"
-    params = (pid,) if pid else ()
-    if pid:
-        exp_rows = q(
-            "SELECT dt_id, col_key FROM columns_config"
-            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status') AND visible=TRUE",
-            (pid,))
-    else:
-        exp_rows = q(
-            "SELECT dt_id, col_key FROM columns_config"
-            " WHERE col_key IN ('expectedReplyDate','status') AND visible=TRUE")
+    where, params = _project_scope_clause("r.project_id", pid, project_ids)
+    col_where, col_params = _project_scope_clause("project_id", pid, project_ids)
+    exp_rows = q(
+        "SELECT dt_id, col_key FROM columns_config"
+        f" {col_where} AND col_key IN ('expectedReplyDate','status') AND visible=TRUE",
+        col_params)
     dt_has_exp_a    = set()
     dt_has_status_a = set()
     for r in exp_rows:
         if r["col_key"] == "expectedReplyDate": dt_has_exp_a.add(r["dt_id"])
         elif r["col_key"] == "status":          dt_has_status_a.add(r["dt_id"])
     dt_with_exp = dt_has_exp_a & dt_has_status_a
-    dt_rows = q("SELECT id, code, name FROM doc_types WHERE project_id=%s", (pid,)) if pid else q("SELECT id, code, name FROM doc_types")
+    dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
+    dt_rows = q(f"SELECT id, code, name FROM doc_types {dt_where}", dt_params)
     dt_with_exp = {dt_id for dt_id in dt_with_exp
                    if not _is_non_workflow_dt(
                        next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),
@@ -1380,11 +1437,10 @@ def get_aging_report(pid=None):
         else:            buckets[">21"]   += 1
     return [{"range": k, "count": v} for k, v in buckets.items()]
 
-def get_quality_report(pid=None):
+def get_quality_report(pid=None, project_ids=None):
     """Returns doc quality: how many docs needed 0,1,2,3+ revisions."""
     import re as _re
-    where = "WHERE project_id=%s" if pid else "WHERE 1=1"
-    params = (pid,) if pid else ()
+    where, params = _project_scope_clause("project_id", pid, project_ids)
     rows = q(f"SELECT data FROM records {where}", params)
     doc_revs = {}
     for row in rows:
@@ -1404,27 +1460,22 @@ def get_quality_report(pid=None):
     return [{"revisions": k, "count": v} for k, v in buckets.items()]
 
 
-def get_overdue_records(pid=None):
+def get_overdue_records(pid=None, project_ids=None):
     """Returns overdue records — only for doc types with BOTH visible status AND visible expectedReplyDate."""
     from utils import is_overdue
     import datetime as _dt
-    where = "WHERE project_id=%s" if pid else "WHERE 1=1"
-    params = (pid,) if pid else ()
+    where, params = _project_scope_clause("r.project_id", pid, project_ids)
     rows = q(f"""SELECT r.project_id, r.dt_id, r.data, d.code as dt_code, d.name as dt_name
                  FROM records r
                  JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
-                 {where.replace("project_id", "r.project_id")}""", params)
+                 {where}""", params)
     # Only dt_ids that have BOTH visible status AND visible expectedReplyDate
     # (types like Letters/PR that have no status column are excluded)
-    if pid:
-        exp_rows = q(
-            "SELECT dt_id, col_key FROM columns_config"
-            " WHERE project_id=%s AND col_key IN ('expectedReplyDate','status') AND visible=TRUE",
-            (pid,))
-    else:
-        exp_rows = q(
-            "SELECT dt_id, col_key FROM columns_config"
-            " WHERE col_key IN ('expectedReplyDate','status') AND visible=TRUE")
+    col_where, col_params = _project_scope_clause("project_id", pid, project_ids)
+    exp_rows = q(
+        "SELECT dt_id, col_key FROM columns_config"
+        f" {col_where} AND col_key IN ('expectedReplyDate','status') AND visible=TRUE",
+        col_params)
     dt_has_exp    = set()
     dt_has_status = set()
     for r in exp_rows:
@@ -1432,7 +1483,8 @@ def get_overdue_records(pid=None):
         elif r["col_key"] == "status":          dt_has_status.add(r["dt_id"])
     # Must have BOTH to be considered overdue-eligible
     dt_with_exp = dt_has_exp & dt_has_status
-    dt_rows = q("SELECT id, code, name FROM doc_types WHERE project_id=%s", (pid,)) if pid else q("SELECT id, code, name FROM doc_types")
+    dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
+    dt_rows = q(f"SELECT id, code, name FROM doc_types {dt_where}", dt_params)
     dt_with_exp = {dt_id for dt_id in dt_with_exp
                    if not _is_non_workflow_dt(
                        next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),

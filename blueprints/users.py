@@ -14,7 +14,7 @@ changed from @app.route to @users_bp.route.
 from flask import Blueprint, jsonify, request
 
 import db
-from auth import current_user, require_superadmin
+from auth import current_user, require_superadmin, get_allowed_project_ids
 
 users_bp = Blueprint("users", __name__)
 
@@ -66,7 +66,7 @@ def api_user_projects(username):
 def api_whoami():
     u = current_user()
     if not u: return jsonify(username="guest", role="guest", projects=[])
-    projs = [] if u["role"] == "superadmin" else db.get_user_projects(u["username"])
+    projs = get_allowed_project_ids(u)
     return jsonify(username=u["username"], role=u["role"], projects=projs)
 
 

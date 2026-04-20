@@ -13,7 +13,7 @@ import uuid
 from flask import Blueprint, jsonify, request
 
 import db
-from auth import current_user, can_edit
+from auth import current_user, can_edit, can_view_project
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 
 records_bp = Blueprint("records", __name__)
@@ -222,6 +222,8 @@ def api_get_pr_items(record_id):
         return jsonify(error="Not found"), 404
     pid   = full_row.get("_project_id", "")
     dt_id = full_row.get("_dt_id", "")
+    if not can_view_project(pid):
+        return jsonify(error="Forbidden"), 403
     if not _is_pr_doc_type(pid, dt_id):
         return jsonify(error="Not a PR document"), 400
     items = db.get_pr_items(record_id)
