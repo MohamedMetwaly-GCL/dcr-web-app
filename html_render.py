@@ -133,13 +133,13 @@ def render_login():
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;align-items:center;
   justify-content:center;margin:0;overflow:hidden;background:linear-gradient(135deg,#8BC34A 0%,#5f9f56 24%,#2F4F64 100%)}}
-.shell{{width:100%;height:100%;display:flex;align-items:center;justify-content:center}}
+.shell{{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:18px 16px}}
 .card{{background:rgba(255,255,255,.98);border-radius:16px;box-shadow:0 26px 70px rgba(18,34,46,.28);
-  width:100%;max-width:410px;overflow:hidden;backdrop-filter:blur(6px)}}
+  width:100%;max-width:392px;overflow:hidden;backdrop-filter:blur(6px)}}
 .brand-band{{height:10px;background:linear-gradient(90deg,#8BC34A,#2F4F64)}}
-.cbody{{padding:34px 34px 30px}}
+.cbody{{padding:30px 28px 26px}}
 .logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:18px;padding:12px;background:transparent;border-radius:12px}}
-.logo-wrap img{{width:min(100%,210px);height:auto;display:block;background:transparent;mix-blend-mode:multiply;filter:drop-shadow(0 10px 18px rgba(47,79,100,.12))}}
+.logo-wrap img{{width:min(100%,192px);height:auto;display:block;background:transparent;mix-blend-mode:multiply;filter:drop-shadow(0 10px 18px rgba(47,79,100,.12))}}
 .title{{font-size:28px;font-weight:800;letter-spacing:.4px;color:#2F4F64;text-align:center;margin-bottom:6px}}
 .subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:26px}}
 .fld{{margin-bottom:18px}}
@@ -154,10 +154,10 @@ body{{font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;align-it
 .btn-login:active{{transform:translateY(0)}}
 .hint{{text-align:center;color:#7d8a95;font-size:11px;margin-top:15px}}
 @media(max-width:480px){{
-  body{{padding:0}}
-  .cbody{{padding:28px 22px 24px}}
+  .shell{{padding:14px 12px}}
+  .cbody{{padding:24px 20px 22px}}
   .title{{font-size:24px}}
-  .logo-wrap img{{width:min(100%,185px)}}
+  .logo-wrap img{{width:min(100%,172px)}}
 }}
 </style></head><body>
 <div class="shell">
