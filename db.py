@@ -771,6 +771,76 @@ def get_record_by_doc_no(pid, dt_id, doc_no):
         **data,
     }
 
+def _norm_ltr_text(v):
+    return "".join(ch for ch in str(v or "").strip().lower() if ch.isalnum())
+
+def _get_ltr_dt_id(pid):
+    dt = q("""
+        SELECT id, name, code
+        FROM doc_types
+        WHERE project_id=%s
+        ORDER BY sort_order, id
+    """, (pid,))
+    match = next((d for d in dt if _is_ltr_dt(d.get("code",""), d.get("name",""))), None)
+    return match["id"] if match else None
+
+def _ltr_field_key_from_cols(cols, role):
+    wanted = {
+        "docNo": {"docno", "letterref"},
+        "title": {"title", "subject"},
+        "direction": {"direction"},
+        "fromParty": {"fromparty", "from"},
+        "toParty": {"toparty", "to"},
+        "issuedDate": {"issueddate"},
+        "receivedDate": {"receiveddate"},
+        "parentLetterId": {"parentletterid"},
+    }.get(role, set())
+    for c in cols or []:
+        key = _norm_ltr_text(c.get("col_key"))
+        label = _norm_ltr_text(c.get("label"))
+        if key in wanted or label in wanted:
+            return c.get("col_key")
+    return role
+
+def get_letter_parent_options(pid, exclude_id=None):
+    dt_id = _get_ltr_dt_id(pid)
+    if not dt_id:
+        return []
+    cols = get_columns(pid, dt_id)
+    doc_key = _ltr_field_key_from_cols(cols, "docNo")
+    subject_key = _ltr_field_key_from_cols(cols, "title")
+    direction_key = _ltr_field_key_from_cols(cols, "direction")
+    from_key = _ltr_field_key_from_cols(cols, "fromParty")
+    to_key = _ltr_field_key_from_cols(cols, "toParty")
+    issued_key = _ltr_field_key_from_cols(cols, "issuedDate")
+    received_key = _ltr_field_key_from_cols(cols, "receivedDate")
+    params = [pid, dt_id]
+    sql = """
+        SELECT id, data, created_at
+        FROM records
+        WHERE project_id=%s AND dt_id=%s
+    """
+    if exclude_id:
+        sql += " AND id<>%s"
+        params.append(exclude_id)
+    sql += " ORDER BY created_at DESC, id DESC LIMIT 200"
+    rows = q(sql, params)
+    out = []
+    for row in rows:
+        data = row["data"] if isinstance(row.get("data"), dict) else {}
+        issued = str(data.get(issued_key) or "").strip()
+        received = str(data.get(received_key) or "").strip()
+        out.append({
+            "id": row["id"],
+            "doc_no": str(data.get(doc_key) or "").strip(),
+            "subject": str(data.get(subject_key) or "").strip(),
+            "direction": str(data.get(direction_key) or "").strip(),
+            "from_party": str(data.get(from_key) or "").strip(),
+            "to_party": str(data.get(to_key) or "").strip(),
+            "date": issued or received,
+        })
+    return out
+
 def merge_record_data(existing_data: dict, incoming_data: dict):
     merged = {k: v for k, v in (existing_data or {}).items() if not str(k).startswith("_")}
     for key, value in (incoming_data or {}).items():

@@ -108,6 +108,14 @@ def api_records(pid, dt_id):
     return jsonify(records=records, columns=cols, count=db.count_records(pid, dt_id), pr_items_map=pr_items_map)
 
 
+@records_bp.route("/api/letters/parent-options/<pid>")
+def api_letter_parent_options(pid):
+    if not can_view_project(pid):
+        return jsonify(error="Forbidden"), 403
+    exclude_id = str(request.args.get("record_id","") or "").strip() or None
+    return jsonify(options=db.get_letter_parent_options(pid, exclude_id))
+
+
 @records_bp.route("/api/records/<pid>/<dt_id>", methods=["POST"])
 def api_save_record(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
