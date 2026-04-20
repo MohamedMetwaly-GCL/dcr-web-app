@@ -21,6 +21,7 @@ Step 3 of the incremental refactor. Only HTML rendering lives here.
 No routes, no business logic, no database writes.
 """
 import json
+import os
 
 import db
 from flask import url_for
@@ -125,7 +126,9 @@ async function changePw(){
 
 
 def render_login():
-    logo_src = url_for("static", filename="logo.png")
+    logo_file = os.path.join(os.path.dirname(__file__), "static", "logo.png")
+    logo_ver = str(int(os.path.getmtime(logo_file))) if os.path.exists(logo_file) else "1"
+    logo_src = url_for("static", filename="logo.png") + f"?v={logo_ver}"
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — Login</title>
@@ -133,16 +136,16 @@ def render_login():
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;align-items:center;
   justify-content:center;margin:0;overflow:hidden;background:linear-gradient(135deg,#8BC34A 0%,#5f9f56 24%,#2F4F64 100%)}}
-.shell{{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:18px 16px}}
+.shell{{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:26px 16px 24px}}
 .card{{background:rgba(255,255,255,.98);border-radius:16px;box-shadow:0 26px 70px rgba(18,34,46,.28);
   width:100%;max-width:392px;overflow:hidden;backdrop-filter:blur(6px)}}
 .brand-band{{height:10px;background:linear-gradient(90deg,#8BC34A,#2F4F64)}}
-.cbody{{padding:30px 28px 26px}}
-.logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:18px;padding:12px;background:transparent;border-radius:12px}}
-.logo-wrap img{{width:min(100%,192px);height:auto;display:block;background:transparent;mix-blend-mode:multiply;filter:drop-shadow(0 10px 18px rgba(47,79,100,.12))}}
+.cbody{{padding:26px 26px 22px}}
+.logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:14px;padding:8px;background:transparent;border-radius:12px}}
+.logo-wrap img{{width:min(100%,176px);height:auto;display:block;background:transparent;filter:drop-shadow(0 8px 16px rgba(47,79,100,.1))}}
 .title{{font-size:28px;font-weight:800;letter-spacing:.4px;color:#2F4F64;text-align:center;margin-bottom:6px}}
-.subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:26px}}
-.fld{{margin-bottom:18px}}
+.subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:20px}}
+.fld{{margin-bottom:14px}}
 .fld label{{display:block;font-size:11px;font-weight:700;color:#4f6370;text-transform:uppercase;letter-spacing:.55px;margin-bottom:7px}}
 .fld input{{width:100%;padding:13px 15px;border:1.5px solid #d9e2e8;border-radius:11px;font-family:inherit;font-size:14px;
   outline:none;transition:border-color .2s, box-shadow .2s, background .2s;background:#fbfdff;color:#1f2f3b}}
@@ -152,12 +155,14 @@ body{{font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;align-it
   font-size:14px;font-weight:800;letter-spacing:.25px;cursor:pointer;transition:transform .18s, box-shadow .18s, background .18s}}
 .btn-login:hover{{transform:translateY(-1px);box-shadow:0 12px 28px rgba(47,79,100,.26);background:#284355}}
 .btn-login:active{{transform:translateY(0)}}
-.hint{{text-align:center;color:#7d8a95;font-size:11px;margin-top:15px}}
+.hint{{text-align:center;color:#7d8a95;font-size:11px;margin-top:12px}}
 @media(max-width:480px){{
-  .shell{{padding:14px 12px}}
-  .cbody{{padding:24px 20px 22px}}
+  .shell{{padding:22px 12px 20px}}
+  .cbody{{padding:22px 18px 20px}}
   .title{{font-size:24px}}
-  .logo-wrap img{{width:min(100%,172px)}}
+  .subtitle{{margin-bottom:18px}}
+  .fld{{margin-bottom:12px}}
+  .logo-wrap img{{width:min(100%,162px)}}
 }}
 </style></head><body>
 <div class="shell">
