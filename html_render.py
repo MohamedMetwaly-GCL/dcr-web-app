@@ -23,6 +23,7 @@ No routes, no business logic, no database writes.
 import json
 
 import db
+from flask import url_for
 from auth import can_edit
 from utils import STATUS_COLORS
 
@@ -124,6 +125,7 @@ async function changePw(){
 
 
 def render_login():
+    logo_src = url_for("static", filename="logo.png")
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — Login</title>
@@ -162,7 +164,7 @@ body{{font-family:'Segoe UI',Arial,sans-serif;min-height:100vh;display:flex;alig
   <div class="card">
     <div class="brand-band"></div>
     <div class="cbody">
-      <div class="logo-wrap"><img src="/static/logo.png" alt="Gas Chill"></div>
+      <div class="logo-wrap"><img src="{logo_src}" alt="Gas Chill"></div>
       <div class="title">Document Control System</div>
       <div class="subtitle">Secure Project Access</div>
       <div class="err" id="err"></div>
