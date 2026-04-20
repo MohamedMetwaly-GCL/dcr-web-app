@@ -215,22 +215,17 @@ NOC_COLS = [
 ]
 
 LTR_DIRECTION_VALUES = ["Sent", "Received"]
-LTR_STATUS_VALUES = ["Open", "Awaiting Response", "Replied", "Closed"]
 
 LTR_COLS = [
     ("docNo", "Letter Ref", "docno", None, 0, True),
     ("title", "Subject", "text", None, 1, True),
-    ("description", "Description", "text", None, 2, False),
-    ("fileLocation", "Attachment / File Location", "link", None, 3, False),
-    ("remarks", "Remarks", "text", None, 4, False),
-    ("direction", "Direction", "dropdown", "letter_direction", 5, True),
-    ("fromParty", "From Party", "dropdown", "correspondence_parties", 6, True),
-    ("toParty", "To Party", "dropdown", "correspondence_parties", 7, True),
-    ("issuedDate", "Issue Date", "date", None, 8, True),
-    ("receivedDate", "Received Date", "date", None, 9, True),
-    ("parentLetterId", "Parent Letter ID", "text", None, 10, False),
-    ("parentLetterRef", "Response Ref", "text", None, 11, True),
-    ("status", "Status", "dropdown", "letter_status", 12, True),
+    ("direction", "Direction", "dropdown", "letter_direction", 2, True),
+    ("fromParty", "From Party", "dropdown", "correspondence_parties", 3, True),
+    ("toParty", "To Party", "dropdown", "correspondence_parties", 4, True),
+    ("issuedDate", "Issue Date", "date", None, 5, True),
+    ("receivedDate", "Received Date", "date", None, 6, True),
+    ("parentLetterId", "Parent Letter ID", "text", None, 7, False),
+    ("parentLetterRef", "Response Ref", "text", None, 8, True),
 ]
 
 # Default meta categories for known status values
@@ -390,12 +385,6 @@ def _ensure_ltr_lists(pid):
             " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
             " DO UPDATE SET sort_order=EXCLUDED.sort_order",
             (pid, "letter_direction", item, i, None))
-    for i, item in enumerate(LTR_STATUS_VALUES):
-        meta = DEFAULT_STATUS_META.get(item, "pending")
-        exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
-            " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
-            " DO UPDATE SET sort_order=EXCLUDED.sort_order, meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
-            (pid, "letter_status", item, i, meta))
 
 def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
     exe("INSERT INTO doc_types(id,project_id,name,code,sort_order)"
@@ -421,16 +410,22 @@ def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
 
 def _sync_ltr_doc_type(pid, dt_id="LTR", dt_name="Letters"):
     specs = _doc_type_col_specs("LTR", dt_name)
+    blocked_keys = ["description", "fileLocation", "remarks", "status"]
+    exe(
+        "DELETE FROM columns_config WHERE project_id=%s AND dt_id=%s AND col_key = ANY(%s)",
+        (pid, dt_id, blocked_keys),
+    )
     for ck, lbl, ct, ln, so, visible in specs:
         exe("""
             INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
             VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT(project_id,dt_id,col_key) DO UPDATE
-            SET label=EXCLUDED.label,
-                col_type=EXCLUDED.col_type,
+            SET col_type=EXCLUDED.col_type,
                 list_name=EXCLUDED.list_name,
-                visible=EXCLUDED.visible,
-                sort_order=EXCLUDED.sort_order
+                visible=CASE
+                    WHEN columns_config.col_key='parentLetterId' THEN FALSE
+                    ELSE columns_config.visible
+                END
         """, (pid, dt_id, ck, lbl, ct, ln, visible, so))
     _ensure_ltr_lists(pid)
 

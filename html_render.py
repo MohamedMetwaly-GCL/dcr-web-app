@@ -1448,7 +1448,6 @@ tr.alt td{{background:#fafbfd}}
     <button class="tool-btn" type="button" data-ltr-view="" onclick="setLTRQuickView('')">All</button>
     <button class="tool-btn" type="button" data-ltr-view="sent" onclick="setLTRQuickView('sent')">Sent Letters</button>
     <button class="tool-btn" type="button" data-ltr-view="received" onclick="setLTRQuickView('received')">Received Letters</button>
-    <button class="tool-btn" type="button" data-ltr-view="awaiting" onclick="setLTRQuickView('awaiting')">Awaiting Response</button>
   </div>
   
   <div id="bulkbar">
@@ -1665,7 +1664,14 @@ function ensureLTRProjectLists(){{
 function isLTRSingleSelectField(col){{
   if(!isLTRTab())return false;
   const key=String(col?.col_key||'').trim().toLowerCase();
-  return ['direction','fromparty','toparty','status'].includes(key);
+  return ['direction','fromparty','toparty'].includes(key);
+}}
+
+function isLTRExcludedField(col){{
+  if(!isLTRTab())return false;
+  const role=getLTRFieldRole(col);
+  const key=String(col?.col_key||'').trim().toLowerCase();
+  return ['description','fileLocation','remarks','status'].includes(role)||['description','filelocation','remarks','status'].includes(key);
 }}
 
 function isLTRInternalField(col){{
@@ -1698,11 +1704,11 @@ function getLTRFieldRole(col){{
 }}
 
 function getLTRRegisterKeys(){{
-  return ['docNo','direction','fromParty','toParty','issuedDate','receivedDate','title','status','parentLetterRef'];
+  return ['docNo','direction','fromParty','toParty','issuedDate','receivedDate','title','parentLetterRef'];
 }}
 
 function getLTRFormKeys(){{
-  return ['docNo','title','description','fileLocation','remarks','direction','fromParty','toParty','issuedDate','receivedDate','parentLetterId','parentLetterRef','status'];
+  return ['docNo','title','direction','fromParty','toParty','issuedDate','receivedDate','parentLetterId','parentLetterRef'];
 }}
 
 function getLTRColsByRole(cols, roles, visibleOnly=false){{
@@ -1737,14 +1743,31 @@ function getLTRValue(row, cols, role){{
   return first?row?.[first.col_key]:'';
 }}
 
+function formatLTRParentLabel(opt){{
+  const doc=String(opt?.doc_no||'').trim();
+  const subject=String(opt?.subject||'').trim();
+  if(doc&&subject)return `${{doc}} | ${{subject}}`;
+  return doc||subject||'Untitled letter';
+}}
+
+function formatLTRParentMeta(opt){{
+  if(!opt)return 'No parent letter selected';
+  const parts=[];
+  if(opt.direction)parts.push(opt.direction);
+  if(opt.from_party)parts.push('From: '+opt.from_party);
+  if(opt.to_party)parts.push('To: '+opt.to_party);
+  if(opt.date)parts.push(opt.date);
+  return parts.join(' • ')||'No additional details';
+}}
+
 function getLTRVisibleColsFallback(cols, roles){{
   const picked=getLTRColsByRole(cols, roles, true);
-  return picked.length?picked:(cols||[]).filter(c=>c.visible&&!isLTRInternalField(c));
+  return picked.length?picked:(cols||[]).filter(c=>c.visible&&!isLTRInternalField(c)&&!isLTRExcludedField(c));
 }}
 
 function getLTRFormColsFallback(cols, roles){{
   const picked=getLTRColsByRole(cols, roles, false);
-  return picked.length?picked:(cols||[]).filter(c=>!isLTRInternalField(c));
+  return picked.length?picked:(cols||[]).filter(c=>!isLTRInternalField(c)&&!isLTRExcludedField(c));
 }}
 
 function updateLTRQuickBar(){{
@@ -1937,7 +1960,7 @@ async function loadRecords(){{
   ]);
   if(!data)return;
   state.recs=data.records; state.allTabCols=data.columns||[]; state.cols=data.columns.filter(c=>c.visible);
-  if(isLTRTab())state.cols=state.cols.filter(c=>!isLTRInternalField(c));
+  if(isLTRTab())state.cols=state.cols.filter(c=>!isLTRInternalField(c)&&!isLTRExcludedField(c));
   state.prItemsCache=data.pr_items_map||{{}};
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
@@ -2074,10 +2097,8 @@ function renderRows(){{
     if(isLtrTab){{
       const quick=String(state.filters._ltrQuick||'').toLowerCase();
       const direction=String(getLTRValue(r,state.allTabCols,'direction')||'').toLowerCase();
-      const status=String(getLTRValue(r,state.allTabCols,'status')||'').toLowerCase();
       if(quick==='sent'&&direction!=='sent')return false;
       if(quick==='received'&&direction!=='received')return false;
-      if(quick==='awaiting'&&status!=='awaiting response')return false;
     }}
     return true;
   }});
@@ -2469,8 +2490,14 @@ async function buildForm(row){{
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
   const isLtrTab=isLTRTab();
-  const formCols=isLtrTab?allCols.filter(c=>c.visible&&!isLTRInternalField(c)):allCols;
+  const formCols=isLtrTab?allCols.filter(c=>c.visible&&!isLTRInternalField(c)&&!isLTRExcludedField(c)):allCols;
   const ltrParentIdCol=isLtrTab?getLTRColForRole(allCols,'parentLetterId'):null;
+  let ltrParentOptions=[];
+  if(isLtrTab){{
+    const q=row?('?record_id='+encodeURIComponent(row._id)):'';
+    const parentData=await apiFetch('/api/letters/parent-options/'+PID+q);
+    ltrParentOptions=Array.isArray(parentData?.options)?parentData.options:[];
+  }}
   const prevCols=state.cols;
   state.cols=formCols.filter(c=>c.visible);
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
@@ -2495,7 +2522,7 @@ async function buildForm(row){{
     const hid=document.createElement('input');
     hid.type='hidden';
     hid.id='f-'+(ltrParentIdCol?.col_key||'parentLetterId');
-    hid.value=ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):'';
+    hid.value=String(ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):(getLTRValue(row,allCols,'parentLetterId')||''));
     grid.appendChild(hid);
   }}
   for(const col of formCols){{
@@ -2529,10 +2556,36 @@ async function buildForm(row){{
       continue;
     }}
     if(isLtrTab&&getLTRFieldRole(col)==='parentLetterRef'){{
-      const ref=document.createElement('input');ref.id='f-'+key;ref.value=val||'';ref.readOnly=true;
-      ref.placeholder='Parent letter reference';
-      ref.style.cssText='background:#f8fafc';
-      grp.appendChild(ref);
+      lbl.textContent='Parent Letter';
+      const currentParentId=String(ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):(getLTRValue(row,allCols,'parentLetterId')||'')).trim();
+      const currentParentRef=String(val||'').trim();
+      const options=[...ltrParentOptions];
+      if(currentParentId&&!options.some(o=>o.id===currentParentId)){{
+        options.unshift({{
+          id:currentParentId,
+          doc_no:currentParentRef,
+          subject:'',
+          direction:'',
+          from_party:'',
+          to_party:'',
+          date:''
+        }});
+      }}
+      const sel=document.createElement('select');sel.id='f-'+key+'-selector';
+      sel.innerHTML='<option value="">No parent letter</option>'+options.map(o=>`<option value="${{escHtml(o.id)}}">${{escHtml(formatLTRParentLabel(o))}}</option>`).join('');
+      sel.value=currentParentId||'';
+      grp.appendChild(sel);
+      const meta=document.createElement('div');
+      meta.style.cssText='font-size:10px;color:var(--mu);margin-top:5px;line-height:1.4';
+      grp.appendChild(meta);
+      const syncParent=()=>{{
+        const picked=options.find(o=>o.id===sel.value)||null;
+        const hid=document.getElementById('f-'+(ltrParentIdCol?.col_key||'parentLetterId'));
+        if(hid)hid.value=picked?picked.id:'';
+        meta.textContent=formatLTRParentMeta(picked);
+      }};
+      sel.onchange=syncParent;
+      syncParent();
       grid.appendChild(grp);
       continue;
     }}
@@ -3115,7 +3168,8 @@ async function manageColumns(){{
   const cols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!cols)return;
   const body=document.getElementById('col-body');body.innerHTML='';
   const ul=document.createElement('ul');ul.id='col-sortable';ul.className='slist';ul.style.maxHeight='400px';
-  cols.forEach(col=>{{
+  const visibleCols=isLTRTab()?cols.filter(c=>!isLTRInternalField(c)&&!isLTRExcludedField(c)):cols;
+  visibleCols.forEach(col=>{{
     const li=document.createElement('li');li.className='sitem';li.dataset.id=col.id;li.draggable=true;
     li.style.cssText='cursor:default;align-items:center;gap:7px';
     const grip=document.createElement('span');grip.textContent='⠿';
