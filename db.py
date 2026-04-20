@@ -837,6 +837,80 @@ def get_letter_parent_options(pid, exclude_id=None):
         })
     return out
 
+def get_letter_thread(pid, record_id):
+    dt_id = _get_ltr_dt_id(pid)
+    if not dt_id:
+        return None
+    cols = get_columns(pid, dt_id)
+    doc_key = _ltr_field_key_from_cols(cols, "docNo")
+    subject_key = _ltr_field_key_from_cols(cols, "title")
+    direction_key = _ltr_field_key_from_cols(cols, "direction")
+    from_key = _ltr_field_key_from_cols(cols, "fromParty")
+    to_key = _ltr_field_key_from_cols(cols, "toParty")
+    issued_key = _ltr_field_key_from_cols(cols, "issuedDate")
+    received_key = _ltr_field_key_from_cols(cols, "receivedDate")
+    parent_key = _ltr_field_key_from_cols(cols, "parentLetterId")
+    rows = q("""
+        SELECT id, data, created_at
+        FROM records
+        WHERE project_id=%s AND dt_id=%s
+        ORDER BY created_at, id
+    """, (pid, dt_id))
+    nodes = {}
+    parent_map = {}
+    children = {}
+    for row in rows:
+        data = row["data"] if isinstance(row.get("data"), dict) else {}
+        rec_id = row["id"]
+        nodes[rec_id] = {
+            "id": rec_id,
+            "data": data,
+            "created_at": row.get("created_at"),
+        }
+        parent_id = str(data.get(parent_key) or "").strip()
+        if parent_id and parent_id != rec_id:
+            parent_map[rec_id] = parent_id
+    if record_id not in nodes:
+        return None
+    for child_id, parent_id in parent_map.items():
+        if parent_id in nodes:
+            children.setdefault(parent_id, []).append(child_id)
+    root_id = record_id
+    seen = set()
+    while root_id in parent_map and parent_map[root_id] in nodes and root_id not in seen:
+        seen.add(root_id)
+        root_id = parent_map[root_id]
+    items = []
+    def _item_payload(rec_id, level):
+        row = nodes[rec_id]
+        data = row["data"]
+        issued = str(data.get(issued_key) or "").strip()
+        received = str(data.get(received_key) or "").strip()
+        return {
+            "id": rec_id,
+            "parent_id": parent_map.get(rec_id, ""),
+            "doc_no": str(data.get(doc_key) or "").strip(),
+            "subject": str(data.get(subject_key) or "").strip(),
+            "direction": str(data.get(direction_key) or "").strip(),
+            "from_party": str(data.get(from_key) or "").strip(),
+            "to_party": str(data.get(to_key) or "").strip(),
+            "date": issued or received,
+            "level": level,
+        }
+    def _walk(rec_id, level, seen_ids):
+        if rec_id in seen_ids:
+            return
+        seen_ids.add(rec_id)
+        items.append(_item_payload(rec_id, level))
+        for child_id in children.get(rec_id, []):
+            _walk(child_id, level + 1, seen_ids)
+    _walk(root_id, 0, set())
+    return {
+        "root_id": root_id,
+        "current_id": record_id,
+        "items": items,
+    }
+
 def merge_record_data(existing_data: dict, incoming_data: dict):
     merged = {k: v for k, v in (existing_data or {}).items() if not str(k).startswith("_")}
     for key, value in (incoming_data or {}).items():

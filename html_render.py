@@ -1486,6 +1486,18 @@ tr.alt td{{background:#fafbfd}}
   </div>
 </div>
 
+<!-- LETTER THREAD -->
+<div class="overlay hidden" id="thread-modal">
+  <div class="modal" style="max-width:760px">
+    <div class="mhdr"><span id="thread-title">Letter Thread</span>
+      <button class="xbtn" onclick="closeM('thread-modal')">✕</button></div>
+    <div class="mbody" id="thread-body"></div>
+    <div class="mfoot">
+      <button class="btn btn-sc" onclick="closeM('thread-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- PROJECT MODAL -->
 <div class="overlay hidden" id="proj-modal">
   <div class="modal" style="max-width:820px">
@@ -2194,6 +2206,7 @@ function renderRows(){{
     const ta=document.createElement('td');ta.className='acts';
     let acts='';
     if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
+    if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">Thread</button> `;
     if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')">✏</button> <button class="act del" onclick="delRec('${{row._id}}')">🗑</button>`;
     else if(!acts)acts='<span style="color:var(--mu);font-size:10px">—</span>';
     ta.innerHTML=acts;
@@ -2231,6 +2244,55 @@ function isStatusLikeField(col){{
   const key=String(col?.col_key||'').toLowerCase();
   const label=String(col?.label||'').toLowerCase();
   return key==='status'||key.includes('status')||label.includes('status');
+}}
+
+async function openLetterThread(id){{
+  const data=await apiFetch('/api/letters/thread/'+PID+'/'+id);if(!data)return;
+  renderLetterThread(data);
+  openM('thread-modal');
+}}
+
+function renderLetterThread(data){{
+  const body=document.getElementById('thread-body');
+  const title=document.getElementById('thread-title');
+  const items=Array.isArray(data?.items)?data.items:[];
+  const currentId=String(data?.current_id||'').trim();
+  const current=items.find(it=>it.id===currentId)||items[0]||null;
+  title.textContent=current?.doc_no?('Letter Thread — '+current.doc_no):'Letter Thread';
+  if(!items.length){{
+    body.innerHTML='<div style="padding:12px;color:var(--mu);font-size:12px">No thread items found.</div>';
+    return;
+  }}
+  body.innerHTML=items.map(it=>{{
+    const isCurrent=it.id===currentId;
+    const margin=it.level*26;
+    const border=isCurrent?'#8BC34A':'#d7e0e6';
+    const bg=isCurrent?'#f6fbef':'#fff';
+    const shadow=isCurrent?'0 10px 26px rgba(139,195,74,.14)':'0 6px 18px rgba(15,23,42,.05)';
+    const titleText=escHtml(it.subject||'');
+    const refText=escHtml(it.doc_no||'Untitled');
+    const metaParts=[
+      it.direction?escHtml(it.direction):'',
+      it.from_party?('From: '+escHtml(it.from_party)):'',
+      it.to_party?('To: '+escHtml(it.to_party)):'',
+      it.date?escHtml(it.date):''
+    ].filter(Boolean);
+    const currentBadge=isCurrent?'<span style="flex-shrink:0;background:#8BC34A;color:#17351b;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase">Current</span>':'';
+    const subjectHtml=titleText||'<span style="color:var(--mu)">No subject</span>';
+    const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
+    return `<div style="margin-left:${{margin}}px;margin-bottom:10px;position:relative">
+      <div style="background:${{bg}};border:1px solid ${{border}};border-left:4px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+          <div style="min-width:0">
+            <div style="font-size:12px;font-weight:800;color:var(--pr)" dir="auto">${{refText}}</div>
+            <div style="font-size:12px;color:var(--tx);margin-top:4px;line-height:1.45" dir="auto">${{subjectHtml}}</div>
+          </div>
+          ${{currentBadge}}
+        </div>
+        ${{metaHtml}}
+      </div>
+    </div>`;
+  }}).join('');
 }}
 
 function isCurrencyField(col){{

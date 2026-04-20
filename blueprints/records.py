@@ -116,6 +116,23 @@ def api_letter_parent_options(pid):
     return jsonify(options=db.get_letter_parent_options(pid, exclude_id))
 
 
+@records_bp.route("/api/letters/thread/<pid>/<record_id>")
+def api_letter_thread(pid, record_id):
+    if not can_view_project(pid):
+        return jsonify(error="Forbidden"), 403
+    full_row = db.get_record_by_id(record_id)
+    if not full_row:
+        return jsonify(error="Not found"), 404
+    if full_row.get("_project_id") != pid:
+        return jsonify(error="Invalid project"), 400
+    if not _is_ltr_doc_type(pid, full_row.get("_dt_id", "")):
+        return jsonify(error="Not an LTR record"), 400
+    thread = db.get_letter_thread(pid, record_id)
+    if not thread:
+        return jsonify(error="Thread not found"), 404
+    return jsonify(thread)
+
+
 @records_bp.route("/api/records/<pid>/<dt_id>", methods=["POST"])
 def api_save_record(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
