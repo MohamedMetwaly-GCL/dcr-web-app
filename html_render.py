@@ -136,16 +136,16 @@ def render_login():
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;align-items:center;
   justify-content:center;margin:0;overflow:hidden;background:linear-gradient(135deg,#8BC34A 0%,#5f9f56 24%,#2F4F64 100%)}}
-.shell{{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:26px 16px 24px}}
+.shell{{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:32px 16px 30px}}
 .card{{background:rgba(255,255,255,.98);border-radius:16px;box-shadow:0 26px 70px rgba(18,34,46,.28);
-  width:100%;max-width:392px;overflow:hidden;backdrop-filter:blur(6px)}}
+  width:100%;max-width:370px;overflow:hidden;backdrop-filter:blur(6px)}}
 .brand-band{{height:10px;background:linear-gradient(90deg,#8BC34A,#2F4F64)}}
-.cbody{{padding:26px 26px 22px}}
-.logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:10px;padding:8px;background:transparent;border-radius:12px}}
-.logo-wrap img{{width:min(100%,205px);height:auto;display:block;background:transparent;filter:drop-shadow(0 8px 16px rgba(47,79,100,.1))}}
+.cbody{{padding:22px 22px 18px}}
+.logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:8px;padding:8px;background:transparent;border-radius:12px}}
+.logo-wrap img{{width:min(100%,220px);height:auto;display:block;background:transparent;filter:drop-shadow(0 8px 16px rgba(47,79,100,.1))}}
 .title{{font-size:28px;font-weight:800;letter-spacing:.4px;color:#2F4F64;text-align:center;margin-bottom:6px}}
-.subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:16px}}
-.fld{{margin-bottom:14px}}
+.subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:14px}}
+.fld{{margin-bottom:10px}}
 .fld label{{display:block;font-size:11px;font-weight:700;color:#4f6370;text-transform:uppercase;letter-spacing:.55px;margin-bottom:7px}}
 .fld input{{width:100%;padding:13px 15px;border:1.5px solid #d9e2e8;border-radius:11px;font-family:inherit;font-size:14px;
   outline:none;transition:border-color .2s, box-shadow .2s, background .2s;background:#fbfdff;color:#1f2f3b}}
