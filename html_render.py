@@ -1671,7 +1671,7 @@ function isLTRExcludedField(col){{
   if(!isLTRTab())return false;
   const role=getLTRFieldRole(col);
   const key=String(col?.col_key||'').trim().toLowerCase();
-  return ['description','fileLocation','remarks','status'].includes(role)||['description','filelocation','remarks','status'].includes(key);
+  return ['description','fileLocation','status'].includes(role)||['description','filelocation','status'].includes(key);
 }}
 
 function isLTRInternalField(col){{
@@ -1708,7 +1708,7 @@ function getLTRRegisterKeys(){{
 }}
 
 function getLTRFormKeys(){{
-  return ['docNo','title','direction','fromParty','toParty','issuedDate','receivedDate','parentLetterId','parentLetterRef'];
+  return ['docNo','title','direction','fromParty','toParty','issuedDate','receivedDate','remarks','parentLetterId','parentLetterRef'];
 }}
 
 function getLTRColsByRole(cols, roles, visibleOnly=false){{

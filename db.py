@@ -224,8 +224,9 @@ LTR_COLS = [
     ("toParty", "To Party", "dropdown", "correspondence_parties", 4, True),
     ("issuedDate", "Issue Date", "date", None, 5, True),
     ("receivedDate", "Received Date", "date", None, 6, True),
-    ("parentLetterId", "Parent Letter ID", "text", None, 7, False),
-    ("parentLetterRef", "Response Ref", "text", None, 8, True),
+    ("remarks", "Remarks", "text", None, 7, False),
+    ("parentLetterId", "Parent Letter ID", "text", None, 8, False),
+    ("parentLetterRef", "Response Ref", "text", None, 9, True),
 ]
 
 # Default meta categories for known status values
@@ -410,7 +411,7 @@ def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
 
 def _sync_ltr_doc_type(pid, dt_id="LTR", dt_name="Letters"):
     specs = _doc_type_col_specs("LTR", dt_name)
-    blocked_keys = ["description", "fileLocation", "remarks", "status"]
+    blocked_keys = ["description", "fileLocation", "status"]
     exe(
         "DELETE FROM columns_config WHERE project_id=%s AND dt_id=%s AND col_key = ANY(%s)",
         (pid, dt_id, blocked_keys),
