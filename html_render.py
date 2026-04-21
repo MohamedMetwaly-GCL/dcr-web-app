@@ -243,17 +243,17 @@ body.dark .prog{{background:#334155}}
 
 /* ── KPIs ── */
 .kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:7px;margin-bottom:10px}}
-.kpi{{background:var(--wh);border-radius:10px;padding:10px 12px;
+.kpi{{background:var(--wh);border-radius:10px;padding:9px 11px;min-height:82px;
   box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid var(--pr);cursor:default;
-  transition:transform .15s,box-shadow .15s}}
+  transition:transform .15s,box-shadow .15s;display:flex;flex-direction:column;justify-content:center}}
 .kpi:hover{{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.12)}}
 .kpi.ok{{border-left-color:var(--ok)}}.kpi.wa{{border-left-color:var(--wa)}}
 .kpi.er{{border-left-color:var(--er)}}.kpi.pu{{border-left-color:#7c3aed}}
-.kval{{font-size:28px;font-weight:800;color:var(--pr);line-height:1}}
+.kval{{font-size:28px;font-weight:800;color:var(--pr);line-height:1;margin-bottom:4px}}
 .kpi.ok .kval{{color:var(--ok)}}.kpi.wa .kval{{color:var(--wa)}}
 .kpi.er .kval{{color:var(--er)}}.kpi.pu .kval{{color:#7c3aed}}
-.klbl{{font-size:9px;color:#5f6f86;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:3px}}
-.ktrend{{font-size:10px;color:var(--mu);margin-top:2px}}
+.klbl{{font-size:9px;color:#54657d;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:0}}
+.ktrend{{font-size:10px;color:var(--mu);margin-top:3px}}
 
 /* ── Toolbar ── */
 .psel-bar{{display:flex;align-items:center;gap:8px;background:var(--wh);padding:7px 10px;
@@ -270,12 +270,12 @@ body.dark .prog{{background:#334155}}
 /* ── Charts grid ── */
 .charts-grid{{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px}}
 .charts-grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:10px}}
-.ccard{{background:var(--wh);border-radius:10px;padding:12px;
+.ccard{{background:var(--wh);border-radius:10px;padding:10px 11px;
   box-shadow:0 1px 4px rgba(0,0,0,.07);transition:box-shadow .15s,transform .15s}}
 .ccard:hover{{box-shadow:0 4px 14px rgba(0,0,0,.08);transform:translateY(-1px)}}
 .clbl{{font-size:10px;font-weight:700;color:var(--pr);text-transform:uppercase;
-  letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}}
-canvas{{max-height:185px}}
+  letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px}}
+canvas{{max-height:174px}}
 
 /* ── Project cards ── */
 .overview-main{{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.95fr);gap:12px;align-items:start;margin-bottom:10px}}
@@ -289,17 +289,17 @@ canvas{{max-height:185px}}
 .pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
-  transition:transform .15s,box-shadow .15s;position:relative}}
+  transition:transform .15s,box-shadow .15s;position:relative;min-height:132px}}
 .pcard:hover{{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.12)}}
 .pchdr{{background:var(--pr);padding:8px 10px;display:flex;align-items:center;justify-content:space-between}}
-.pcbody{{padding:8px 10px}}
-.prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}}
-.prog{{height:5px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:5px}}
+.pcbody{{padding:7px 10px 8px;display:flex;flex-direction:column;gap:2px}}
+.prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:1px}}
+.prog{{height:5px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:4px}}
 .progf{{height:100%;border-radius:99px;transition:width .6s ease}}
-.addcard{{background:var(--wh);border-radius:10px;border:2px dashed var(--bd);min-height:130px;
+.addcard{{background:linear-gradient(180deg,#fbfcfe,#f5f8fc);border-radius:10px;border:1.5px dashed #c9d4e2;min-height:132px;
   display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
-  cursor:pointer;transition:all .15s;color:var(--mu);font-size:12px}}
-.addcard:hover{{border-color:var(--pr);color:var(--pr)}}
+  cursor:pointer;transition:all .15s;color:#71829a;font-size:12px}}
+.addcard:hover{{border-color:var(--pr);color:var(--pr);background:linear-gradient(180deg,#ffffff,#f3f8ff)}}
 
 /* ── Tables ── */
 .tbl-wrap{{background:var(--wh);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07);
@@ -309,8 +309,8 @@ canvas{{max-height:185px}}
 .dt-tbl{{width:100%;min-width:760px;border-collapse:collapse;font-size:12px}}
 .dt-tbl th{{background:#183754;color:#fff;padding:7px 10px;
   text-align:left;font-weight:600;white-space:nowrap;font-size:11px}}
-.dt-tbl td{{padding:5px 10px;border-bottom:1px solid #e5eaf1;font-variant-numeric:tabular-nums}}
-.dt-tbl tr:hover td{{background:#f3f7fb}}
+.dt-tbl td{{padding:4px 10px;border-bottom:1px solid #dde5ef;font-variant-numeric:tabular-nums;transition:background .12s ease}}
+.dt-tbl tr:hover td{{background:#f1f6fb}}
 .dt-tbl .alt td{{background:#fafbfd}}
 .overview-table-switch{{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 8px}}
 .overview-table-btn{{padding:6px 11px;border:1.5px solid var(--bd);border-radius:999px;background:var(--bg);
@@ -320,7 +320,8 @@ canvas{{max-height:185px}}
 .overview-table-btn.active{{background:#2F4F64;color:#fff;border-color:#2F4F64;box-shadow:0 2px 6px rgba(47,79,100,.16)}}
 .overview-table-pane{{display:none}}
 .overview-table-pane.active{{display:block}}
-.overview-table-shell{{max-height:350px;overflow:auto;-webkit-overflow-scrolling:touch;padding-right:2px}}
+.overview-table-shell{{max-height:350px;overflow:auto;-webkit-overflow-scrolling:touch;padding-right:2px;scroll-behavior:smooth}}
+.overview-table-shell .dt-tbl th{{position:sticky;top:0;z-index:2;box-shadow:0 1px 0 rgba(255,255,255,.08)}}
 .overview-table-shell .tbl-wrap{{margin-bottom:0}}
 .pr-toggle{{padding:2px 7px;border:1px solid var(--bd);background:#fff;border-radius:3px;cursor:pointer;font-size:11px}}
 .pr-toggle:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
@@ -353,7 +354,7 @@ canvas{{max-height:185px}}
   box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:12px;transition:box-shadow .15s,transform .15s}}
 .panel:hover{{box-shadow:0 4px 14px rgba(0,0,0,.08);transform:translateY(-1px)}}
 .panel-title{{font-size:11px;font-weight:700;color:var(--pr);
-  text-transform:uppercase;letter-spacing:.5px;margin-bottom:9px;
+  text-transform:uppercase;letter-spacing:.48px;margin-bottom:8px;
   border-bottom:1.5px solid var(--pr);padding-bottom:5px}}
 
 /* ── Tabs ── */
@@ -477,8 +478,8 @@ canvas{{max-height:185px}}
       </div>
 
     <div class="charts-grid">
-      <div class="ccard"><div class="clbl">???? Documents by Project</div><canvas id="cProj"></canvas></div>
-      <div class="ccard"><div class="clbl">???? Status Distribution</div><canvas id="cStatus"></canvas></div>
+      <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
+      <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
     </div>
 
     <div class="panel overview-wide-panel">
@@ -930,25 +931,28 @@ function renderLettersOverview(d){{
       ['Sent',stats.sent,'#2563a8','Outgoing correspondence'],
       ['Received',stats.received,'#16a34a','Incoming correspondence'],
     ];
-    const summaryHtml=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
-      ${{cards.map(([label,value,color,hint])=>`<div style="background:var(--bg);border-radius:8px;padding:12px 14px;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
+    const summaryHtml=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px">
+      ${{cards.map(([label,value,color,hint])=>`<div style="background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
         <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{label}}</div>
-        <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.1;margin-top:6px">${{value}}</div>
-        <div style="font-size:10px;color:var(--mu);margin-top:4px">${{hint}}</div>
+        <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.08;margin-top:5px">${{value}}</div>
+        <div style="font-size:10px;color:var(--mu);margin-top:3px">${{hint}}</div>
       </div>`).join('')}}
     </div>`;
     const partiesHtml=topParties.length
-      ? `<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
+      ? `<div style="background:var(--bg);border-radius:8px;padding:9px 11px;border:1px solid #e3eaf2">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
             <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
             <div style="font-size:10px;color:var(--mu);font-weight:700">Top ${{topParties.length}} Parties</div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">
-            ${{topParties.map(row=>{{
+            ${{topParties.map((row, idx)=>{{
               const pct=stats.total?Math.round((Number(row.total||0)/stats.total)*100):0;
-              return `<div style="border:1px solid rgba(221,227,237,.95);border-radius:8px;background:rgba(255,255,255,.78);padding:9px 10px;transition:background .15s,border-color .15s,transform .15s"
-                onmouseenter="this.style.background='rgba(255,255,255,.96)';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)'"
-                onmouseleave="this.style.background='rgba(255,255,255,.78)';this.style.borderColor='rgba(221,227,237,.95)';this.style.transform='translateY(0)'">
+              const accent=idx<3?'rgba(47,79,100,.12)':'rgba(221,227,237,.95)';
+              const bg=idx<3?'linear-gradient(180deg,rgba(255,255,255,.98),rgba(245,249,255,.94))':'rgba(255,255,255,.82)';
+              const shadow=idx<3?'0 3px 10px rgba(47,79,100,.06)':'0 1px 3px rgba(15,23,42,.04)';
+              return `<div style="border:1px solid ${accent};border-radius:9px;background:${bg};padding:9px 10px;box-shadow:${shadow};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
+                onmouseenter="this.style.background='linear-gradient(180deg,rgba(255,255,255,1),rgba(244,248,253,.98))';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(47,79,100,.08)'"
+                onmouseleave="this.style.background='${bg}';this.style.borderColor='${accent}';this.style.transform='translateY(0)';this.style.boxShadow='${shadow}'">
                 <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
                   <div style="min-width:0">
                     <div style="font-size:12px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
@@ -959,14 +963,14 @@ function renderLettersOverview(d){{
                     <div style="font-size:9px;color:var(--mu);margin-top:2px">Total</div>
                   </div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-                  <div style="background:#eef4fb;border-radius:7px;padding:6px 8px">
-                    <div style="font-size:10px;font-weight:800;color:#2563a8">? ${{row.sent}}</div>
-                    <div style="font-size:9px;color:#2563a8;letter-spacing:.2px;margin-top:2px">Sent</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px">
+                  <div style="background:#eef4fb;border-radius:7px;padding:6px 8px;border:1px solid #dbe8f7">
+                    <div style="font-size:10px;font-weight:800;color:#2563a8">Sent: ${{row.sent}}</div>
+                    <div style="font-size:9px;color:#2563a8;letter-spacing:.2px;margin-top:2px">Outgoing</div>
                   </div>
-                  <div style="background:#edf9f0;border-radius:7px;padding:6px 8px">
-                    <div style="font-size:10px;font-weight:800;color:#16a34a">? ${{row.received}}</div>
-                    <div style="font-size:9px;color:#16a34a;letter-spacing:.2px;margin-top:2px">Received</div>
+                  <div style="background:#edf9f0;border-radius:7px;padding:6px 8px;border:1px solid #d7efdc">
+                    <div style="font-size:10px;font-weight:800;color:#16a34a">Received: ${{row.received}}</div>
+                    <div style="font-size:9px;color:#16a34a;letter-spacing:.2px;margin-top:2px">Incoming</div>
                   </div>
                 </div>
               </div>`;
