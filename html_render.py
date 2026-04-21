@@ -888,28 +888,34 @@ function renderLettersOverview(d){{
     ];
     const partiesHtml=topParties.length
       ? `<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
             <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
-            <div style="font-size:10px;color:var(--mu)">${{topParties.length}} shown</div>
+            <div style="font-size:10px;color:var(--mu);font-weight:700">Top ${{topParties.length}} Parties</div>
           </div>
-          <div style="display:grid;gap:4px">
-            ${{topParties.map(row=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:4px 0;border-bottom:1px solid var(--bd)">
-              <div style="min-width:0">
-                <div style="font-size:11px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
-              </div>
-              <div style="text-align:right">
-                <div style="font-size:10px;font-weight:800;color:#2F4F64">${{row.total}}</div>
-                <div style="font-size:9px;color:var(--mu)">Total</div>
-              </div>
-              <div style="text-align:right">
-                <div style="font-size:10px;font-weight:800;color:#2563a8">${{row.sent}}</div>
-                <div style="font-size:9px;color:var(--mu)">Sent</div>
-              </div>
-              <div style="text-align:right">
-                <div style="font-size:10px;font-weight:800;color:#16a34a">${{row.received}}</div>
-                <div style="font-size:9px;color:var(--mu)">Received</div>
-              </div>
-            </div>`).join('')}}
+          <div style="display:grid;gap:6px">
+            ${{topParties.map(row=>{{
+              const pct=stats.total?Math.round((Number(row.total||0)/stats.total)*100):0;
+              return `<div style="display:grid;grid-template-columns:minmax(0,1fr) 72px 72px 82px;gap:10px;align-items:center;padding:7px 8px;border:1px solid rgba(221,227,237,.95);border-radius:8px;background:rgba(255,255,255,.72);transition:background .15s,border-color .15s,transform .15s"
+                onmouseenter="this.style.background='rgba(255,255,255,.96)';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)'"
+                onmouseleave="this.style.background='rgba(255,255,255,.72)';this.style.borderColor='rgba(221,227,237,.95)';this.style.transform='translateY(0)'">
+                <div style="min-width:0">
+                  <div style="font-size:12px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
+                  <div style="font-size:9px;color:var(--mu);margin-top:2px">Share of letters: ${{pct}}%</div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-size:11px;font-weight:800;color:#2F4F64">${{row.total}}</div>
+                  <div style="font-size:9px;color:var(--mu);letter-spacing:.2px">Total</div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-size:11px;font-weight:800;color:#2563a8">↗ ${{row.sent}}</div>
+                  <div style="font-size:9px;color:#2563a8;letter-spacing:.2px">Sent</div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-size:11px;font-weight:800;color:#16a34a">↙ ${{row.received}}</div>
+                  <div style="font-size:9px;color:#16a34a;letter-spacing:.2px">Received</div>
+                </div>
+              </div>`;
+            }}).join('')}}
           </div>
         </div>`
       : '<div style="font-size:11px;color:var(--mu)">No party activity available in the current project scope.</div>';
