@@ -430,8 +430,15 @@ canvas{{max-height:200px}}
       <div class="stitle">🗂 Projects</div>
       <div class="pgrid" id="pgrid"></div>
       <div class="panel" style="padding:12px 14px;margin-bottom:12px">
-        <div class="panel-title" style="margin-bottom:10px">PR Analytics</div>
-        <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:12px">
+      <div class="panel-title" style="margin-bottom:10px">PR Analytics</div>
+      <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:12px">
+        <div style="font-size:11px;color:var(--mu)">Loading...</div>
+      </div>
+      </div>
+
+      <div class="panel" style="padding:12px 14px;margin-bottom:12px">
+        <div class="panel-title" style="margin-bottom:10px">Letters Overview</div>
+        <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:12px">
           <div style="font-size:11px;color:var(--mu)">Loading...</div>
         </div>
       </div>
@@ -696,7 +703,8 @@ function getFiltered(pid,disc){{
 
 function renderAll(pid,disc){{
   const d=getFiltered(pid,disc);
-  updateKPIs(d);renderCards(d,pid);renderCharts(d);renderDTTable(d);renderDiscTable(d);
+  const lettersScope=pid?STATS.filter(s=>s.id===pid):STATS;
+  updateKPIs(d);renderCards(d,pid);renderLettersOverview(lettersScope);renderCharts(d);renderDTTable(d);renderDiscTable(d);
 }}
 
 // ── KPIs ──────────────────────────────────────────────────
@@ -844,6 +852,37 @@ function renderCharts(d){{
 }}
 
 // ── DT Table ──────────────────────────────────────────────
+function renderLettersOverview(d){{
+  const el=document.getElementById('ltr-panel');
+  if(!el)return;
+  const stats=d.reduce((acc,p)=>{{
+    const l=p.ltr||{{}};
+    acc.total+=Number(l.total||0);
+    acc.sent+=Number(l.sent||0);
+    acc.received+=Number(l.received||0);
+    acc.awaiting_response+=Number(l.awaiting_response||0);
+    if(Number(l.total||0)>0)acc.project_count+=1;
+    return acc;
+  }},{{total:0,sent:0,received:0,awaiting_response:0,project_count:0}});
+  if(!stats.total){{
+    el.innerHTML='<div style="font-size:11px;color:var(--mu)">No letter records in the current project scope.</div>';
+    return;
+  }}
+  const cards=[
+    ['Total Letters',stats.total,'#2F4F64','Across '+stats.project_count+' project'+(stats.project_count===1?'':'s')],
+    ['Sent',stats.sent,'#2563a8','Outgoing correspondence'],
+    ['Received',stats.received,'#16a34a','Incoming correspondence'],
+    ['Awaiting Response',stats.awaiting_response,'#f59e0b','Sent letters without a child reply'],
+  ];
+  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+    ${{cards.map(([label,value,color,hint])=>`<div style="background:var(--bg);border-radius:8px;padding:12px 14px;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
+      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{label}}</div>
+      <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.1;margin-top:6px">${{value}}</div>
+      <div style="font-size:10px;color:var(--mu);margin-top:4px">${{hint}}</div>
+    </div>`).join('')}}
+  </div>`;
+}}
+
 function renderDTTable(d){{
   const tbody=document.getElementById('dt-tbody'),empty=document.getElementById('dt-empty');
   tbody.innerHTML='';let rows=[],i=0;

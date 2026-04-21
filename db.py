@@ -981,6 +981,84 @@ def get_letter_timeline(pid, record_id):
         "items": items,
     }
 
+def _get_ltr_dashboard_stats_map(project_ids=None):
+    projects = get_projects(project_ids)
+    if not projects:
+        return {}
+    pids = [p["id"] for p in projects]
+    stats_map = {
+        pid: {"total": 0, "sent": 0, "received": 0, "awaiting_response": 0}
+        for pid in pids
+    }
+    ph = ",".join(["%s"] * len(pids))
+    dt_rows = q(f"""
+        SELECT project_id, id, code, name
+        FROM doc_types
+        WHERE project_id IN ({ph})
+    """, pids)
+    ltr_dt_map = {}
+    key_map = {}
+    for dt in dt_rows:
+        if not _is_ltr_dt(dt.get("code", ""), dt.get("name", "")):
+            continue
+        pid = dt["project_id"]
+        ltr_dt_map[pid] = dt["id"]
+        cols = get_columns(pid, dt["id"])
+        key_map[pid] = {
+            "direction": _ltr_field_key_from_cols(cols, "direction"),
+            "parentLetterId": _ltr_field_key_from_cols(cols, "parentLetterId"),
+        }
+    if not ltr_dt_map:
+        return stats_map
+    dt_ids = list(ltr_dt_map.values())
+    dt_ph = ",".join(["%s"] * len(dt_ids))
+    rows = q(f"""
+        SELECT id, project_id, dt_id, data
+        FROM records
+        WHERE project_id IN ({ph})
+          AND dt_id IN ({dt_ph})
+    """, pids + dt_ids)
+    sent_ids = {}
+    parent_refs = {}
+    for row in rows:
+        pid = row["project_id"]
+        if ltr_dt_map.get(pid) != row["dt_id"]:
+            continue
+        data = row["data"] if isinstance(row.get("data"), dict) else {}
+        keys = key_map.get(pid, {})
+        direction = str(data.get(keys.get("direction")) or "").strip().lower()
+        parent_id = str(data.get(keys.get("parentLetterId")) or "").strip()
+        stats = stats_map.setdefault(pid, {"total": 0, "sent": 0, "received": 0, "awaiting_response": 0})
+        stats["total"] += 1
+        if direction == "sent":
+            stats["sent"] += 1
+            sent_ids.setdefault(pid, set()).add(row["id"])
+        elif direction == "received":
+            stats["received"] += 1
+        if parent_id:
+            parent_refs.setdefault(pid, set()).add(parent_id)
+    for pid, ids in sent_ids.items():
+        refs = parent_refs.get(pid, set())
+        stats_map[pid]["awaiting_response"] = sum(1 for rec_id in ids if rec_id not in refs)
+    return stats_map
+
+def get_ltr_dashboard_stats(pid=None, project_ids=None):
+    if pid:
+        return _get_ltr_dashboard_stats_map([pid]).get(pid, {
+            "total": 0,
+            "sent": 0,
+            "received": 0,
+            "awaiting_response": 0,
+        })
+    stats_map = _get_ltr_dashboard_stats_map(project_ids)
+    out = {"total": 0, "sent": 0, "received": 0, "awaiting_response": 0}
+    for stats in stats_map.values():
+        out["total"] += int(stats.get("total", 0) or 0)
+        out["sent"] += int(stats.get("sent", 0) or 0)
+        out["received"] += int(stats.get("received", 0) or 0)
+        out["awaiting_response"] += int(stats.get("awaiting_response", 0) or 0)
+    return out
+
 def merge_record_data(existing_data: dict, incoming_data: dict):
     merged = {k: v for k, v in (existing_data or {}).items() if not str(k).startswith("_")}
     for key, value in (incoming_data or {}).items():
@@ -1158,6 +1236,7 @@ def get_dashboard_stats(project_ids=None):
         return []
 
     pids = [p["id"] for p in projects]
+    ltr_stats_map = _get_ltr_dashboard_stats_map(pids)
     ph   = ",".join(["%s"] * len(pids))
 
     meta_rows = q(f"""
@@ -1233,6 +1312,7 @@ def get_dashboard_stats(project_ids=None):
             disc_map = {}
             dt_is_non_workflow = _is_non_workflow_dt(dt.get("code",""), dt.get("name",""))
             dt_is_pr = _is_pr_dt(dt.get("code",""), dt.get("name",""))
+            dt_is_ltr = _is_ltr_dt(dt.get("code",""), dt.get("name",""))
 
             # ── Approach 1: group by base doc, use LATEST rev status ──
             # Collect ALL revisions per base document first
@@ -1289,7 +1369,7 @@ def get_dashboard_stats(project_ids=None):
             disc_list = [{"disc":k,"total":v["total"],"approved":v["approved"],
                           "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"]}
                          for k,v in sorted(disc_map.items())]
-            if not dt_is_pr:
+            if not dt_is_pr and not dt_is_ltr:
                 dt_stats.append({"id":dt["id"],"code":dt["code"],"name":dt["name"],
                                  "total":t,"approved":ap,"pending":pe,"overdue":ov,"rejected":rj,
                                  "disc_breakdown":disc_list})
@@ -1300,7 +1380,8 @@ def get_dashboard_stats(project_ids=None):
             "id": pid, "name": p["name"], "code": p["code"],
             "client": pdata.get("client","") if isinstance(pdata, dict) else "",
             "total": total, "approved": approved, "pending": pending,
-            "overdue": overdue_cnt, "rejected": total_rj, "pct": pct, "dt_stats": dt_stats
+            "overdue": overdue_cnt, "rejected": total_rj, "pct": pct, "dt_stats": dt_stats,
+            "ltr": ltr_stats_map.get(pid, {"total": 0, "sent": 0, "received": 0, "awaiting_response": 0})
         })
     return result
 
