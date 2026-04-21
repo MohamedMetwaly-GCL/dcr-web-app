@@ -987,7 +987,7 @@ def _get_ltr_dashboard_stats_map(project_ids=None):
         return {}
     pids = [p["id"] for p in projects]
     stats_map = {
-        pid: {"total": 0, "sent": 0, "received": 0, "awaiting_response": 0}
+        pid: {"total": 0, "sent": 0, "received": 0, "party_stats": [], "top_parties": []}
         for pid in pids
     }
     ph = ",".join(["%s"] * len(pids))
@@ -1006,7 +1006,8 @@ def _get_ltr_dashboard_stats_map(project_ids=None):
         cols = get_columns(pid, dt["id"])
         key_map[pid] = {
             "direction": _ltr_field_key_from_cols(cols, "direction"),
-            "parentLetterId": _ltr_field_key_from_cols(cols, "parentLetterId"),
+            "fromParty": _ltr_field_key_from_cols(cols, "fromParty"),
+            "toParty": _ltr_field_key_from_cols(cols, "toParty"),
         }
     if not ltr_dt_map:
         return stats_map
@@ -1018,8 +1019,7 @@ def _get_ltr_dashboard_stats_map(project_ids=None):
         WHERE project_id IN ({ph})
           AND dt_id IN ({dt_ph})
     """, pids + dt_ids)
-    sent_ids = {}
-    parent_refs = {}
+    party_maps = {pid: {} for pid in pids}
     for row in rows:
         pid = row["project_id"]
         if ltr_dt_map.get(pid) != row["dt_id"]:
@@ -1027,19 +1027,31 @@ def _get_ltr_dashboard_stats_map(project_ids=None):
         data = row["data"] if isinstance(row.get("data"), dict) else {}
         keys = key_map.get(pid, {})
         direction = str(data.get(keys.get("direction")) or "").strip().lower()
-        parent_id = str(data.get(keys.get("parentLetterId")) or "").strip()
-        stats = stats_map.setdefault(pid, {"total": 0, "sent": 0, "received": 0, "awaiting_response": 0})
+        stats = stats_map.setdefault(pid, {"total": 0, "sent": 0, "received": 0, "party_stats": [], "top_parties": []})
         stats["total"] += 1
         if direction == "sent":
             stats["sent"] += 1
-            sent_ids.setdefault(pid, set()).add(row["id"])
         elif direction == "received":
             stats["received"] += 1
-        if parent_id:
-            parent_refs.setdefault(pid, set()).add(parent_id)
-    for pid, ids in sent_ids.items():
-        refs = parent_refs.get(pid, set())
-        stats_map[pid]["awaiting_response"] = sum(1 for rec_id in ids if rec_id not in refs)
+        parties = {
+            str(data.get(keys.get("fromParty")) or "").strip(),
+            str(data.get(keys.get("toParty")) or "").strip(),
+        }
+        parties = {party for party in parties if party}
+        for party in parties:
+            pstats = party_maps.setdefault(pid, {}).setdefault(party, {"party": party, "total": 0, "sent": 0, "received": 0})
+            pstats["total"] += 1
+            if direction == "sent":
+                pstats["sent"] += 1
+            elif direction == "received":
+                pstats["received"] += 1
+    for pid, party_map in party_maps.items():
+        ranked = sorted(
+            party_map.values(),
+            key=lambda item: (-item["total"], -item["sent"], -item["received"], item["party"].lower())
+        )
+        stats_map[pid]["party_stats"] = ranked
+        stats_map[pid]["top_parties"] = ranked[:5]
     return stats_map
 
 def get_ltr_dashboard_stats(pid=None, project_ids=None):
@@ -1048,15 +1060,30 @@ def get_ltr_dashboard_stats(pid=None, project_ids=None):
             "total": 0,
             "sent": 0,
             "received": 0,
-            "awaiting_response": 0,
+            "party_stats": [],
+            "top_parties": [],
         })
     stats_map = _get_ltr_dashboard_stats_map(project_ids)
-    out = {"total": 0, "sent": 0, "received": 0, "awaiting_response": 0}
+    party_totals = {}
+    out = {"total": 0, "sent": 0, "received": 0, "party_stats": [], "top_parties": []}
     for stats in stats_map.values():
         out["total"] += int(stats.get("total", 0) or 0)
         out["sent"] += int(stats.get("sent", 0) or 0)
         out["received"] += int(stats.get("received", 0) or 0)
-        out["awaiting_response"] += int(stats.get("awaiting_response", 0) or 0)
+        for party_row in stats.get("party_stats", []):
+            party = str(party_row.get("party") or "").strip()
+            if not party:
+                continue
+            bucket = party_totals.setdefault(party, {"party": party, "total": 0, "sent": 0, "received": 0})
+            bucket["total"] += int(party_row.get("total", 0) or 0)
+            bucket["sent"] += int(party_row.get("sent", 0) or 0)
+            bucket["received"] += int(party_row.get("received", 0) or 0)
+    ranked = sorted(
+        party_totals.values(),
+        key=lambda item: (-item["total"], -item["sent"], -item["received"], item["party"].lower())
+    )
+    out["party_stats"] = ranked
+    out["top_parties"] = ranked[:5]
     return out
 
 def merge_record_data(existing_data: dict, incoming_data: dict):
@@ -1381,7 +1408,7 @@ def get_dashboard_stats(project_ids=None):
             "client": pdata.get("client","") if isinstance(pdata, dict) else "",
             "total": total, "approved": approved, "pending": pending,
             "overdue": overdue_cnt, "rejected": total_rj, "pct": pct, "dt_stats": dt_stats,
-            "ltr": ltr_stats_map.get(pid, {"total": 0, "sent": 0, "received": 0, "awaiting_response": 0})
+            "ltr": ltr_stats_map.get(pid, {"total": 0, "sent": 0, "received": 0, "party_stats": [], "top_parties": []})
         })
     return result
 
