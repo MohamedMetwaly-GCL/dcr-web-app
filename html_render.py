@@ -950,9 +950,9 @@ function renderLettersOverview(d){{
               const accent=idx<3?'rgba(47,79,100,.12)':'rgba(221,227,237,.95)';
               const bg=idx<3?'linear-gradient(180deg,rgba(255,255,255,.98),rgba(245,249,255,.94))':'rgba(255,255,255,.82)';
               const shadow=idx<3?'0 3px 10px rgba(47,79,100,.06)':'0 1px 3px rgba(15,23,42,.04)';
-              return `<div style="border:1px solid ${accent};border-radius:9px;background:${bg};padding:9px 10px;box-shadow:${shadow};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
+              return `<div style="border:1px solid ${{accent}};border-radius:9px;background:${{bg}};padding:9px 10px;box-shadow:${{shadow}};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
                 onmouseenter="this.style.background='linear-gradient(180deg,rgba(255,255,255,1),rgba(244,248,253,.98))';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(47,79,100,.08)'"
-                onmouseleave="this.style.background='${bg}';this.style.borderColor='${accent}';this.style.transform='translateY(0)';this.style.boxShadow='${shadow}'">
+                onmouseleave="this.style.background='${{bg}}';this.style.borderColor='${{accent}}';this.style.transform='translateY(0)';this.style.boxShadow='${{shadow}}'">
                 <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
                   <div style="min-width:0">
                     <div style="font-size:12px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
