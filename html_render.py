@@ -855,70 +855,76 @@ function renderCharts(d){{
 function renderLettersOverview(d){{
   const el=document.getElementById('ltr-panel');
   if(!el)return;
-  const partyMap={{}};
-  const stats=d.reduce((acc,p)=>{{
-    const l=p.ltr||{{}};
-    acc.total+=Number(l.total||0);
-    acc.sent+=Number(l.sent||0);
-    acc.received+=Number(l.received||0);
-    if(Number(l.total||0)>0)acc.project_count+=1;
-    (l.party_stats||[]).forEach(row=>{{
-      const party=String(row.party||'').trim();
-      if(!party)return;
-      if(!partyMap[party])partyMap[party]={{party,total:0,sent:0,received:0}};
-      partyMap[party].total+=Number(row.total||0);
-      partyMap[party].sent+=Number(row.sent||0);
-      partyMap[party].received+=Number(row.received||0);
-    }});
-    return acc;
-  }},{{total:0,sent:0,received:0,project_count:0}});
-  if(!stats.total){{
-    el.innerHTML='<div style="font-size:11px;color:var(--mu)">No letter records in the current project scope.</div>';
-    return;
+  try{{
+    const safeHtml=v=>String(v??'').replace(/[&<>\"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
+    const partyMap={{}};
+    const stats=(Array.isArray(d)?d:[]).reduce((acc,p)=>{{
+      const l=(p&&typeof p==='object'&&p.ltr&&typeof p.ltr==='object')?p.ltr:{{}};
+      acc.total+=Number(l.total||0);
+      acc.sent+=Number(l.sent||0);
+      acc.received+=Number(l.received||0);
+      if(Number(l.total||0)>0)acc.project_count+=1;
+      (Array.isArray(l.party_stats)?l.party_stats:[]).forEach(row=>{{
+        const party=String((row&&row.party)||'').trim();
+        if(!party)return;
+        if(!partyMap[party])partyMap[party]={{party,total:0,sent:0,received:0}};
+        partyMap[party].total+=Number((row&&row.total)||0);
+        partyMap[party].sent+=Number((row&&row.sent)||0);
+        partyMap[party].received+=Number((row&&row.received)||0);
+      }});
+      return acc;
+    }},{{total:0,sent:0,received:0,project_count:0}});
+    if(!stats.total){{
+      el.innerHTML='<div style="font-size:11px;color:var(--mu)">No letter records in the current project scope.</div>';
+      return;
+    }}
+    const topParties=Object.values(partyMap)
+      .sort((a,b)=>(b.total-a.total)||(b.sent-a.sent)||(b.received-a.received)||a.party.localeCompare(b.party))
+      .slice(0,5);
+    const cards=[
+      ['Total Letters',stats.total,'#2F4F64','Across '+stats.project_count+' project'+(stats.project_count===1?'':'s')],
+      ['Sent',stats.sent,'#2563a8','Outgoing correspondence'],
+      ['Received',stats.received,'#16a34a','Incoming correspondence'],
+    ];
+    const partiesHtml=topParties.length
+      ? `<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
+            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
+            <div style="font-size:10px;color:var(--mu)">${{topParties.length}} shown</div>
+          </div>
+          <div style="display:grid;gap:6px">
+            ${{topParties.map(row=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)">
+              <div style="min-width:0">
+                <div style="font-size:12px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:11px;font-weight:800;color:#2F4F64">${{row.total}}</div>
+                <div style="font-size:9px;color:var(--mu)">Total</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:11px;font-weight:800;color:#2563a8">${{row.sent}}</div>
+                <div style="font-size:9px;color:var(--mu)">Sent</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:11px;font-weight:800;color:#16a34a">${{row.received}}</div>
+                <div style="font-size:9px;color:var(--mu)">Received</div>
+              </div>
+            </div>`).join('')}}
+          </div>
+        </div>`
+      : '<div style="font-size:11px;color:var(--mu)">No party activity available in the current project scope.</div>';
+    el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      ${{cards.map(([label,value,color,hint])=>`<div style="background:var(--bg);border-radius:8px;padding:12px 14px;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
+        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{label}}</div>
+        <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.1;margin-top:6px">${{value}}</div>
+        <div style="font-size:10px;color:var(--mu);margin-top:4px">${{hint}}</div>
+      </div>`).join('')}}
+    </div>
+    <div style="margin-top:10px">${{partiesHtml}}</div>`;
+  }}catch(err){{
+    console.error('renderLettersOverview failed', err);
+    el.innerHTML='<div style="font-size:11px;color:var(--mu)">Letters overview is temporarily unavailable.</div>';
   }}
-  const topParties=Object.values(partyMap)
-    .sort((a,b)=>(b.total-a.total)||(b.sent-a.sent)||(b.received-a.received)||a.party.localeCompare(b.party))
-    .slice(0,5);
-  const cards=[
-    ['Total Letters',stats.total,'#2F4F64','Across '+stats.project_count+' project'+(stats.project_count===1?'':'s')],
-    ['Sent',stats.sent,'#2563a8','Outgoing correspondence'],
-    ['Received',stats.received,'#16a34a','Incoming correspondence'],
-  ];
-  const partiesHtml=topParties.length
-    ? `<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
-          <div style="font-size:10px;color:var(--mu)">${{topParties.length}} shown</div>
-        </div>
-        <div style="display:grid;gap:6px">
-          ${{topParties.map(row=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)">
-            <div style="min-width:0">
-              <div style="font-size:12px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{escHtml(row.party)}}</div>
-            </div>
-            <div style="text-align:right">
-              <div style="font-size:11px;font-weight:800;color:#2F4F64">${{row.total}}</div>
-              <div style="font-size:9px;color:var(--mu)">Total</div>
-            </div>
-            <div style="text-align:right">
-              <div style="font-size:11px;font-weight:800;color:#2563a8">${{row.sent}}</div>
-              <div style="font-size:9px;color:var(--mu)">Sent</div>
-            </div>
-            <div style="text-align:right">
-              <div style="font-size:11px;font-weight:800;color:#16a34a">${{row.received}}</div>
-              <div style="font-size:9px;color:var(--mu)">Received</div>
-            </div>
-          </div>`).join('')}}
-        </div>
-      </div>`
-    : '<div style="font-size:11px;color:var(--mu)">No party activity available in the current project scope.</div>';
-  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
-    ${{cards.map(([label,value,color,hint])=>`<div style="background:var(--bg);border-radius:8px;padding:12px 14px;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
-      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{label}}</div>
-      <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.1;margin-top:6px">${{value}}</div>
-      <div style="font-size:10px;color:var(--mu);margin-top:4px">${{hint}}</div>
-    </div>`).join('')}}
-  </div>
-  <div style="margin-top:10px">${{partiesHtml}}</div>`;
 }}
 
 function renderDTTable(d){{
