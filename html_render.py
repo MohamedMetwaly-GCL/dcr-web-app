@@ -278,13 +278,13 @@ body.dark .prog{{background:#334155}}
 canvas{{max-height:185px}}
 
 /* ── Project cards ── */
-.overview-main{{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(320px,.95fr);gap:12px;align-items:start;margin-bottom:10px}}
-.overview-side{{display:grid;gap:10px}}
-.overview-projects-panel{{padding:11px 12px;margin-bottom:0}}
+.overview-main{{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr);gap:12px;align-items:start;margin-bottom:10px}}
+.overview-side{{display:grid;gap:10px;min-width:0}}
+.overview-projects-panel{{padding:11px 12px;margin-bottom:0;min-width:0}}
 .overview-projects-panel .panel-title{{margin-bottom:8px}}
-.overview-mini-panel{{padding:11px 12px;margin-bottom:0}}
+.overview-mini-panel{{padding:11px 12px;margin-bottom:0;min-width:0}}
 .overview-mini-panel .panel-title{{margin-bottom:8px}}
-.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:0}}
+.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
   transition:transform .15s,box-shadow .15s;position:relative}}
@@ -301,14 +301,23 @@ canvas{{max-height:185px}}
 
 /* ── Tables ── */
 .tbl-wrap{{background:var(--wh);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07);
-  overflow:hidden;margin-bottom:12px;transition:box-shadow .15s}}
+  overflow-x:auto;overflow-y:hidden;margin-bottom:12px;transition:box-shadow .15s;
+  -webkit-overflow-scrolling:touch}}
 .tbl-wrap:hover{{box-shadow:0 4px 14px rgba(0,0,0,.07)}}
-.dt-tbl{{width:100%;border-collapse:collapse;font-size:12px}}
+.dt-tbl{{width:100%;min-width:760px;border-collapse:collapse;font-size:12px}}
 .dt-tbl th{{background:#183754;color:#fff;padding:7px 10px;
   text-align:left;font-weight:600;white-space:nowrap;font-size:11px}}
 .dt-tbl td{{padding:5px 10px;border-bottom:1px solid #e5eaf1;font-variant-numeric:tabular-nums}}
 .dt-tbl tr:hover td{{background:#f3f7fb}}
 .dt-tbl .alt td{{background:#fafbfd}}
+.overview-table-switch{{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 8px}}
+.overview-table-btn{{padding:6px 11px;border:1.5px solid var(--bd);border-radius:999px;background:var(--bg);
+  color:var(--mu);cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.35px;font-family:inherit;
+  transition:all .15s}}
+.overview-table-btn:hover{{border-color:#2F4F64;color:#2F4F64;background:#fff}}
+.overview-table-btn.active{{background:#2F4F64;color:#fff;border-color:#2F4F64;box-shadow:0 2px 6px rgba(47,79,100,.16)}}
+.overview-table-pane{{display:none}}
+.overview-table-pane.active{{display:block}}
 .pr-toggle{{padding:2px 7px;border:1px solid var(--bd);background:#fff;border-radius:3px;cursor:pointer;font-size:11px}}
 .pr-toggle:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 .pr-items-row{{display:none}}
@@ -366,12 +375,14 @@ canvas{{max-height:185px}}
   .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
   .wrap{{padding:8px}}
   .tab{{padding:6px 10px;font-size:11px}}
-  .tbl-wrap{{overflow-x:auto;-webkit-overflow-scrolling:touch}}
   .dt-tbl{{min-width:600px}}
   .psel-bar{{flex-wrap:wrap;gap:6px}}
   .psel-bar select{{min-width:140px;flex:1}}
   .kpi{{padding:8px 10px}}
   .kval{{font-size:22px}}
+}}
+@media(max-width:1080px){{
+  .overview-main{{grid-template-columns:minmax(0,1.3fr) minmax(240px,.92fr)}}
 }}
 @media(max-width:480px){{
   .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
@@ -723,6 +734,7 @@ function renderAll(pid,disc){{
   const d=getFiltered(pid,disc);
   const lettersScope=pid?STATS.filter(s=>s.id===pid):STATS;
   updateKPIs(d);renderCards(d,pid);renderLettersOverview(lettersScope);renderCharts(d);renderDTTable(d);renderDiscTable(d);
+  ensureOverviewTableControls();setOverviewTableTab(window._overviewTableTab||'docTypes');
 }}
 
 // ── KPIs ──────────────────────────────────────────────────
@@ -741,13 +753,13 @@ function renderPrAnalytics(data){{
         <span style="font-size:11px;font-weight:700;color:var(--pr);white-space:nowrap">${{p.pr_count}}</span>
       </div>`).join('')
     : `<div style="font-size:11px;color:var(--mu)">No project data</div>`;
-  el.innerHTML=`<div style="display:grid;grid-template-columns:minmax(150px,.22fr) minmax(220px,.34fr) minmax(260px,.44fr);gap:10px;align-items:stretch">
+  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:stretch">
     <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;justify-content:center">
       <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Total PRs</div>
       <div style="font-size:24px;font-weight:800;color:var(--pr);line-height:1.05;margin-top:4px">${{data.total_pr_records||0}}</div>
       <div style="font-size:10px;color:var(--mu);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{data.top_project_name||'No project data'}}</div>
     </div>
-    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;min-height:170px">
+    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;min-height:156px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Top Projects</div>
         <div style="font-size:10px;color:var(--mu);white-space:nowrap">${{(data.top_projects||[]).length}} shown</div>
@@ -756,7 +768,7 @@ function renderPrAnalytics(data){{
         ${{topProjects}}
       </div>
     </div>
-    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;min-height:170px">
+    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;min-height:156px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div>
           <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Top Trades by PR Count</div>
@@ -981,6 +993,47 @@ function setLettersOverviewTab(tab){{
     partiesBtn.style.borderColor=s[2];
     partiesBtn.style.boxShadow=s[3];
   }}
+}}
+
+function ensureOverviewTableControls(){{
+  const overview=document.getElementById('tab-overview');
+  if(!overview)return;
+  const titles=overview.querySelectorAll('.stitle');
+  const wraps=overview.querySelectorAll('.tbl-wrap');
+  if(titles.length<3||wraps.length<2)return;
+  const summaryTitle=titles[1];
+  summaryTitle.textContent='Summary Tables';
+  summaryTitle.style.display='block';
+  summaryTitle.style.marginBottom='6px';
+  if(document.getElementById('overview-table-switch'))return;
+  const switcher=document.createElement('div');
+  switcher.id='overview-table-switch';
+  switcher.className='overview-table-switch';
+  switcher.innerHTML=`<button type="button" id="ovtab-doc-types" class="overview-table-btn" onclick="setOverviewTableTab('docTypes')">Document Types Summary</button>
+    <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">Discipline Breakdown</button>`;
+  summaryTitle.insertAdjacentElement('afterend',switcher);
+}}
+
+function setOverviewTableTab(tab){{
+  window._overviewTableTab=(tab==='discipline')?'discipline':'docTypes';
+  const overview=document.getElementById('tab-overview');
+  if(!overview)return;
+  const titles=overview.querySelectorAll('.stitle');
+  const wraps=overview.querySelectorAll('.tbl-wrap');
+  if(titles.length<3||wraps.length<2)return;
+  const summaryTitle=titles[1];
+  const disciplineTitle=titles[2];
+  const docWrap=wraps[0];
+  const discWrap=wraps[1];
+  summaryTitle.textContent='Summary Tables';
+  summaryTitle.style.display='block';
+  disciplineTitle.style.display='none';
+  docWrap.style.display=window._overviewTableTab==='docTypes'?'block':'none';
+  discWrap.style.display=window._overviewTableTab==='discipline'?'block':'none';
+  const docBtn=document.getElementById('ovtab-doc-types');
+  const discBtn=document.getElementById('ovtab-discipline');
+  if(docBtn)docBtn.classList.toggle('active',window._overviewTableTab==='docTypes');
+  if(discBtn)discBtn.classList.toggle('active',window._overviewTableTab==='discipline');
 }}
 
 function renderDTTable(d){{
