@@ -87,8 +87,9 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx
 .btn-ok{background:var(--ok);color:#fff}
 .btn-er{background:var(--er);color:#fff}
 .btn-sm{padding:4px 10px;font-size:11px}
-.stitle{font-size:11px;font-weight:700;color:var(--pr);text-transform:uppercase;
-  letter-spacing:.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--pr)}
+.stitle{font-size:10.5px;font-weight:700;color:var(--pr);text-transform:uppercase;
+  letter-spacing:.5px;margin:10px 0 6px;padding-bottom:4px;border-bottom:1.5px solid var(--pr)}
+#tab-overview > .stitle:first-child{display:none}
 .badge{display:inline-block;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700}
 #toast{position:fixed;bottom:28px;right:18px;background:var(--pr);color:#fff;
   padding:10px 18px;border-radius:var(--rd);font-size:12px;z-index:9999;
@@ -214,7 +215,7 @@ def render_dashboard(u):
 <style>
 /* ── Layout ── */
 body{{display:flex;flex-direction:column;min-height:100vh}}
-.wrap{{max-width:1480px;margin:0 auto;padding:14px 12px;flex:1;width:100%}}
+.wrap{{max-width:1480px;margin:0 auto;padding:12px 12px;flex:1;width:100%}}
 
 /* ── Dark Mode ── */
 body.dark{{--bg:#0f172a;--wh:#1e293b;--tx:#e2e8f0;--mu:#94a3b8;--bd:#334155;--pr:#3b82f6;--pl:#60a5fa}}
@@ -241,8 +242,8 @@ body.dark .ov-row{{border-color:#334155;color:#cbd5e1}}
 body.dark .prog{{background:#334155}}
 
 /* ── KPIs ── */
-.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px}}
-.kpi{{background:var(--wh);border-radius:10px;padding:12px 14px;
+.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:7px;margin-bottom:10px}}
+.kpi{{background:var(--wh);border-radius:10px;padding:10px 12px;
   box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid var(--pr);cursor:default;
   transition:transform .15s,box-shadow .15s}}
 .kpi:hover{{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.12)}}
@@ -251,12 +252,12 @@ body.dark .prog{{background:#334155}}
 .kval{{font-size:28px;font-weight:800;color:var(--pr);line-height:1}}
 .kpi.ok .kval{{color:var(--ok)}}.kpi.wa .kval{{color:var(--wa)}}
 .kpi.er .kval{{color:var(--er)}}.kpi.pu .kval{{color:#7c3aed}}
-.klbl{{font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:3px}}
+.klbl{{font-size:9px;color:#5f6f86;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:3px}}
 .ktrend{{font-size:10px;color:var(--mu);margin-top:2px}}
 
 /* ── Toolbar ── */
-.psel-bar{{display:flex;align-items:center;gap:8px;background:var(--wh);padding:8px 12px;
-  border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:12px;flex-wrap:wrap}}
+.psel-bar{{display:flex;align-items:center;gap:8px;background:var(--wh);padding:7px 10px;
+  border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:10px;flex-wrap:wrap}}
 .psel-bar label{{font-size:11px;font-weight:700;color:var(--mu);white-space:nowrap}}
 .psel-bar select,.psel-bar input{{padding:5px 10px;border:1.5px solid var(--bd);
   border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none}}
@@ -267,23 +268,30 @@ body.dark .prog{{background:#334155}}
 .tbtn.active{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 
 /* ── Charts grid ── */
-.charts-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}}
-.charts-grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}}
-.ccard{{background:var(--wh);border-radius:10px;padding:14px;
-  box-shadow:0 1px 4px rgba(0,0,0,.07)}}
+.charts-grid{{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px}}
+.charts-grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:10px}}
+.ccard{{background:var(--wh);border-radius:10px;padding:12px;
+  box-shadow:0 1px 4px rgba(0,0,0,.07);transition:box-shadow .15s,transform .15s}}
+.ccard:hover{{box-shadow:0 4px 14px rgba(0,0,0,.08);transform:translateY(-1px)}}
 .clbl{{font-size:10px;font-weight:700;color:var(--pr);text-transform:uppercase;
-  letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:6px}}
-canvas{{max-height:200px}}
+  letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}}
+canvas{{max-height:185px}}
 
 /* ── Project cards ── */
-.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px}}
+.overview-main{{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(320px,.95fr);gap:12px;align-items:start;margin-bottom:10px}}
+.overview-side{{display:grid;gap:10px}}
+.overview-projects-panel{{padding:11px 12px;margin-bottom:0}}
+.overview-projects-panel .panel-title{{margin-bottom:8px}}
+.overview-mini-panel{{padding:11px 12px;margin-bottom:0}}
+.overview-mini-panel .panel-title{{margin-bottom:8px}}
+.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
   transition:transform .15s,box-shadow .15s;position:relative}}
 .pcard:hover{{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.12)}}
-.pchdr{{background:var(--pr);padding:10px 12px;display:flex;align-items:center;justify-content:space-between}}
-.pcbody{{padding:10px 12px}}
-.prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}}
+.pchdr{{background:var(--pr);padding:8px 10px;display:flex;align-items:center;justify-content:space-between}}
+.pcbody{{padding:8px 10px}}
+.prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}}
 .prog{{height:5px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:5px}}
 .progf{{height:100%;border-radius:99px;transition:width .6s ease}}
 .addcard{{background:var(--wh);border-radius:10px;border:2px dashed var(--bd);min-height:130px;
@@ -293,12 +301,13 @@ canvas{{max-height:200px}}
 
 /* ── Tables ── */
 .tbl-wrap{{background:var(--wh);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07);
-  overflow:hidden;margin-bottom:14px}}
+  overflow:hidden;margin-bottom:12px;transition:box-shadow .15s}}
+.tbl-wrap:hover{{box-shadow:0 4px 14px rgba(0,0,0,.07)}}
 .dt-tbl{{width:100%;border-collapse:collapse;font-size:12px}}
-.dt-tbl th{{background:var(--pr);color:#fff;padding:8px 10px;
+.dt-tbl th{{background:#183754;color:#fff;padding:7px 10px;
   text-align:left;font-weight:600;white-space:nowrap;font-size:11px}}
-.dt-tbl td{{padding:6px 10px;border-bottom:1px solid #edf0f5}}
-.dt-tbl tr:hover td{{background:#f0f4f8}}
+.dt-tbl td{{padding:5px 10px;border-bottom:1px solid #e5eaf1;font-variant-numeric:tabular-nums}}
+.dt-tbl tr:hover td{{background:#f3f7fb}}
 .dt-tbl .alt td{{background:#fafbfd}}
 .pr-toggle{{padding:2px 7px;border:1px solid var(--bd);background:#fff;border-radius:3px;cursor:pointer;font-size:11px}}
 .pr-toggle:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
@@ -327,11 +336,12 @@ canvas{{max-height:200px}}
 .ov-badge.warn{{background:#fffbeb;color:#f59e0b}}
 
 /* ── Executive Summary panel ── */
-.panel{{background:var(--wh);border-radius:10px;padding:16px;
-  box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:14px}}
-.panel-title{{font-size:12px;font-weight:700;color:var(--pr);
-  text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;
-  border-bottom:2px solid var(--pr);padding-bottom:6px}}
+.panel{{background:var(--wh);border-radius:10px;padding:12px 14px;
+  box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:12px;transition:box-shadow .15s,transform .15s}}
+.panel:hover{{box-shadow:0 4px 14px rgba(0,0,0,.08);transform:translateY(-1px)}}
+.panel-title{{font-size:11px;font-weight:700;color:var(--pr);
+  text-transform:uppercase;letter-spacing:.5px;margin-bottom:9px;
+  border-bottom:1.5px solid var(--pr);padding-bottom:5px}}
 
 /* ── Tabs ── */
 .tab-bar{{display:flex;gap:4px;margin-bottom:12px;border-bottom:2px solid var(--bd);padding-bottom:0}}
@@ -350,6 +360,7 @@ canvas{{max-height:200px}}
 
 /* ── Mobile ── */
 @media(max-width:768px){{
+  .overview-main{{grid-template-columns:1fr;gap:10px}}
   .charts-grid,.charts-grid-3{{grid-template-columns:1fr}}
   .pgrid{{grid-template-columns:1fr}}
   .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
@@ -428,18 +439,25 @@ canvas{{max-height:200px}}
     <!-- TAB: OVERVIEW -->
     <div id="tab-overview" class="tab-pane active">
       <div class="stitle">🗂 Projects</div>
-      <div class="pgrid" id="pgrid"></div>
-      <div class="panel" style="padding:12px 14px;margin-bottom:12px">
-      <div class="panel-title" style="margin-bottom:10px">PR Analytics</div>
-      <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:12px">
-        <div style="font-size:11px;color:var(--mu)">Loading...</div>
-      </div>
-      </div>
+      <div class="overview-main">
+        <div class="panel overview-projects-panel">
+          <div class="panel-title">Projects</div>
+          <div class="pgrid" id="pgrid"></div>
+        </div>
+        <div class="overview-side">
+          <div class="panel overview-mini-panel">
+            <div class="panel-title">PR Analytics</div>
+            <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
+              <div style="font-size:11px;color:var(--mu)">Loading...</div>
+            </div>
+          </div>
 
-      <div class="panel" style="padding:12px 14px;margin-bottom:12px">
-        <div class="panel-title" style="margin-bottom:10px">Letters Overview</div>
-        <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:12px">
-          <div style="font-size:11px;color:var(--mu)">Loading...</div>
+          <div class="panel overview-mini-panel">
+            <div class="panel-title">Letters Overview</div>
+            <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
+              <div style="font-size:11px;color:var(--mu)">Loading...</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -926,9 +944,9 @@ function renderLettersOverview(d){{
         <div style="font-size:10px;color:var(--mu);margin-top:4px">${{hint}}</div>
       </div>`).join('')}}
     </div>`;
-    el.innerHTML=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
-      <button type="button" id="ltr-tab-summary" onclick="setLettersOverviewTab('summary')" style="padding:5px 10px;border:1.5px solid #2F4F64;background:#2F4F64;color:#fff;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.35px;cursor:pointer">Summary</button>
-      <button type="button" id="ltr-tab-parties" onclick="setLettersOverviewTab('parties')" style="padding:5px 10px;border:1.5px solid var(--bd);background:var(--bg);color:var(--mu);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.35px;cursor:pointer">Parties</button>
+    el.innerHTML=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <button type="button" id="ltr-tab-summary" onclick="setLettersOverviewTab('summary')" style="padding:5px 10px;border:1.5px solid #2F4F64;background:#2F4F64;color:#fff;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.35px;cursor:pointer;box-shadow:0 2px 6px rgba(47,79,100,.16)">Summary</button>
+      <button type="button" id="ltr-tab-parties" onclick="setLettersOverviewTab('parties')" style="padding:5px 10px;border:1.5px solid var(--bd);background:var(--bg);color:var(--mu);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.35px;cursor:pointer;box-shadow:none">Parties</button>
     </div>
     <div id="ltr-view-summary">${{summaryHtml}}</div>
     <div id="ltr-view-parties" style="display:none">${{partiesHtml}}</div>`;
@@ -945,8 +963,8 @@ function setLettersOverviewTab(tab){{
   const partiesBtn=document.getElementById('ltr-tab-parties');
   const summaryView=document.getElementById('ltr-view-summary');
   const partiesView=document.getElementById('ltr-view-parties');
-  const activeStyles=['#2F4F64','#fff','#2F4F64'];
-  const idleStyles=['var(--bg)','var(--mu)','var(--bd)'];
+  const activeStyles=['#2F4F64','#fff','#2F4F64','0 2px 6px rgba(47,79,100,.16)'];
+  const idleStyles=['var(--bg)','var(--mu)','var(--bd)','none'];
   if(summaryView)summaryView.style.display=window._ltrOverviewTab==='summary'?'block':'none';
   if(partiesView)partiesView.style.display=window._ltrOverviewTab==='parties'?'block':'none';
   if(summaryBtn){{
@@ -954,12 +972,14 @@ function setLettersOverviewTab(tab){{
     summaryBtn.style.background=s[0];
     summaryBtn.style.color=s[1];
     summaryBtn.style.borderColor=s[2];
+    summaryBtn.style.boxShadow=s[3];
   }}
   if(partiesBtn){{
     const s=window._ltrOverviewTab==='parties'?activeStyles:idleStyles;
     partiesBtn.style.background=s[0];
     partiesBtn.style.color=s[1];
     partiesBtn.style.borderColor=s[2];
+    partiesBtn.style.boxShadow=s[3];
   }}
 }}
 
