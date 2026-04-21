@@ -888,42 +888,72 @@ function renderLettersOverview(d){{
     ];
     const partiesHtml=topParties.length
       ? `<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">
             <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
             <div style="font-size:10px;color:var(--mu)">${{topParties.length}} shown</div>
           </div>
-          <div style="display:grid;gap:6px">
-            ${{topParties.map(row=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)">
+          <div style="display:grid;gap:4px">
+            ${{topParties.map(row=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:4px 0;border-bottom:1px solid var(--bd)">
               <div style="min-width:0">
-                <div style="font-size:12px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
+                <div style="font-size:11px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
               </div>
               <div style="text-align:right">
-                <div style="font-size:11px;font-weight:800;color:#2F4F64">${{row.total}}</div>
+                <div style="font-size:10px;font-weight:800;color:#2F4F64">${{row.total}}</div>
                 <div style="font-size:9px;color:var(--mu)">Total</div>
               </div>
               <div style="text-align:right">
-                <div style="font-size:11px;font-weight:800;color:#2563a8">${{row.sent}}</div>
+                <div style="font-size:10px;font-weight:800;color:#2563a8">${{row.sent}}</div>
                 <div style="font-size:9px;color:var(--mu)">Sent</div>
               </div>
               <div style="text-align:right">
-                <div style="font-size:11px;font-weight:800;color:#16a34a">${{row.received}}</div>
+                <div style="font-size:10px;font-weight:800;color:#16a34a">${{row.received}}</div>
                 <div style="font-size:9px;color:var(--mu)">Received</div>
               </div>
             </div>`).join('')}}
           </div>
         </div>`
       : '<div style="font-size:11px;color:var(--mu)">No party activity available in the current project scope.</div>';
-    el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+    const summaryHtml=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
       ${{cards.map(([label,value,color,hint])=>`<div style="background:var(--bg);border-radius:8px;padding:12px 14px;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
         <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{label}}</div>
         <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.1;margin-top:6px">${{value}}</div>
         <div style="font-size:10px;color:var(--mu);margin-top:4px">${{hint}}</div>
       </div>`).join('')}}
+    </div>`;
+    el.innerHTML=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <button type="button" id="ltr-tab-summary" onclick="setLettersOverviewTab('summary')" style="padding:5px 10px;border:1.5px solid #2F4F64;background:#2F4F64;color:#fff;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.35px;cursor:pointer">Summary</button>
+      <button type="button" id="ltr-tab-parties" onclick="setLettersOverviewTab('parties')" style="padding:5px 10px;border:1.5px solid var(--bd);background:var(--bg);color:var(--mu);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.35px;cursor:pointer">Parties</button>
     </div>
-    <div style="margin-top:10px">${{partiesHtml}}</div>`;
+    <div id="ltr-view-summary">${{summaryHtml}}</div>
+    <div id="ltr-view-parties" style="display:none">${{partiesHtml}}</div>`;
+    setLettersOverviewTab(window._ltrOverviewTab||'summary');
   }}catch(err){{
     console.error('renderLettersOverview failed', err);
     el.innerHTML='<div style="font-size:11px;color:var(--mu)">Letters overview is temporarily unavailable.</div>';
+  }}
+}}
+
+function setLettersOverviewTab(tab){{
+  window._ltrOverviewTab=(tab==='parties')?'parties':'summary';
+  const summaryBtn=document.getElementById('ltr-tab-summary');
+  const partiesBtn=document.getElementById('ltr-tab-parties');
+  const summaryView=document.getElementById('ltr-view-summary');
+  const partiesView=document.getElementById('ltr-view-parties');
+  const activeStyles=['#2F4F64','#fff','#2F4F64'];
+  const idleStyles=['var(--bg)','var(--mu)','var(--bd)'];
+  if(summaryView)summaryView.style.display=window._ltrOverviewTab==='summary'?'block':'none';
+  if(partiesView)partiesView.style.display=window._ltrOverviewTab==='parties'?'block':'none';
+  if(summaryBtn){{
+    const s=window._ltrOverviewTab==='summary'?activeStyles:idleStyles;
+    summaryBtn.style.background=s[0];
+    summaryBtn.style.color=s[1];
+    summaryBtn.style.borderColor=s[2];
+  }}
+  if(partiesBtn){{
+    const s=window._ltrOverviewTab==='parties'?activeStyles:idleStyles;
+    partiesBtn.style.background=s[0];
+    partiesBtn.style.color=s[1];
+    partiesBtn.style.borderColor=s[2];
   }}
 }}
 
