@@ -278,12 +278,14 @@ body.dark .prog{{background:#334155}}
 canvas{{max-height:185px}}
 
 /* ── Project cards ── */
-.overview-main{{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr);gap:12px;align-items:start;margin-bottom:10px}}
+.overview-main{{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.95fr);gap:12px;align-items:start;margin-bottom:10px}}
 .overview-side{{display:grid;gap:10px;min-width:0}}
 .overview-projects-panel{{padding:11px 12px;margin-bottom:0;min-width:0}}
 .overview-projects-panel .panel-title{{margin-bottom:8px}}
 .overview-mini-panel{{padding:11px 12px;margin-bottom:0;min-width:0}}
 .overview-mini-panel .panel-title{{margin-bottom:8px}}
+.overview-wide-panel{{padding:11px 12px;margin-bottom:10px}}
+.overview-wide-panel .panel-title{{margin-bottom:8px}}
 .pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
@@ -318,6 +320,8 @@ canvas{{max-height:185px}}
 .overview-table-btn.active{{background:#2F4F64;color:#fff;border-color:#2F4F64;box-shadow:0 2px 6px rgba(47,79,100,.16)}}
 .overview-table-pane{{display:none}}
 .overview-table-pane.active{{display:block}}
+.overview-table-shell{{max-height:350px;overflow:auto;-webkit-overflow-scrolling:touch;padding-right:2px}}
+.overview-table-shell .tbl-wrap{{margin-bottom:0}}
 .pr-toggle{{padding:2px 7px;border:1px solid var(--bd);background:#fff;border-radius:3px;cursor:pointer;font-size:11px}}
 .pr-toggle:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 .pr-items-row{{display:none}}
@@ -382,7 +386,7 @@ canvas{{max-height:185px}}
   .kval{{font-size:22px}}
 }}
 @media(max-width:1080px){{
-  .overview-main{{grid-template-columns:minmax(0,1.3fr) minmax(240px,.92fr)}}
+  .overview-main{{grid-template-columns:minmax(0,1.3fr) minmax(240px,.95fr)}}
 }}
 @media(max-width:480px){{
   .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
@@ -462,51 +466,61 @@ canvas{{max-height:185px}}
               <div style="font-size:11px;color:var(--mu)">Loading...</div>
             </div>
           </div>
+        </div>
+      </div>
 
-          <div class="panel overview-mini-panel">
-            <div class="panel-title">Letters Overview</div>
-            <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
-              <div style="font-size:11px;color:var(--mu)">Loading...</div>
-            </div>
-          </div>
+      <div class="panel overview-wide-panel">
+        <div class="panel-title">Letters Overview</div>
+        <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
+          <div style="font-size:11px;color:var(--mu)">Loading...</div>
         </div>
       </div>
 
     <div class="charts-grid">
-      <div class="ccard"><div class="clbl">📊 Documents by Project</div><canvas id="cProj"></canvas></div>
-      <div class="ccard"><div class="clbl">🥧 Status Distribution</div><canvas id="cStatus"></canvas></div>
+      <div class="ccard"><div class="clbl">???? Documents by Project</div><canvas id="cProj"></canvas></div>
+      <div class="ccard"><div class="clbl">???? Status Distribution</div><canvas id="cStatus"></canvas></div>
     </div>
 
-    <div class="stitle">📋 Document Types Summary</div>
-    <div class="tbl-wrap">
-      <table class="dt-tbl">
-        <thead><tr>
-          <th>Project</th><th>Code</th><th>Type</th>
-          <th style="text-align:center">Total</th>
-          <th style="text-align:center">Approved</th>
-          <th style="text-align:center">Pending</th>
-          <th style="text-align:center">Rejected</th>
-          <th style="text-align:center">Overdue</th>
-        </tr></thead>
-        <tbody id="dt-tbody"></tbody>
-      </table>
-      <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
-    </div>
-
-    <div class="stitle">🏗 Discipline Breakdown</div>
-    <div class="tbl-wrap">
-      <table class="dt-tbl">
-        <thead><tr>
-          <th>Project</th><th>Doc Type</th><th>Discipline</th>
-          <th style="text-align:center">Total</th>
-          <th style="text-align:center">Approved</th>
-          <th style="text-align:center">Pending</th>
-          <th style="text-align:center">Rejected</th>
-          <th style="text-align:center">Overdue</th>
-        </tr></thead>
-        <tbody id="disc-tbody"></tbody>
-      </table>
-      <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+    <div class="panel overview-wide-panel">
+      <div class="panel-title">Operational Breakdown</div>
+      <div class="overview-table-switch">
+        <button type="button" id="ovtab-doc-types" class="overview-table-btn active" onclick="setOverviewTableTab('docTypes')">Document Types Summary</button>
+        <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">Discipline Breakdown</button>
+      </div>
+      <div class="overview-table-shell">
+        <div id="overview-pane-docTypes" class="overview-table-pane active">
+          <div class="tbl-wrap">
+            <table class="dt-tbl">
+              <thead><tr>
+                <th>Project</th><th>Code</th><th>Type</th>
+                <th style="text-align:center">Total</th>
+                <th style="text-align:center">Approved</th>
+                <th style="text-align:center">Pending</th>
+                <th style="text-align:center">Rejected</th>
+                <th style="text-align:center">Overdue</th>
+              </tr></thead>
+              <tbody id="dt-tbody"></tbody>
+            </table>
+            <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+          </div>
+        </div>
+        <div id="overview-pane-discipline" class="overview-table-pane">
+          <div class="tbl-wrap">
+            <table class="dt-tbl">
+              <thead><tr>
+                <th>Project</th><th>Doc Type</th><th>Discipline</th>
+                <th style="text-align:center">Total</th>
+                <th style="text-align:center">Approved</th>
+                <th style="text-align:center">Pending</th>
+                <th style="text-align:center">Rejected</th>
+                <th style="text-align:center">Overdue</th>
+              </tr></thead>
+              <tbody id="disc-tbody"></tbody>
+            </table>
+            <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -886,7 +900,7 @@ function renderLettersOverview(d){{
   const el=document.getElementById('ltr-panel');
   if(!el)return;
   try{{
-    const safeHtml=v=>String(v??'').replace(/[&<>\"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
+    const safeHtml=v=>String(v??'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
     const partyMap={{}};
     const stats=(Array.isArray(d)?d:[]).reduce((acc,p)=>{{
       const l=(p&&typeof p==='object'&&p.ltr&&typeof p.ltr==='object')?p.ltr:{{}};
@@ -910,128 +924,83 @@ function renderLettersOverview(d){{
     }}
     const topParties=Object.values(partyMap)
       .sort((a,b)=>(b.total-a.total)||(b.sent-a.sent)||(b.received-a.received)||a.party.localeCompare(b.party))
-      .slice(0,5);
+      .slice(0,6);
     const cards=[
       ['Total Letters',stats.total,'#2F4F64','Across '+stats.project_count+' project'+(stats.project_count===1?'':'s')],
       ['Sent',stats.sent,'#2563a8','Outgoing correspondence'],
       ['Received',stats.received,'#16a34a','Incoming correspondence'],
     ];
-    const partiesHtml=topParties.length
-      ? `<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
-            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
-            <div style="font-size:10px;color:var(--mu);font-weight:700">Top ${{topParties.length}} Parties</div>
-          </div>
-          <div style="display:grid;gap:6px">
-            ${{topParties.map(row=>{{
-              const pct=stats.total?Math.round((Number(row.total||0)/stats.total)*100):0;
-              return `<div style="display:grid;grid-template-columns:minmax(0,1fr) 72px 72px 82px;gap:10px;align-items:center;padding:7px 8px;border:1px solid rgba(221,227,237,.95);border-radius:8px;background:rgba(255,255,255,.72);transition:background .15s,border-color .15s,transform .15s"
-                onmouseenter="this.style.background='rgba(255,255,255,.96)';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)'"
-                onmouseleave="this.style.background='rgba(255,255,255,.72)';this.style.borderColor='rgba(221,227,237,.95)';this.style.transform='translateY(0)'">
-                <div style="min-width:0">
-                  <div style="font-size:12px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
-                  <div style="font-size:9px;color:var(--mu);margin-top:2px">Share of letters: ${{pct}}%</div>
-                </div>
-                <div style="text-align:right">
-                  <div style="font-size:11px;font-weight:800;color:#2F4F64">${{row.total}}</div>
-                  <div style="font-size:9px;color:var(--mu);letter-spacing:.2px">Total</div>
-                </div>
-                <div style="text-align:right">
-                  <div style="font-size:11px;font-weight:800;color:#2563a8">↗ ${{row.sent}}</div>
-                  <div style="font-size:9px;color:#2563a8;letter-spacing:.2px">Sent</div>
-                </div>
-                <div style="text-align:right">
-                  <div style="font-size:11px;font-weight:800;color:#16a34a">↙ ${{row.received}}</div>
-                  <div style="font-size:9px;color:#16a34a;letter-spacing:.2px">Received</div>
-                </div>
-              </div>`;
-            }}).join('')}}
-          </div>
-        </div>`
-      : '<div style="font-size:11px;color:var(--mu)">No party activity available in the current project scope.</div>';
-    const summaryHtml=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+    const summaryHtml=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
       ${{cards.map(([label,value,color,hint])=>`<div style="background:var(--bg);border-radius:8px;padding:12px 14px;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
         <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{label}}</div>
         <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.1;margin-top:6px">${{value}}</div>
         <div style="font-size:10px;color:var(--mu);margin-top:4px">${{hint}}</div>
       </div>`).join('')}}
     </div>`;
-    el.innerHTML=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-      <button type="button" id="ltr-tab-summary" onclick="setLettersOverviewTab('summary')" style="padding:5px 10px;border:1.5px solid #2F4F64;background:#2F4F64;color:#fff;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.35px;cursor:pointer;box-shadow:0 2px 6px rgba(47,79,100,.16)">Summary</button>
-      <button type="button" id="ltr-tab-parties" onclick="setLettersOverviewTab('parties')" style="padding:5px 10px;border:1.5px solid var(--bd);background:var(--bg);color:var(--mu);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.35px;cursor:pointer;box-shadow:none">Parties</button>
-    </div>
-    <div id="ltr-view-summary">${{summaryHtml}}</div>
-    <div id="ltr-view-parties" style="display:none">${{partiesHtml}}</div>`;
-    setLettersOverviewTab(window._ltrOverviewTab||'summary');
+    const partiesHtml=topParties.length
+      ? `<div style="background:var(--bg);border-radius:8px;padding:10px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
+            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
+            <div style="font-size:10px;color:var(--mu);font-weight:700">Top ${{topParties.length}} Parties</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">
+            ${{topParties.map(row=>{{
+              const pct=stats.total?Math.round((Number(row.total||0)/stats.total)*100):0;
+              return `<div style="border:1px solid rgba(221,227,237,.95);border-radius:8px;background:rgba(255,255,255,.78);padding:9px 10px;transition:background .15s,border-color .15s,transform .15s"
+                onmouseenter="this.style.background='rgba(255,255,255,.96)';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)'"
+                onmouseleave="this.style.background='rgba(255,255,255,.78)';this.style.borderColor='rgba(221,227,237,.95)';this.style.transform='translateY(0)'">
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+                  <div style="min-width:0">
+                    <div style="font-size:12px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
+                    <div style="font-size:9px;color:var(--mu);margin-top:2px">Share of letters: ${{pct}}%</div>
+                  </div>
+                  <div style="text-align:right;flex-shrink:0">
+                    <div style="font-size:14px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
+                    <div style="font-size:9px;color:var(--mu);margin-top:2px">Total</div>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+                  <div style="background:#eef4fb;border-radius:7px;padding:6px 8px">
+                    <div style="font-size:10px;font-weight:800;color:#2563a8">? ${{row.sent}}</div>
+                    <div style="font-size:9px;color:#2563a8;letter-spacing:.2px;margin-top:2px">Sent</div>
+                  </div>
+                  <div style="background:#edf9f0;border-radius:7px;padding:6px 8px">
+                    <div style="font-size:10px;font-weight:800;color:#16a34a">? ${{row.received}}</div>
+                    <div style="font-size:9px;color:#16a34a;letter-spacing:.2px;margin-top:2px">Received</div>
+                  </div>
+                </div>
+              </div>`;
+            }}).join('')}}
+          </div>
+        </div>`
+      : '<div style="font-size:11px;color:var(--mu)">No party activity available in the current project scope.</div>';
+    el.innerHTML=`<div style="display:grid;gap:10px">
+      ${{summaryHtml}}
+      ${{partiesHtml}}
+    </div>`;
   }}catch(err){{
     console.error('renderLettersOverview failed', err);
     el.innerHTML='<div style="font-size:11px;color:var(--mu)">Letters overview is temporarily unavailable.</div>';
   }}
 }}
 
-function setLettersOverviewTab(tab){{
-  window._ltrOverviewTab=(tab==='parties')?'parties':'summary';
-  const summaryBtn=document.getElementById('ltr-tab-summary');
-  const partiesBtn=document.getElementById('ltr-tab-parties');
-  const summaryView=document.getElementById('ltr-view-summary');
-  const partiesView=document.getElementById('ltr-view-parties');
-  const activeStyles=['#2F4F64','#fff','#2F4F64','0 2px 6px rgba(47,79,100,.16)'];
-  const idleStyles=['var(--bg)','var(--mu)','var(--bd)','none'];
-  if(summaryView)summaryView.style.display=window._ltrOverviewTab==='summary'?'block':'none';
-  if(partiesView)partiesView.style.display=window._ltrOverviewTab==='parties'?'block':'none';
-  if(summaryBtn){{
-    const s=window._ltrOverviewTab==='summary'?activeStyles:idleStyles;
-    summaryBtn.style.background=s[0];
-    summaryBtn.style.color=s[1];
-    summaryBtn.style.borderColor=s[2];
-    summaryBtn.style.boxShadow=s[3];
-  }}
-  if(partiesBtn){{
-    const s=window._ltrOverviewTab==='parties'?activeStyles:idleStyles;
-    partiesBtn.style.background=s[0];
-    partiesBtn.style.color=s[1];
-    partiesBtn.style.borderColor=s[2];
-    partiesBtn.style.boxShadow=s[3];
-  }}
-}}
-
 function ensureOverviewTableControls(){{
   const overview=document.getElementById('tab-overview');
   if(!overview)return;
-  const titles=overview.querySelectorAll('.stitle');
-  const wraps=overview.querySelectorAll('.tbl-wrap');
-  if(titles.length<3||wraps.length<2)return;
-  const summaryTitle=titles[1];
-  summaryTitle.textContent='Summary Tables';
-  summaryTitle.style.display='block';
-  summaryTitle.style.marginBottom='6px';
-  if(document.getElementById('overview-table-switch'))return;
-  const switcher=document.createElement('div');
-  switcher.id='overview-table-switch';
-  switcher.className='overview-table-switch';
-  switcher.innerHTML=`<button type="button" id="ovtab-doc-types" class="overview-table-btn" onclick="setOverviewTableTab('docTypes')">Document Types Summary</button>
-    <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">Discipline Breakdown</button>`;
-  summaryTitle.insertAdjacentElement('afterend',switcher);
+  const shell=overview.querySelector('.overview-table-shell');
+  const docPane=document.getElementById('overview-pane-docTypes');
+  const discPane=document.getElementById('overview-pane-discipline');
+  if(!shell||!docPane||!discPane)return;
 }}
 
 function setOverviewTableTab(tab){{
   window._overviewTableTab=(tab==='discipline')?'discipline':'docTypes';
-  const overview=document.getElementById('tab-overview');
-  if(!overview)return;
-  const titles=overview.querySelectorAll('.stitle');
-  const wraps=overview.querySelectorAll('.tbl-wrap');
-  if(titles.length<3||wraps.length<2)return;
-  const summaryTitle=titles[1];
-  const disciplineTitle=titles[2];
-  const docWrap=wraps[0];
-  const discWrap=wraps[1];
-  summaryTitle.textContent='Summary Tables';
-  summaryTitle.style.display='block';
-  disciplineTitle.style.display='none';
-  docWrap.style.display=window._overviewTableTab==='docTypes'?'block':'none';
-  discWrap.style.display=window._overviewTableTab==='discipline'?'block':'none';
+  const docPane=document.getElementById('overview-pane-docTypes');
+  const discPane=document.getElementById('overview-pane-discipline');
   const docBtn=document.getElementById('ovtab-doc-types');
   const discBtn=document.getElementById('ovtab-discipline');
+  if(docPane)docPane.classList.toggle('active',window._overviewTableTab==='docTypes');
+  if(discPane)discPane.classList.toggle('active',window._overviewTableTab==='discipline');
   if(docBtn)docBtn.classList.toggle('active',window._overviewTableTab==='docTypes');
   if(discBtn)discBtn.classList.toggle('active',window._overviewTableTab==='discipline');
 }}
