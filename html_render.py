@@ -312,6 +312,21 @@ canvas{{max-height:174px}}
 .dt-tbl td{{padding:4px 10px;border-bottom:1px solid #dde5ef;font-variant-numeric:tabular-nums;transition:background .12s ease}}
 .dt-tbl tr:hover td{{background:#f1f6fb}}
 .dt-tbl .alt td{{background:#fafbfd}}
+.disc-group-row td{{background:#f7fafc;font-weight:600}}
+.disc-group-row:hover td{{background:#eef4f8}}
+.disc-group-row.warn td{{background:#fff7ed}}
+.disc-child-row{{display:none}}
+.disc-child-row.open{{display:table-row}}
+.disc-child-row td{{background:#fcfdff}}
+.disc-child-row:hover td{{background:#f3f7fb}}
+.disc-child-spacer{{width:14px;padding:0 0 0 10px!important}}
+.disc-child-label{{padding-left:18px!important;position:relative;font-weight:600;color:#2f4f64}}
+.disc-child-label::before{{content:'';position:absolute;left:8px;top:50%;width:6px;height:6px;border-radius:999px;background:#c7d2de;transform:translateY(-50%)}}
+.disc-badge{{display:inline-flex;align-items:center;justify-content:center;min-width:26px;padding:2px 8px;border-radius:999px;background:#e8eef6;color:#2f4f64;font-size:10px;font-weight:700}}
+.disc-expander{{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid #d7e0ea;border-radius:999px;background:#fff;color:#2f4f64;cursor:pointer;font-size:11px;transition:all .15s}}
+.disc-expander:hover{{border-color:#2f4f64;background:#f5f8fc}}
+.disc-expander.open{{background:#2f4f64;color:#fff;border-color:#2f4f64}}
+.disc-meta{{font-size:10px;color:var(--mu);font-weight:600}}
 .overview-table-switch{{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 8px}}
 .overview-table-btn{{padding:6px 11px;border:1.5px solid var(--bd);border-radius:999px;background:var(--bg);
   color:var(--mu);cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.35px;font-family:inherit;
@@ -509,12 +524,13 @@ canvas{{max-height:174px}}
           <div class="tbl-wrap">
             <table class="dt-tbl">
               <thead><tr>
-                <th>Project</th><th>Doc Type</th><th>Discipline</th>
+                <th>Project</th><th>Doc Type</th><th>Disciplines</th>
                 <th style="text-align:center">Total</th>
                 <th style="text-align:center">Approved</th>
                 <th style="text-align:center">Pending</th>
                 <th style="text-align:center">Rejected</th>
                 <th style="text-align:center">Overdue</th>
+                <th style="text-align:center;width:42px">View</th>
               </tr></thead>
               <tbody id="disc-tbody"></tbody>
             </table>
@@ -1034,32 +1050,51 @@ function renderDTTable(d){{
 // ── Disc Table ────────────────────────────────────────────
 function renderDiscTable(data){{
   const tbody=document.getElementById('disc-tbody'),empty=document.getElementById('disc-empty');
-  tbody.innerHTML='';let rows=0;
+  tbody.innerHTML='';let rows=0,groupIdx=0;
+  const mk=(v,c)=>`<td style="text-align:center;font-weight:700;color:${{c}}">${{v||0}}</td>`;
   data.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{
     const disc=dt.disc_breakdown||[];if(!disc.length)return;
-    disc.forEach((ds,di)=>{{
-      rows++;
-      const tr=document.createElement('tr');tr.className=rows%2===0?'alt':'';
-      if(di===0){{
-        const tdc=document.createElement('td');tdc.rowSpan=disc.length;
-        tdc.style.cssText='font-size:10px;color:var(--mu);vertical-align:top;padding:6px 10px';
-        tdc.textContent=p.code;tr.appendChild(tdc);
-        const tdt=document.createElement('td');tdt.rowSpan=disc.length;
-        tdt.style.cssText='font-weight:600;vertical-align:top;padding:6px 10px;font-size:11px';
-        tdt.textContent=dt.code;tr.appendChild(tdt);
-      }}
-      const mk=(v,c)=>{{const td=document.createElement('td');
-        td.style.cssText='text-align:center;padding:6px 8px;font-weight:600;color:'+c;
-        td.textContent=v||'0';return td;}};
-      const tdisc=document.createElement('td');tdisc.style.cssText='padding:6px 10px';
-      tdisc.textContent=ds.disc;tr.appendChild(tdisc);
-      tr.appendChild(mk(ds.total,'var(--pr)'));tr.appendChild(mk(ds.approved,'#16a34a'));
-      tr.appendChild(mk(ds.pending,'#f59e0b'));tr.appendChild(mk(ds.rejected,'#7c3aed'));
-      tr.appendChild(mk(ds.overdue,'#ef4444'));
-      tbody.appendChild(tr);
+    rows++;groupIdx++;
+    const groupId=`discgrp-${{groupIdx}}`;
+    const warn=(Number(dt.overdue||0)>0)||disc.some(ds=>Number(ds.overdue||0)>0);
+    const tr=document.createElement('tr');
+    tr.className=`disc-group-row${{warn?' warn':''}}${{rows%2===0?' alt':''}}`;
+    tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{p.code}}</td>
+      <td style="font-weight:700;color:var(--pr)">${{dt.code}}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge">${{disc.length}}</span><span class="disc-meta">${{disc.length===1?'1 discipline':`${{disc.length}} disciplines`}}</span></div></td>
+      ${{mk(dt.total,'var(--pr)')}}
+      ${{mk(dt.approved,'#16a34a')}}
+      ${{mk(dt.pending,'#f59e0b')}}
+      ${{mk(dt.rejected||0,'#7c3aed')}}
+      ${{mk(dt.overdue,'#ef4444')}}
+      <td style="text-align:center"><button type="button" class="disc-expander" data-group="${{groupId}}" aria-expanded="false" onclick="toggleDiscGroup('${{groupId}}', this)">▼</button></td>`;
+    tbody.appendChild(tr);
+    disc.forEach(ds=>{{
+      const child=document.createElement('tr');
+      child.className='disc-child-row';
+      child.dataset.group=groupId;
+      child.innerHTML=`<td class="disc-child-spacer"></td>
+        <td style="font-size:10px;color:var(--mu)"> </td>
+        <td class="disc-child-label">${{ds.disc}}</td>
+        ${{mk(ds.total,'var(--pr)')}}
+        ${{mk(ds.approved,'#16a34a')}}
+        ${{mk(ds.pending,'#f59e0b')}}
+        ${{mk(ds.rejected||0,'#7c3aed')}}
+        ${{mk(ds.overdue,'#ef4444')}}
+        <td></td>`;
+      tbody.appendChild(child);
     }});
   }});}});
   if(empty)empty.style.display=rows?'none':'block';
+}}
+
+function toggleDiscGroup(groupId, btn){{
+  const rows=document.querySelectorAll(`#disc-tbody tr[data-group="${{groupId}}"]`);
+  const shouldOpen=!btn.classList.contains('open');
+  rows.forEach(row=>row.classList.toggle('open', shouldOpen));
+  btn.classList.toggle('open', shouldOpen);
+  btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  btn.textContent=shouldOpen ? '▲' : '▼';
 }}
 
 // ── Analytics Tab ─────────────────────────────────────────
