@@ -312,8 +312,11 @@ canvas{{max-height:174px}}
 .dt-tbl td{{padding:4px 10px;border-bottom:1px solid #dde5ef;font-variant-numeric:tabular-nums;transition:background .12s ease}}
 .dt-tbl tr:hover td{{background:#f1f6fb}}
 .dt-tbl .alt td{{background:#fbfcfe}}
-.overview-pane-discipline .dt-tbl th:first-child,
-.overview-pane-discipline .dt-tbl td:first-child{{min-width:92px;white-space:nowrap}}
+#overview-pane-discipline .dt-tbl{{table-layout:fixed}}
+#overview-pane-discipline .dt-tbl th:first-child,
+#overview-pane-discipline .dt-tbl td:first-child{{white-space:nowrap}}
+#overview-pane-discipline .dt-tbl th:nth-child(2),
+#overview-pane-discipline .dt-tbl td:nth-child(2){{white-space:nowrap}}
 .disc-group-row td{{background:#f9fbfd;font-weight:600}}
 .disc-group-row.alt td{{background:#f6f9fc}}
 .disc-group-row:hover td{{background:#edf3f8}}
@@ -527,6 +530,17 @@ canvas{{max-height:174px}}
         <div id="overview-pane-discipline" class="overview-table-pane">
           <div class="tbl-wrap">
             <table class="dt-tbl">
+              <colgroup>
+                <col style="width:120px">
+                <col style="width:90px">
+                <col>
+                <col style="width:88px">
+                <col style="width:88px">
+                <col style="width:88px">
+                <col style="width:88px">
+                <col style="width:88px">
+                <col style="width:52px">
+              </colgroup>
               <thead><tr>
                 <th>Project</th><th>Doc Type</th><th>Disciplines</th>
                 <th style="text-align:center">Total</th>
