@@ -278,14 +278,14 @@ body.dark .prog{{background:#334155}}
 canvas{{max-height:174px}}
 
 /* ── Project cards ── */
-.overview-main{{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.95fr);gap:12px;align-items:start;margin-bottom:10px}}
-.overview-side{{display:grid;gap:10px;min-width:0}}
+.overview-stack{{display:grid;gap:10px;margin-bottom:10px}}
 .overview-projects-panel{{padding:11px 12px;margin-bottom:0;min-width:0}}
 .overview-projects-panel .panel-title{{margin-bottom:8px}}
-.overview-mini-panel{{padding:11px 12px;margin-bottom:0;min-width:0}}
-.overview-mini-panel .panel-title{{margin-bottom:8px}}
+.overview-pr-panel{{padding:11px 12px;margin-bottom:0;min-width:0}}
+.overview-pr-panel .panel-title{{margin-bottom:8px}}
 .overview-wide-panel{{padding:11px 12px;margin-bottom:10px}}
 .overview-wide-panel .panel-title{{margin-bottom:8px}}
+.pr-analytics-grid{{display:grid;grid-template-columns:minmax(170px,.95fr) minmax(220px,1.15fr) minmax(260px,1.4fr);gap:10px;align-items:stretch}}
 .pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
@@ -398,7 +398,8 @@ canvas{{max-height:174px}}
 
 /* ── Mobile ── */
 @media(max-width:768px){{
-  .overview-main{{grid-template-columns:1fr;gap:10px}}
+  .overview-stack{{gap:10px}}
+  .pr-analytics-grid{{grid-template-columns:1fr}}
   .charts-grid,.charts-grid-3{{grid-template-columns:1fr}}
   .pgrid{{grid-template-columns:1fr}}
   .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
@@ -411,7 +412,7 @@ canvas{{max-height:174px}}
   .kval{{font-size:22px}}
 }}
 @media(max-width:1080px){{
-  .overview-main{{grid-template-columns:minmax(0,1.3fr) minmax(240px,.95fr)}}
+  .pr-analytics-grid{{grid-template-columns:minmax(160px,.95fr) minmax(210px,1.08fr) minmax(240px,1.28fr)}}
 }}
 @media(max-width:480px){{
   .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
@@ -479,17 +480,15 @@ canvas{{max-height:174px}}
     <!-- TAB: OVERVIEW -->
     <div id="tab-overview" class="tab-pane active">
       <div class="stitle">🗂 Projects</div>
-      <div class="overview-main">
+      <div class="overview-stack">
         <div class="panel overview-projects-panel">
           <div class="panel-title">Projects</div>
           <div class="pgrid" id="pgrid"></div>
         </div>
-        <div class="overview-side">
-          <div class="panel overview-mini-panel">
-            <div class="panel-title">PR Analytics</div>
-            <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
-              <div style="font-size:11px;color:var(--mu)">Loading...</div>
-            </div>
+        <div class="panel overview-pr-panel">
+          <div class="panel-title">PR Analytics</div>
+          <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
+            <div style="font-size:11px;color:var(--mu)">Loading...</div>
           </div>
         </div>
       </div>
@@ -804,7 +803,7 @@ function renderPrAnalytics(data){{
         <span style="font-size:11px;font-weight:700;color:var(--pr);white-space:nowrap">${{p.pr_count}}</span>
       </div>`).join('')
     : `<div style="font-size:11px;color:var(--mu)">No project data</div>`;
-  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:stretch">
+  el.innerHTML=`<div class="pr-analytics-grid">
     <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;justify-content:center">
       <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Total PRs</div>
       <div style="font-size:24px;font-weight:800;color:var(--pr);line-height:1.05;margin-top:4px">${{data.total_pr_records||0}}</div>
