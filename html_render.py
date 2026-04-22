@@ -285,7 +285,7 @@ canvas{{max-height:174px}}
 .overview-pr-panel .panel-title{{margin-bottom:8px}}
 .overview-wide-panel{{padding:11px 12px;margin-bottom:10px}}
 .overview-wide-panel .panel-title{{margin-bottom:8px}}
-.pr-analytics-grid{{display:grid;grid-template-columns:minmax(170px,.95fr) minmax(220px,1.15fr) minmax(260px,1.4fr);gap:10px;align-items:stretch}}
+.pr-analytics-grid{{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(240px,1.18fr) minmax(290px,1.5fr);gap:10px;align-items:stretch}}
 .pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
@@ -798,31 +798,36 @@ function renderPrAnalytics(data){{
     return;
   }}
   const topProjects=(data.top_projects||[]).length
-    ? (data.top_projects||[]).map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)">
-        <span style="font-size:11px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{p.project_name}}</span>
-        <span style="font-size:11px;font-weight:700;color:var(--pr);white-space:nowrap">${{p.pr_count}}</span>
+    ? (data.top_projects||[]).map((p,idx)=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:${{idx===0?'7px 0 8px':'6px 0'}};border-bottom:1px solid var(--bd);align-items:center">
+        <div style="min-width:0">
+          <div style="font-size:${{idx===0?'11.5px':'11px'}};font-weight:${{idx===0?'800':'600'}};color:${{idx===0?'var(--pr)':'var(--tx)'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{p.project_name}}</div>
+          ${{idx===0?'<div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active project</div>':''}}
+        </div>
+        <span style="font-size:${{idx===0?'12px':'11px'}};font-weight:800;color:var(--pr);white-space:nowrap">${{p.pr_count}}</span>
       </div>`).join('')
     : `<div style="font-size:11px;color:var(--mu)">No project data</div>`;
   el.innerHTML=`<div class="pr-analytics-grid">
-    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;justify-content:center">
+    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;justify-content:center">
       <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Total PRs</div>
       <div style="font-size:24px;font-weight:800;color:var(--pr);line-height:1.05;margin-top:4px">${{data.total_pr_records||0}}</div>
-      <div style="font-size:10px;color:var(--mu);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{data.top_project_name||'No project data'}}</div>
+      <div style="font-size:9px;color:var(--mu);margin-top:6px;text-transform:uppercase;letter-spacing:.28px">Current dashboard scope</div>
+      <div style="font-size:10px;color:var(--mu);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Top project: ${{data.top_project_name||'No project data'}}</div>
     </div>
-    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;min-height:156px">
+    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
-        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Top Projects</div>
+        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Projects</div>
         <div style="font-size:10px;color:var(--mu);white-space:nowrap">${{(data.top_projects||[]).length}} shown</div>
       </div>
       <div style="flex:1;overflow:auto;padding-right:2px">
         ${{topProjects}}
       </div>
     </div>
-    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;min-height:156px">
+    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Top Trades by PR Count</div>
+          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Trades</div>
           <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{data.top_trade_name||'No trade data'}}</div>
+          <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active trade</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{data.top_trade_count||0}}</div>
