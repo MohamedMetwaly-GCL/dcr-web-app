@@ -312,6 +312,8 @@ canvas{{max-height:174px}}
 .dt-tbl td{{padding:4px 10px;border-bottom:1px solid #dde5ef;font-variant-numeric:tabular-nums;transition:background .12s ease}}
 .dt-tbl tr:hover td{{background:#f1f6fb}}
 .dt-tbl .alt td{{background:#fbfcfe}}
+.dt-summary-row.warn td{{background:#fff4e8}}
+.dt-summary-row.warn:hover td{{background:#feeccc}}
 #overview-pane-discipline .dt-tbl{{table-layout:fixed}}
 #overview-pane-discipline .dt-tbl th:first-child,
 #overview-pane-discipline .dt-tbl td:first-child{{white-space:nowrap}}
@@ -1052,7 +1054,9 @@ function renderDTTable(d){{
   rows.forEach(r=>{{
     const pct=r.total?Math.round(r.approved/r.total*100):0;
     const col=pct>=80?'#16a34a':pct>=50?'#f59e0b':'#ef4444';
-    const tr=document.createElement('tr');if(i%2)tr.className='alt';i++;
+    const tr=document.createElement('tr');
+    tr.className=`dt-summary-row${{r.overdue>0?' warn':''}}${{i%2?' alt':''}}`;
+    i++;
     tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{r.pcode}}</td>
       <td style="font-weight:700;color:var(--pr)">${{r.code}}</td>
       <td>${{r.name}}</td>
