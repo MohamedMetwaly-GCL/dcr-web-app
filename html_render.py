@@ -311,14 +311,18 @@ canvas{{max-height:174px}}
   text-align:left;font-weight:600;white-space:nowrap;font-size:11px}}
 .dt-tbl td{{padding:4px 10px;border-bottom:1px solid #dde5ef;font-variant-numeric:tabular-nums;transition:background .12s ease}}
 .dt-tbl tr:hover td{{background:#f1f6fb}}
-.dt-tbl .alt td{{background:#fafbfd}}
-.disc-group-row td{{background:#f7fafc;font-weight:600}}
-.disc-group-row:hover td{{background:#eef4f8}}
-.disc-group-row.warn td{{background:#fff7ed}}
+.dt-tbl .alt td{{background:#fbfcfe}}
+.overview-pane-discipline .dt-tbl th:first-child,
+.overview-pane-discipline .dt-tbl td:first-child{{min-width:92px;white-space:nowrap}}
+.disc-group-row td{{background:#f9fbfd;font-weight:600}}
+.disc-group-row.alt td{{background:#f6f9fc}}
+.disc-group-row:hover td{{background:#edf3f8}}
+.disc-group-row.warn td{{background:#fff4e8}}
+.disc-group-row.warn:hover td{{background:#feeccc}}
 .disc-child-row{{display:none}}
 .disc-child-row.open{{display:table-row}}
-.disc-child-row td{{background:#fcfdff}}
-.disc-child-row:hover td{{background:#f3f7fb}}
+.disc-child-row td{{background:#f7fafe}}
+.disc-child-row:hover td{{background:#eef3f8}}
 .disc-child-spacer{{width:14px;padding:0 0 0 10px!important}}
 .disc-child-label{{padding-left:18px!important;position:relative;font-weight:600;color:#2f4f64}}
 .disc-child-label::before{{content:'';position:absolute;left:8px;top:50%;width:6px;height:6px;border-radius:999px;background:#c7d2de;transform:translateY(-50%)}}
