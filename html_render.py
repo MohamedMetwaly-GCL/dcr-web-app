@@ -1754,7 +1754,7 @@ tr.alt td{{background:#fafbfd}}
 
 <!-- ADD/EDIT RECORD -->
 <div class="overlay hidden" id="rec-modal">
-  <div class="modal record-modal" style="max-width:820px">
+  <div class="modal record-modal">
     <div class="mhdr"><span id="rec-title">Add Document</span>
       <button class="xbtn" onclick="closeM('rec-modal')">✕</button></div>
     <div class="mbody"><div class="fgrid record-form-grid" id="rec-form"></div></div>
