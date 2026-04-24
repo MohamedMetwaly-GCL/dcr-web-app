@@ -50,9 +50,13 @@ BASE_CSS = """
 :root{--pr:#1a3a5c;--pl:#2563a8;--ac:#f0a500;--bg:#f0f4f8;--wh:#fff;--bd:#dde3ed;
   --tx:#1e2a3a;--mu:#6b7a94;--ok:#16a34a;--er:#ef4444;--wa:#f59e0b;--rd:6px}
 *{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
 body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
+body.dark{--pr:#17314d;--pl:#60a5fa;--ac:#f6c453;--bg:#0f172a;--wh:#162132;--bd:#304257;
+  --tx:#e2e8f0;--mu:#9fb0c6}
 #topbar{background:var(--pr);color:#fff;height:46px;display:flex;align-items:center;
   padding:0 14px;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.25);flex-shrink:0;position:relative;z-index:100}
+body.dark #topbar{background:#0d1f33}
 #topbar .sp{flex:1}
 .tb-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;
   padding:5px 11px;border-radius:var(--rd);cursor:pointer;font-size:12px;font-family:inherit;
@@ -65,12 +69,15 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx
 .modal{background:#fff;border-radius:10px;box-shadow:0 24px 64px rgba(0,0,0,.3);
   width:92%;max-width:600px;max-height:90vh;display:flex;flex-direction:column;
   animation:mIn .18s ease}
+body.dark .modal{background:var(--wh);color:var(--tx);box-shadow:0 24px 64px rgba(0,0,0,.48)}
 @keyframes mIn{from{transform:translateY(-14px);opacity:0}}
 .mhdr{background:var(--pr);color:#fff;padding:12px 18px;font-weight:700;font-size:13px;
   display:flex;justify-content:space-between;align-items:center;flex-shrink:0;border-radius:10px 10px 0 0}
+body.dark .mhdr{background:#17314d}
 .mbody{padding:16px 18px;overflow-y:auto;flex:1}
 .mfoot{padding:10px 18px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;
   gap:8px;background:var(--bg);flex-shrink:0;border-radius:0 0 10px 10px}
+body.dark .mfoot{background:#101a29}
 .xbtn{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;opacity:.7;line-height:1}
 .xbtn:hover{opacity:1}
 .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -78,7 +85,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx
 .fg.full{grid-column:1/-1}
 .fg label{font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px}
 .fg input,.fg select,.fg textarea{width:100%;padding:7px 10px;border:1.5px solid var(--bd);
-  border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none;transition:border-color .2s}
+  border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none;transition:border-color .2s;
+  background:var(--wh);color:var(--tx)}
 .fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--pl);box-shadow:0 0 0 2px rgba(37,99,168,.1)}
 .btn{padding:7px 16px;border-radius:var(--rd);cursor:pointer;font-family:inherit;
   font-size:12px;font-weight:600;border:1px solid transparent;transition:all .15s}
@@ -90,6 +98,22 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx
 .stitle{font-size:10.5px;font-weight:700;color:var(--pr);text-transform:uppercase;
   letter-spacing:.5px;margin:10px 0 6px;padding-bottom:4px;border-bottom:1.5px solid var(--pr)}
 #tab-overview > .stitle:first-child{display:none}
+.record-form-shell{display:flex;flex-direction:column;gap:12px}
+.form-section{background:linear-gradient(180deg,#fcfdff,#f7fafe);border:1px solid var(--bd);border-radius:12px;
+  padding:12px 12px 10px;box-shadow:0 2px 8px rgba(15,23,42,.04)}
+.form-section-header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}
+.form-section-title{font-size:10px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}
+.form-section-sub{font-size:10px;color:var(--mu);line-height:1.45;margin-top:3px}
+.form-section-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;align-items:start}
+.form-section-grid .fg{min-width:0}
+.form-section-grid .fg label{margin-bottom:4px}
+.form-section-grid textarea{min-height:82px;resize:vertical}
+.form-section-grid .fg.full textarea{min-height:98px}
+body.dark .form-section{background:linear-gradient(180deg,#162132,#101a28);border-color:#2b3c4f;box-shadow:none}
+body.dark .btn-sc{background:#101a29}
+body.dark .btn-sc:hover{background:#223246}
+body.dark .fg input,body.dark .fg select,body.dark .fg textarea{background:#0f1a29;border-color:#314558;color:#e2e8f0}
+body.dark .fg input::placeholder,body.dark .fg textarea::placeholder{color:#7f93ac}
 .badge{display:inline-block;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700}
 #toast{position:fixed;bottom:28px;right:18px;background:var(--pr);color:#fff;
   padding:10px 18px;border-radius:var(--rd);font-size:12px;z-index:9999;
@@ -102,6 +126,17 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx
 SHARED_JS = """
 <div id="toast"></div>
 <script>
+function applyDarkMode(on){
+  document.body.classList.toggle('dark',!!on);
+  const btn=document.getElementById('darkBtn');
+  if(btn)btn.textContent=on?'☀️':'🌙';
+}
+function toggleDark(){
+  const on=!document.body.classList.contains('dark');
+  applyDarkMode(on);
+  localStorage.setItem('dcr_dark',on?'1':'');
+}
+if(localStorage.getItem('dcr_dark'))applyDarkMode(true);
 function toast(msg,type=''){
   const t=document.getElementById('toast');
   t.textContent=msg;t.className='show '+(type||'');
@@ -214,13 +249,13 @@ def render_dashboard(u):
 {BASE_CSS}
 <style>
 /* ── Layout ── */
-body{{display:flex;flex-direction:column;min-height:100vh}}
+body{{display:flex;flex-direction:column;min-height:100vh;overflow-x:hidden}}
 .wrap{{max-width:1480px;margin:0 auto;padding:12px 12px;flex:1;width:100%}}
 
 /* ── Dark Mode ── */
 body.dark{{--bg:#0f172a;--wh:#1e293b;--tx:#e2e8f0;--mu:#94a3b8;--bd:#334155;--pr:#3b82f6;--pl:#60a5fa}}
 body.dark .kpi,body.dark .ccard,body.dark .pcard,body.dark .panel,
-body.dark .psel-bar,body.dark .tbl-wrap{{background:#1e293b;color:#e2e8f0}}
+body.dark .psel-bar,body.dark .tbl-wrap{{background:#162132;color:#e2e8f0}}
 body.dark .kval{{color:#93c5fd}}
 body.dark .kpi.ok .kval{{color:#86efac}}
 body.dark .kpi.wa .kval{{color:#fcd34d}}
@@ -240,6 +275,9 @@ body.dark select,body.dark input{{background:#1e293b;color:#e2e8f0;border-color:
 body.dark .tbtn{{background:#1e293b;color:#e2e8f0;border-color:#334155}}
 body.dark .ov-row{{border-color:#334155;color:#cbd5e1}}
 body.dark .prog{{background:#334155}}
+body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap,body.dark .ltr-party-card{{border-color:#304257!important}}
+body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap{{background:#101a29!important}}
+body.dark .ltr-party-card{{background:#162132!important}}
 
 /* ── KPIs ── */
 .kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:7px;margin-bottom:10px}}
@@ -287,6 +325,9 @@ canvas{{max-height:174px}}
 .overview-wide-panel .panel-title{{margin-bottom:8px}}
 .pr-analytics-grid{{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(240px,1.18fr) minmax(290px,1.5fr);gap:10px;align-items:stretch}}
 .pr-analytics-grid > div{{min-width:0}}
+.pr-block,.ltr-summary-card,.ltr-parties-wrap,.ltr-party-card,.charts-grid > *,.charts-grid-3 > *,#pr-panel,#ltr-panel{{min-width:0}}
+.ltr-summary-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}}
+.ltr-parties-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}}
 .pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
@@ -423,6 +464,9 @@ canvas{{max-height:174px}}
   .psel-bar{{align-items:stretch;gap:6px}}
   .psel-bar select{{min-width:0;flex:1 1 160px}}
   .overview-table-shell{{max-height:300px}}
+  .dt-tbl{{min-width:760px}}
+  .ltr-summary-grid,.ltr-parties-grid{{grid-template-columns:1fr}}
+  .pr-block{{padding:10px!important}}
 }}
 @media(max-width:768px){{
   .dt-tbl{{min-width:600px}}
@@ -714,18 +758,6 @@ let PR_ANALYTICS=null;
 let pChart,sChart,tChart,aChart,qChart,arChart,prTradeChart;
 let _currentDisc='',_currentPid='';
 
-// ── Dark mode ──────────────────────────────────────────────
-function toggleDark(){{
-  document.body.classList.toggle('dark');
-  const on=document.body.classList.contains('dark');
-  document.getElementById('darkBtn').textContent=on?'☀️':'🌙';
-  localStorage.setItem('dcr_dark',on?'1':'');
-}}
-if(localStorage.getItem('dcr_dark')){{
-  document.body.classList.add('dark');
-  document.getElementById('darkBtn').textContent='☀️';
-}}
-
 // ── Tab switching ──────────────────────────────────────────
 function showTab(name){{
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
@@ -826,13 +858,13 @@ function renderPrAnalytics(data){{
       </div>`).join('')
     : `<div style="font-size:11px;color:var(--mu)">No project data</div>`;
   el.innerHTML=`<div class="pr-analytics-grid">
-    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;justify-content:center">
+    <div class="pr-block pr-total" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;justify-content:center">
       <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Total PRs</div>
       <div style="font-size:24px;font-weight:800;color:var(--pr);line-height:1.05;margin-top:4px">${{data.total_pr_records||0}}</div>
       <div style="font-size:9px;color:var(--mu);margin-top:6px;text-transform:uppercase;letter-spacing:.28px">Current dashboard scope</div>
       <div style="font-size:10px;color:var(--mu);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Top project: ${{data.top_project_name||'No project data'}}</div>
     </div>
-    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
+    <div class="pr-block pr-projects" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Projects</div>
         <div style="font-size:10px;color:var(--mu);white-space:nowrap">${{(data.top_projects||[]).length}} shown</div>
@@ -841,7 +873,7 @@ function renderPrAnalytics(data){{
         ${{topProjects}}
       </div>
     </div>
-    <div style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
+    <div class="pr-block pr-trades" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div>
           <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Trades</div>
@@ -990,26 +1022,26 @@ function renderLettersOverview(d){{
       ['Sent',stats.sent,'#2563a8','Outgoing correspondence'],
       ['Received',stats.received,'#16a34a','Incoming correspondence'],
     ];
-    const summaryHtml=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px">
-      ${{cards.map(([label,value,color,hint])=>`<div style="background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
+    const summaryHtml=`<div class="ltr-summary-grid">
+      ${{cards.map(([label,value,color,hint])=>`<div class="ltr-summary-card" style="background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
         <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{label}}</div>
         <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.08;margin-top:5px">${{value}}</div>
         <div style="font-size:10px;color:var(--mu);margin-top:3px">${{hint}}</div>
       </div>`).join('')}}
     </div>`;
     const partiesHtml=topParties.length
-      ? `<div style="background:var(--bg);border-radius:8px;padding:9px 11px;border:1px solid #e3eaf2">
+      ? `<div class="ltr-parties-wrap" style="background:var(--bg);border-radius:8px;padding:9px 11px;border:1px solid #e3eaf2">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
             <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
             <div style="font-size:10px;color:var(--mu);font-weight:700">Top ${{topParties.length}} Parties</div>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">
+          <div class="ltr-parties-grid">
             ${{topParties.map((row, idx)=>{{
               const pct=stats.total?Math.round((Number(row.total||0)/stats.total)*100):0;
               const accent=idx<3?'rgba(47,79,100,.12)':'rgba(221,227,237,.95)';
               const bg=idx<3?'linear-gradient(180deg,rgba(255,255,255,.98),rgba(245,249,255,.94))':'rgba(255,255,255,.82)';
               const shadow=idx<3?'0 3px 10px rgba(47,79,100,.06)':'0 1px 3px rgba(15,23,42,.04)';
-              return `<div style="border:1px solid ${{accent}};border-radius:9px;background:${{bg}};padding:9px 10px;box-shadow:${{shadow}};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
+              return `<div class="ltr-party-card" style="border:1px solid ${{accent}};border-radius:9px;background:${{bg}};padding:9px 10px;box-shadow:${{shadow}};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
                 onmouseenter="this.style.background='linear-gradient(180deg,rgba(255,255,255,1),rgba(244,248,253,.98))';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(47,79,100,.08)'"
                 onmouseleave="this.style.background='${{bg}}';this.style.borderColor='${{accent}}';this.style.transform='translateY(0)';this.style.boxShadow='${{shadow}}'">
                 <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
@@ -1536,6 +1568,22 @@ def render_register(u, proj):
 <style>
 .hidden{{display:none!important}}
 body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
+body.dark #projbar,body.dark #toolbar,body.dark #ltr-quickbar,body.dark #noc-summary{{background:#162132;color:#e2e8f0;border-color:#304257}}
+body.dark #tabsbar{{background:#0d1f33}}
+body.dark #tblwrap{{background:#111b2a}}
+body.dark #regtbl th{{background:#17314d}}
+body.dark .frow th{{background:#101a29}}
+body.dark .frow input,body.dark .frow select{{background:#0f1a29;border-color:#314558;color:#e2e8f0}}
+body.dark #regtbl td{{border-color:#253648;color:#d7e1ec}}
+body.dark #regtbl tr.alt td{{background:#132031}}
+body.dark #regtbl tr:hover td{{background:rgba(96,165,250,.12)}}
+body.dark .tool-dd-menu{{background:#162132;border-color:#304257}}
+body.dark .tool-dd-menu button{{color:#e2e8f0}}
+body.dark .tool-dd-menu button:hover{{background:#101a29;color:#93c5fd}}
+body.dark .tab-btn{{color:rgba(255,255,255,.72)}}
+body.dark .tab-btn:hover{{background:rgba(255,255,255,.08)}}
+body.dark .tcnt{{background:rgba(255,255,255,.14)}}
+body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 @media print{{
   #topbar,#tabbar,.toolrow,.bulkbar,#statusbar,.acts{{display:none!important}}
   body{{height:auto;overflow:visible}}
@@ -1552,7 +1600,7 @@ body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
 .pf-lbl{{font-size:9px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px}}
 .pf-val{{font-size:11px;white-space:nowrap}}
 #tabsbar{{background:#0f2640;display:flex;align-items:center;overflow-x:auto;flex-shrink:0;
-  padding:0 8px;scrollbar-width:thin}}
+  padding:4px 8px;scrollbar-width:thin;gap:6px}}
 #tabsbar::-webkit-scrollbar{{height:3px}}
 #tabsbar::-webkit-scrollbar-thumb{{background:rgba(255,255,255,.3)}}
 .tab-btn{{display:flex;align-items:center;gap:5px;padding:9px 12px;background:transparent;
@@ -1567,6 +1615,7 @@ body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
 .tab-add:hover{{background:rgba(255,255,255,.2)}}
 #toolbar{{background:#fff;border-bottom:1px solid var(--bd);padding:5px 10px;
   display:flex;align-items:center;gap:5px;flex-shrink:0;flex-wrap:wrap}}
+#toolbar-actions{{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}}
 .tool-btn{{display:flex;align-items:center;gap:4px;padding:5px 10px;background:var(--bg);
   border:1px solid var(--bd);border-radius:var(--rd);cursor:pointer;font-size:11px;
   font-family:inherit;color:var(--tx);transition:all .15s;white-space:nowrap}}
@@ -1581,23 +1630,23 @@ body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
   border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none;
   background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%236b7a94' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 7px center}}
 #srchbox:focus{{border-color:var(--pl);box-shadow:0 0 0 2px rgba(37,99,168,.1)}}
-#main{{flex:1;overflow:hidden;display:flex;flex-direction:column}}
-#tblwrap{{flex:1;overflow:auto}}
-table{{width:100%;border-collapse:collapse;min-width:900px;font-size:12px}}
-thead{{position:sticky;top:0;z-index:10}}
-th{{background:var(--pr);color:#fff;padding:8px;text-align:left;font-weight:600;
+#main{{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0}}
+#tblwrap{{flex:1;overflow:auto;min-width:0;-webkit-overflow-scrolling:touch}}
+#regtbl{{width:100%;border-collapse:collapse;min-width:980px;font-size:12px}}
+#regtbl thead{{position:sticky;top:0;z-index:10}}
+#regtbl th{{background:var(--pr);color:#fff;padding:8px;text-align:left;font-weight:600;
   white-space:nowrap;border-right:1px solid rgba(255,255,255,.1);cursor:pointer;user-select:none;position:relative}}
-th:hover{{background:var(--pl)}}
+#regtbl th:hover{{background:var(--pl)}}
 .frow th{{background:#eef1f7;padding:2px 4px;cursor:default;position:sticky;top:33px;z-index:9}}
 .frow th:hover{{background:#eef1f7}}
 .frow input,.frow select{{width:100%;padding:3px 6px;border:1px solid var(--bd);
   border-radius:3px;font-size:10px;font-family:inherit;background:#fff;outline:none}}
-td{{padding:5px 8px;border-bottom:1px solid #edf0f5;border-right:1px solid #f3f4f6;
+#regtbl td{{padding:5px 8px;border-bottom:1px solid #edf0f5;border-right:1px solid #f3f4f6;
   vertical-align:middle;max-width:220px;word-break:break-word}}
-tr:hover td{{background:rgba(37,99,168,.10);transition:background .1s}}
-tr.ov td{{background:#fff5f5}}
-tr.rv td{{color:var(--mu)}}
-tr.alt td{{background:#fafbfd}}
+#regtbl tr:hover td{{background:rgba(37,99,168,.10);transition:background .1s}}
+#regtbl tr.ov td{{background:#fff5f5}}
+#regtbl tr.rv td{{color:var(--mu)}}
+#regtbl tr.alt td{{background:#fafbfd}}
 .sr{{text-align:center;color:var(--mu);font-size:10px;min-width:28px}}
 .chkcell{{text-align:center;width:28px;padding:4px!important}}
 .chkcell input{{width:14px;height:14px;cursor:pointer;accent-color:var(--pr)}}
@@ -1611,7 +1660,7 @@ tr.alt td{{background:#fafbfd}}
 .mlcell{{white-space:pre-line!important;word-break:break-word}}
 #bulkbar{{display:none;background:#1a3a5c;color:#fff;padding:5px 14px;align-items:center;gap:10px;font-size:12px;flex-shrink:0}}
 #bulkbar.show{{display:flex}}
-#sbar{{background:var(--pr);color:rgba(255,255,255,.75);padding:3px 14px;font-size:10px;display:flex;gap:16px;flex-shrink:0}}
+#sbar{{background:var(--pr);color:rgba(255,255,255,.75);padding:3px 14px;font-size:10px;display:flex;gap:16px;flex-wrap:wrap;flex-shrink:0}}
 .rz{{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:1}}
 .rz:hover,.rz.rzg{{background:var(--ac)}}
 .ms-con{{border:1px solid var(--bd);border-radius:var(--rd);min-height:34px;padding:3px;
@@ -1642,11 +1691,6 @@ tr.alt td{{background:#fafbfd}}
   font-size:11px;font-family:inherit;outline:none}}
 #rec-modal .record-modal{{width:min(96vw,980px)!important;max-width:980px!important}}
 #rec-modal .mbody{{padding:14px 16px 12px}}
-.record-form-grid{{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;align-items:start}}
-.record-form-grid .fg{{min-width:0}}
-.record-form-grid .fg label{{margin-bottom:5px}}
-.record-form-grid textarea{{min-height:92px}}
-.record-form-grid .fg.full textarea{{min-height:110px}}
 .record-modal-actions{{gap:10px;flex-wrap:wrap}}
 .record-modal-actions .btn{{min-height:38px}}
 #pr-items-editor{{overflow-x:auto;padding-bottom:2px}}
@@ -1655,32 +1699,41 @@ tr.alt td{{background:#fafbfd}}
   #projbar{{flex-wrap:wrap;gap:6px;padding:5px 10px}}
   .pf{{min-width:110px;flex:1 1 120px}}
   #toolbar{{gap:6px}}
+  #toolbar-actions{{flex:1 1 auto}}
   #srchbox{{max-width:none;flex:1 1 220px}}
 }}
 @media(max-width:900px){{
   .tool-btn{{min-height:34px}}
+  #tabsbar{{padding:6px 8px}}
+  .tab-btn{{border:1px solid rgba(255,255,255,.16);border-bottom:none;border-radius:999px;padding:8px 11px;color:rgba(255,255,255,.82)}}
+  .tab-btn.active{{background:#fff;color:#0f2640}}
+  .tab-add{{margin-left:0;border-radius:999px;padding:6px 11px;font-size:13px}}
   #srchbox{{flex:1 1 100%;min-width:0}}
-  table{{font-size:11px}}
-  td,th{{padding:4px 5px}}
-  .record-form-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  #regtbl{{font-size:11px}}
+  #regtbl td,#regtbl th{{padding:4px 5px}}
+  #tblwrap{{padding-bottom:4px}}
 }}
 @media(max-width:640px){{
   #projbar{{padding:6px 8px}}
   .pf{{flex:1 1 calc(50% - 8px);border-right:none;border-bottom:1px solid var(--bd);padding:4px 6px 6px}}
   #toolbar{{padding:6px 8px;align-items:stretch}}
-  .tool-btn{{justify-content:center}}
+  #toolbar-actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:6px}}
+  .tool-btn{{justify-content:center;min-width:0}}
   #rec-modal .record-modal{{width:96vw!important;max-width:96vw!important}}
   #rec-modal .mbody{{padding:12px}}
-  .record-form-grid{{grid-template-columns:1fr;gap:10px}}
   .record-modal-actions{{padding:10px 12px;justify-content:stretch}}
   .record-modal-actions .btn{{flex:1 1 100%;width:100%;min-height:40px}}
   .modal{{width:96vw;max-height:96vh}}
+  #srchbox{{width:100%;flex:1 1 100%;max-width:none}}
+  #regtbl{{min-width:1080px}}
+  #ltr-quickbar .tool-btn{{flex:1 1 calc(50% - 6px)}}
 }}
 @media(max-width:480px){{
   .pf{{flex:1 1 100%}}
-  .tab-btn{{padding:7px 8px;font-size:10px}}
+  .tab-btn{{padding:7px 9px;font-size:10px}}
   .tool-btn{{padding:6px 8px;font-size:10px}}
-  .fgrid{{grid-template-columns:1fr}}
+  #toolbar-actions{{grid-template-columns:1fr 1fr}}
+  #ltr-quickbar .tool-btn{{flex:1 1 100%}}
 }}
 </style></head><body>
 
@@ -1689,6 +1742,7 @@ tr.alt td{{background:#fafbfd}}
   <span style="font-weight:700;font-size:14px;letter-spacing:.3px">Document Control Register</span>
   <div class="sp"></div>
   <a href="/" class="tb-btn">📊 Dashboard</a>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
@@ -1708,18 +1762,20 @@ tr.alt td{{background:#fafbfd}}
 </div>
 
   <div id="toolbar">
-    {edit_btns}
-    <div class="tool-dd" id="exp-dd">
-    <button class="tool-btn teal" onclick="toggleExpDD(event)">📥 Export ▾</button>
-    <div class="tool-dd-menu hidden" id="exp-menu">
-      <button onclick="doExport();closeExpDD()">📊 Excel — This Tab</button>
-      <button onclick="doExportAll();closeExpDD()">📊 Excel — All Tabs</button>
-      <button onclick="doExportPDF();closeExpDD()">📄 PDF — This Tab</button>
-      <button onclick="doExportAllPDF();closeExpDD()">📄 PDF — All Tabs</button>
+    <div id="toolbar-actions">
+      {edit_btns}
+      <div class="tool-dd" id="exp-dd">
+      <button class="tool-btn teal" onclick="toggleExpDD(event)">📥 Export ▾</button>
+      <div class="tool-dd-menu hidden" id="exp-menu">
+        <button onclick="doExport();closeExpDD()">📊 Excel — This Tab</button>
+        <button onclick="doExportAll();closeExpDD()">📊 Excel — All Tabs</button>
+        <button onclick="doExportPDF();closeExpDD()">📄 PDF — This Tab</button>
+        <button onclick="doExportAllPDF();closeExpDD()">📄 PDF — All Tabs</button>
+      </div>
     </div>
-  </div>
-  <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
-    {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
+    <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
+      {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
+    </div>
     <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
   </div>
   <div id="ltr-quickbar" style="display:none;padding:8px 10px;border-bottom:1px solid var(--bd);background:#f8fafc;gap:6px;align-items:center;flex-wrap:wrap">
@@ -1757,7 +1813,7 @@ tr.alt td{{background:#fafbfd}}
   <div class="modal record-modal">
     <div class="mhdr"><span id="rec-title">Add Document</span>
       <button class="xbtn" onclick="closeM('rec-modal')">✕</button></div>
-    <div class="mbody"><div class="fgrid record-form-grid" id="rec-form"></div></div>
+    <div class="mbody"><div class="record-form-shell" id="rec-form"></div></div>
     <div class="mfoot record-modal-actions">
       <button class="btn btn-sc" onclick="closeM('rec-modal')">Cancel</button>
       <button class="btn btn-pr" onclick="saveRecord()">Save</button>
@@ -2736,22 +2792,22 @@ function getLongTextMeta(col){{
   const isItemRefLike=isItemRefField(col);
   if(isContentLike)return {{
     rows:5,
-    style:'resize:vertical; min-height:120px',
+    style:'resize:vertical; min-height:100px',
     placeholder:'Use Enter to put each item on a separate line'
   }};
   if(isRemarksLike)return {{
     rows:3,
-    style:'resize:vertical; min-height:80px',
+    style:'resize:vertical; min-height:76px',
     placeholder:'Use Enter for multiline remarks'
   }};
   if(isMsLike)return {{
     rows:3,
-    style:'resize:vertical; min-height:80px',
+    style:'resize:vertical; min-height:76px',
     placeholder:'Use Enter to put each MS on a separate line'
   }};
   if(isItemRefLike)return {{
     rows:3,
-    style:'resize:vertical; min-height:80px',
+    style:'resize:vertical; min-height:76px',
     placeholder:'Use Enter to put each item reference / DWG No. on a separate line'
   }};
   return null;
@@ -2897,7 +2953,8 @@ function editRec(id){{state.editId=id;const row=state.recs.find(r=>r._id===id);i
 async function buildForm(row){{
   const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols)return;
   const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today']);
-  const grid=document.getElementById('rec-form');grid.innerHTML='';
+  const formRoot=document.getElementById('rec-form');formRoot.innerHTML='';
+  const sectionBodies={{}};
   let nextNo='';
   if(!row){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
   const isPrTab=isPRTab();
@@ -2924,33 +2981,26 @@ async function buildForm(row){{
     'Variation Order':['voNo','voIssueDate','voBaseValue','voValueWithSIAndVAT'],
   }};
   const nocSectionForKey=(key)=>Object.entries(nocSections).find(([,keys])=>keys.includes(key))?.[0]||null;
-  const renderedSections=new Set();
   let nocStageInp=null,nocBaseInp=null,nocTotalInp=null;
   if(isNocTab){{
     const sf=makeReadOnlyField('Stage Progress',getNocStageProgress(row||{{}}));
     nocStageInp=sf.inp;
-    grid.appendChild(sf.grp);
+    getOrCreateFormSection(formRoot,sectionBodies,'Basic Info').appendChild(sf.grp);
   }}
   if(isLtrTab){{
     const hid=document.createElement('input');
     hid.type='hidden';
     hid.id='f-'+(ltrParentIdCol?.col_key||'parentLetterId');
     hid.value=String(ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):(getLTRValue(row,allCols,'parentLetterId')||''));
-    grid.appendChild(hid);
+    formRoot.appendChild(hid);
   }}
   for(const col of formCols){{
     if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
-    if(isNocTab){{
-      const section=nocSectionForKey(key);
-      if(section&&!renderedSections.has(section)){{
-        appendSectionTitle(grid,section);
-        renderedSections.add(section);
-      }}
-    }}
     const longTextMeta=getLongTextMeta(col);
     const full=['title','fileLocation','itemRef'].includes(key)||!!longTextMeta;
     const grp=document.createElement('div');grp.className='fg'+(full?' full':'');
+    const targetSection=isNocTab?(nocSectionForKey(key)||'Additional Details'):getDynamicFormSection(col,{{isPrTab,isLtrTab,isNocTab}});
     const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
     const ltrRole=isLtrTab?getLTRFieldRole(col):'';
     const val=(isLtrTab&&ltrRole)?(row?.[key]||getLTRValue(row,allCols,ltrRole)||''):(row?.[key]||'');
@@ -2965,7 +3015,7 @@ async function buildForm(row){{
       hint.style.cssText='font-size:10px;color:var(--mu);margin-top:4px';
       hint.textContent='Leave blank to auto-generate from PR items.';
       grp.appendChild(hint);
-      grid.appendChild(grp);
+      getOrCreateFormSection(formRoot,sectionBodies,targetSection).appendChild(grp);
       continue;
     }}
     if(isLtrTab&&getLTRFieldRole(col)==='parentLetterRef'){{
@@ -2999,7 +3049,7 @@ async function buildForm(row){{
       }};
       sel.onchange=syncParent;
       syncParent();
-      grid.appendChild(grp);
+      getOrCreateFormSection(formRoot,sectionBodies,targetSection).appendChild(grp);
       continue;
     }}
     if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
@@ -3018,8 +3068,8 @@ async function buildForm(row){{
     else if(isLtrTab&&['title','description','remarks'].includes(getLTRFieldRole(col))){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val||'';
       const role=getLTRFieldRole(col);
-      ta.rows=role==='description'?5:3;
-      ta.style.cssText=role==='description'?'resize:vertical; min-height:120px':'resize:vertical; min-height:80px';
+      ta.rows=role==='description'?4:3;
+      ta.style.cssText=role==='description'?'resize:vertical; min-height:96px':'resize:vertical; min-height:76px';
       ta.placeholder=role==='title'?'Use Enter for a multiline subject':'Use Enter for multiline text';
       bindDirectionalInput(ta);
       grp.appendChild(ta);
@@ -3075,7 +3125,7 @@ async function buildForm(row){{
     }}
     else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';bindDirectionalInput(inp);grp.appendChild(inp);}}
     if(isNocTab&&isCurrencyField(col))grp.style.gridColumn='span 1';
-    grid.appendChild(grp);
+    getOrCreateFormSection(formRoot,sectionBodies,targetSection).appendChild(grp);
   }}
   if(isNocTab){{
     const syncNoc=()=>{{
@@ -3088,11 +3138,12 @@ async function buildForm(row){{
       if(nocStageInp)nocStageInp.value=getNocStageProgress(data);
       if(nocBaseInp&&nocTotalInp&&!String(nocBaseInp.value||'').trim())nocBaseInp.value=getNocAutoBaseValue(data);
     }};
-    grid.querySelectorAll('input, textarea, select').forEach(el=>el.addEventListener('input',syncNoc));
-    grid.querySelectorAll('input, textarea, select').forEach(el=>el.addEventListener('change',syncNoc));
+    formRoot.querySelectorAll('input, textarea, select').forEach(el=>el.addEventListener('input',syncNoc));
+    formRoot.querySelectorAll('input, textarea, select').forEach(el=>el.addEventListener('change',syncNoc));
     syncNoc();
   }}
   if(isPrTab){{
+    const prSection=getOrCreateFormSection(formRoot,sectionBodies,'PR Items');
     const grp=document.createElement('div');grp.className='fg full pr-items-editor';
     const lbl=document.createElement('label');lbl.textContent='PR Items';grp.appendChild(lbl);
     const wrap=document.createElement('div');wrap.id='pr-items-editor';
@@ -3106,7 +3157,7 @@ async function buildForm(row){{
         <button class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
         <div id="pr-legacy" style="font-size:11px;color:var(--mu);white-space:pre-line;display:none"></div>
       </div>`;
-    grp.appendChild(wrap);grid.appendChild(grp);
+    grp.appendChild(wrap);prSection.appendChild(grp);
     const legacyText=prDetailsKey?String(row?.[prDetailsKey]||'').trim():'';
     initPrItemsEditor([], legacyText);
     if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
@@ -3225,18 +3276,71 @@ function buildMS(key,options,init){{
   render();return con;
 }}
 
+function getFormSectionHint(title){{
+  const hints={{
+    'Document Details':'Core document identity and register metadata',
+    'Dates & Status':'Timeline, approvals, and stage tracking',
+    'Parties & Responsibility':'Origin, destination, and responsible stakeholders',
+    'Narrative & References':'Subjects, remarks, descriptions, and supporting references',
+    'Commercial & Quantities':'Values, quantities, and related numeric fields',
+    'PR Items':'Line items and grouped procurement details',
+    'Letter Information':'Reference and headline details for the letter',
+    'Correspondence Routing':'Direction, parties, and linked parent correspondence',
+    'Additional Details':'Remaining project-specific fields'
+  }};
+  return hints[title]||'Structured fields for this document section';
+}}
+
+function getDynamicFormSection(col, ctx){{
+  const key=String(col?.col_key||'').toLowerCase();
+  const label=String(col?.label||'').toLowerCase();
+  const text=(key+' '+label).replace(/[_-]+/g,' ').trim();
+  const longTextMeta=getLongTextMeta(col);
+  if(ctx.isLtrTab){{
+    if(['docno','title','reference'].some(v=>text.includes(v)))return 'Letter Information';
+    if(['direction','fromparty','toparty','parentletter','issueddate','receiveddate'].some(v=>key.includes(v)||text.includes(v)))return 'Correspondence Routing';
+    if(longTextMeta||['remarks','description','subject'].some(v=>text.includes(v)))return 'Narrative & References';
+    return 'Additional Details';
+  }}
+  if(ctx.isPrTab){{
+    if(['docno','title','reference','filelocation'].some(v=>text.includes(v)))return 'Document Details';
+    if(['date','status','reply','review','issue'].some(v=>text.includes(v)))return 'Dates & Status';
+    if(['qty','quantity','unit','amount','value','cost','price'].some(v=>text.includes(v)))return 'Commercial & Quantities';
+    if(longTextMeta||['remarks','notes','description','itemref'].some(v=>text.includes(v)))return 'Narrative & References';
+    return 'Document Details';
+  }}
+  if(['date','status','reply','review','issue','approval','return'].some(v=>text.includes(v)))return 'Dates & Status';
+  if(['qty','quantity','unit','amount','value','cost','price'].some(v=>text.includes(v)))return 'Commercial & Quantities';
+  if(['from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'Parties & Responsibility';
+  if(longTextMeta||['remarks','notes','description','subject','content','location','reference','originating'].some(v=>text.includes(v)))return 'Narrative & References';
+  return 'Document Details';
+}}
+
+function getOrCreateFormSection(root, sectionMap, title){{
+  if(sectionMap[title])return sectionMap[title];
+  const sec=document.createElement('section');
+  sec.className='form-section';
+  const hdr=document.createElement('div');
+  hdr.className='form-section-header';
+  hdr.innerHTML=`<div><div class="form-section-title">${{escHtml(title)}}</div><div class="form-section-sub">${{escHtml(getFormSectionHint(title))}}</div></div>`;
+  const body=document.createElement('div');
+  body.className='form-section-grid';
+  sec.appendChild(hdr);
+  sec.appendChild(body);
+  root.appendChild(sec);
+  sectionMap[title]=body;
+  return body;
+}}
+
 function appendSectionTitle(grid,title){{
-  const st=document.createElement('div');
-  st.className='stitle';
-  st.textContent=title;
-  grid.appendChild(st);
+  return getOrCreateFormSection(grid,{{}},title);
 }}
 
 function makeReadOnlyField(label,value){{
   const grp=document.createElement('div');grp.className='fg full';
   const lbl=document.createElement('label');lbl.textContent=label;grp.appendChild(lbl);
   const inp=document.createElement('input');inp.value=value||'';inp.readOnly=true;
-  inp.style.cssText='background:#f8fafc;font-weight:700;color:var(--pr)';
+  inp.style.cssText='background:var(--bg);font-weight:700;color:var(--pr)';
   grp.appendChild(inp);
   return {{grp,inp}};
 }}
