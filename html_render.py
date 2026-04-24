@@ -77,7 +77,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx
 .fg{display:flex;flex-direction:column;gap:4px}
 .fg.full{grid-column:1/-1}
 .fg label{font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px}
-.fg input,.fg select,.fg textarea{padding:7px 10px;border:1.5px solid var(--bd);
+.fg input,.fg select,.fg textarea{width:100%;padding:7px 10px;border:1.5px solid var(--bd);
   border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none;transition:border-color .2s}
 .fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--pl);box-shadow:0 0 0 2px rgba(37,99,168,.1)}
 .btn{padding:7px 16px;border-radius:var(--rd);cursor:pointer;font-family:inherit;
@@ -286,6 +286,7 @@ canvas{{max-height:174px}}
 .overview-wide-panel{{padding:11px 12px;margin-bottom:10px}}
 .overview-wide-panel .panel-title{{margin-bottom:8px}}
 .pr-analytics-grid{{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(240px,1.18fr) minmax(290px,1.5fr);gap:10px;align-items:stretch}}
+.pr-analytics-grid > div{{min-width:0}}
 .pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
@@ -397,28 +398,46 @@ canvas{{max-height:174px}}
 @keyframes spin{{to{{transform:rotate(360deg)}}}}
 
 /* ── Mobile ── */
-@media(max-width:768px){{
+@media(max-width:1200px){{
+  .wrap{{padding:12px 10px}}
+  .pgrid{{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
+  .pr-analytics-grid{{grid-template-columns:minmax(160px,.9fr) minmax(220px,1.08fr) minmax(250px,1.32fr)}}
+}}
+@media(max-width:900px){{
+  .wrap{{padding:10px}}
   .overview-stack{{gap:10px}}
   .pr-analytics-grid{{grid-template-columns:1fr}}
   .charts-grid,.charts-grid-3{{grid-template-columns:1fr}}
-  .pgrid{{grid-template-columns:1fr}}
-  .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
+  .kpi-grid{{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  .tab{{padding:7px 10px;font-size:11px}}
+  canvas{{max-height:210px}}
+  .overview-table-shell{{max-height:320px}}
+}}
+@media(max-width:640px){{
   .wrap{{padding:8px}}
-  .tab{{padding:6px 10px;font-size:11px}}
+  .kpi-grid{{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}}
+  .kpi{{min-height:74px}}
+  .kval{{font-size:22px}}
+  .pgrid{{grid-template-columns:1fr}}
+  .overview-projects-panel,.overview-pr-panel,.overview-wide-panel{{padding:10px 10px}}
+  .psel-bar{{align-items:stretch;gap:6px}}
+  .psel-bar select{{min-width:0;flex:1 1 160px}}
+  .overview-table-shell{{max-height:300px}}
+}}
+@media(max-width:768px){{
   .dt-tbl{{min-width:600px}}
   .psel-bar{{flex-wrap:wrap;gap:6px}}
   .psel-bar select{{min-width:140px;flex:1}}
-  .kpi{{padding:8px 10px}}
-  .kval{{font-size:22px}}
 }}
 @media(max-width:1080px){{
   .pr-analytics-grid{{grid-template-columns:minmax(160px,.95fr) minmax(210px,1.08fr) minmax(240px,1.28fr)}}
 }}
 @media(max-width:480px){{
-  .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
   .psel-bar{{flex-direction:column;align-items:stretch}}
-  .kpi-grid{{gap:5px}}
+  .psel-bar .tbtn{{width:100%;justify-content:center}}
+  .kpi-grid{{grid-template-columns:repeat(2,1fr);gap:5px}}
   .charts-grid{{gap:8px}}
+  canvas{{max-height:190px}}
 }}
 
 /* ── Del button ── */
@@ -1621,12 +1640,46 @@ tr.alt td{{background:#fafbfd}}
 .addrow{{display:flex;gap:6px;margin-top:6px}}
 .addrow input{{flex:1;padding:5px 8px;border:1px solid var(--bd);border-radius:3px;
   font-size:11px;font-family:inherit;outline:none}}
-@media(max-width:768px){{
-  .pf{{padding:0 6px;min-width:70px}}
+#rec-modal .record-modal{{width:min(96vw,980px)!important;max-width:980px!important}}
+#rec-modal .mbody{{padding:14px 16px 12px}}
+.record-form-grid{{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;align-items:start}}
+.record-form-grid .fg{{min-width:0}}
+.record-form-grid .fg label{{margin-bottom:5px}}
+.record-form-grid textarea{{min-height:92px}}
+.record-form-grid .fg.full textarea{{min-height:110px}}
+.record-modal-actions{{gap:10px;flex-wrap:wrap}}
+.record-modal-actions .btn{{min-height:38px}}
+#pr-items-editor{{overflow-x:auto;padding-bottom:2px}}
+.pr-items-editor table{{min-width:560px}}
+@media(max-width:1200px){{
+  #projbar{{flex-wrap:wrap;gap:6px;padding:5px 10px}}
+  .pf{{min-width:110px;flex:1 1 120px}}
+  #toolbar{{gap:6px}}
+  #srchbox{{max-width:none;flex:1 1 220px}}
+}}
+@media(max-width:900px){{
+  .tool-btn{{min-height:34px}}
+  #srchbox{{flex:1 1 100%;min-width:0}}
+  table{{font-size:11px}}
+  td,th{{padding:4px 5px}}
+  .record-form-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}
+}}
+@media(max-width:640px){{
+  #projbar{{padding:6px 8px}}
+  .pf{{flex:1 1 calc(50% - 8px);border-right:none;border-bottom:1px solid var(--bd);padding:4px 6px 6px}}
+  #toolbar{{padding:6px 8px;align-items:stretch}}
+  .tool-btn{{justify-content:center}}
+  #rec-modal .record-modal{{width:96vw!important;max-width:96vw!important}}
+  #rec-modal .mbody{{padding:12px}}
+  .record-form-grid{{grid-template-columns:1fr;gap:10px}}
+  .record-modal-actions{{padding:10px 12px;justify-content:stretch}}
+  .record-modal-actions .btn{{flex:1 1 100%;width:100%;min-height:40px}}
+  .modal{{width:96vw;max-height:96vh}}
+}}
+@media(max-width:480px){{
+  .pf{{flex:1 1 100%}}
   .tab-btn{{padding:7px 8px;font-size:10px}}
-  .tool-btn{{padding:4px 7px;font-size:10px}}
-  table{{font-size:11px}} td,th{{padding:4px 5px}}
-  .modal{{width:97%;max-height:96vh}}
+  .tool-btn{{padding:6px 8px;font-size:10px}}
   .fgrid{{grid-template-columns:1fr}}
 }}
 </style></head><body>
@@ -1701,11 +1754,11 @@ tr.alt td{{background:#fafbfd}}
 
 <!-- ADD/EDIT RECORD -->
 <div class="overlay hidden" id="rec-modal">
-  <div class="modal" style="max-width:820px">
+  <div class="modal record-modal" style="max-width:820px">
     <div class="mhdr"><span id="rec-title">Add Document</span>
       <button class="xbtn" onclick="closeM('rec-modal')">✕</button></div>
-    <div class="mbody"><div class="fgrid" id="rec-form"></div></div>
-    <div class="mfoot">
+    <div class="mbody"><div class="fgrid record-form-grid" id="rec-form"></div></div>
+    <div class="mfoot record-modal-actions">
       <button class="btn btn-sc" onclick="closeM('rec-modal')">Cancel</button>
       <button class="btn btn-pr" onclick="saveRecord()">Save</button>
     </div>
