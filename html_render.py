@@ -144,6 +144,13 @@ function toast(msg,type=''){
 }
 function openM(id){document.getElementById(id).classList.remove('hidden')}
 function closeM(id){document.getElementById(id).classList.add('hidden')}
+function toggleProjectInfo(){
+  const bar=document.getElementById('projbar');
+  const btn=document.getElementById('projbar-toggle');
+  if(!bar||!btn)return;
+  const open=bar.classList.toggle('show-details');
+  btn.textContent=open?'Hide Info':'Project Info';
+}
 async function apiFetch(url,opts={}){
   const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},...opts});
   if(r.status===403){const d=await r.json().catch(()=>({}));
@@ -444,6 +451,9 @@ canvas{{max-height:174px}}
   .pgrid{{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
   .pr-analytics-grid{{grid-template-columns:minmax(160px,.9fr) minmax(220px,1.08fr) minmax(250px,1.32fr)}}
 }}
+@media(min-width:901px) and (max-width:1080px){{
+  .pr-analytics-grid{{grid-template-columns:minmax(160px,.95fr) minmax(210px,1.08fr) minmax(240px,1.28fr)}}
+}}
 @media(max-width:900px){{
   .wrap{{padding:10px}}
   .overview-stack{{gap:10px}}
@@ -472,9 +482,6 @@ canvas{{max-height:174px}}
   .dt-tbl{{min-width:600px}}
   .psel-bar{{flex-wrap:wrap;gap:6px}}
   .psel-bar select{{min-width:140px;flex:1}}
-}}
-@media(max-width:1080px){{
-  .pr-analytics-grid{{grid-template-columns:minmax(160px,.95fr) minmax(210px,1.08fr) minmax(240px,1.28fr)}}
 }}
 @media(max-width:480px){{
   .psel-bar{{flex-direction:column;align-items:stretch}}
@@ -1537,11 +1544,19 @@ def render_register(u, proj):
     custom_labels = proj.get("_labels") or {}
     PROJ_FIELDS = [(k, custom_labels.get(k, lbl)) for k, lbl in DEFAULT_PROJ_FIELDS]
 
-    projbar = "".join(
-        f'<div class="pf"><span class="pf-lbl">{lbl}</span>'
+    primary_keys = {"code", "name", "client"}
+    projbar_primary = "".join(
+        f'<div class="pf primary"><span class="pf-lbl">{lbl}</span>'
         f'<span class="pf-val" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
         for key,lbl in PROJ_FIELDS
-        if proj.get(key,"").strip())  # hide empty fields
+        if key in primary_keys and proj.get(key,"").strip())
+    projbar_secondary = "".join(
+        f'<div class="pf secondary"><span class="pf-lbl">{lbl}</span>'
+        f'<span class="pf-val" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
+        for key,lbl in PROJ_FIELDS
+        if key not in primary_keys and proj.get(key,"").strip())
+    projbar_toggle = ('<button id="projbar-toggle" class="tool-btn" type="button" '
+                      'onclick="toggleProjectInfo()">Project Info</button>') if projbar_secondary else ''
 
     tabs_html = "".join(
         f'<button class="tab-btn" data-id="{dt["id"]}" onclick="switchTab(\'{dt["id"]}\')">'
@@ -1571,6 +1586,8 @@ body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
 body.dark #projbar,body.dark #toolbar,body.dark #ltr-quickbar,body.dark #noc-summary{{background:#162132;color:#e2e8f0;border-color:#304257}}
 body.dark #tabsbar{{background:#0d1f33}}
 body.dark #tblwrap{{background:#111b2a}}
+body.dark .pf-lbl{{color:#93c5fd}}
+body.dark .pf-val{{color:#dbe7f3}}
 body.dark #regtbl th{{background:#17314d}}
 body.dark .frow th{{background:#101a29}}
 body.dark .frow input,body.dark .frow select{{background:#0f1a29;border-color:#314558;color:#e2e8f0}}
@@ -1580,6 +1597,7 @@ body.dark #regtbl tr:hover td{{background:rgba(96,165,250,.12)}}
 body.dark .tool-dd-menu{{background:#162132;border-color:#304257}}
 body.dark .tool-dd-menu button{{color:#e2e8f0}}
 body.dark .tool-dd-menu button:hover{{background:#101a29;color:#93c5fd}}
+body.dark .tool-btn{{color:#e2e8f0;border-color:#304257;background:#101a29}}
 body.dark .tab-btn{{color:rgba(255,255,255,.72)}}
 body.dark .tab-btn:hover{{background:rgba(255,255,255,.08)}}
 body.dark .tcnt{{background:rgba(255,255,255,.14)}}
@@ -1593,12 +1611,16 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   #regtbl th,#regtbl td{{padding:4px 6px!important;white-space:normal!important}}
   @page{{size:A4 landscape;margin:10mm}}
 }}
-#projbar{{background:#fff;border-bottom:2px solid var(--pr);padding:3px 12px;
-  display:flex;align-items:center;overflow-x:auto;flex-shrink:0;gap:4px}}
-.pf{{display:flex;flex-direction:column;padding:0 10px;border-right:1px solid var(--bd)}}
+#projbar{{background:#fff;border-bottom:2px solid var(--pr);padding:5px 12px;
+  display:flex;align-items:center;flex-wrap:wrap;flex-shrink:0;gap:6px}}
+#projbar-main{{display:flex;align-items:center;flex:1 1 auto;gap:6px;min-width:0;flex-wrap:wrap}}
+#projbar-primary,#projbar-extra{{display:flex;align-items:center;gap:0;flex-wrap:wrap;min-width:0}}
+#projbar-toggle{{display:none}}
+#projbar img{{max-height:34px;max-width:120px;object-fit:contain;flex-shrink:0}}
+.pf{{display:flex;flex-direction:column;padding:0 10px;border-right:1px solid var(--bd);min-width:0}}
 .pf:last-of-type{{border-right:none}}
 .pf-lbl{{font-size:9px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px}}
-.pf-val{{font-size:11px;white-space:nowrap}}
+.pf-val{{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
 #tabsbar{{background:#0f2640;display:flex;align-items:center;overflow-x:auto;flex-shrink:0;
   padding:4px 8px;scrollbar-width:thin;gap:6px}}
 #tabsbar::-webkit-scrollbar{{height:3px}}
@@ -1633,11 +1655,13 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 #main{{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0}}
 #tblwrap{{flex:1;overflow:auto;min-width:0;-webkit-overflow-scrolling:touch}}
 #regtbl{{width:100%;border-collapse:collapse;min-width:980px;font-size:12px}}
-#regtbl thead{{position:sticky;top:0;z-index:10}}
+#regtbl thead{{position:static}}
 #regtbl th{{background:var(--pr);color:#fff;padding:8px;text-align:left;font-weight:600;
   white-space:nowrap;border-right:1px solid rgba(255,255,255,.1);cursor:pointer;user-select:none;position:relative}}
+#thead tr:first-child th{{position:sticky;top:0;z-index:11}}
 #regtbl th:hover{{background:var(--pl)}}
-.frow th{{background:#eef1f7;padding:2px 4px;cursor:default;position:sticky;top:33px;z-index:9}}
+.frow{{position:relative}}
+.frow th{{background:#eef1f7;padding:2px 4px;cursor:default;position:sticky;top:34px;z-index:10}}
 .frow th:hover{{background:#eef1f7}}
 .frow input,.frow select{{width:100%;padding:3px 6px;border:1px solid var(--bd);
   border-radius:3px;font-size:10px;font-family:inherit;background:#fff;outline:none}}
@@ -1714,8 +1738,17 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   #tblwrap{{padding-bottom:4px}}
 }}
 @media(max-width:640px){{
-  #projbar{{padding:6px 8px}}
-  .pf{{flex:1 1 calc(50% - 8px);border-right:none;border-bottom:1px solid var(--bd);padding:4px 6px 6px}}
+  #projbar{{padding:6px 8px;align-items:flex-start;gap:6px}}
+  #projbar img{{max-height:24px;max-width:88px}}
+  #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:6px;width:100%}}
+  #projbar-primary{{display:flex;flex-direction:column;gap:4px;min-width:0}}
+  #projbar-primary .pf{{padding:0;border-right:none;border-bottom:none;min-width:0}}
+  #projbar-primary .pf-lbl{{font-size:8px}}
+  #projbar-primary .pf-val{{font-size:11px;max-width:none}}
+  #projbar-extra{{display:none;width:100%;padding-top:6px;border-top:1px solid var(--bd)}}
+  #projbar.show-details #projbar-extra{{display:grid;grid-template-columns:1fr 1fr;gap:6px}}
+  #projbar-extra .pf{{border-right:none;border-bottom:1px solid var(--bd);padding:4px 6px 6px}}
+  #projbar-toggle{{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;font-size:10px;min-height:32px}}
   #toolbar{{padding:6px 8px;align-items:stretch}}
   #toolbar-actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:6px}}
   .tool-btn{{justify-content:center;min-width:0}}
@@ -1726,14 +1759,20 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   .modal{{width:96vw;max-height:96vh}}
   #srchbox{{width:100%;flex:1 1 100%;max-width:none}}
   #regtbl{{min-width:1080px}}
+  #tblwrap{{min-height:42vh}}
   #ltr-quickbar .tool-btn{{flex:1 1 calc(50% - 6px)}}
+  .overview-pr-panel{{overflow:hidden}}
+  .pr-analytics-grid{{grid-template-columns:minmax(0,1fr)!important;width:100%}}
+  .pr-block{{width:100%;max-width:100%;min-width:0;overflow:hidden}}
+  .pr-projects,.pr-trades{{min-height:0!important}}
+  .pr-trades > div:last-child{{min-width:0;height:180px;max-height:none!important}}
 }}
 @media(max-width:480px){{
-  .pf{{flex:1 1 100%}}
   .tab-btn{{padding:7px 9px;font-size:10px}}
   .tool-btn{{padding:6px 8px;font-size:10px}}
   #toolbar-actions{{grid-template-columns:1fr 1fr}}
   #ltr-quickbar .tool-btn{{flex:1 1 100%}}
+  #projbar.show-details #projbar-extra{{grid-template-columns:1fr}}
 }}
 </style></head><body>
 
@@ -1752,7 +1791,11 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 
 <div id="projbar">
   {logo_html}
-  {projbar}
+  <div id="projbar-main">
+    <div id="projbar-primary">{projbar_primary}</div>
+    {projbar_toggle}
+    <div id="projbar-extra">{projbar_secondary}</div>
+  </div>
   {'<button onclick="editProject()" style="margin-left:auto;background:var(--pr);color:#fff;border:none;padding:5px 12px;border-radius:var(--rd);cursor:pointer;font-size:11px;font-family:inherit;flex-shrink:0">✏ Edit</button>' if editable else ''}
 </div>
 
