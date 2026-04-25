@@ -1952,28 +1952,28 @@ body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:l
   #topbar .topbar-user{{font-size:8px;gap:0;flex-shrink:0}}
   #topbar .topbar-user-name{{display:none}}
   #topbar .topbar-user span:last-child{{padding:2px 5px!important;font-size:8px!important;line-height:1.05;max-width:62px;text-align:center}}
-  #projbar{{padding:3px 8px;gap:5px;align-items:flex-start;border-bottom-width:1px}}
-  #projbar img{{max-height:28px;max-width:70px;margin-top:1px}}
+  #projbar{{padding:2px 8px;gap:5px;align-items:flex-start;border-bottom-width:1px}}
+  #projbar img{{max-height:34px;max-width:82px;margin-top:0}}
   #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;flex:1 1 100%;width:100%}}
-  #projbar-primary,#projbar-extra{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 8px;width:100%;min-width:0}}
+  #projbar-primary,#projbar-extra{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px 7px;width:100%;min-width:0}}
   #projbar-primary .pf,#projbar-extra .pf{{padding:0;border-right:none;min-width:0;display:block}}
-  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{font-size:6.5px;line-height:.95;color:var(--mu);letter-spacing:.18px;margin-bottom:0}}
-  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:9.5px;line-height:1.02;max-width:none;white-space:normal;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}}
+  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{font-size:6px;line-height:.9;color:var(--mu);letter-spacing:.16px;margin-bottom:0}}
+  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:9px;line-height:1;max-width:none;white-space:normal;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}}
   #projbar-primary .pf.primary:first-child .pf-val{{font-size:10px;font-weight:800;color:var(--pr);text-transform:uppercase;-webkit-line-clamp:1}}
-  #projbar-primary .pf.primary:last-child{{grid-column:1/-1;border-bottom:1px solid var(--bd);padding-bottom:2px;margin-bottom:0}}
-  #projbar-primary .pf.primary:last-child .pf-val{{font-size:11px;font-weight:800;line-height:1.05;-webkit-line-clamp:1}}
+  #projbar-primary .pf.primary:last-child{{grid-column:1/-1;border-bottom:1px solid var(--bd);padding-bottom:1px;margin-bottom:0}}
+  #projbar-primary .pf.primary:last-child .pf-val{{font-size:10.5px;font-weight:800;line-height:1;-webkit-line-clamp:1}}
   #projbar-extra{{padding-top:0;border-top:none}}
   #projbar-toggle,.proj-edit-btn{{display:none!important}}
-  #tabsbar{{padding:3px 7px;gap:4px;scroll-snap-type:x proximity}}
-  .tab-btn{{padding:4px 8px;font-size:9px;min-height:24px;border-radius:999px;scroll-snap-align:start}}
-  .tcnt{{padding:0 5px;font-size:8px}}
-  .tab-add{{padding:3px 8px;font-size:11px;min-height:24px}}
-  #toolbar{{padding:3px 7px;gap:4px;align-items:stretch}}
-  #toolbar-actions{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;gap:4px}}
-  .tool-btn{{justify-content:center;min-width:0;padding:3px 4px;font-size:8.8px;min-height:24px;border-radius:6px;gap:2px}}
+  #tabsbar{{padding:2px 7px;gap:3px;scroll-snap-type:x proximity}}
+  .tab-btn{{padding:3px 7px;font-size:8.5px;min-height:22px;border-radius:999px;scroll-snap-align:start}}
+  .tcnt{{padding:0 4px;font-size:7.5px;line-height:1.25}}
+  .tab-add{{padding:2px 7px;font-size:10px;min-height:22px}}
+  #toolbar{{padding:2px 7px;gap:3px;align-items:stretch}}
+  #toolbar-actions{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;gap:3px}}
+  .tool-btn{{justify-content:center;min-width:0;padding:2px 3px;font-size:8.3px;min-height:22px;border-radius:6px;gap:2px}}
   .tool-dd{{min-width:0}}
   .tool-dd .tool-btn{{width:100%}}
-  #srchbox{{width:100%;flex:1 1 100%;max-width:none;min-height:27px;padding:4px 9px 4px 27px;font-size:10.5px;border-radius:7px}}
+  #srchbox{{width:100%;flex:1 1 100%;max-width:none;min-height:25px;padding:3px 8px 3px 27px;font-size:10px;border-radius:7px}}
   #tblwrap{{min-height:56vh;padding-bottom:2px}}
   #regtbl{{min-width:1040px;font-size:10.5px}}
   #regtbl th{{padding:5px 6px!important;font-size:10px;line-height:1.15}}
@@ -1994,31 +1994,31 @@ body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:l
   #topbar .topbar-mark{{font-size:15px}}
   #topbar .topbar-user{{font-size:9px;gap:4px}}
   #topbar .topbar-user-name{{display:none}}
-  #tabsbar{{padding:3px 6px;gap:4px}}
-  .tab-btn{{padding:4px 8px;font-size:9px;min-height:24px}}
-  .tab-add{{padding:3px 7px;font-size:11px;min-height:24px}}
-  #projbar{{padding:3px 7px;align-items:flex-start;gap:4px}}
-  #projbar img{{max-height:26px;max-width:64px}}
+  #tabsbar{{padding:2px 6px;gap:3px}}
+  .tab-btn{{padding:3px 7px;font-size:8.5px;min-height:22px}}
+  .tab-add{{padding:2px 7px;font-size:10px;min-height:22px}}
+  #projbar{{padding:2px 7px;align-items:flex-start;gap:4px}}
+  #projbar img{{max-height:32px;max-width:78px}}
   #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:4px;width:100%}}
-  #projbar-primary,#projbar-extra{{display:grid;grid-template-columns:1fr 1fr;gap:2px 7px;width:100%;min-width:0}}
+  #projbar-primary,#projbar-extra{{display:grid;grid-template-columns:1fr 1fr;gap:1px 6px;width:100%;min-width:0}}
   #projbar-primary .pf,#projbar-extra .pf{{padding:0;border-right:none;border-bottom:none;min-width:0;display:block;flex:none}}
-  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{display:block;font-size:7px;line-height:1;color:var(--mu);letter-spacing:.24px}}
-  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:9.5px;line-height:1.02;max-width:none;white-space:normal;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}}
+  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{display:block;font-size:6px;line-height:.9;color:var(--mu);letter-spacing:.18px}}
+  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:9px;line-height:1;max-width:none;white-space:normal;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}}
   #projbar-primary .pf.primary:first-child .pf-val{{font-size:10px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.3px;-webkit-line-clamp:1}}
   #projbar-primary .pf.primary:last-child{{grid-column:1/-1}}
-  #projbar-primary .pf.primary:last-child .pf-val{{font-size:10.5px;font-weight:800}}
+  #projbar-primary .pf.primary:last-child .pf-val{{font-size:10px;font-weight:800}}
   #projbar-extra{{padding-top:0;border-top:none}}
   #projbar-toggle{{display:none}}
   .proj-edit-btn{{display:none}}
-  #toolbar{{padding:3px 6px;align-items:stretch;gap:3px}}
+  #toolbar{{padding:2px 6px;align-items:stretch;gap:3px}}
   #toolbar-actions{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;gap:3px}}
-  .tool-btn{{justify-content:center;min-width:0;padding:2px 3px;font-size:8.5px;min-height:23px}}
+  .tool-btn{{justify-content:center;min-width:0;padding:2px 3px;font-size:8px;min-height:21px}}
   #rec-modal .record-modal{{width:96vw!important;max-width:96vw!important}}
   #rec-modal .mbody{{padding:12px}}
   .record-modal-actions{{padding:10px 12px;justify-content:stretch}}
   .record-modal-actions .btn{{flex:1 1 100%;width:100%;min-height:40px}}
   .modal{{width:96vw;max-height:96vh}}
-  #srchbox{{width:100%;flex:1 1 100%;max-width:none;padding-top:3px;padding-bottom:3px;font-size:10.5px;min-height:26px}}
+  #srchbox{{width:100%;flex:1 1 100%;max-width:none;padding-top:2px;padding-bottom:2px;font-size:10px;min-height:24px}}
   #regtbl{{min-width:1040px;font-size:10.5px}}
   #regtbl th{{white-space:nowrap!important;word-break:normal!important}}
   #tblwrap{{min-height:56vh}}
@@ -2037,18 +2037,18 @@ body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:l
   #topbar .tb-btn{{font-size:8.5px;width:auto;padding:2px 4px;overflow:visible;min-height:23px}}
   #topbar a.tb-btn{{width:auto;font-size:8.5px;padding:2px 5px}}
   #topbar .topbar-user span:last-child{{max-width:50px;font-size:7px!important;padding:2px 4px!important}}
-  #projbar{{padding:2px 7px}}
-  #projbar img{{max-height:24px;max-width:58px}}
+  #projbar{{padding:2px 6px}}
+  #projbar img{{max-height:32px;max-width:76px}}
   #projbar-primary,#projbar-extra{{gap:1px 6px}}
-  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{font-size:6.5px}}
-  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:9.5px;line-height:1.04;-webkit-line-clamp:1}}
-  #projbar-primary .pf.primary:last-child .pf-val{{font-size:11px}}
-  #tabsbar{{padding:4px 6px}}
-  .tab-btn{{padding:5px 8px;font-size:9px;gap:4px}}
-  #toolbar{{padding:3px 5px}}
+  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{font-size:6px}}
+  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:8.8px;line-height:1;-webkit-line-clamp:1}}
+  #projbar-primary .pf.primary:last-child .pf-val{{font-size:10px}}
+  #tabsbar{{padding:2px 6px}}
+  .tab-btn{{padding:3px 7px;font-size:8.5px;gap:3px}}
+  #toolbar{{padding:2px 5px}}
   #toolbar-actions{{grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}}
-  .tool-btn{{font-size:8px;min-height:22px;padding:2px 3px}}
-  #srchbox{{min-height:25px;font-size:10px}}
+  .tool-btn{{font-size:7.8px;min-height:20px;padding:2px 3px}}
+  #srchbox{{min-height:23px;font-size:9.8px}}
   #regtbl{{min-width:980px;font-size:10px}}
   #regtbl th{{padding:4px 5px!important;font-size:9.5px}}
   #regtbl td{{padding:3px 5px!important;line-height:1.15}}
@@ -2064,29 +2064,29 @@ body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:l
   #projbar-extra{{grid-template-columns:1fr 1fr}}
 }}
 @media(max-width:900px) and (orientation:landscape){{
-  #topbar{{height:29px;padding:0 6px;gap:4px}}
+  #topbar{{height:28px;padding:0 6px;gap:4px}}
   #topbar .topbar-title-full{{display:none}}
   #topbar .topbar-title-short{{display:inline!important;font-size:12px!important}}
   #topbar .topbar-title-short::after{{content:" Register"}}
-  #topbar .tb-btn{{min-height:22px;padding:2px 5px;font-size:8.5px}}
+  #topbar .tb-btn{{min-height:21px;padding:2px 5px;font-size:8px}}
   #topbar .topbar-user span:last-child{{font-size:7px!important;padding:1px 5px!important;max-width:58px}}
-  #projbar{{padding:2px 8px;gap:4px}}
-  #projbar img{{max-height:22px;max-width:58px}}
-  #projbar-main{{gap:1px}}
+  #projbar{{padding:2px 8px;gap:5px;min-height:0;align-items:center}}
+  #projbar img{{max-height:30px;max-width:72px}}
+  #projbar-main{{gap:1px;display:grid;grid-template-columns:minmax(0,1fr);flex:1 1 auto}}
   #projbar-primary,#projbar-extra{{grid-template-columns:repeat(3,minmax(0,1fr));gap:1px 8px}}
-  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{font-size:6px;line-height:.95}}
-  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:8.5px;line-height:1;-webkit-line-clamp:1}}
+  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{font-size:5.8px;line-height:.9;margin:0}}
+  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:8px;line-height:.95;-webkit-line-clamp:1}}
   #projbar-primary .pf.primary:last-child{{grid-column:auto;border-bottom:none;padding-bottom:0;margin-bottom:0}}
-  #projbar-primary .pf.primary:last-child .pf-val{{font-size:9px}}
-  #tabsbar{{padding:2px 7px;gap:4px}}
-  .tab-btn{{min-height:22px;padding:3px 8px;font-size:8.5px}}
-  .tcnt{{font-size:7.5px;padding:0 5px}}
-  .tab-add{{min-height:22px;padding:2px 7px;font-size:10px}}
-  #toolbar{{padding:2px 6px;gap:3px}}
-  #toolbar-actions{{grid-template-columns:repeat(8,minmax(0,1fr));gap:3px}}
-  .tool-btn{{min-height:21px;padding:2px 3px;font-size:7.8px;gap:2px}}
-  #srchbox{{min-height:24px;padding-top:2px;padding-bottom:2px;font-size:9.5px}}
-  #tblwrap{{min-height:42vh}}
+  #projbar-primary .pf.primary:last-child .pf-val{{font-size:8.5px}}
+  #tabsbar{{padding:1px 7px;gap:3px}}
+  .tab-btn{{min-height:20px;padding:2px 7px;font-size:8px}}
+  .tcnt{{font-size:7px;padding:0 4px}}
+  .tab-add{{min-height:20px;padding:1px 7px;font-size:9px}}
+  #toolbar{{padding:2px 6px;gap:3px;display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,220px);align-items:center}}
+  #toolbar-actions{{grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;width:auto}}
+  .tool-btn{{min-height:20px;padding:1px 3px;font-size:7.5px;gap:1px}}
+  #srchbox{{min-height:22px;padding-top:1px;padding-bottom:1px;font-size:9px;flex:0 0 auto;width:100%;max-width:none}}
+  #tblwrap{{min-height:50vh;height:calc(100vh - 188px)}}
   #sbar{{padding:1px 8px;font-size:8px;line-height:1.1}}
 }}
 </style></head><body>
