@@ -63,6 +63,8 @@ body.dark #topbar{background:#0d1f33}
   text-decoration:none;display:inline-block;transition:background .15s}
 .tb-btn:hover{background:rgba(255,255,255,.28)}
 .tb-btn.glow{background:rgba(240,165,0,.3);border-color:rgba(240,165,0,.7);font-weight:700}
+.topbar-title-short{display:none}
+.topbar-user{display:inline-flex;align-items:center;gap:6px;color:rgba(255,255,255,.85);font-size:11px}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;
   display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
 .overlay.hidden{display:none!important}
@@ -151,14 +153,6 @@ function toggleProjectInfo(){
   const open=bar.classList.toggle('show-details');
   btn.textContent=open?'Hide Info':'Project Info';
 }
-function updateRegisterStickyOffsets(){
-  const head=document.getElementById('thead');
-  const wrap=document.getElementById('tblwrap');
-  if(!head||!wrap)return;
-  const topRow=head.querySelector('tr:first-child');
-  wrap.style.setProperty('--reg-head-offset', ((topRow?.offsetHeight)||34)+'px');
-}
-window.addEventListener('resize',()=>requestAnimationFrame(()=>{if(typeof updateRegisterStickyOffsets==='function')updateRegisterStickyOffsets();}));
 async function apiFetch(url,opts={}){
   const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},...opts});
   if(r.status===403){const d=await r.json().catch(()=>({}));
@@ -1641,8 +1635,9 @@ body.dark .frow input,body.dark .frow select{{background:#0f1a29;border-color:#3
 body.dark #regtbl td{{border-color:#253648;color:#d7e1ec}}
 body.dark #regtbl tr.alt td{{background:#132031}}
 body.dark #regtbl tr:hover td{{background:rgba(96,165,250,.12)}}
-body.dark #thead tr:first-child th{{box-shadow:0 1px 0 #304257}}
-body.dark .frow th{{box-shadow:0 1px 0 #253648}}
+body.dark #regtbl tr.ov td{{background:#3a231f;color:#f8d8c7}}
+body.dark #regtbl tr.rv td{{background:#2f261b;color:#f4ddb3}}
+body.dark .flink{{color:#93c5fd}}
 body.dark .tool-dd-menu{{background:#162132;border-color:#304257}}
 body.dark .tool-dd-menu button{{color:#e2e8f0}}
 body.dark .tool-dd-menu button:hover{{background:#101a29;color:#93c5fd}}
@@ -1709,8 +1704,8 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   white-space:nowrap;border-right:1px solid rgba(255,255,255,.1);cursor:pointer;user-select:none;position:relative}}
 #thead tr:first-child th{{position:sticky;top:0;z-index:11;box-shadow:0 1px 0 rgba(221,227,237,.9)}}
 #regtbl th:hover{{background:var(--pl)}}
-.frow{{position:relative}}
-.frow th{{background:#eef1f7;padding:2px 4px;cursor:default;position:sticky;top:var(--reg-head-offset,34px);z-index:10;box-shadow:0 1px 0 rgba(221,227,237,.95)}}
+.frow{{position:static}}
+.frow th{{background:#eef1f7;padding:2px 4px;cursor:default;position:static;top:auto;z-index:auto;box-shadow:none}}
 .frow th:hover{{background:#eef1f7}}
 .frow input,.frow select{{width:100%;padding:3px 6px;border:1px solid var(--bd);
   border-radius:3px;font-size:10px;font-family:inherit;background:#fff;outline:none}}
@@ -1789,19 +1784,29 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 @media(max-width:640px){{
   #topbar{{height:36px;padding:0 6px;gap:5px}}
   #topbar .tb-btn{{padding:3px 7px;font-size:10px}}
-  #projbar{{padding:4px 8px;align-items:flex-start;gap:4px}}
-  #projbar img{{max-height:20px;max-width:72px}}
-  #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:4px;width:100%}}
-  #projbar-primary{{display:flex;flex-direction:column;gap:2px;min-width:0}}
-  #projbar-primary .pf{{padding:0;border-right:none;border-bottom:none;min-width:0}}
-  #projbar-primary .pf-lbl{{font-size:7px;letter-spacing:.28px}}
-  #projbar-primary .pf-val{{font-size:10px;line-height:1.18;max-width:none}}
+  #topbar .topbar-title-full{{display:none}}
+  #topbar .topbar-title-short{{display:inline}}
+  #topbar .topbar-mark{{font-size:15px}}
+  #topbar .topbar-user{{font-size:9px;gap:4px}}
+  #topbar .topbar-user-name{{display:none}}
+  #tabsbar{{padding:4px 6px;gap:5px}}
+  .tab-btn{{padding:6px 8px;font-size:10px}}
+  .tab-add{{padding:4px 8px;font-size:12px}}
+  #projbar{{padding:3px 8px;align-items:center;gap:4px}}
+  #projbar img{{max-height:18px;max-width:64px}}
+  #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px;width:100%}}
+  #projbar-primary{{display:flex;flex-direction:column;gap:1px;min-width:0}}
+  #projbar-primary .pf{{padding:0;border-right:none;border-bottom:none;min-width:0;display:block}}
+  #projbar-primary .pf-lbl{{display:none}}
+  #projbar-primary .pf.primary:first-child .pf-val{{font-size:10px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.3px}}
+  #projbar-primary .pf.primary:last-child .pf-val{{font-size:12px;font-weight:700;line-height:1.15;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
   #projbar-extra{{display:none;width:100%;padding-top:4px;border-top:1px solid var(--bd)}}
   #projbar.show-details #projbar-extra{{display:grid;grid-template-columns:1fr 1fr;gap:6px}}
   #projbar-extra .pf{{border-right:none;border-bottom:1px solid var(--bd);padding:3px 4px 4px}}
   #projbar-extra .pf-lbl{{font-size:7px}}
   #projbar-extra .pf-val{{font-size:10px;max-width:none}}
   #projbar-toggle{{display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;font-size:9px;min-height:26px}}
+  .proj-edit-btn{{display:none}}
   #toolbar{{padding:4px 6px;align-items:stretch}}
   #toolbar-actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:6px}}
   .tool-btn{{justify-content:center;min-width:0;padding:4px 8px;font-size:10px;min-height:30px}}
@@ -1811,7 +1816,7 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   .record-modal-actions .btn{{flex:1 1 100%;width:100%;min-height:40px}}
   .modal{{width:96vw;max-height:96vh}}
   #srchbox{{width:100%;flex:1 1 100%;max-width:none;padding-top:5px;padding-bottom:5px;font-size:11px}}
-  #regtbl{{min-width:1080px}}
+  #regtbl{{min-width:1120px}}
   #tblwrap{{min-height:52vh}}
   #sbar{{padding:2px 8px;font-size:9px;gap:8px}}
   #ltr-quickbar .tool-btn{{flex:1 1 calc(50% - 6px)}}
@@ -1828,22 +1833,20 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   #overview-pane-discipline .disc-group-row,
   #overview-pane-discipline .disc-child-row.open{{display:block;border:1px solid var(--bd);border-radius:10px;overflow:hidden;background:var(--wh)}}
   #overview-pane-discipline .disc-group-row td,
-  #overview-pane-discipline .disc-child-row.open td{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;border-bottom:1px solid rgba(221,227,237,.8)}}
+  #overview-pane-discipline .disc-child-row.open td{{display:block;padding:7px 10px;border-bottom:1px solid rgba(221,227,237,.8)}}
   #overview-pane-discipline .disc-group-row td:last-child,
   #overview-pane-discipline .disc-child-row.open td:last-child{{border-bottom:none}}
   #overview-pane-discipline .disc-group-row td::before,
-  #overview-pane-discipline .disc-child-row.open td::before{{content:attr(data-label);font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.28px;flex-shrink:0}}
-  #overview-pane-discipline .disc-group-row td:nth-child(1),
-  #overview-pane-discipline .disc-group-row td:nth-child(2),
-  #overview-pane-discipline .disc-group-row td:nth-child(3),
-  #overview-pane-discipline .disc-child-row.open td:nth-child(3){{justify-content:flex-start;flex-wrap:wrap}}
-  #overview-pane-discipline .disc-group-row td:nth-child(9),
-  #overview-pane-discipline .disc-child-row.open td:nth-child(9){{justify-content:flex-end}}
+  #overview-pane-discipline .disc-child-row.open td::before{{content:attr(data-label);display:block;font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.28px;margin-bottom:2px}}
+  #overview-pane-discipline .disc-group-row td:nth-child(3) > div{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
+  #overview-pane-discipline .disc-num-cell{{min-width:0;text-align:left!important}}
+  #overview-pane-discipline td[data-label="View"]{{display:flex;justify-content:flex-end;align-items:center}}
   #overview-pane-discipline .disc-child-spacer{{display:none!important}}
   #overview-pane-discipline .disc-child-label{{padding-left:0!important}}
   #overview-pane-discipline .disc-child-label::before{{display:none}}
 }}
 @media(max-width:480px){{
+  #topbar{{height:34px}}
   .tab-btn{{padding:7px 9px;font-size:10px}}
   .tool-btn{{padding:6px 8px;font-size:10px}}
   #toolbar-actions{{grid-template-columns:1fr 1fr}}
@@ -1853,14 +1856,15 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 </style></head><body>
 
 <div id="topbar">
-  <span style="font-size:20px">📋</span>
-  <span style="font-weight:700;font-size:14px;letter-spacing:.3px">Document Control Register</span>
+  <span class="topbar-mark" style="font-size:20px">📋</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px;letter-spacing:.3px">Document Control Register</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px;letter-spacing:.35px">DCR</span>
   <div class="sp"></div>
   <a href="/" class="tb-btn">📊 Dashboard</a>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
+  <span class="topbar-user"><span class="topbar-user-name">👤 {uname}</span>
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
@@ -1872,7 +1876,7 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
     {projbar_toggle}
     <div id="projbar-extra">{projbar_secondary}</div>
   </div>
-  {'<button onclick="editProject()" style="margin-left:auto;background:var(--pr);color:#fff;border:none;padding:5px 12px;border-radius:var(--rd);cursor:pointer;font-size:11px;font-family:inherit;flex-shrink:0">✏ Edit</button>' if editable else ''}
+  {'<button class="proj-edit-btn" onclick="editProject()" style="margin-left:auto;background:var(--pr);color:#fff;border:none;padding:5px 12px;border-radius:var(--rd);cursor:pointer;font-size:11px;font-family:inherit;flex-shrink:0">✏ Edit</button>' if editable else ''}
 </div>
 
 <div id="tabsbar">
@@ -2456,13 +2460,18 @@ function buildHead(){{
   const _srW=state.colWidths&&state.colWidths['_sr'];
   sr.dataset.key='_sr';
   sr.style.cssText=(_srW?'width:'+_srW+'px;min-width:'+_srW+'px;max-width:'+_srW+'px;':'width:34px;')
-    +'white-space:normal;word-break:break-word;cursor:default';
+    +'white-space:nowrap;word-break:normal;cursor:default';
   hr.appendChild(sr);
   state.cols.forEach(col=>{{
     const th=document.createElement('th');th.dataset.key=col.col_key;
     const w=state.colWidths&&state.colWidths[col.col_key];
-    if(w)th.style.cssText='width:'+w+'px;min-width:'+w+'px;max-width:'+w+'px;white-space:normal;word-break:break-word';
-    else th.style.cssText='white-space:normal;word-break:break-word';
+    const labelTxt=String(col.label||'').toLowerCase();
+    const minW=labelTxt.includes('sub-trade')?150:
+      labelTxt.includes('discipline')?130:
+      labelTxt.includes('title')?220:
+      labelTxt.includes('subject')?220:0;
+    if(w)th.style.cssText='width:'+w+'px;min-width:'+w+'px;max-width:'+w+'px;white-space:nowrap;word-break:normal';
+    else th.style.cssText=(minW?'min-width:'+minW+'px;':'')+'white-space:nowrap;word-break:normal';
     const sortInd=state.sortCol===col.col_key?(state.sortDir==='asc'?' ↑':' ↓'):'';
     th.innerHTML='<span class="th-lbl">'+col.label+sortInd+'</span>';
     if(!['auto_date','auto_num'].includes(col.col_type))th.onclick=()=>sortBy(col.col_key);
@@ -2494,7 +2503,6 @@ function buildHead(){{
   }});
   fr.appendChild(document.createElement('th'));
   head.appendChild(fr);
-  requestAnimationFrame(updateRegisterStickyOffsets);
 }}
 
 function parseDocNo(docNo){{
