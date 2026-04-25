@@ -151,6 +151,14 @@ function toggleProjectInfo(){
   const open=bar.classList.toggle('show-details');
   btn.textContent=open?'Hide Info':'Project Info';
 }
+function updateRegisterStickyOffsets(){
+  const head=document.getElementById('thead');
+  const wrap=document.getElementById('tblwrap');
+  if(!head||!wrap)return;
+  const topRow=head.querySelector('tr:first-child');
+  wrap.style.setProperty('--reg-head-offset', ((topRow?.offsetHeight)||34)+'px');
+}
+window.addEventListener('resize',()=>requestAnimationFrame(()=>{if(typeof updateRegisterStickyOffsets==='function')updateRegisterStickyOffsets();}));
 async function apiFetch(url,opts={}){
   const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},...opts});
   if(r.status===403){const d=await r.json().catch(()=>({}));
@@ -260,7 +268,7 @@ body{{display:flex;flex-direction:column;min-height:100vh;overflow-x:hidden}}
 .wrap{{max-width:1480px;margin:0 auto;padding:12px 12px;flex:1;width:100%}}
 
 /* ── Dark Mode ── */
-body.dark{{--bg:#0f172a;--wh:#1e293b;--tx:#e2e8f0;--mu:#94a3b8;--bd:#334155;--pr:#3b82f6;--pl:#60a5fa}}
+body.dark{{--bg:#0f172a;--wh:#162132;--tx:#e2e8f0;--mu:#9fb0c6;--bd:#304257;--pr:#60a5fa;--pl:#93c5fd}}
 body.dark .kpi,body.dark .ccard,body.dark .pcard,body.dark .panel,
 body.dark .psel-bar,body.dark .tbl-wrap{{background:#162132;color:#e2e8f0}}
 body.dark .kval{{color:#93c5fd}}
@@ -268,20 +276,22 @@ body.dark .kpi.ok .kval{{color:#86efac}}
 body.dark .kpi.wa .kval{{color:#fcd34d}}
 body.dark .kpi.er .kval{{color:#fca5a5}}
 body.dark .kpi.pu .kval{{color:#c4b5fd}}
-body.dark .klbl{{color:#94a3b8}}
+body.dark .klbl,body.dark .ktrend,body.dark .psel-bar label{{color:#b8c8da}}
 body.dark .clbl{{color:#93c5fd}}
 body.dark .stitle{{color:#93c5fd;border-color:#93c5fd}}
 body.dark .dt-tbl th{{background:#1e3a5f;color:#e2e8f0}}
 body.dark .dt-tbl td{{border-color:#334155;color:#cbd5e1}}
-body.dark .dt-tbl tr:hover td{{background:#0f172a}}
-body.dark .dt-tbl .alt td{{background:#162032}}
+body.dark .dt-tbl tr:hover td{{background:#142235}}
+body.dark .dt-tbl .alt td{{background:#132031}}
 body.dark #topbar{{background:#0f2640}}
 body.dark .pchdr{{background:#1e3a5f}}
-body.dark .pcbody{{color:#cbd5e1}}
+body.dark .pcbody{{color:#dbe7f3}}
 body.dark select,body.dark input{{background:#1e293b;color:#e2e8f0;border-color:#334155}}
 body.dark .tbtn{{background:#1e293b;color:#e2e8f0;border-color:#334155}}
 body.dark .ov-row{{border-color:#334155;color:#cbd5e1}}
 body.dark .prog{{background:#334155}}
+body.dark .addcard{{background:linear-gradient(180deg,#132031,#0f1a29);border-color:#304257;color:#b8c8da}}
+body.dark .addcard:hover{{background:linear-gradient(180deg,#17263a,#122033);border-color:#60a5fa;color:#dbe7f3}}
 body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap,body.dark .ltr-party-card{{border-color:#304257!important}}
 body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap{{background:#101a29!important}}
 body.dark .ltr-party-card{{background:#162132!important}}
@@ -363,6 +373,8 @@ canvas{{max-height:174px}}
 .dt-tbl .alt td{{background:#fbfcfe}}
 .dt-summary-row.warn td{{background:#fff4e8}}
 .dt-summary-row.warn:hover td{{background:#feeccc}}
+body.dark .dt-summary-row.warn td{{background:#35271e}}
+body.dark .dt-summary-row.warn:hover td{{background:#453224}}
 #overview-pane-discipline .dt-tbl{{table-layout:fixed}}
 #overview-pane-discipline .dt-tbl th:first-child,
 #overview-pane-discipline .dt-tbl td:first-child{{white-space:nowrap}}
@@ -385,6 +397,22 @@ canvas{{max-height:174px}}
 .disc-expander:hover{{border-color:#2f4f64;background:#f5f8fc}}
 .disc-expander.open{{background:#2f4f64;color:#fff;border-color:#2f4f64}}
 .disc-meta{{font-size:10px;color:var(--mu);font-weight:600}}
+.disc-num-cell{{text-align:center!important;font-weight:700;font-variant-numeric:tabular-nums}}
+#overview-pane-discipline .disc-group-row td,#overview-pane-discipline .disc-child-row td{{vertical-align:middle}}
+#overview-pane-discipline .disc-group-row td:nth-child(3) > div{{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-width:0}}
+#overview-pane-discipline .disc-group-row td:nth-child(3),#overview-pane-discipline .disc-child-row td:nth-child(3){{min-width:170px}}
+#overview-pane-discipline .disc-num-cell{{min-width:84px}}
+body.dark .disc-group-row td{{background:#162132;color:#dbe7f3}}
+body.dark .disc-group-row.alt td{{background:#132031}}
+body.dark .disc-group-row:hover td{{background:#1a2a3d}}
+body.dark .disc-group-row.warn td{{background:#3a2a1f}}
+body.dark .disc-group-row.warn:hover td{{background:#4a3425}}
+body.dark .disc-child-row td{{background:#101a29}}
+body.dark .disc-child-row:hover td{{background:#162132}}
+body.dark .disc-badge{{background:#223246;color:#dbe7f3}}
+body.dark .disc-expander{{background:#101a29;border-color:#304257;color:#dbe7f3}}
+body.dark .disc-expander.open{{background:#3b82f6;border-color:#3b82f6;color:#fff}}
+body.dark .disc-meta,body.dark .disc-child-label{{color:#b8c8da}}
 .overview-table-switch{{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 8px}}
 .overview-table-btn{{padding:6px 11px;border:1.5px solid var(--bd);border-radius:999px;background:var(--bg);
   color:var(--mu);cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.35px;font-family:inherit;
@@ -899,6 +927,7 @@ function renderPrAnalytics(data){{
   if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
   if(!tradeCanvas)return;
   const trades=data.top_trades||[];
+  const dark=document.body.classList.contains('dark');
   prTradeChart=new Chart(tradeCanvas,{{
     type:'bar',
     data:{{
@@ -916,8 +945,8 @@ function renderPrAnalytics(data){{
       indexAxis:'y',
       plugins:{{legend:{{display:false}}}},
       scales:{{
-        x:{{beginAtZero:true,ticks:{{precision:0,font:{{size:10}}}}}},
-        y:{{grid:{{display:false}},ticks:{{font:{{size:10}}}}}}
+        x:{{beginAtZero:true,grid:{{color:dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.06)'}},ticks:{{precision:0,font:{{size:10}},color:dark?'#cbd5e1':'#54657d'}}}},
+        y:{{grid:{{display:false}},ticks:{{font:{{size:10}},color:dark?'#dbe7f3':'#334155'}}}}
       }}
     }}
   }});
@@ -971,15 +1000,19 @@ function renderCards(d,pid){{
 
 // ── Overview Charts ───────────────────────────────────────
 function renderCharts(d){{
+  const dark=document.body.classList.contains('dark');
+  const gridColor=dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.05)';
+  const tickColor=dark?'#cbd5e1':'#54657d';
+  const legendColor=dark?'#dbe7f3':'#334155';
   if(pChart)pChart.destroy();
   pChart=new Chart(document.getElementById('cProj'),{{type:'bar',
     data:{{labels:d.map(s=>s.code),datasets:[
       {{label:'Approved',data:d.map(s=>s.approved),backgroundColor:'#16a34a',borderRadius:4}},
       {{label:'Pending', data:d.map(s=>s.pending), backgroundColor:'#f59e0b',borderRadius:4}},
       {{label:'Overdue', data:d.map(s=>s.overdue), backgroundColor:'#ef4444',borderRadius:4}}]}},
-    options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}}}},
-      scales:{{y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}}}},
-        x:{{grid:{{display:false}}}}}}}}}});
+    options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}}}},
+      scales:{{y:{{beginAtZero:true,grid:{{color:gridColor}},ticks:{{color:tickColor}}}},
+        x:{{grid:{{display:false}},ticks:{{color:tickColor}}}}}}}}}});
   const t=d.reduce((s,p)=>s+p.total,0),ap=d.reduce((s,p)=>s+p.approved,0),
     pe=d.reduce((s,p)=>s+p.pending,0),ov=d.reduce((s,p)=>s+p.overdue,0),
     rj=d.reduce((s,p)=>s+(p.rejected||0),0);
@@ -988,9 +1021,9 @@ function renderCharts(d){{
     data:{{labels:['Approved','Pending','Rejected','Overdue'],
       datasets:[{{data:[ap,pe,rj,ov],
         backgroundColor:['#16a34a','#f59e0b','#7c3aed','#ef4444'],
-        borderWidth:3,borderColor:'#fff',hoverOffset:6}}]}},
+        borderWidth:3,borderColor:dark?'#162132':'#fff',hoverOffset:6}}]}},
     options:{{responsive:true,cutout:'65%',
-      plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}},
+      plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}},
         tooltip:{{callbacks:{{label:ctx=>` ${{ctx.label}}: ${{ctx.raw}} (${{t?Math.round(ctx.raw/t*100):0}}%)`}}}}}}}}}});
 }}
 
@@ -1135,7 +1168,7 @@ function renderDTTable(d){{
 function renderDiscTable(data){{
   const tbody=document.getElementById('disc-tbody'),empty=document.getElementById('disc-empty');
   tbody.innerHTML='';let rows=0,groupIdx=0;
-  const mk=(v,c)=>`<td style="text-align:center;font-weight:700;color:${{c}}">${{v||0}}</td>`;
+  const mk=(label,v,c)=>`<td class="disc-num-cell" data-label="${{label}}" style="color:${{c}}">${{v||0}}</td>`;
   data.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{
     const disc=dt.disc_breakdown||[];if(!disc.length)return;
     rows++;groupIdx++;
@@ -1143,14 +1176,14 @@ function renderDiscTable(data){{
     const warn=(Number(dt.overdue||0)>0)||disc.some(ds=>Number(ds.overdue||0)>0);
     const tr=document.createElement('tr');
     tr.className=`disc-group-row${{warn?' warn':''}}${{rows%2===0?' alt':''}}`;
-    tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{p.code}}</td>
-      <td style="font-weight:700;color:var(--pr)">${{dt.code}}</td>
-      <td><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge">${{disc.length}}</span><span class="disc-meta">${{disc.length===1?'1 discipline':`${{disc.length}} disciplines`}}</span></div></td>
-      ${{mk(dt.total,'var(--pr)')}}
-      ${{mk(dt.approved,'#16a34a')}}
-      ${{mk(dt.pending,'#f59e0b')}}
-      ${{mk(dt.rejected||0,'#7c3aed')}}
-      ${{mk(dt.overdue,'#ef4444')}}
+    tr.innerHTML=`<td data-label="Project" style="font-size:10px;color:var(--mu)">${{p.code}}</td>
+      <td data-label="Doc Type" style="font-weight:700;color:var(--pr)">${{dt.code}}</td>
+      <td data-label="Disciplines"><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge">${{disc.length}}</span><span class="disc-meta">${{disc.length===1?'1 discipline':`${{disc.length}} disciplines`}}</span></div></td>
+      ${{mk('Total',dt.total,'var(--pr)')}}
+      ${{mk('Approved',dt.approved,'#16a34a')}}
+      ${{mk('Pending',dt.pending,'#f59e0b')}}
+      ${{mk('Rejected',dt.rejected||0,'#7c3aed')}}
+      ${{mk('Overdue',dt.overdue,'#ef4444')}}
       <td style="text-align:center"><button type="button" class="disc-expander" data-group="${{groupId}}" aria-expanded="false" onclick="toggleDiscGroup('${{groupId}}', this)">▼</button></td>`;
     tbody.appendChild(tr);
     disc.forEach(ds=>{{
@@ -1158,17 +1191,31 @@ function renderDiscTable(data){{
       child.className='disc-child-row';
       child.dataset.group=groupId;
       child.innerHTML=`<td class="disc-child-spacer"></td>
-        <td style="font-size:10px;color:var(--mu)"> </td>
+        <td style="font-size:10px;color:var(--mu)">${{dt.code}}</td>
         <td class="disc-child-label">${{ds.disc}}</td>
-        ${{mk(ds.total,'var(--pr)')}}
-        ${{mk(ds.approved,'#16a34a')}}
-        ${{mk(ds.pending,'#f59e0b')}}
-        ${{mk(ds.rejected||0,'#7c3aed')}}
-        ${{mk(ds.overdue,'#ef4444')}}
+        ${{mk('Total',ds.total,'var(--pr)')}}
+        ${{mk('Approved',ds.approved,'#16a34a')}}
+        ${{mk('Pending',ds.pending,'#f59e0b')}}
+        ${{mk('Rejected',ds.rejected||0,'#7c3aed')}}
+        ${{mk('Overdue',ds.overdue,'#ef4444')}}
         <td></td>`;
       tbody.appendChild(child);
     }});
   }});}});
+  [...tbody.querySelectorAll('.disc-group-row')].forEach(tr=>{{
+    const cells=tr.children;
+    if(cells[0])cells[0].dataset.label='Project';
+    if(cells[1])cells[1].dataset.label='Doc Type';
+    if(cells[2])cells[2].dataset.label='Disciplines';
+    if(cells[8])cells[8].dataset.label='View';
+  }});
+  [...tbody.querySelectorAll('.disc-child-row')].forEach(tr=>{{
+    const cells=tr.children;
+    if(cells[0])cells[0].dataset.label='';
+    if(cells[1])cells[1].dataset.label='Doc Type';
+    if(cells[2])cells[2].dataset.label='Discipline';
+    if(cells[8])cells[8].dataset.label='';
+  }});
   if(empty)empty.style.display=rows?'none':'block';
 }}
 
@@ -1544,7 +1591,7 @@ def render_register(u, proj):
     custom_labels = proj.get("_labels") or {}
     PROJ_FIELDS = [(k, custom_labels.get(k, lbl)) for k, lbl in DEFAULT_PROJ_FIELDS]
 
-    primary_keys = {"code", "name", "client"}
+    primary_keys = {"code", "name"}
     projbar_primary = "".join(
         f'<div class="pf primary"><span class="pf-lbl">{lbl}</span>'
         f'<span class="pf-val" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
@@ -1594,6 +1641,8 @@ body.dark .frow input,body.dark .frow select{{background:#0f1a29;border-color:#3
 body.dark #regtbl td{{border-color:#253648;color:#d7e1ec}}
 body.dark #regtbl tr.alt td{{background:#132031}}
 body.dark #regtbl tr:hover td{{background:rgba(96,165,250,.12)}}
+body.dark #thead tr:first-child th{{box-shadow:0 1px 0 #304257}}
+body.dark .frow th{{box-shadow:0 1px 0 #253648}}
 body.dark .tool-dd-menu{{background:#162132;border-color:#304257}}
 body.dark .tool-dd-menu button{{color:#e2e8f0}}
 body.dark .tool-dd-menu button:hover{{background:#101a29;color:#93c5fd}}
@@ -1611,16 +1660,16 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   #regtbl th,#regtbl td{{padding:4px 6px!important;white-space:normal!important}}
   @page{{size:A4 landscape;margin:10mm}}
 }}
-#projbar{{background:#fff;border-bottom:2px solid var(--pr);padding:5px 12px;
+#projbar{{background:#fff;border-bottom:2px solid var(--pr);padding:5px 10px;
   display:flex;align-items:center;flex-wrap:wrap;flex-shrink:0;gap:6px}}
-#projbar-main{{display:flex;align-items:center;flex:1 1 auto;gap:6px;min-width:0;flex-wrap:wrap}}
+#projbar-main{{display:flex;align-items:center;flex:1 1 auto;gap:4px;min-width:0;flex-wrap:wrap}}
 #projbar-primary,#projbar-extra{{display:flex;align-items:center;gap:0;flex-wrap:wrap;min-width:0}}
 #projbar-toggle{{display:none}}
-#projbar img{{max-height:34px;max-width:120px;object-fit:contain;flex-shrink:0}}
-.pf{{display:flex;flex-direction:column;padding:0 10px;border-right:1px solid var(--bd);min-width:0}}
+#projbar img{{max-height:30px;max-width:108px;object-fit:contain;flex-shrink:0}}
+.pf{{display:flex;flex-direction:column;padding:0 8px;border-right:1px solid var(--bd);min-width:0}}
 .pf:last-of-type{{border-right:none}}
 .pf-lbl{{font-size:9px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px}}
-.pf-val{{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
+.pf-val{{font-size:11px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
 #tabsbar{{background:#0f2640;display:flex;align-items:center;overflow-x:auto;flex-shrink:0;
   padding:4px 8px;scrollbar-width:thin;gap:6px}}
 #tabsbar::-webkit-scrollbar{{height:3px}}
@@ -1635,10 +1684,10 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 .tab-add{{padding:5px 10px;background:rgba(255,255,255,.1);border:1px dashed rgba(255,255,255,.35);
   color:rgba(255,255,255,.7);border-radius:4px;cursor:pointer;font-size:16px;margin-left:6px}}
 .tab-add:hover{{background:rgba(255,255,255,.2)}}
-#toolbar{{background:#fff;border-bottom:1px solid var(--bd);padding:5px 10px;
+#toolbar{{background:#fff;border-bottom:1px solid var(--bd);padding:4px 8px;
   display:flex;align-items:center;gap:5px;flex-shrink:0;flex-wrap:wrap}}
 #toolbar-actions{{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}}
-.tool-btn{{display:flex;align-items:center;gap:4px;padding:5px 10px;background:var(--bg);
+.tool-btn{{display:flex;align-items:center;gap:4px;padding:4px 9px;background:var(--bg);
   border:1px solid var(--bd);border-radius:var(--rd);cursor:pointer;font-size:11px;
   font-family:inherit;color:var(--tx);transition:all .15s;white-space:nowrap}}
 .tool-btn:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
@@ -1648,7 +1697,7 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 .tool-dd-menu{{position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1.5px solid var(--bd);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:300;min-width:210px;overflow:hidden}}
 .tool-dd-menu button{{display:block;width:100%;text-align:left;padding:9px 14px;border:none;background:none;cursor:pointer;font-size:12px;font-family:inherit;color:#1e2a3a;white-space:nowrap}}
 .tool-dd-menu button:hover{{background:#f0f4f8;color:var(--pr)}}
-#srchbox{{flex:1;min-width:150px;max-width:260px;padding:5px 10px 5px 28px;border:1px solid var(--bd);
+#srchbox{{flex:1;min-width:150px;max-width:260px;padding:4px 10px 4px 28px;border:1px solid var(--bd);
   border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none;
   background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%236b7a94' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 7px center}}
 #srchbox:focus{{border-color:var(--pl);box-shadow:0 0 0 2px rgba(37,99,168,.1)}}
@@ -1658,10 +1707,10 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 #regtbl thead{{position:static}}
 #regtbl th{{background:var(--pr);color:#fff;padding:8px;text-align:left;font-weight:600;
   white-space:nowrap;border-right:1px solid rgba(255,255,255,.1);cursor:pointer;user-select:none;position:relative}}
-#thead tr:first-child th{{position:sticky;top:0;z-index:11}}
+#thead tr:first-child th{{position:sticky;top:0;z-index:11;box-shadow:0 1px 0 rgba(221,227,237,.9)}}
 #regtbl th:hover{{background:var(--pl)}}
 .frow{{position:relative}}
-.frow th{{background:#eef1f7;padding:2px 4px;cursor:default;position:sticky;top:34px;z-index:10}}
+.frow th{{background:#eef1f7;padding:2px 4px;cursor:default;position:sticky;top:var(--reg-head-offset,34px);z-index:10;box-shadow:0 1px 0 rgba(221,227,237,.95)}}
 .frow th:hover{{background:#eef1f7}}
 .frow input,.frow select{{width:100%;padding:3px 6px;border:1px solid var(--bd);
   border-radius:3px;font-size:10px;font-family:inherit;background:#fff;outline:none}}
@@ -1684,7 +1733,7 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 .mlcell{{white-space:pre-line!important;word-break:break-word}}
 #bulkbar{{display:none;background:#1a3a5c;color:#fff;padding:5px 14px;align-items:center;gap:10px;font-size:12px;flex-shrink:0}}
 #bulkbar.show{{display:flex}}
-#sbar{{background:var(--pr);color:rgba(255,255,255,.75);padding:3px 14px;font-size:10px;display:flex;gap:16px;flex-wrap:wrap;flex-shrink:0}}
+#sbar{{background:var(--pr);color:rgba(255,255,255,.75);padding:2px 12px;font-size:10px;display:flex;gap:12px;flex-wrap:wrap;flex-shrink:0}}
 .rz{{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:1}}
 .rz:hover,.rz.rzg{{background:var(--ac)}}
 .ms-con{{border:1px solid var(--bd);border-radius:var(--rd);min-height:34px;padding:3px;
@@ -1738,34 +1787,61 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   #tblwrap{{padding-bottom:4px}}
 }}
 @media(max-width:640px){{
-  #projbar{{padding:6px 8px;align-items:flex-start;gap:6px}}
-  #projbar img{{max-height:24px;max-width:88px}}
-  #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:6px;width:100%}}
-  #projbar-primary{{display:flex;flex-direction:column;gap:4px;min-width:0}}
+  #topbar{{height:36px;padding:0 6px;gap:5px}}
+  #topbar .tb-btn{{padding:3px 7px;font-size:10px}}
+  #projbar{{padding:4px 8px;align-items:flex-start;gap:4px}}
+  #projbar img{{max-height:20px;max-width:72px}}
+  #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:4px;width:100%}}
+  #projbar-primary{{display:flex;flex-direction:column;gap:2px;min-width:0}}
   #projbar-primary .pf{{padding:0;border-right:none;border-bottom:none;min-width:0}}
-  #projbar-primary .pf-lbl{{font-size:8px}}
-  #projbar-primary .pf-val{{font-size:11px;max-width:none}}
-  #projbar-extra{{display:none;width:100%;padding-top:6px;border-top:1px solid var(--bd)}}
+  #projbar-primary .pf-lbl{{font-size:7px;letter-spacing:.28px}}
+  #projbar-primary .pf-val{{font-size:10px;line-height:1.18;max-width:none}}
+  #projbar-extra{{display:none;width:100%;padding-top:4px;border-top:1px solid var(--bd)}}
   #projbar.show-details #projbar-extra{{display:grid;grid-template-columns:1fr 1fr;gap:6px}}
-  #projbar-extra .pf{{border-right:none;border-bottom:1px solid var(--bd);padding:4px 6px 6px}}
-  #projbar-toggle{{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;font-size:10px;min-height:32px}}
-  #toolbar{{padding:6px 8px;align-items:stretch}}
+  #projbar-extra .pf{{border-right:none;border-bottom:1px solid var(--bd);padding:3px 4px 4px}}
+  #projbar-extra .pf-lbl{{font-size:7px}}
+  #projbar-extra .pf-val{{font-size:10px;max-width:none}}
+  #projbar-toggle{{display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;font-size:9px;min-height:26px}}
+  #toolbar{{padding:4px 6px;align-items:stretch}}
   #toolbar-actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:6px}}
-  .tool-btn{{justify-content:center;min-width:0}}
+  .tool-btn{{justify-content:center;min-width:0;padding:4px 8px;font-size:10px;min-height:30px}}
   #rec-modal .record-modal{{width:96vw!important;max-width:96vw!important}}
   #rec-modal .mbody{{padding:12px}}
   .record-modal-actions{{padding:10px 12px;justify-content:stretch}}
   .record-modal-actions .btn{{flex:1 1 100%;width:100%;min-height:40px}}
   .modal{{width:96vw;max-height:96vh}}
-  #srchbox{{width:100%;flex:1 1 100%;max-width:none}}
+  #srchbox{{width:100%;flex:1 1 100%;max-width:none;padding-top:5px;padding-bottom:5px;font-size:11px}}
   #regtbl{{min-width:1080px}}
-  #tblwrap{{min-height:42vh}}
+  #tblwrap{{min-height:52vh}}
+  #sbar{{padding:2px 8px;font-size:9px;gap:8px}}
   #ltr-quickbar .tool-btn{{flex:1 1 calc(50% - 6px)}}
   .overview-pr-panel{{overflow:hidden}}
   .pr-analytics-grid{{grid-template-columns:minmax(0,1fr)!important;width:100%}}
   .pr-block{{width:100%;max-width:100%;min-width:0;overflow:hidden}}
   .pr-projects,.pr-trades{{min-height:0!important}}
   .pr-trades > div:last-child{{min-width:0;height:180px;max-height:none!important}}
+  #overview-pane-discipline .tbl-wrap{{overflow-x:hidden}}
+  #overview-pane-discipline .dt-tbl{{min-width:0;table-layout:auto}}
+  #overview-pane-discipline colgroup,
+  #overview-pane-discipline thead{{display:none}}
+  #overview-pane-discipline .dt-tbl tbody{{display:grid;gap:10px}}
+  #overview-pane-discipline .disc-group-row,
+  #overview-pane-discipline .disc-child-row.open{{display:block;border:1px solid var(--bd);border-radius:10px;overflow:hidden;background:var(--wh)}}
+  #overview-pane-discipline .disc-group-row td,
+  #overview-pane-discipline .disc-child-row.open td{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;border-bottom:1px solid rgba(221,227,237,.8)}}
+  #overview-pane-discipline .disc-group-row td:last-child,
+  #overview-pane-discipline .disc-child-row.open td:last-child{{border-bottom:none}}
+  #overview-pane-discipline .disc-group-row td::before,
+  #overview-pane-discipline .disc-child-row.open td::before{{content:attr(data-label);font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.28px;flex-shrink:0}}
+  #overview-pane-discipline .disc-group-row td:nth-child(1),
+  #overview-pane-discipline .disc-group-row td:nth-child(2),
+  #overview-pane-discipline .disc-group-row td:nth-child(3),
+  #overview-pane-discipline .disc-child-row.open td:nth-child(3){{justify-content:flex-start;flex-wrap:wrap}}
+  #overview-pane-discipline .disc-group-row td:nth-child(9),
+  #overview-pane-discipline .disc-child-row.open td:nth-child(9){{justify-content:flex-end}}
+  #overview-pane-discipline .disc-child-spacer{{display:none!important}}
+  #overview-pane-discipline .disc-child-label{{padding-left:0!important}}
+  #overview-pane-discipline .disc-child-label::before{{display:none}}
 }}
 @media(max-width:480px){{
   .tab-btn{{padding:7px 9px;font-size:10px}}
@@ -2418,6 +2494,7 @@ function buildHead(){{
   }});
   fr.appendChild(document.createElement('th'));
   head.appendChild(fr);
+  requestAnimationFrame(updateRegisterStickyOffsets);
 }}
 
 function parseDocNo(docNo){{
