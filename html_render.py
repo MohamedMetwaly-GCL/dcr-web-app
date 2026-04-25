@@ -1705,10 +1705,10 @@ body.dark .frow input,body.dark .frow select{{background:#0f1a29;border-color:#3
 body.dark #regtbl td{{border-color:#253648;color:#d7e1ec}}
 body.dark #regtbl tr.alt td{{background:#132031}}
 body.dark #regtbl tr.ov td{{background:#3a231f;color:#f8d8c7}}
-body.dark #regtbl tr.rv td{{background:#2f261b;color:#f4ddb3}}
+body.dark #regtbl tr.rv td{{background:#101a29;color:#b8c8da}}
 body.dark #regtbl tbody tr:hover td{{background:#1e3147;color:#eef5ff}}
 body.dark #regtbl tbody tr.ov:hover td{{background:#4a2a24;color:#ffe1d2}}
-body.dark #regtbl tbody tr.rv:hover td{{background:#3d301f;color:#ffe8ba}}
+body.dark #regtbl tbody tr.rv:hover td{{background:#1e3147;color:#eef5ff}}
 body.dark .flink{{color:#93c5fd}}
 body.dark .tool-dd-menu{{background:#162132;border-color:#304257}}
 body.dark .tool-dd-menu button{{color:#e2e8f0}}
@@ -1819,6 +1819,52 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 .ms-opt:last-child{{border-bottom:none}}
 .ms-opt:hover{{background:#f0f4f8;color:var(--pr)}}
 .ms-opt.sel{{background:#eff6ff}}
+body.dark .ms-con{{background:#101a29;border-color:#304257;color:#e2e8f0}}
+body.dark .ms-ph{{color:#9fb0c6}}
+body.dark .ms-dd{{background:#101a29;border-color:#304257;box-shadow:0 14px 36px rgba(0,0,0,.42)}}
+body.dark .ms-opt{{background:#101a29;color:#dbe7f3;border-bottom-color:#253648}}
+body.dark .ms-opt:hover{{background:#1e3147;color:#eef5ff}}
+body.dark .ms-opt.sel{{background:#17314d;color:#eef5ff}}
+body.dark .ms-opt input{{accent-color:#60a5fa}}
+.letter-flow{{position:relative;padding-left:10px}}
+.letter-flow-line{{position:absolute;left:13px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,#d7e0e6,#c7d2da)}}
+.letter-node{{position:relative;padding-left:30px;margin-bottom:14px}}
+.letter-dot{{position:absolute;left:8px;top:14px;width:12px;height:12px;border-radius:999px;background:#2F4F64;border:3px solid #fff;box-shadow:0 0 0 2px rgba(47,79,100,.18)}}
+.letter-dot.current{{background:#8BC34A;box-shadow:0 0 0 2px rgba(139,195,74,.35)}}
+.letter-card{{background:#fff;border:1px solid #d7e0e6;border-left:4px solid #d7e0e6;border-radius:12px;padding:12px 14px;box-shadow:0 6px 18px rgba(15,23,42,.05)}}
+.letter-card.current{{background:#f6fbef;border-color:#8BC34A;border-left-color:#8BC34A;box-shadow:0 10px 26px rgba(139,195,74,.14)}}
+.letter-card-kicker{{font-size:9px;color:#7d8a95;text-transform:uppercase;letter-spacing:.35px;margin-bottom:6px}}
+.letter-card-ref{{font-size:12px;font-weight:800;color:var(--pr)}}
+.letter-card-subject{{font-size:12px;color:var(--tx);margin-top:6px;line-height:1.45}}
+.letter-card-meta{{font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5}}
+.letter-date-badge{{display:inline-flex;align-items:center;background:#eef4f8;color:#2F4F64;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:800;letter-spacing:.2px}}
+.letter-current-badge{{flex-shrink:0;background:#8BC34A;color:#17351b;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase}}
+.letter-branch-cue{{color:#7d8a95;font-weight:800;margin-right:8px}}
+.letter-connector{{position:absolute;left:-24px;top:0;bottom:22px;width:2px;background:#cbd5df;border-radius:2px}}
+.letter-connector-arm{{position:absolute;left:-24px;top:24px;width:18px;height:2px;background:#cbd5df;border-radius:2px}}
+body.dark .letter-flow-line{{background:linear-gradient(180deg,#3a526d,#253648)}}
+body.dark .letter-dot{{background:#60a5fa;border-color:#101a29;box-shadow:0 0 0 2px rgba(96,165,250,.28)}}
+body.dark .letter-dot.current{{background:#8BC34A;box-shadow:0 0 0 2px rgba(139,195,74,.42)}}
+body.dark .letter-card{{background:#162132;border-color:#304257;border-left-color:#496780;box-shadow:0 10px 28px rgba(0,0,0,.28)}}
+body.dark .letter-card.current{{background:#1d2b1d;border-color:#8BC34A;border-left-color:#8BC34A;box-shadow:0 10px 28px rgba(0,0,0,.32)}}
+body.dark .letter-card-kicker,body.dark .letter-card-meta{{color:#b8c8da}}
+body.dark .letter-card-ref{{color:#dbeafe}}
+body.dark .letter-card-subject{{color:#eef5ff}}
+body.dark .letter-date-badge{{background:#233850;color:#bfdbfe}}
+body.dark .letter-branch-cue{{color:#93c5fd}}
+body.dark .letter-connector,body.dark .letter-connector-arm{{background:#496780}}
+body.dark #thread-body [style*="background:#fff"],
+body.dark #timeline-body [style*="background:#fff"]{{background:#162132!important;border-color:#304257!important;box-shadow:0 10px 28px rgba(0,0,0,.28)!important}}
+body.dark #thread-body [style*="background:#f6fbef"],
+body.dark #timeline-body [style*="background:#f6fbef"]{{background:#1d2b1d!important;border-color:#8BC34A!important;box-shadow:0 10px 28px rgba(0,0,0,.32)!important}}
+body.dark #thread-body [style*="color:#7d8a95"],
+body.dark #timeline-body [style*="color:#7d8a95"]{{color:#b8c8da!important}}
+body.dark #thread-body [style*="background:#eef4f8"],
+body.dark #timeline-body [style*="background:#eef4f8"]{{background:#233850!important;color:#bfdbfe!important}}
+body.dark #thread-body [style*="border:3px solid #fff"],
+body.dark #timeline-body [style*="border:3px solid #fff"]{{border-color:#101a29!important}}
+body.dark #thread-body [style*="linear-gradient(180deg,#d7e0e6"],
+body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:linear-gradient(180deg,#3a526d,#253648)!important}}
 .empty{{text-align:center;padding:60px 20px;color:var(--mu)}}
 .slist{{list-style:none;display:flex;flex-direction:column;gap:3px;
   max-height:190px;overflow-y:auto;border:1px solid var(--bd);border-radius:var(--rd);padding:4px}}
@@ -2815,9 +2861,8 @@ function renderLetterThread(data){{
       it.to_party?('To: '+escHtml(it.to_party)):'',
       it.date?escHtml(it.date):''
     ].filter(Boolean);
-    const currentBadge=isCurrent?'<span style="flex-shrink:0;background:#8BC34A;color:#17351b;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase">Current</span>':'';
+    const currentBadge=isCurrent?'<span class="letter-current-badge">Current</span>':'';
     const subjectHtml=titleText||'<span style="color:var(--mu)">No subject</span>';
-    const connectorColor=isCurrent?'rgba(139,195,74,.55)':'#cbd5df';
     const branchCue=it.level>0?'<span style="color:#7d8a95;font-weight:800;margin-right:8px">↳</span>':'';
     const levelLabel=it.level>0?('Reply level '+it.level):'Root letter';
     const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
@@ -3439,10 +3484,10 @@ function buildMS(key,options,init){{
     if(e.target.classList.contains('ms-rm'))return;
     const ex=document.querySelector('.ms-dd');if(ex){{ex.remove();return;}}
     const dd=document.createElement('div');dd.className='ms-dd';
-    dd.style.cssText='position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1.5px solid var(--bd);border-radius:6px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.15);max-height:260px;overflow-y:auto';
+    dd.style.cssText='position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:500;max-height:260px;overflow-y:auto';
     options.forEach(opt=>{{
       const it=document.createElement('div');
-      it.style.cssText='padding:10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:12px'+(sel.includes(opt)?';background:#eff6ff':'');
+      it.className='ms-opt'+(sel.includes(opt)?' sel':'');
       const chk=document.createElement('input');chk.type='checkbox';chk.checked=sel.includes(opt);chk.style.cssText='flex-shrink:0;width:14px;height:14px;pointer-events:none';
       const lbl=document.createElement('span');lbl.textContent=opt;lbl.style.flex='1';
       it.appendChild(chk);it.appendChild(lbl);
@@ -3451,7 +3496,7 @@ function buildMS(key,options,init){{
         if(sel.includes(opt))sel.splice(sel.indexOf(opt),1);else sel.push(opt);
         con.dataset.value=sel.join(', ');render();
         chk.checked=sel.includes(opt);
-        it.style.background=sel.includes(opt)?'#eff6ff':'';
+        it.classList.toggle('sel',sel.includes(opt));
       }};
       dd.appendChild(it);
     }});
