@@ -443,18 +443,24 @@ body.dark .disc-mobile-val{{color:#e2e8f0}}
 .pr-items-row{{display:none}}
 .pr-items-row.open{{display:table-row}}
 .pr-items-row>td{{padding:0!important;border-bottom:1px solid #d9e2ec!important;border-right:none!important;max-width:none!important;background:transparent!important}}
-.pr-items-panel{{display:block;width:100%;box-sizing:border-box;padding:16px;background:#f8fafc;border-top:1px solid #d9e2ec;border-bottom:1px solid #d9e2ec}}
-.pr-items-table-wrap{{display:block;width:100%;overflow-x:auto;padding-bottom:2px}}
+.pr-items-panel{{display:block;width:100%;box-sizing:border-box;padding:16px;background:#f8fafc;border-top:1px solid #d9e2ec;border-bottom:1px solid #d9e2ec;position:relative;z-index:1}}
+.pr-items-table-wrap{{display:block;width:100%;max-width:100%;overflow-x:auto;padding-bottom:2px}}
 .pr-items-title{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}}
 .pr-items-title:before{{content:"";width:4px;height:16px;border-radius:999px;background:var(--ac);display:inline-block}}
-.pr-items-table{{width:100%;min-width:720px;table-layout:fixed;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden}}
-.pr-items-table th:nth-child(1),.pr-items-table td:nth-child(1){{width:38%}}
-.pr-items-table th:nth-child(2),.pr-items-table td:nth-child(2){{width:14%;white-space:nowrap}}
-.pr-items-table th:nth-child(3),.pr-items-table td:nth-child(3){{width:12%;text-align:center;white-space:nowrap}}
-.pr-items-table th:nth-child(4),.pr-items-table td:nth-child(4){{width:36%}}
-.pr-items-table th{{background:#e2e8f0;color:#334155;padding:6px 8px;text-align:left;font-weight:700}}
-.pr-items-table td{{padding:6px 8px;border-bottom:1px solid #e5e7eb}}
+.pr-items-table{{width:100%!important;min-width:1100px!important;table-layout:fixed;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden}}
+.pr-items-table th:nth-child(1),.pr-items-table td:nth-child(1){{width:58%}}
+.pr-items-table th:nth-child(2),.pr-items-table td:nth-child(2){{width:12%;white-space:nowrap}}
+.pr-items-table th:nth-child(3),.pr-items-table td:nth-child(3){{width:10%;text-align:center;white-space:nowrap}}
+.pr-items-table th:nth-child(4),.pr-items-table td:nth-child(4){{width:20%}}
+.pr-items-table th{{background:#e2e8f0;color:#334155;padding:7px 10px;text-align:left;font-weight:700}}
+.pr-items-table td{{padding:7px 10px;border-bottom:1px solid #e5e7eb}}
 .pr-items-table .pr-section td{{background:#e8eef6;color:var(--pr);font-weight:800;text-transform:uppercase;letter-spacing:.35px}}
+.pr-items-row #regtbl,.pr-items-row thead{{position:static!important}}
+#regtbl .pr-items-table{{width:100%!important;min-width:1100px!important;table-layout:fixed!important}}
+#regtbl .pr-items-table thead{{position:static!important;top:auto!important;z-index:auto!important}}
+#regtbl .pr-items-table th{{position:static!important;top:auto!important;z-index:auto!important;max-width:none!important;white-space:normal!important;word-break:normal!important;cursor:default!important;background:#e2e8f0!important;color:#334155!important;border-right:1px solid #dbe3ed!important}}
+#regtbl .pr-items-table th:hover{{background:#e2e8f0!important;color:#334155!important}}
+#regtbl .pr-items-table td{{max-width:none!important;word-break:normal!important;vertical-align:top!important;background:#fff!important;border-right:1px solid #edf2f7!important}}
 .pr-items-empty{{color:var(--mu);font-size:11px;padding:6px 0}}
 body.dark .pr-items-row>td{{background:transparent!important;border-color:#304257!important}}
 body.dark .pr-items-panel{{background:#101a29;border-color:#304257}}
@@ -463,6 +469,9 @@ body.dark .pr-items-table th{{background:#17314d;color:#dbeafe;border-color:#304
 body.dark .pr-items-table td{{border-color:#253648;color:#d7e1ec;background:#162132}}
 body.dark .pr-items-table .pr-section td{{background:#1e3147;color:#dbeafe}}
 body.dark .pr-items-table .pr-section td div{{background:#1e3147!important;color:#dbeafe!important}}
+body.dark #regtbl .pr-items-table th{{background:#17314d!important;color:#dbeafe!important;border-color:#304257!important}}
+body.dark #regtbl .pr-items-table th:hover{{background:#17314d!important;color:#dbeafe!important}}
+body.dark #regtbl .pr-items-table td{{background:#162132!important;color:#d7e1ec!important;border-color:#253648!important}}
 .pr-items-editor table{{width:100%;border-collapse:collapse;font-size:11px}}
 .pr-items-editor th{{background:#e2e8f0;color:#334155;padding:6px 8px;text-align:left;font-weight:700}}
 .pr-items-editor td{{padding:6px 8px;border-bottom:1px solid #e5e7eb}}
