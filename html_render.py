@@ -392,6 +392,20 @@ body.dark .dt-summary-row.warn:hover td{{background:#453224}}
 .disc-expander.open{{background:#2f4f64;color:#fff;border-color:#2f4f64}}
 .disc-meta{{font-size:10px;color:var(--mu);font-weight:600}}
 .disc-num-cell{{text-align:center!important;font-weight:700;font-variant-numeric:tabular-nums}}
+.disc-mobile-list{{display:none}}
+.disc-mobile-card{{border:1px solid var(--bd);border-radius:8px;background:var(--wh);overflow:hidden;margin-bottom:8px}}
+.disc-mobile-card.warn{{border-color:#f2c48d;background:#fff8ef}}
+.disc-mobile-head{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:9px 10px;border-bottom:1px solid var(--bd)}}
+.disc-mobile-title{{font-weight:800;color:var(--pr);font-size:12px}}
+.disc-mobile-sub{{font-size:10px;color:var(--mu);margin-top:2px}}
+.disc-mobile-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;padding:9px 10px}}
+.disc-mobile-cell{{min-width:0}}
+.disc-mobile-lbl{{font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.24px}}
+.disc-mobile-val{{font-size:13px;font-weight:800;margin-top:1px;font-variant-numeric:tabular-nums;color:var(--tx)}}
+.disc-mobile-children{{display:none;border-top:1px solid var(--bd);background:rgba(255,255,255,.55)}}
+.disc-mobile-card.open .disc-mobile-children{{display:block}}
+.disc-mobile-child{{padding:8px 10px;border-bottom:1px solid var(--bd)}}
+.disc-mobile-child:last-child{{border-bottom:none}}
 #overview-pane-discipline .disc-group-row td,#overview-pane-discipline .disc-child-row td{{vertical-align:middle}}
 #overview-pane-discipline .disc-group-row td:nth-child(3) > div{{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-width:0}}
 #overview-pane-discipline .disc-group-row td:nth-child(3),#overview-pane-discipline .disc-child-row td:nth-child(3){{min-width:170px}}
@@ -407,6 +421,12 @@ body.dark .disc-badge{{background:#223246;color:#dbe7f3}}
 body.dark .disc-expander{{background:#101a29;border-color:#304257;color:#dbe7f3}}
 body.dark .disc-expander.open{{background:#3b82f6;border-color:#3b82f6;color:#fff}}
 body.dark .disc-meta,body.dark .disc-child-label{{color:#b8c8da}}
+body.dark .disc-mobile-card{{background:#162132;border-color:#304257}}
+body.dark .disc-mobile-card.warn{{background:#2d241a;border-color:#5b3b20}}
+body.dark .disc-mobile-children{{background:#101a29;border-color:#304257}}
+body.dark .disc-mobile-child{{border-color:#304257}}
+body.dark .disc-mobile-sub,body.dark .disc-mobile-lbl{{color:#b8c8da}}
+body.dark .disc-mobile-val{{color:#e2e8f0}}
 .overview-table-switch{{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 8px}}
 .overview-table-btn{{padding:6px 11px;border:1.5px solid var(--bd);border-radius:999px;background:var(--bg);
   color:var(--mu);cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.35px;font-family:inherit;
@@ -647,6 +667,7 @@ body.dark .disc-meta,body.dark .disc-child-label{{color:#b8c8da}}
             </table>
             <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
           </div>
+          <div id="disc-mobile-list" class="disc-mobile-list"></div>
         </div>
       </div>
     </div>
@@ -1161,13 +1182,52 @@ function renderDTTable(d){{
 // ── Disc Table ────────────────────────────────────────────
 function renderDiscTable(data){{
   const tbody=document.getElementById('disc-tbody'),empty=document.getElementById('disc-empty');
+  const mobile=document.getElementById('disc-mobile-list');
   tbody.innerHTML='';let rows=0,groupIdx=0;
+  if(mobile)mobile.innerHTML='';
   const mk=(label,v,c)=>`<td class="disc-num-cell" data-label="${{label}}" style="color:${{c}}">${{v||0}}</td>`;
+  const safe=v=>String(v??'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
+  const metric=(label,value,color)=>`<div class="disc-mobile-cell"><div class="disc-mobile-lbl">${{label}}</div><div class="disc-mobile-val" style="color:${{color||'var(--tx)'}}">${{value||0}}</div></div>`;
   data.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{
     const disc=dt.disc_breakdown||[];if(!disc.length)return;
     rows++;groupIdx++;
     const groupId=`discgrp-${{groupIdx}}`;
     const warn=(Number(dt.overdue||0)>0)||disc.some(ds=>Number(ds.overdue||0)>0);
+    if(mobile){{
+      const card=document.createElement('div');
+      card.className=`disc-mobile-card${{warn?' warn':''}}`;
+      card.dataset.group=groupId;
+      card.innerHTML=`<div class="disc-mobile-head">
+        <div>
+          <div class="disc-mobile-title">${{safe(p.code)}} | ${{safe(dt.code)}}</div>
+          <div class="disc-mobile-sub">${{disc.length}} ${{disc.length===1?'discipline':'disciplines'}}</div>
+        </div>
+        <button type="button" class="disc-expander" aria-expanded="false" onclick="toggleDiscMobileGroup('${{groupId}}', this)">â–¼</button>
+      </div>
+      <div class="disc-mobile-grid">
+        ${{metric('Project',safe(p.code),'var(--pr)')}}
+        ${{metric('Doc Type',safe(dt.code),'var(--pr)')}}
+        ${{metric('Disciplines',disc.length,'#2f4f64')}}
+        ${{metric('Total',dt.total,'var(--pr)')}}
+        ${{metric('Approved',dt.approved,'#16a34a')}}
+        ${{metric('Pending',dt.pending,'#f59e0b')}}
+        ${{metric('Rejected',dt.rejected||0,'#7c3aed')}}
+        ${{metric('Overdue',dt.overdue,'#ef4444')}}
+      </div>
+      <div class="disc-mobile-children">
+        ${{disc.map(ds=>`<div class="disc-mobile-child">
+          <div class="disc-mobile-title">${{safe(ds.disc)}}</div>
+          <div class="disc-mobile-grid">
+            ${{metric('Total',ds.total,'var(--pr)')}}
+            ${{metric('Approved',ds.approved,'#16a34a')}}
+            ${{metric('Pending',ds.pending,'#f59e0b')}}
+            ${{metric('Rejected',ds.rejected||0,'#7c3aed')}}
+            ${{metric('Overdue',ds.overdue,'#ef4444')}}
+          </div>
+        </div>`).join('')}}
+      </div>`;
+      mobile.appendChild(card);
+    }}
     const tr=document.createElement('tr');
     tr.className=`disc-group-row${{warn?' warn':''}}${{rows%2===0?' alt':''}}`;
     tr.innerHTML=`<td data-label="Project" style="font-size:10px;color:var(--mu)">${{p.code}}</td>
@@ -1223,6 +1283,16 @@ function toggleDiscGroup(groupId, btn){{
 }}
 
 // ── Analytics Tab ─────────────────────────────────────────
+function toggleDiscMobileGroup(groupId, btn){{
+  const card=document.querySelector(`#disc-mobile-list .disc-mobile-card[data-group="${{groupId}}"]`);
+  if(!card)return;
+  const shouldOpen=!card.classList.contains('open');
+  card.classList.toggle('open', shouldOpen);
+  btn.classList.toggle('open', shouldOpen);
+  btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  btn.textContent=shouldOpen ? 'â–²' : 'â–¼';
+}}
+
 let analyticsLoaded=false;
 async function loadAnalytics(forceReload=false){{
   if(analyticsLoaded&&!forceReload)return;
@@ -1634,9 +1704,11 @@ body.dark .frow th{{background:#101a29}}
 body.dark .frow input,body.dark .frow select{{background:#0f1a29;border-color:#314558;color:#e2e8f0}}
 body.dark #regtbl td{{border-color:#253648;color:#d7e1ec}}
 body.dark #regtbl tr.alt td{{background:#132031}}
-body.dark #regtbl tr:hover td{{background:rgba(96,165,250,.12)}}
 body.dark #regtbl tr.ov td{{background:#3a231f;color:#f8d8c7}}
 body.dark #regtbl tr.rv td{{background:#2f261b;color:#f4ddb3}}
+body.dark #regtbl tbody tr:hover td{{background:#1e3147;color:#eef5ff}}
+body.dark #regtbl tbody tr.ov:hover td{{background:#4a2a24;color:#ffe1d2}}
+body.dark #regtbl tbody tr.rv:hover td{{background:#3d301f;color:#ffe8ba}}
 body.dark .flink{{color:#93c5fd}}
 body.dark .tool-dd-menu{{background:#162132;border-color:#304257}}
 body.dark .tool-dd-menu button{{color:#e2e8f0}}
@@ -1699,13 +1771,13 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 #main{{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0}}
 #tblwrap{{flex:1;overflow:auto;min-width:0;-webkit-overflow-scrolling:touch}}
 #regtbl{{width:100%;border-collapse:collapse;min-width:980px;font-size:12px}}
-#regtbl thead{{position:static}}
+#regtbl thead{{position:sticky;top:0;z-index:20}}
 #regtbl th{{background:var(--pr);color:#fff;padding:8px;text-align:left;font-weight:600;
   white-space:nowrap;border-right:1px solid rgba(255,255,255,.1);cursor:pointer;user-select:none;position:relative}}
-#thead tr:first-child th{{position:sticky;top:0;z-index:11;box-shadow:0 1px 0 rgba(221,227,237,.9)}}
+#thead tr:first-child th{{position:relative;top:auto;z-index:auto;border-bottom:2px solid rgba(255,255,255,.24);box-shadow:none}}
 #regtbl th:hover{{background:var(--pl)}}
 .frow{{position:static}}
-.frow th{{background:#eef1f7;padding:2px 4px;cursor:default;position:static;top:auto;z-index:auto;box-shadow:none}}
+.frow th{{background:#eef1f7;padding:3px 4px;cursor:default;position:static;top:auto;z-index:auto;box-shadow:0 1px 0 rgba(221,227,237,.95)}}
 .frow th:hover{{background:#eef1f7}}
 .frow input,.frow select{{width:100%;padding:3px 6px;border:1px solid var(--bd);
   border-radius:3px;font-size:10px;font-family:inherit;background:#fff;outline:none}}
@@ -1715,6 +1787,9 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
 #regtbl tr.ov td{{background:#fff5f5}}
 #regtbl tr.rv td{{color:var(--mu)}}
 #regtbl tr.alt td{{background:#fafbfd}}
+#regtbl tbody tr:hover td{{background:#dce8f5;color:var(--tx)}}
+#regtbl tbody tr.ov:hover td{{background:#ffe7e7;color:#3b1f1f}}
+#regtbl tbody tr.rv:hover td{{background:#fff4d8;color:#3b2a12}}
 .sr{{text-align:center;color:var(--mu);font-size:10px;min-width:28px}}
 .chkcell{{text-align:center;width:28px;padding:4px!important}}
 .chkcell input{{width:14px;height:14px;cursor:pointer;accent-color:var(--pr)}}
@@ -1794,18 +1869,16 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   .tab-add{{padding:4px 8px;font-size:12px}}
   #projbar{{padding:3px 8px;align-items:center;gap:4px}}
   #projbar img{{max-height:18px;max-width:64px}}
-  #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px;width:100%}}
-  #projbar-primary{{display:flex;flex-direction:column;gap:1px;min-width:0}}
-  #projbar-primary .pf{{padding:0;border-right:none;border-bottom:none;min-width:0;display:block}}
-  #projbar-primary .pf-lbl{{display:none}}
-  #projbar-primary .pf.primary:first-child .pf-val{{font-size:10px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.3px}}
-  #projbar-primary .pf.primary:last-child .pf-val{{font-size:12px;font-weight:700;line-height:1.15;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
-  #projbar-extra{{display:none;width:100%;padding-top:4px;border-top:1px solid var(--bd)}}
-  #projbar.show-details #projbar-extra{{display:grid;grid-template-columns:1fr 1fr;gap:6px}}
-  #projbar-extra .pf{{border-right:none;border-bottom:1px solid var(--bd);padding:3px 4px 4px}}
-  #projbar-extra .pf-lbl{{font-size:7px}}
-  #projbar-extra .pf-val{{font-size:10px;max-width:none}}
-  #projbar-toggle{{display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;font-size:9px;min-height:26px}}
+  #projbar-main{{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:4px;width:100%}}
+  #projbar-primary,#projbar-extra{{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;width:100%;min-width:0}}
+  #projbar-primary .pf,#projbar-extra .pf{{padding:0;border-right:none;border-bottom:none;min-width:0;display:block;flex:none}}
+  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{display:block;font-size:7px;line-height:1;color:var(--mu);letter-spacing:.24px}}
+  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:10px;line-height:1.15;max-width:none;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
+  #projbar-primary .pf.primary:first-child .pf-val{{font-size:10px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.3px;-webkit-line-clamp:1}}
+  #projbar-primary .pf.primary:last-child{{grid-column:1/-1}}
+  #projbar-primary .pf.primary:last-child .pf-val{{font-size:11px;font-weight:700}}
+  #projbar-extra{{padding-top:2px;border-top:1px solid var(--bd)}}
+  #projbar-toggle{{display:none}}
   .proj-edit-btn{{display:none}}
   #toolbar{{padding:4px 6px;align-items:stretch}}
   #toolbar-actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:6px}}
@@ -1817,6 +1890,7 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   .modal{{width:96vw;max-height:96vh}}
   #srchbox{{width:100%;flex:1 1 100%;max-width:none;padding-top:5px;padding-bottom:5px;font-size:11px}}
   #regtbl{{min-width:1120px}}
+  #regtbl th{{white-space:nowrap!important;word-break:normal!important}}
   #tblwrap{{min-height:52vh}}
   #sbar{{padding:2px 8px;font-size:9px;gap:8px}}
   #ltr-quickbar .tool-btn{{flex:1 1 calc(50% - 6px)}}
@@ -1825,25 +1899,8 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   .pr-block{{width:100%;max-width:100%;min-width:0;overflow:hidden}}
   .pr-projects,.pr-trades{{min-height:0!important}}
   .pr-trades > div:last-child{{min-width:0;height:180px;max-height:none!important}}
-  #overview-pane-discipline .tbl-wrap{{overflow-x:hidden}}
-  #overview-pane-discipline .dt-tbl{{min-width:0;table-layout:auto}}
-  #overview-pane-discipline colgroup,
-  #overview-pane-discipline thead{{display:none}}
-  #overview-pane-discipline .dt-tbl tbody{{display:grid;gap:10px}}
-  #overview-pane-discipline .disc-group-row,
-  #overview-pane-discipline .disc-child-row.open{{display:block;border:1px solid var(--bd);border-radius:10px;overflow:hidden;background:var(--wh)}}
-  #overview-pane-discipline .disc-group-row td,
-  #overview-pane-discipline .disc-child-row.open td{{display:block;padding:7px 10px;border-bottom:1px solid rgba(221,227,237,.8)}}
-  #overview-pane-discipline .disc-group-row td:last-child,
-  #overview-pane-discipline .disc-child-row.open td:last-child{{border-bottom:none}}
-  #overview-pane-discipline .disc-group-row td::before,
-  #overview-pane-discipline .disc-child-row.open td::before{{content:attr(data-label);display:block;font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.28px;margin-bottom:2px}}
-  #overview-pane-discipline .disc-group-row td:nth-child(3) > div{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
-  #overview-pane-discipline .disc-num-cell{{min-width:0;text-align:left!important}}
-  #overview-pane-discipline td[data-label="View"]{{display:flex;justify-content:flex-end;align-items:center}}
-  #overview-pane-discipline .disc-child-spacer{{display:none!important}}
-  #overview-pane-discipline .disc-child-label{{padding-left:0!important}}
-  #overview-pane-discipline .disc-child-label::before{{display:none}}
+  #overview-pane-discipline .tbl-wrap{{display:none}}
+  #overview-pane-discipline .disc-mobile-list{{display:block}}
 }}
 @media(max-width:480px){{
   #topbar{{height:34px}}
@@ -1851,7 +1908,7 @@ body.dark #sbar{{background:#0d1f33;color:rgba(255,255,255,.72)}}
   .tool-btn{{padding:6px 8px;font-size:10px}}
   #toolbar-actions{{grid-template-columns:1fr 1fr}}
   #ltr-quickbar .tool-btn{{flex:1 1 100%}}
-  #projbar.show-details #projbar-extra{{grid-template-columns:1fr}}
+  #projbar-extra{{grid-template-columns:1fr}}
 }}
 </style></head><body>
 
@@ -2460,7 +2517,7 @@ function buildHead(){{
   const _srW=state.colWidths&&state.colWidths['_sr'];
   sr.dataset.key='_sr';
   sr.style.cssText=(_srW?'width:'+_srW+'px;min-width:'+_srW+'px;max-width:'+_srW+'px;':'width:34px;')
-    +'white-space:nowrap;word-break:normal;cursor:default';
+    +'white-space:normal;word-break:normal;cursor:default';
   hr.appendChild(sr);
   state.cols.forEach(col=>{{
     const th=document.createElement('th');th.dataset.key=col.col_key;
@@ -2470,8 +2527,8 @@ function buildHead(){{
       labelTxt.includes('discipline')?130:
       labelTxt.includes('title')?220:
       labelTxt.includes('subject')?220:0;
-    if(w)th.style.cssText='width:'+w+'px;min-width:'+w+'px;max-width:'+w+'px;white-space:nowrap;word-break:normal';
-    else th.style.cssText=(minW?'min-width:'+minW+'px;':'')+'white-space:nowrap;word-break:normal';
+    if(w)th.style.cssText='width:'+w+'px;min-width:'+w+'px;max-width:'+w+'px;white-space:normal;word-break:normal';
+    else th.style.cssText=(minW?'min-width:'+minW+'px;':'')+'white-space:normal;word-break:normal';
     const sortInd=state.sortCol===col.col_key?(state.sortDir==='asc'?' ↑':' ↓'):'';
     th.innerHTML='<span class="th-lbl">'+col.label+sortInd+'</span>';
     if(!['auto_date','auto_num'].includes(col.col_type))th.onclick=()=>sortBy(col.col_key);
