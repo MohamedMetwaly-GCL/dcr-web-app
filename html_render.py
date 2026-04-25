@@ -442,13 +442,26 @@ body.dark .disc-mobile-val{{color:#e2e8f0}}
 .pr-toggle:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 .pr-items-row{{display:none}}
 .pr-items-row.open{{display:table-row}}
-.pr-items-row td{{padding:0;border-bottom:1px solid #edf0f5}}
-.pr-items-wrap{{padding:10px 12px;background:#f8fafc}}
-.pr-items-table{{width:100%;border-collapse:collapse;font-size:11px}}
+.pr-items-row>td{{padding:0!important;border-bottom:1px solid #d9e2ec!important;border-right:none!important;max-width:none!important;background:#f8fafc!important}}
+.pr-items-wrap{{width:100%;padding:12px 14px;background:#f8fafc}}
+.pr-items-title{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}}
+.pr-items-title:before{{content:"";width:4px;height:16px;border-radius:999px;background:var(--ac);display:inline-block}}
+.pr-items-table{{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden}}
+.pr-items-table th:nth-child(1),.pr-items-table td:nth-child(1){{width:38%}}
+.pr-items-table th:nth-child(2),.pr-items-table td:nth-child(2){{width:14%;white-space:nowrap}}
+.pr-items-table th:nth-child(3),.pr-items-table td:nth-child(3){{width:12%;text-align:center;white-space:nowrap}}
+.pr-items-table th:nth-child(4),.pr-items-table td:nth-child(4){{width:36%}}
 .pr-items-table th{{background:#e2e8f0;color:#334155;padding:6px 8px;text-align:left;font-weight:700}}
 .pr-items-table td{{padding:6px 8px;border-bottom:1px solid #e5e7eb}}
 .pr-items-table .pr-section td{{background:#e8eef6;color:var(--pr);font-weight:800;text-transform:uppercase;letter-spacing:.35px}}
 .pr-items-empty{{color:var(--mu);font-size:11px;padding:6px 0}}
+body.dark .pr-items-row>td{{background:#101a29!important;border-color:#304257!important}}
+body.dark .pr-items-wrap{{background:#101a29}}
+body.dark .pr-items-table{{background:#162132;border-color:#304257}}
+body.dark .pr-items-table th{{background:#17314d;color:#dbeafe;border-color:#304257}}
+body.dark .pr-items-table td{{border-color:#253648;color:#d7e1ec;background:#162132}}
+body.dark .pr-items-table .pr-section td{{background:#1e3147;color:#dbeafe}}
+body.dark .pr-items-table .pr-section td div{{background:#1e3147!important;color:#dbeafe!important}}
 .pr-items-editor table{{width:100%;border-collapse:collapse;font-size:11px}}
 .pr-items-editor th{{background:#e2e8f0;color:#334155;padding:6px 8px;text-align:left;font-weight:700}}
 .pr-items-editor td{{padding:6px 8px;border-bottom:1px solid #e5e7eb}}
@@ -3063,7 +3076,7 @@ async function fetchPrItems(recordId){{
 function renderPrItemsTable(items, legacyText){{
   if(!items||!items.length){{
     const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
-    return `<div class="pr-items-empty">No items added</div>${{legacy}}`;
+    return `<div class="pr-items-title">PR Items Breakdown</div><div class="pr-items-empty">No items added</div>${{legacy}}`;
   }}
   const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
     ? `<tr class="pr-section"><td colspan="4" style="padding:8px 8px;border-bottom:1px solid #d7dee8">
@@ -3077,7 +3090,7 @@ function renderPrItemsTable(items, legacyText){{
         <td>${{escHtml(it.quantity??'')}}</td>
         <td>${{escHtml(it.remarks||'')}}</td>
       </tr>`).join('');
-  return `<table class="pr-items-table">
+  return `<div class="pr-items-title">PR Items Breakdown</div><table class="pr-items-table">
     <thead><tr><th>Item</th><th>Unit</th><th>Qty</th><th>Remarks</th></tr></thead>
     <tbody>${{rows}}</tbody>
   </table>`;
@@ -3088,7 +3101,7 @@ async function togglePrItems(recordId, btn){{
   if(!tr)return;
   let nxt=tr.nextElementSibling;
   if(!nxt||!nxt.classList||!nxt.classList.contains('pr-items-row')||nxt.dataset.id!==recordId){{
-    const colSpan=state.cols.length+1;
+    const colSpan=tr.children.length||state.cols.length+3;
     const wrap=document.createElement('div');wrap.className='pr-items-wrap';
     wrap.innerHTML='<div class="pr-items-empty">Loading...</div>';
     const td=document.createElement('td');td.colSpan=colSpan;td.appendChild(wrap);
