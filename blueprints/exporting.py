@@ -368,6 +368,141 @@ def _excel_row_height(values, base=20):
     return max(base, min(62, 15 * max_lines))
 
 
+def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, pr_details_key=None):
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    pr_items_map = pr_items_map or {}
+    PRIMARY = "1A3A5C"; PL = "2563A8"; WHITE = "FFFFFF"
+    ALT = "F8FAFC"; OV = "FFF5F5"; MUTED = "9CA3AF"
+
+    STATUS_XL = {
+        "A - Approved":              ("BBF7D0","166534"),
+        "B - Approved As Noted":     ("DCFCE7","14532D"),
+        "B,C - Approved & Resubmit": ("FED7AA","7C2D12"),
+        "C - Revise & Resubmit":     ("FCE7F3","831843"),
+        "D - Review not Required":   ("FECACA","7F1D1D"),
+        "Under Review":              ("FEF9C3","713F12"),
+        "Cancelled":                 ("EF4444","FFFFFF"),
+        "Open":                      ("FED7AA","7C2D12"),
+        "Closed":                    ("BFDBFE","1E3A5F"),
+        "Replied":                   ("D1FAE5","064E3B"),
+        "Pending":                   ("E0E7FF","312E81"),
+    }
+
+    def fill(c): return PatternFill("solid", fgColor=c)
+    def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
+
+    ws.sheet_view.showGridLines = False
+    all_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
+    nc = len(all_cols)
+
+    def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11, halign="center"):
+        c = ws.cell(row=row, column=1, value=val)
+        ws.merge_cells(f"A{row}:{get_column_letter(nc)}{row}")
+        c.font = Font(bold=bold, color=fg, size=sz, name="Arial")
+        c.fill = fill(bg)
+        c.alignment = Alignment(horizontal=halign, vertical="center")
+        return c
+
+    dt_name = (dt.get("name") if dt else "") or (dt.get("id") if dt else "") or "REGISTER"
+    mcell(1, f"DOCUMENT CONTROL REGISTER  -  {str(dt_name).upper()}",
+          PRIMARY, bold=True, sz=13)
+    ws.row_dimensions[1].height = 36
+
+    info = "   |   ".join(f"{k}: {v}" for k,v in [
+        ("Project",proj.get("name","")),("Code",proj.get("code","")),
+        ("Client",proj.get("client","")),("Consultant",proj.get("mainConsultant","")),
+        ("Exported",datetime.datetime.now().strftime("%d/%b/%Y %H:%M"))] if v)
+    mcell(2, info, PL, sz=9)
+    ws.row_dimensions[2].height = 18
+    ws.row_dimensions[3].height = 4
+
+    ws.freeze_panes = "A5"
+    ws.print_title_rows = "4:4"
+    ws.sheet_view.zoomScale = 90
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.oddFooter.right.text = "Page &[Page] of &[Pages]"
+    ws.oddFooter.left.text = "Generated from DCR System"
+
+    for ci, col in enumerate(all_cols, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = _excel_column_width(col["col_key"], col["label"])
+        c = ws.cell(row=4, column=ci, value=col["label"])
+        c.font = Font(bold=True,color=WHITE,size=10,name="Arial")
+        c.fill = fill(PRIMARY)
+        c.alignment = Alignment(horizontal="center",vertical="center",wrap_text=True)
+        c.border = thin()
+    ws.row_dimensions[4].height = 24
+
+    has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in all_cols)
+    sr = 1
+    if not records:
+        c = ws.cell(row=5, column=1, value="No records in this register")
+        c.font = Font(italic=True, size=10, name="Arial", color=MUTED)
+        ws.merge_cells(f"A5:{get_column_letter(nc)}5")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[5].height = 24
+        total_row = 6
+    else:
+        for ri, row in enumerate(records):
+            rn   = 5 + ri
+            is_rev = extract_rev(row.get("docNo","")) > 0
+            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col)
+            bg     = OV if ov else (ALT if sr%2==0 else WHITE)
+            row_values = []
+
+            for ci, col in enumerate(all_cols, 1):
+                key = col["col_key"]
+                if key=="_sr":                  val = "" if is_rev else str(sr)
+                elif key=="expectedReplyDate":  val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
+                elif key=="duration":
+                    dur_val = compute_duration(row.get("issuedDate"),row.get("actualReplyDate"))
+                    val = str(dur_val) if dur_val is not None else ""
+                elif key=="issuedDate":         val = format_date(row.get(key,""))
+                elif key=="actualReplyDate":    val = format_date(row.get(key,""))
+                elif pr_details_key and key == pr_details_key:
+                    val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
+                else:                           val = str(row.get(key,"") or "")
+                val = _format_multiline_display_value(key, col["label"], val)
+                row_values.append(val)
+
+                if key == "fileLocation" and val and val.startswith("http"):
+                    c = ws.cell(row=rn, column=ci)
+                    c.value = "View"
+                    c.hyperlink = val
+                    c.font = Font(size=9,name="Arial",color="2563A8",underline="single")
+                else:
+                    c = ws.cell(row=rn, column=ci, value=val)
+                    if key == "duration" and val == "0":
+                        c.value = 0
+                    if key=="status" and val:
+                        bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
+                        c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
+                    elif key=="docNo":
+                        c.fill = fill(bg)
+                        c.font = Font(size=10,name="Consolas",bold=not is_rev,
+                                      color=MUTED if is_rev else PRIMARY)
+                    else:
+                        c.fill = fill(bg)
+                        c.font = Font(size=10,name="Arial",
+                                      color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
+                c.border    = thin()
+                c.alignment = Alignment(vertical="center", wrap_text=True,
+                                        horizontal="center" if _excel_center_col(key, col["label"]) else "left")
+            ws.row_dimensions[rn].height = _excel_row_height(row_values, base=20)
+            if not is_rev: sr += 1
+        total_row = 5 + len(records)
+
+    real = sum(1 for r in records if extract_rev(r.get("docNo",""))==0)
+    mcell(total_row, f"TOTAL: {real} documents  |  {len(records)} submissions", PRIMARY, sz=10, halign="left")
+    ws.row_dimensions[total_row].height = 22
+    if total_row >= 4:
+        ws.auto_filter.ref = f"A4:{get_column_letter(nc)}{max(4, total_row - 1)}"
+
+
 def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -716,8 +851,6 @@ def api_export_all(pid):
     u = current_user()
     if u: db.log_action(u["username"],"EXPORT_EXCEL",pid,detail="Export All")
     import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
 
     proj    = db.get_project(pid) or {}
     dts     = db.get_doc_types(pid)
@@ -747,98 +880,8 @@ def api_export_all(pid):
         is_pr = _is_pr_dt(dt)
         pr_details_key = _pr_details_key(cols) if is_pr else None
         pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
-        # always include tab (even if empty)
-
         ws = wb.create_sheet(title=dt["id"][:31])
-        ws.sheet_view.showGridLines = False
-        all_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
-        nc = len(all_cols)
-
-        from openpyxl.utils import get_column_letter as gcl
-        def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11):
-            c = ws.cell(row=row, column=1, value=val)
-            ws.merge_cells(f"A{row}:{gcl(nc)}{row}")
-            c.font = Font(bold=bold, color=fg, size=sz, name="Arial")
-            c.fill = fill(bg)
-            c.alignment = Alignment(horizontal="left", vertical="center")
-            return c
-
-        mcell(1, f"{dt['name'].upper()} - {proj.get('name','')} ({proj.get('code','')})",
-              PRIMARY, bold=True, sz=12)
-        ws.row_dimensions[1].height = 30
-        ws.row_dimensions[2].height = 4
-
-        ws.freeze_panes = "A4"
-        ws.print_title_rows = "3:3"
-        ws.sheet_view.zoomScale = 90
-        ws.sheet_properties.pageSetUpPr.fitToPage = True
-        ws.page_setup.orientation = "landscape"
-        ws.page_setup.fitToWidth = 1
-        ws.page_setup.fitToHeight = 0
-        ws.oddFooter.right.text = "Page &[Page] of &[Pages]"
-        ws.oddFooter.left.text = "Generated from DCR System"
-
-        for ci, col in enumerate(all_cols, 1):
-            ws.column_dimensions[gcl(ci)].width = _excel_column_width(col["col_key"], col["label"])
-            c = ws.cell(row=3, column=ci, value=col["label"])
-            c.font = Font(bold=True,color=WHITE,size=10,name="Arial")
-            c.fill = fill(PRIMARY)
-            c.alignment = Alignment(horizontal="center",vertical="center",wrap_text=True)
-            c.border = thin()
-        ws.row_dimensions[3].height = 22
-
-        sr = 1
-        if not records:
-            # Empty tab — write a "no records" row
-            c = ws.cell(row=4, column=1, value="No records in this register")
-            c.font = Font(italic=True, size=10, name="Arial", color="9CA3AF")
-            ws.merge_cells(f"A4:{gcl(nc)}4")
-            c.alignment = Alignment(horizontal="center", vertical="center")
-            ws.row_dimensions[4].height = 24
-        has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in all_cols)
-        for ri, row in enumerate(records):
-            rn = 4 + ri
-            is_rev = extract_rev(row.get("docNo","")) > 0
-            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col)
-            bg     = OV if ov else (ALT if sr%2==0 else WHITE)
-            row_values = []
-            for ci, col in enumerate(all_cols, 1):
-                key = col["col_key"]
-                if key=="_sr":                   val = "" if is_rev else str(sr)
-                elif key=="expectedReplyDate":   val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
-                elif key=="duration":
-                    dur_val = compute_duration(row.get("issuedDate"),row.get("actualReplyDate"))
-                    val = str(dur_val) if dur_val is not None else ""
-                elif key in ("issuedDate","actualReplyDate"): val = format_date(row.get(key,""))
-                elif pr_details_key and key == pr_details_key:
-                    val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
-                else:                            val = str(row.get(key,"") or "")
-                val = _format_multiline_display_value(key, col["label"], val)
-                row_values.append(val)
-                if key == "fileLocation" and val and val.startswith("http"):
-                    c = ws.cell(row=rn, column=ci)
-                    c.value = "View"
-                    c.hyperlink = val
-                    c.font = Font(size=9,name="Arial",color="2563A8",underline="single")
-                else:
-                    c = ws.cell(row=rn, column=ci, value=val)
-                    if key == "duration" and val == "0":
-                        c.value = 0
-                c.border = thin()
-                c.alignment = Alignment(vertical="center", wrap_text=True,
-                                        horizontal="center" if _excel_center_col(key, col["label"]) else "left")
-                if key=="status" and val:
-                    bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
-                    c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
-                elif key != "fileLocation" or not (val and val.startswith("http")):
-                    c.fill = fill(bg)
-                    c.font = Font(size=10,name="Arial",
-                                  color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
-            ws.row_dimensions[rn].height = _excel_row_height(row_values, base=20)
-            if not is_rev: sr += 1
-        last_row = 3 + len(records)
-        if last_row >= 3:
-            ws.auto_filter.ref = f"A3:{gcl(nc)}{last_row}"
+        _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map, pr_details_key)
 
     if not wb.sheetnames:
         ws = wb.create_sheet("Empty"); ws.cell(1,1,"No data")
@@ -852,12 +895,10 @@ def api_export_all(pid):
 @exporting_bp.route("/api/export/<pid>/<dt_id>")
 def api_export(pid, dt_id):
     import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
 
     proj    = db.get_project(pid) or {}
     cols    = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
-    records = db.get_records(pid, dt_id)
+    records = sorted(db.get_records(pid, dt_id), key=_doc_revision_sort_key)
     dts     = db.get_doc_types(pid)
     dt      = next((d for d in dts if d["id"] == dt_id), None)
     is_pr = _is_pr_dt(dt)
@@ -874,117 +915,10 @@ def api_export(pid, dt_id):
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-    PRIMARY = "1A3A5C"; PL = "2563A8"; WHITE = "FFFFFF"
-    ALT = "F8FAFC"; OV = "FFF5F5"; MUTED = "9CA3AF"
-
-    STATUS_XL = {
-        "A - Approved":              ("BBF7D0","166534"),
-        "B - Approved As Noted":     ("DCFCE7","14532D"),
-        "B,C - Approved & Resubmit": ("FED7AA","7C2D12"),
-        "C - Revise & Resubmit":     ("FCE7F3","831843"),
-        "D - Review not Required":   ("FECACA","7F1D1D"),
-        "Under Review":              ("FEF9C3","713F12"),
-        "Cancelled":                 ("EF4444","FFFFFF"),
-        "Open":                      ("FED7AA","7C2D12"),
-        "Closed":                    ("BFDBFE","1E3A5F"),
-        "Replied":                   ("D1FAE5","064E3B"),
-        "Pending":                   ("E0E7FF","312E81"),
-    }
-
-    def fill(c): return PatternFill("solid", fgColor=c)
-    def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
-
-    wb = openpyxl.Workbook(); ws = wb.active
-    ws.title = dt_id; ws.sheet_view.showGridLines = False
-
-    all_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
-    nc = len(all_cols)
-
-    def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11, halign="center"):
-        c = ws.cell(row=row, column=1, value=val)
-        ws.merge_cells(f"A{row}:{get_column_letter(nc)}{row}")
-        c.font = Font(bold=bold, color=fg, size=sz, name="Arial")
-        c.fill = fill(bg)
-        c.alignment = Alignment(horizontal=halign, vertical="center")
-        return c
-
-    mcell(1, f"DOCUMENT CONTROL REGISTER  —  {(dt['name'] if dt else dt_id).upper()}",
-          PRIMARY, bold=True, sz=13)
-    ws.row_dimensions[1].height = 36
-
-    info = "   |   ".join(f"{k}: {v}" for k,v in [
-        ("Project",proj.get("name","")),("Code",proj.get("code","")),
-        ("Client",proj.get("client","")),("Consultant",proj.get("mainConsultant","")),
-        ("Exported",datetime.datetime.now().strftime("%d/%b/%Y %H:%M"))] if v)
-    mcell(2, info, PL, sz=9); ws.row_dimensions[2].height=18
-    ws.row_dimensions[3].height = 4
-
-    for ci, col in enumerate(all_cols, 1):
-        ws.column_dimensions[get_column_letter(ci)].width = _excel_column_width(col["col_key"], col["label"])
-        c = ws.cell(row=4, column=ci, value=col["label"])
-        c.font = Font(bold=True,color=WHITE,size=10,name="Arial")
-        c.fill = fill(PRIMARY)
-        c.alignment = Alignment(horizontal="center",vertical="center",wrap_text=True)
-        c.border = thin()
-    ws.row_dimensions[4].height = 24
-
-    has_exp_col_s = any(c["col_key"]=="expectedReplyDate" for c in cols)
-    sr = 1
-    for ri, row in enumerate(records):
-        rn   = 5 + ri
-        is_rev = extract_rev(row.get("docNo","")) > 0
-        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col_s)
-        bg     = OV if ov else (ALT if sr%2==0 else WHITE)
-        row_values = []
-
-        for ci, col in enumerate(all_cols, 1):
-            key = col["col_key"]
-            if key=="_sr":                  val = "" if is_rev else str(sr)
-            elif key=="expectedReplyDate":  val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
-            elif key=="duration":
-                dur_val = compute_duration(row.get("issuedDate"),row.get("actualReplyDate"))
-                val = str(dur_val) if dur_val is not None else ""
-            elif key=="issuedDate":         val = format_date(row.get(key,""))
-            elif key=="actualReplyDate":    val = format_date(row.get(key,""))
-            elif pr_details_key and key == pr_details_key:
-                val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
-            else:                           val = str(row.get(key,"") or "")
-            val = _format_multiline_display_value(key, col["label"], val)
-            row_values.append(val)
-
-            # fileLocation → hyperlink "View"
-            if key == "fileLocation" and val and val.startswith("http"):
-                c = ws.cell(row=rn, column=ci)
-                c.value = "View"
-                c.hyperlink = val
-                c.font = Font(size=9,name="Arial",color="2563A8",underline="single")
-            else:
-                c = ws.cell(row=rn, column=ci, value=val)
-                # Duration 0 should show as number not empty
-                if key == "duration" and val == "0":
-                    c.value = 0
-                if key=="status" and val:
-                    bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
-                    c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
-                elif key=="docNo":
-                    c.fill = fill(bg)
-                    c.font = Font(size=10,name="Consolas",bold=not is_rev,
-                                  color=MUTED if is_rev else PRIMARY)
-                else:
-                    c.fill = fill(bg)
-                    c.font = Font(size=10,name="Arial",
-                                  color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
-            c.border    = thin()
-            c.alignment = Alignment(vertical="center", wrap_text=True,
-                                    horizontal="center" if _excel_center_col(key, col["label"]) else "left")
-        ws.row_dimensions[rn].height = _excel_row_height(row_values, base=20)
-        if not is_rev: sr += 1
-
-    tot = 5 + len(records)
-    real = sum(1 for r in records if extract_rev(r.get("docNo",""))==0)
-    mcell(tot, f"TOTAL: {real} documents  |  {len(records)} submissions", PRIMARY, sz=10, halign="left")
-    ws.row_dimensions[tot].height = 22
-
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = dt_id[:31]
+    _write_register_excel_sheet(ws, proj, dt or {"id": dt_id, "name": dt_id}, cols, records, pr_items_map, pr_details_key)
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     fname = f"{proj.get('code','DCR')}_{dt_id}_Register.xlsx"
     return send_file(buf, as_attachment=True, download_name=fname,
@@ -1324,3 +1258,5 @@ def api_import_project(pid):
     except Exception as e:
         logger.error("import_project_failed pid=%s ext=%s error=%s", pid, ext, e)
         return jsonify(ok=False, error=str(e)), 500
+
+
