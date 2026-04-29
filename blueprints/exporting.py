@@ -265,6 +265,109 @@ def _format_multiline_display_value(col_key, label, value):
     return text
 
 
+_REV_TOKEN_RE = re.compile(r"\bREV\s*[-_ ]?(\d+)\b", re.IGNORECASE)
+
+
+def normalize_doc_base(doc_no):
+    text = str(doc_no or "").strip()
+    if not text:
+        return ""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"(?i)(?:[\s/_-]+)?REV\s*[-_ ]?\d+\s*$", "", text).strip()
+    text = re.sub(r"(?i)\s+REV\s*[-_ ]?\d+\b", " ", text).strip()
+    return re.sub(r"\s+", " ", text) or str(doc_no or "").strip()
+
+
+def extract_rev_no(doc_no):
+    match = _REV_TOKEN_RE.search(str(doc_no or ""))
+    if not match:
+        return 0
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return 0
+
+
+def _natural_sort_key(value):
+    parts = re.split(r"(\d+)", str(value or ""))
+    return [int(part) if part.isdigit() else part.lower() for part in parts]
+
+
+def _doc_revision_sort_key(row):
+    doc_no = row.get("docNo", "") if isinstance(row, dict) else ""
+    base = normalize_doc_base(doc_no)
+    return (
+        _natural_sort_key(base),
+        extract_rev_no(doc_no),
+        _natural_sort_key(doc_no),
+        str(row.get("_id", "")) if isinstance(row, dict) else "",
+    )
+
+
+def _excel_column_width(col_key, label):
+    key = str(col_key or "").strip()
+    key_l = key.lower()
+    label_l = re.sub(r"[_./-]+", " ", str(label or "").strip().lower())
+    hay = f"{key_l} {label_l}"
+
+    if key == "_sr":
+        return 6
+    if key_l in ("docno", "doc_no") or "document no" in hay or "letter ref" in hay:
+        return 24
+    if "title" in hay or "subject" in hay or "description" in hay:
+        return 46
+    if "pr detail" in hay or key_l in ("prdetails", "pr_details"):
+        return 50
+    if "remarks" in hay or "comment" in hay or "note" in hay:
+        return 34
+    if "ms ref" in hay or "dwg" in hay or "item ref" in hay or "reference" in hay:
+        return 26
+    if "file" in hay or "location" in hay or "link" in hay:
+        return 22
+    if "prepared" in hay or "company" in hay or "client" in hay or "consultant" in hay or "contractor" in hay:
+        return 24
+    if label_l in ("from", "to") or key_l in ("from", "to"):
+        return 18
+    if "discipline" in hay:
+        return 16
+    if "sub trade" in hay or "trade" in hay:
+        return 18
+    if "status" in hay:
+        return 24
+    if "date" in hay:
+        return 14
+    if "duration" in hay:
+        return 10
+    if "floor" in hay:
+        return 18
+    if "direction" in hay or "revision" in hay:
+        return 12
+    return 16
+
+
+def _excel_center_col(col_key, label):
+    key = str(col_key or "").strip()
+    label_l = str(label or "").strip().lower()
+    return (
+        key in {"_sr", "duration", "issuedDate", "expectedReplyDate", "actualReplyDate"}
+        or "date" in key.lower()
+        or "date" in label_l
+    )
+
+
+def _excel_row_height(values, base=20):
+    max_lines = 1
+    for value in values:
+        text = str(value or "")
+        if not text:
+            continue
+        explicit = text.count("\n") + 1
+        wrapped = max(1, min(4, (len(text) // 55) + 1))
+        max_lines = max(max_lines, explicit, wrapped)
+    return max(base, min(62, 15 * max_lines))
+
+
 def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -640,7 +743,7 @@ def api_export_all(pid):
 
     for dt in dts:
         cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
-        records = db.get_records(pid, dt["id"])
+        records = sorted(db.get_records(pid, dt["id"]), key=_doc_revision_sort_key)
         is_pr = _is_pr_dt(dt)
         pr_details_key = _pr_details_key(cols) if is_pr else None
         pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
@@ -660,18 +763,23 @@ def api_export_all(pid):
             c.alignment = Alignment(horizontal="left", vertical="center")
             return c
 
-        mcell(1, f"{dt['name'].upper()} — {proj.get('name','')} ({proj.get('code','')})",
+        mcell(1, f"{dt['name'].upper()} - {proj.get('name','')} ({proj.get('code','')})",
               PRIMARY, bold=True, sz=12)
         ws.row_dimensions[1].height = 30
         ws.row_dimensions[2].height = 4
 
-        COL_W = {"_sr":5,"docNo":22,"discipline":14,"trade":14,"title":38,"floor":12,
-                 "itemRef":16,"issuedDate":13,"expectedReplyDate":14,"actualReplyDate":13,
-                 "status":24,"duration":10,"remarks":28,"fileLocation":18}
-        CENTER = {"_sr","duration","issuedDate","expectedReplyDate","actualReplyDate"}
+        ws.freeze_panes = "A4"
+        ws.print_title_rows = "3:3"
+        ws.sheet_view.zoomScale = 90
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.orientation = "landscape"
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.oddFooter.right.text = "Page &[Page] of &[Pages]"
+        ws.oddFooter.left.text = "Generated from DCR System"
 
         for ci, col in enumerate(all_cols, 1):
-            ws.column_dimensions[gcl(ci)].width = COL_W.get(col["col_key"],13)
+            ws.column_dimensions[gcl(ci)].width = _excel_column_width(col["col_key"], col["label"])
             c = ws.cell(row=3, column=ci, value=col["label"])
             c.font = Font(bold=True,color=WHITE,size=10,name="Arial")
             c.fill = fill(PRIMARY)
@@ -693,7 +801,7 @@ def api_export_all(pid):
             is_rev = extract_rev(row.get("docNo","")) > 0
             ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col)
             bg     = OV if ov else (ALT if sr%2==0 else WHITE)
-            ws.row_dimensions[rn].height = 18
+            row_values = []
             for ci, col in enumerate(all_cols, 1):
                 key = col["col_key"]
                 if key=="_sr":                   val = "" if is_rev else str(sr)
@@ -706,6 +814,7 @@ def api_export_all(pid):
                     val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
                 else:                            val = str(row.get(key,"") or "")
                 val = _format_multiline_display_value(key, col["label"], val)
+                row_values.append(val)
                 if key == "fileLocation" and val and val.startswith("http"):
                     c = ws.cell(row=rn, column=ci)
                     c.value = "View"
@@ -717,7 +826,7 @@ def api_export_all(pid):
                         c.value = 0
                 c.border = thin()
                 c.alignment = Alignment(vertical="center", wrap_text=True,
-                                        horizontal="center" if key in CENTER else "left")
+                                        horizontal="center" if _excel_center_col(key, col["label"]) else "left")
                 if key=="status" and val:
                     bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
                     c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
@@ -725,7 +834,11 @@ def api_export_all(pid):
                     c.fill = fill(bg)
                     c.font = Font(size=10,name="Arial",
                                   color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
+            ws.row_dimensions[rn].height = _excel_row_height(row_values, base=20)
             if not is_rev: sr += 1
+        last_row = 3 + len(records)
+        if last_row >= 3:
+            ws.auto_filter.ref = f"A3:{gcl(nc)}{last_row}"
 
     if not wb.sheetnames:
         ws = wb.create_sheet("Empty"); ws.cell(1,1,"No data")
@@ -806,13 +919,8 @@ def api_export(pid, dt_id):
     mcell(2, info, PL, sz=9); ws.row_dimensions[2].height=18
     ws.row_dimensions[3].height = 4
 
-    COL_W = {"_sr":5,"docNo":22,"discipline":14,"trade":14,"title":38,"floor":12,
-             "itemRef":16,"issuedDate":13,"expectedReplyDate":14,"actualReplyDate":13,
-             "status":24,"duration":10,"remarks":28,"fileLocation":18}
-    CENTER = {"_sr","duration","issuedDate","expectedReplyDate","actualReplyDate"}
-
     for ci, col in enumerate(all_cols, 1):
-        ws.column_dimensions[get_column_letter(ci)].width = COL_W.get(col["col_key"],13)
+        ws.column_dimensions[get_column_letter(ci)].width = _excel_column_width(col["col_key"], col["label"])
         c = ws.cell(row=4, column=ci, value=col["label"])
         c.font = Font(bold=True,color=WHITE,size=10,name="Arial")
         c.fill = fill(PRIMARY)
@@ -827,7 +935,7 @@ def api_export(pid, dt_id):
         is_rev = extract_rev(row.get("docNo","")) > 0
         ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col_s)
         bg     = OV if ov else (ALT if sr%2==0 else WHITE)
-        ws.row_dimensions[rn].height = 20
+        row_values = []
 
         for ci, col in enumerate(all_cols, 1):
             key = col["col_key"]
@@ -842,6 +950,7 @@ def api_export(pid, dt_id):
                 val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
             else:                           val = str(row.get(key,"") or "")
             val = _format_multiline_display_value(key, col["label"], val)
+            row_values.append(val)
 
             # fileLocation → hyperlink "View"
             if key == "fileLocation" and val and val.startswith("http"):
@@ -867,7 +976,8 @@ def api_export(pid, dt_id):
                                   color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
             c.border    = thin()
             c.alignment = Alignment(vertical="center", wrap_text=True,
-                                    horizontal="center" if key in CENTER else "left")
+                                    horizontal="center" if _excel_center_col(key, col["label"]) else "left")
+        ws.row_dimensions[rn].height = _excel_row_height(row_values, base=20)
         if not is_rev: sr += 1
 
     tot = 5 + len(records)
