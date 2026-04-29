@@ -346,6 +346,87 @@ def _excel_column_width(col_key, label):
     return 16
 
 
+def _excel_register_column_width(col):
+    key = str(col.get("col_key", "") or "").strip()
+    key_l = key.lower()
+    label = str(col.get("label", "") or "").strip()
+    label_l = re.sub(r"[_./-]+", " ", label.lower())
+    hay = f"{key_l} {label_l}"
+
+    if key == "_sr":
+        return 5.5
+    if key_l in ("docno", "doc_no") or "document no" in hay or "letter ref" in hay:
+        return 26
+    if "pr detail" in hay or key_l in ("prdetails", "pr_details"):
+        return 50
+    if "title" in hay or "subject" in hay:
+        return 48
+    if "description" in hay or "scope" in hay:
+        return 42
+    if "remarks" in hay or "comment" in hay or "note" in hay:
+        return 28
+    if "ms ref" in hay or "dwg" in hay or "item ref" in hay or "parent letter" in hay:
+        return 24
+    if "prepared" in hay or "engineer" in hay or "person" in hay:
+        return 24
+    if "file" in hay or "location" in hay or "link" in hay:
+        return 16
+    if label_l in ("from", "to") or key_l in ("from", "to"):
+        return 20
+    if "company" in hay or "client" in hay or "consultant" in hay or "contractor" in hay or "party" in hay:
+        return 22
+    if "discipline" in hay:
+        return 16
+    if "sub trade" in hay or "trade" in hay or "brand" in hay or "floor" in hay or "level" in hay:
+        return 16
+    if "status" in hay:
+        return 22
+    if "duration" in hay:
+        return 9.5
+    if "date" in hay:
+        return 13.5
+    if "direction" in hay or "revision" in hay:
+        return 12
+    if "qty" in hay or "quantity" in hay or "unit" in hay:
+        return 11
+    return _excel_column_width(key, label)
+
+
+def _excel_sheet_column_widths(cols):
+    """Build the Excel width profile from the actual ordered visible register columns."""
+    all_cols = [{"col_key":"_sr","label":"Sr."}] + [
+        {"col_key":c["col_key"],"label":c["label"]} for c in cols
+    ]
+    widths = [_excel_register_column_width(c) for c in all_cols]
+
+    # Keep dense sheets readable without flattening every register into one generic profile.
+    visible_keys = [str(c.get("col_key", "") or "").lower() for c in cols]
+    visible_labels = [str(c.get("label", "") or "").lower() for c in cols]
+    is_letters = any(k in {"from", "to", "direction"} for k in visible_keys) and any("subject" in l for l in visible_labels)
+    is_pr = any("pr detail" in l or k in {"prdetails", "pr_details"} for k, l in zip(visible_keys, visible_labels))
+
+    if is_letters:
+        for i, col in enumerate(all_cols):
+            key = str(col.get("col_key", "") or "").lower()
+            label = str(col.get("label", "") or "").lower()
+            if "subject" in label:
+                widths[i] = 52
+            elif key in {"from", "to"}:
+                widths[i] = 21
+            elif "direction" in label or key == "direction":
+                widths[i] = 12
+    if is_pr:
+        for i, col in enumerate(all_cols):
+            label = str(col.get("label", "") or "").lower()
+            key = str(col.get("col_key", "") or "").lower()
+            if "pr detail" in label or key in {"prdetails", "pr_details"}:
+                widths[i] = 52
+            elif "ms ref" in label:
+                widths[i] = 26
+
+    return widths
+
+
 def _excel_center_col(col_key, label):
     key = str(col_key or "").strip()
     label_l = str(label or "").strip().lower()
@@ -428,8 +509,9 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     ws.oddFooter.right.text = "Page &[Page] of &[Pages]"
     ws.oddFooter.left.text = "Generated from DCR System"
 
+    col_widths = _excel_sheet_column_widths(cols)
     for ci, col in enumerate(all_cols, 1):
-        ws.column_dimensions[get_column_letter(ci)].width = _excel_column_width(col["col_key"], col["label"])
+        ws.column_dimensions[get_column_letter(ci)].width = col_widths[ci - 1]
         c = ws.cell(row=4, column=ci, value=col["label"])
         c.font = Font(bold=True,color=WHITE,size=10,name="Arial")
         c.fill = fill(PRIMARY)
