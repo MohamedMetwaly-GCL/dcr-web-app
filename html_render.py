@@ -2397,7 +2397,7 @@ const DEFAULT_EXPECTED_REPLY_RULE={{
   weekend_mode:'friday_only',
   exclude_official_holidays:true
 }};
-const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,lists:{{}},prItemsCache:{{}}}};
+const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,revisionDraftActive:false,lists:{{}},prItemsCache:{{}}}};
 
 function isPRTab(){{
   const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
@@ -2980,6 +2980,36 @@ function syncCheckboxRowHighlights(){{
   }});
 }}
 
+function isVolatileRevisionDraftField(col){{
+  const key=String(col?.col_key||'').trim().toLowerCase();
+  const label=String(col?.label||'').trim().toLowerCase();
+  const type=String(col?.col_type||'').trim().toLowerCase();
+  const text=(key+' '+label).replace(/[_-]+/g,' ');
+  if(!key||key==='docno')return false;
+  if(type==='auto_date'||type==='auto_num'||type==='duration_calc')return true;
+  if(type==='date')return true;
+  const volatileTerms=[
+    'issued','issue date','submitted','submission','submittal','received','receive date',
+    'expected reply','actual reply','reply date','reply','response','status','duration',
+    'remark','comment','file location','attachment','link','transmittal','return date',
+    'approval','approved','review','code','reference no','reply reference','parent letter'
+  ];
+  return volatileTerms.some(term=>text.includes(term));
+}}
+
+function sanitizeRevisionDraftData(oldRecord,newDocNo){{
+  const draft={{}};
+  const cols=state.allTabCols||state.cols||[];
+  cols.forEach(col=>{{
+    const key=col.col_key;
+    if(!key||key.startsWith('_'))return;
+    draft[key]=isVolatileRevisionDraftField(col)?'':(oldRecord?.[key]??'');
+  }});
+  draft.docNo=newDocNo;
+  draft._cloneSourceId=oldRecord?._id;
+  return draft;
+}}
+
 function renderRows(){{
   const body=document.getElementById('tbody');body.innerHTML='';
   const isPrTab=isPRTab();
@@ -3517,14 +3547,16 @@ function buildRevisionDraftFromSelected(){{
   if(!selected)return null;
   const nextDocNo=incrementRevisionNumber(selected.docNo||'');
   if(!nextDocNo)return null;
-  return {{...selected,docNo:nextDocNo,_cloneSourceId:selected._id}};
+  return sanitizeRevisionDraftData(selected,nextDocNo);
 }}
 
 function addRecord(){{
   state.editId=null;
+  state.revisionDraftActive=false;
   const draft=buildRevisionDraftFromSelected();
   if(draft===false)return;
   if(draft){{
+    state.revisionDraftActive=true;
     document.getElementById('rec-title').textContent='Add Revision Draft';
     buildForm(draft,{{mode:'revisionDraft'}});
   }}else{{
@@ -3533,7 +3565,7 @@ function addRecord(){{
   }}
   openM('rec-modal');
 }}
-function editRec(id){{state.editId=id;const row=state.recs.find(r=>r._id===id);if(!row)return;document.getElementById('rec-title').textContent='Edit Document';buildForm(row);openM('rec-modal');}}
+function editRec(id){{state.editId=id;state.revisionDraftActive=false;const row=state.recs.find(r=>r._id===id);if(!row)return;document.getElementById('rec-title').textContent='Edit Document';buildForm(row);openM('rec-modal');}}
 
 async function buildForm(row,opts={{}}){{
   const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols)return;
@@ -4016,6 +4048,7 @@ async function saveRecord(){{
   if(state.editId)data._id=state.editId;
   const r=await apiFetch('/api/records/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify(data)}});
   if(r&&r.ok){{
+    const wasRevisionDraft=state.revisionDraftActive&&!state.editId;
     if(isPRTab()){{
       const items=getPrItemsFromEditor();
       const recId=r.id||state.editId;
@@ -4027,6 +4060,8 @@ async function saveRecord(){{
         toast('Items save failed: '+e.message,'er');return;
       }}
     }}
+    if(wasRevisionDraft)clearSel();
+    state.revisionDraftActive=false;
     closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');
   }}
   else toast('Error saving','er');
