@@ -346,7 +346,7 @@ def _excel_column_width(col_key, label):
     return 16
 
 
-def _excel_register_column_width(col):
+def _field_width_role(col):
     key = str(col.get("col_key", "") or "").strip()
     key_l = key.lower()
     label = str(col.get("label", "") or "").strip()
@@ -354,75 +354,138 @@ def _excel_register_column_width(col):
     hay = f"{key_l} {label_l}"
 
     if key == "_sr":
-        return 5.5
+        return "serial"
     if key_l in ("docno", "doc_no") or "document no" in hay or "letter ref" in hay:
-        return 26
+        return "document_no"
     if "pr detail" in hay or key_l in ("prdetails", "pr_details"):
-        return 50
+        return "very_long"
     if "title" in hay or "subject" in hay:
-        return 48
-    if "description" in hay or "scope" in hay:
-        return 42
+        return "very_long"
+    if "item description" in hay or "description" in hay or "scope" in hay:
+        return "long"
     if "remarks" in hay or "comment" in hay or "note" in hay:
-        return 28
-    if "ms ref" in hay or "dwg" in hay or "item ref" in hay or "parent letter" in hay:
-        return 24
-    if "prepared" in hay or "engineer" in hay or "person" in hay:
-        return 24
+        return "long"
     if "file" in hay or "location" in hay or "link" in hay:
-        return 16
+        return "long"
+    if "ms ref" in hay or "dwg" in hay or "item ref" in hay or "parent letter" in hay or "reference" in hay:
+        return "medium_wide"
+    if "prepared" in hay or "engineer" in hay or "person" in hay:
+        return "medium_wide"
     if label_l in ("from", "to") or key_l in ("from", "to"):
-        return 20
+        return "medium"
     if "company" in hay or "client" in hay or "consultant" in hay or "contractor" in hay or "party" in hay:
-        return 22
+        return "medium"
     if "discipline" in hay:
-        return 16
+        return "medium"
     if "sub trade" in hay or "trade" in hay or "brand" in hay or "floor" in hay or "level" in hay:
-        return 16
+        return "medium"
     if "status" in hay:
-        return 22
+        return "compact"
     if "duration" in hay:
-        return 9.5
+        return "compact"
     if "date" in hay:
-        return 13.5
+        return "date"
     if "direction" in hay or "revision" in hay:
-        return 12
+        return "compact"
     if "qty" in hay or "quantity" in hay or "unit" in hay:
-        return 11
-    return _excel_column_width(key, label)
+        return "compact"
+    return "default"
 
 
-def _excel_sheet_column_widths(cols):
+def _excel_width_from_role(role):
+    return {
+        "serial": 5.5,
+        "document_no": 28,
+        "very_long": 56,
+        "long": 42,
+        "medium_wide": 26,
+        "medium": 18,
+        "date": 14,
+        "compact": 11,
+        "default": 16,
+    }.get(role, 16)
+
+
+def _excel_width_from_web_px(px, role):
+    try:
+        px = float(px)
+    except (TypeError, ValueError):
+        return None
+    if px <= 0:
+        return None
+    min_by_role = {
+        "serial": 5,
+        "document_no": 24,
+        "very_long": 42,
+        "long": 30,
+        "medium_wide": 22,
+        "medium": 15,
+        "date": 13,
+        "compact": 9,
+        "default": 13,
+    }
+    max_by_role = {
+        "serial": 8,
+        "document_no": 36,
+        "very_long": 68,
+        "long": 52,
+        "medium_wide": 34,
+        "medium": 26,
+        "date": 18,
+        "compact": 18,
+        "default": 24,
+    }
+    width = px / 7.2
+    return max(min_by_role.get(role, 12), min(max_by_role.get(role, 28), width))
+
+
+def _excel_sheet_column_widths(cols, dt_name=None, web_widths=None):
     """Build the Excel width profile from the actual ordered visible register columns."""
+    web_widths = web_widths or {}
     all_cols = [{"col_key":"_sr","label":"Sr."}] + [
         {"col_key":c["col_key"],"label":c["label"]} for c in cols
     ]
-    widths = [_excel_register_column_width(c) for c in all_cols]
+    roles = [_field_width_role(c) for c in all_cols]
+    widths = []
+    for col, role in zip(all_cols, roles):
+        live_width = _excel_width_from_web_px(web_widths.get(col["col_key"]), role)
+        widths.append(live_width if live_width is not None else _excel_width_from_role(role))
 
     # Keep dense sheets readable without flattening every register into one generic profile.
+    dt_hint = str(dt_name or "").lower()
     visible_keys = [str(c.get("col_key", "") or "").lower() for c in cols]
     visible_labels = [str(c.get("label", "") or "").lower() for c in cols]
-    is_letters = any(k in {"from", "to", "direction"} for k in visible_keys) and any("subject" in l for l in visible_labels)
-    is_pr = any("pr detail" in l or k in {"prdetails", "pr_details"} for k, l in zip(visible_keys, visible_labels))
+    is_letters = (
+        "letter" in dt_hint
+        or any(k in {"from", "to", "fromparty", "toparty", "direction"} for k in visible_keys)
+        and any("subject" in l or "letter" in l for l in visible_labels)
+    )
+    is_pr = (
+        "purchase" in dt_hint
+        or "requisition" in dt_hint
+        or any("pr detail" in l or k in {"prdetails", "pr_details"} for k, l in zip(visible_keys, visible_labels))
+    )
 
     if is_letters:
         for i, col in enumerate(all_cols):
             key = str(col.get("col_key", "") or "").lower()
             label = str(col.get("label", "") or "").lower()
             if "subject" in label:
-                widths[i] = 52
-            elif key in {"from", "to"}:
-                widths[i] = 21
+                widths[i] = max(widths[i], 58)
+            elif key in {"from", "to", "fromparty", "toparty"}:
+                widths[i] = max(widths[i], 22)
+            elif "parent letter" in label:
+                widths[i] = max(widths[i], 30)
             elif "direction" in label or key == "direction":
-                widths[i] = 12
+                widths[i] = min(widths[i], 12)
     if is_pr:
         for i, col in enumerate(all_cols):
             label = str(col.get("label", "") or "").lower()
             key = str(col.get("col_key", "") or "").lower()
             if "pr detail" in label or key in {"prdetails", "pr_details"}:
-                widths[i] = 52
+                widths[i] = max(widths[i], 60)
             elif "ms ref" in label:
-                widths[i] = 26
+                widths[i] = max(widths[i], 28)
 
     return widths
 
@@ -449,7 +512,7 @@ def _excel_row_height(values, base=20):
     return max(base, min(62, 15 * max_lines))
 
 
-def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, pr_details_key=None):
+def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, pr_details_key=None, web_widths=None):
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
@@ -509,7 +572,7 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     ws.oddFooter.right.text = "Page &[Page] of &[Pages]"
     ws.oddFooter.left.text = "Generated from DCR System"
 
-    col_widths = _excel_sheet_column_widths(cols)
+    col_widths = _excel_sheet_column_widths(cols, dt_name=dt_name, web_widths=web_widths)
     for ci, col in enumerate(all_cols, 1):
         ws.column_dimensions[get_column_letter(ci)].width = col_widths[ci - 1]
         c = ws.cell(row=4, column=ci, value=col["label"])
@@ -962,8 +1025,9 @@ def api_export_all(pid):
         is_pr = _is_pr_dt(dt)
         pr_details_key = _pr_details_key(cols) if is_pr else None
         pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
+        web_widths = db.get_col_widths(pid, dt["id"])
         ws = wb.create_sheet(title=dt["id"][:31])
-        _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map, pr_details_key)
+        _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map, pr_details_key, web_widths)
 
     if not wb.sheetnames:
         ws = wb.create_sheet("Empty"); ws.cell(1,1,"No data")
@@ -986,6 +1050,7 @@ def api_export(pid, dt_id):
     is_pr = _is_pr_dt(dt)
     pr_details_key = _pr_details_key(cols) if is_pr else None
     pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
+    web_widths = db.get_col_widths(pid, dt_id)
 
     if is_pr:
         buf = _build_pr_register_excel(proj, dt or {"id": dt_id, "name": dt_id}, records, pr_items_map, pr_details_key)
@@ -1000,7 +1065,7 @@ def api_export(pid, dt_id):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = dt_id[:31]
-    _write_register_excel_sheet(ws, proj, dt or {"id": dt_id, "name": dt_id}, cols, records, pr_items_map, pr_details_key)
+    _write_register_excel_sheet(ws, proj, dt or {"id": dt_id, "name": dt_id}, cols, records, pr_items_map, pr_details_key, web_widths)
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     fname = f"{proj.get('code','DCR')}_{dt_id}_Register.xlsx"
     return send_file(buf, as_attachment=True, download_name=fname,
