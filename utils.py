@@ -91,7 +91,7 @@ def add_calendar_days(start, days):
     if isinstance(start, str): start = datetime.date.fromisoformat(start)
     return (start + datetime.timedelta(days=int(days or 0))).strftime("%Y-%m-%d")
 
-def working_days_between(start, end):
+def working_days_between(start, end, weekend_mode="friday_only", exclude_official_holidays=True):
     """
     Count working days between two dates (exclusive of start, inclusive of end).
     Rules:
@@ -111,11 +111,35 @@ def working_days_between(start, end):
         return 0
     count, cur = 0, start + datetime.timedelta(days=1)
     while cur <= end:
-        if is_working_day(cur): count += 1
+        if is_working_day(cur, weekend_mode, exclude_official_holidays): count += 1
         cur += datetime.timedelta(days=1)
     return count
 
-def compute_duration(issued_date, actual_reply):
+def days_between_by_rule(start, end, rule=None):
+    """
+    Count days between two dates using the project expected-reply rule.
+    Keeps the existing Duration endpoint semantics: exclusive of start, inclusive of end.
+    """
+    if not start or not end:
+        return None
+    try:
+        if isinstance(start, str): start = datetime.date.fromisoformat(str(start)[:10])
+        if isinstance(end,   str): end   = datetime.date.fromisoformat(str(end)[:10])
+    except Exception:
+        return None
+    if end <= start:
+        return 0
+    cfg = normalize_expected_reply_rule(rule)
+    if cfg["calculation_mode"] == "calendar_days":
+        return (end - start).days
+    return working_days_between(
+        start,
+        end,
+        cfg["weekend_mode"],
+        cfg["exclude_official_holidays"],
+    )
+
+def compute_duration(issued_date, actual_reply, rule=None):
     """
     Working days between issued and reply dates.
     If actual_reply is absent → compute from issued to Yesterday (today-1).
@@ -125,11 +149,11 @@ def compute_duration(issued_date, actual_reply):
     if not issued_date:
         return None
     if actual_reply:
-        result = working_days_between(issued_date, actual_reply)
+        result = days_between_by_rule(issued_date, actual_reply, rule)
         return max(0, result) if result is not None else 0
     else:
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-        result = working_days_between(issued_date, yesterday)
+        result = days_between_by_rule(issued_date, yesterday, rule)
         return max(0, result) if result is not None else 0
 
 def extract_rev(doc_no):

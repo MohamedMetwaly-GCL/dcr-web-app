@@ -95,7 +95,7 @@ def api_records(pid, dt_id):
             row["_expectedReplyDate"] = ""
         issued   = row.get("issuedDate","")
         actual   = row.get("actualReplyDate","")
-        dur = compute_duration(issued, actual)
+        dur = compute_duration(issued, actual, expected_reply_rule)
         row["_duration"] = str(dur) if dur is not None else ""
         row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply, expected_reply_rule)
         row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
