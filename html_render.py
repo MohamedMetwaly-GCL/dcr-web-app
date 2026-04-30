@@ -2860,7 +2860,7 @@ function incrementRevisionNumber(docNo){{
 }}
 
 function suggestNextDocNoFromRows(rows){{
-  const parsed=(rows||[]).map(r=>parseDocNo(r.docNo||'')).filter(p=>p&&p.num>0);
+  const parsed=(rows||[]).map((r,idx)=>({{...parseDocNo(r.docNo||''),_visibleIdx:idx}})).filter(p=>p&&p.num>0);
   if(!parsed.length)return '';
   const families=new Map();
   parsed.forEach(p=>{{
@@ -2868,8 +2868,8 @@ function suggestNextDocNoFromRows(rows){{
     if(!families.has(key))families.set(key,[]);
     families.get(key).push(p);
   }});
-  if(families.size!==1)return '';
-  const family=[...families.values()][0];
+  const lastVisible=parsed.reduce((a,b)=>b._visibleIdx>a._visibleIdx?b:a,parsed[0]);
+  const family=families.get(String(lastVisible.prefix||'').toLowerCase())||[];
   if(!family.length)return '';
   family.sort((a,b)=>a.num-b.num);
   const base=family[family.length-1];
@@ -2957,6 +2957,22 @@ function isInteractiveRowTarget(target){{
   return !!target.closest('button,a,input,select,textarea,label,.pr-items-row');
 }}
 
+function getCheckedRecordIds(){{
+  return [...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
+}}
+
+function getCheckedRecordRows(){{
+  const ids=new Set(getCheckedRecordIds().map(String));
+  return (state.recs||[]).filter(r=>ids.has(String(r._id)));
+}}
+
+function syncCheckboxRowHighlights(){{
+  document.querySelectorAll('#regtbl tbody tr[data-rec-id]').forEach(tr=>{{
+    const cb=tr.querySelector('.chkcell input[data-id]');
+    tr.classList.toggle('row-selected',!!cb?.checked);
+  }});
+}}
+
 function renderRows(){{
   const body=document.getElementById('tbody');body.innerHTML='';
   const isPrTab=isPRTab();
@@ -3012,11 +3028,6 @@ function renderRows(){{
   rows.forEach((row,idx)=>{{
     const tr=document.createElement('tr');
     tr.dataset.recId=row._id;
-    if(String(state.selectedRowId||'')===String(row._id))tr.classList.add('row-selected');
-    tr.onclick=e=>{{
-      if(isInteractiveRowTarget(e.target))return;
-      setSelectedRegisterRow(row._id);
-    }};
     if(row._overdue)tr.classList.add('ov');
     else if(row._isRev)tr.classList.add('rv');
     else if(idx%2===1)tr.classList.add('alt');
@@ -3490,7 +3501,12 @@ function doSearch(){{clearTimeout(_st);_st=setTimeout(()=>loadRecords(),250);}}
 // Add/Edit Record
 function buildRevisionDraftFromSelected(){{
   if(isLTRTab())return null;
-  const selected=getSelectedRegisterRow();
+  const selectedRows=getCheckedRecordRows();
+  if(selectedRows.length>1){{
+    alert('Please select only one document to create a new revision.');
+    return false;
+  }}
+  const selected=selectedRows[0]||null;
   if(!selected)return null;
   const nextDocNo=incrementRevisionNumber(selected.docNo||'');
   if(!nextDocNo)return null;
@@ -3500,6 +3516,7 @@ function buildRevisionDraftFromSelected(){{
 function addRecord(){{
   state.editId=null;
   const draft=buildRevisionDraftFromSelected();
+  if(draft===false)return;
   if(draft){{
     document.getElementById('rec-title').textContent='Add Revision Draft';
     buildForm(draft,{{mode:'revisionDraft'}});
@@ -4021,9 +4038,10 @@ function updBulk(){{
   document.getElementById('bulkbar').classList.toggle('show',checked.length>0);
   const all=document.querySelectorAll('.chkcell input[data-id]');
   const ca=document.getElementById('chkall');if(ca)ca.checked=all.length>0&&checked.length===all.length;
+  syncCheckboxRowHighlights();
 }}
 function selAll(v){{document.querySelectorAll('.chkcell input[data-id]').forEach(cb=>cb.checked=v);updBulk();}}
-function clearSel(){{document.querySelectorAll('.chkcell input').forEach(cb=>cb.checked=false);setSelectedRegisterRow(null);updBulk();}}
+function clearSel(){{document.querySelectorAll('.chkcell input').forEach(cb=>cb.checked=false);updBulk();}}
 async function bulkDel(){{
   const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
   if(!ids.length||!confirm('Delete '+ids.length+' records?'))return;
