@@ -100,15 +100,15 @@ body.dark .mfoot{background:#101a29}
 .stitle{font-size:10.5px;font-weight:700;color:var(--pr);text-transform:uppercase;
   letter-spacing:.5px;margin:10px 0 6px;padding-bottom:4px;border-bottom:1.5px solid var(--pr)}
 #tab-overview > .stitle:first-child{display:none}
-.record-form-shell{display:flex;flex-direction:column;gap:12px}
+.record-form-shell{display:flex;flex-direction:column;gap:9px}
 .form-section{background:linear-gradient(180deg,#fcfdff,#f7fafe);border:1px solid var(--bd);border-radius:12px;
-  padding:12px 12px 10px;box-shadow:0 2px 8px rgba(15,23,42,.04)}
-.form-section-header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}
+  padding:9px 10px 8px;box-shadow:0 2px 8px rgba(15,23,42,.04)}
+.form-section-header{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:7px}
 .form-section-title{font-size:10px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}
-.form-section-sub{font-size:10px;color:var(--mu);line-height:1.45;margin-top:3px}
-.form-section-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 12px;align-items:start}
+.form-section-sub{font-size:9px;color:var(--mu);line-height:1.3;margin-top:2px}
+.form-section-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;align-items:start}
 .form-section-grid .fg{min-width:0}
-.form-section-grid .fg label{margin-bottom:4px}
+.form-section-grid .fg label{margin-bottom:2px}
 .form-section-grid .fg.span-2{grid-column:span 2}
 .form-section-grid textarea{min-height:82px;resize:vertical}
 .form-section-grid .fg.full textarea{min-height:98px}
@@ -127,9 +127,9 @@ body.dark .fg input::placeholder,body.dark .fg textarea::placeholder{color:#7f93
   .mbody{padding:10px 12px}
   .mfoot{padding:8px 12px;gap:7px;position:sticky;bottom:0}
   .btn{padding:7px 12px;font-size:11px}
-  .form-section{padding:9px 10px 8px;border-radius:10px}
-  .record-form-shell{gap:8px}
-  .form-section-header{margin-bottom:7px}
+  .form-section{padding:7px 8px 6px;border-radius:10px}
+  .record-form-shell{gap:6px}
+  .form-section-header{margin-bottom:5px}
   .form-section-title{font-size:9px}
   .form-section-sub{font-size:9px;line-height:1.25;margin-top:2px}
   .form-section-grid{grid-template-columns:1fr;gap:8px 10px}
@@ -3636,6 +3636,7 @@ async function buildForm(row,opts={{}}){{
   const formRoot=document.getElementById('rec-form');formRoot.innerHTML='';
   const sectionBodies={{}};
   let nextNo='';
+  const isAddMode=!row&&!opts.mode;
   if(!row){{
     nextNo=String(opts.suggestedDocNo||'').trim();
     if(!nextNo){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
@@ -3668,7 +3669,7 @@ async function buildForm(row,opts={{}}){{
   if(isNocTab){{
     const sf=makeReadOnlyField('Stage Progress',getNocStageProgress(row||{{}}));
     nocStageInp=sf.inp;
-    getOrCreateFormSection(formRoot,sectionBodies,'Calculated / System Fields').appendChild(sf.grp);
+    if(!isAddMode)getOrCreateFormSection(formRoot,sectionBodies,'Calculated / System Fields').appendChild(sf.grp);
   }}
   if(isLtrTab){{
     const hid=document.createElement('input');
@@ -3688,6 +3689,7 @@ async function buildForm(row,opts={{}}){{
     const ltrRole=isLtrTab?getLTRFieldRole(col):'';
     const val=(isLtrTab&&ltrRole)?(row?.[key]||getLTRValue(row,allCols,ltrRole)||''):(row?.[key]||'');
     if(AUTO.has(col.col_key)||isCalculatedFormField(col)){{
+      if(isAddMode)continue;
       const inp=document.createElement('input');inp.id='f-'+key;inp.value=getCalculatedDisplayValue(col,row);
       inp.readOnly=true;
       inp.placeholder='Calculated automatically';
@@ -3986,6 +3988,23 @@ function getFormSectionHint(title){{
   return hints[title]||'Structured fields for this document section';
 }}
 
+const FORM_SECTION_ORDER=[
+  'Core Register Fields',
+  'References / Technical Fields',
+  'Dates / Timeline',
+  'Status / Workflow',
+  'Files / Notes',
+  'Commercial & Quantities',
+  'Other Dynamic Fields',
+  'Calculated / System Fields',
+  'PR Items'
+];
+
+function getFormSectionOrder(title){{
+  const idx=FORM_SECTION_ORDER.indexOf(title);
+  return idx>=0?idx:FORM_SECTION_ORDER.length;
+}}
+
 function classifyFormFieldSemantic(col, ctx={{}}){{
   const key=String(col?.col_key||'').toLowerCase();
   const label=String(col?.label||'').toLowerCase();
@@ -4047,6 +4066,7 @@ function getOrCreateFormSection(root, sectionMap, title){{
   if(sectionMap[title])return sectionMap[title];
   const sec=document.createElement('section');
   sec.className='form-section';
+  sec.dataset.sectionOrder=String(getFormSectionOrder(title));
   const hdr=document.createElement('div');
   hdr.className='form-section-header';
   hdr.innerHTML=`<div><div class="form-section-title">${{escHtml(title)}}</div><div class="form-section-sub">${{escHtml(getFormSectionHint(title))}}</div></div>`;
@@ -4054,7 +4074,9 @@ function getOrCreateFormSection(root, sectionMap, title){{
   body.className='form-section-grid';
   sec.appendChild(hdr);
   sec.appendChild(body);
-  root.appendChild(sec);
+  const order=getFormSectionOrder(title);
+  const before=[...root.children].find(el=>Number(el.dataset.sectionOrder||999)>order);
+  if(before)root.insertBefore(sec,before);else root.appendChild(sec);
   sectionMap[title]=body;
   return body;
 }}
