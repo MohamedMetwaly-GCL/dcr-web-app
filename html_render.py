@@ -106,9 +106,10 @@ body.dark .mfoot{background:#101a29}
 .form-section-header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}
 .form-section-title{font-size:10px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}
 .form-section-sub{font-size:10px;color:var(--mu);line-height:1.45;margin-top:3px}
-.form-section-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;align-items:start}
+.form-section-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 12px;align-items:start}
 .form-section-grid .fg{min-width:0}
 .form-section-grid .fg label{margin-bottom:4px}
+.form-section-grid .fg.span-2{grid-column:span 2}
 .form-section-grid textarea{min-height:82px;resize:vertical}
 .form-section-grid .fg.full textarea{min-height:98px}
 body.dark .form-section{background:linear-gradient(180deg,#162132,#101a28);border-color:#2b3c4f;box-shadow:none}
@@ -131,7 +132,8 @@ body.dark .fg input::placeholder,body.dark .fg textarea::placeholder{color:#7f93
   .form-section-header{margin-bottom:7px}
   .form-section-title{font-size:9px}
   .form-section-sub{font-size:9px;line-height:1.25;margin-top:2px}
-  .form-section-grid{gap:8px 10px}
+  .form-section-grid{grid-template-columns:1fr;gap:8px 10px}
+  .form-section-grid .fg.span-2,.form-section-grid .fg.full{grid-column:1/-1}
   .form-section-grid .fg label{font-size:9px;margin-bottom:2px}
   .fg input,.fg select,.fg textarea{padding:6px 8px;font-size:11px}
   .form-section-grid textarea{min-height:68px}
@@ -3603,18 +3605,29 @@ function releaseRecordSave(){{
   setRecordSaveState(false);
 }}
 
-function getOrderedRecordFormCols(allCols,isLtrTab){{
+function isCalculatedFormField(col){{
+  const key=String(col?.col_key||'');
+  const type=String(col?.col_type||'').toLowerCase();
+  return ['expectedReplyDate','duration','_duration','_duration_today'].includes(key)||
+    ['auto_date','auto_num','duration_calc'].includes(type);
+}}
+
+function buildDynamicOrderedFormFields(allCols,isLtrTab){{
   const byKey=new Map((allCols||[]).map(c=>[c.col_key,c]));
   const used=new Set();
-  const ordered=[];
+  const ordered=[], calculated=[];
   const addCol=(col)=>{{
     if(!col||used.has(col.col_key))return;
     if(isLtrTab&&(isLTRInternalField(col)||isLTRExcludedField(col)))return;
-    ordered.push(col);used.add(col.col_key);
+    (isCalculatedFormField(col)?calculated:ordered).push(col);used.add(col.col_key);
   }};
   (state.cols||[]).forEach(vc=>addCol(byKey.get(vc.col_key)||vc));
   (allCols||[]).forEach(col=>addCol(col));
-  return ordered;
+  return [...ordered,...calculated];
+}}
+
+function getOrderedRecordFormCols(allCols,isLtrTab){{
+  return buildDynamicOrderedFormFields(allCols,isLtrTab);
 }}
 
 async function buildForm(row,opts={{}}){{
@@ -3655,7 +3668,7 @@ async function buildForm(row,opts={{}}){{
   if(isNocTab){{
     const sf=makeReadOnlyField('Stage Progress',getNocStageProgress(row||{{}}));
     nocStageInp=sf.inp;
-    getOrCreateFormSection(formRoot,sectionBodies,'Basic Info').appendChild(sf.grp);
+    getOrCreateFormSection(formRoot,sectionBodies,'Calculated / System Fields').appendChild(sf.grp);
   }}
   if(isLtrTab){{
     const hid=document.createElement('input');
@@ -3665,15 +3678,24 @@ async function buildForm(row,opts={{}}){{
     formRoot.appendChild(hid);
   }}
   for(const col of formCols){{
-    if(AUTO.has(col.col_key))continue;
     const key=col.col_key;
     const longTextMeta=getLongTextMeta(col);
-    const full=['title','fileLocation','itemRef'].includes(key)||!!longTextMeta;
-    const grp=document.createElement('div');grp.className='fg'+(full?' full':'');
-    const targetSection=isNocTab?(nocSectionForKey(key)||'Additional Details'):getDynamicFormSection(col,{{isPrTab,isLtrTab,isNocTab}});
+    const ctx={{isPrTab,isLtrTab,isNocTab}};
+    const span=getDynamicFieldSpan(col,ctx);
+    const grp=document.createElement('div');grp.className='fg'+(span==='full'?' full':(span==='span-2'?' span-2':''));
+    const targetSection=getDynamicFormSection(col,{{isPrTab,isLtrTab,isNocTab}});
     const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
     const ltrRole=isLtrTab?getLTRFieldRole(col):'';
     const val=(isLtrTab&&ltrRole)?(row?.[key]||getLTRValue(row,allCols,ltrRole)||''):(row?.[key]||'');
+    if(AUTO.has(col.col_key)||isCalculatedFormField(col)){{
+      const inp=document.createElement('input');inp.id='f-'+key;inp.value=getCalculatedDisplayValue(col,row);
+      inp.readOnly=true;
+      inp.placeholder='Calculated automatically';
+      inp.style.cssText='background:var(--bg);font-weight:700;color:var(--mu)';
+      grp.appendChild(inp);
+      getOrCreateFormSection(formRoot,sectionBodies,getDynamicFormSection(col,ctx)).appendChild(grp);
+      continue;
+    }}
     if(isPrTab&&prDetailsKey&&key===prDetailsKey){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
       ta.rows=3;
@@ -3948,10 +3970,13 @@ function buildMS(key,options,init){{
 
 function getFormSectionHint(title){{
   const hints={{
-    'Document Details':'Core document identity and register metadata',
-    'Dates & Status':'Timeline, approvals, and stage tracking',
-    'Parties & Responsibility':'Origin, destination, and responsible stakeholders',
-    'Narrative & References':'Subjects, remarks, descriptions, and supporting references',
+    'Core Register Fields':'Primary register identity and classification fields',
+    'References / Technical Fields':'Drawing, MS, parent, and technical reference details',
+    'Dates / Timeline':'Submission, issue, received, reply, and timeline dates',
+    'Status / Workflow':'Status, direction, review, approval, and response controls',
+    'Files / Notes':'Attachments, file links, remarks, comments, and descriptions',
+    'Calculated / System Fields':'Readonly calculated values shown for context',
+    'Other Dynamic Fields':'Additional fields configured for this document type',
     'Commercial & Quantities':'Values, quantities, and related numeric fields',
     'PR Items':'Line items and grouped procurement details',
     'Letter Information':'Reference and headline details for the letter',
@@ -3961,29 +3986,61 @@ function getFormSectionHint(title){{
   return hints[title]||'Structured fields for this document section';
 }}
 
-function getDynamicFormSection(col, ctx){{
+function classifyFormFieldSemantic(col, ctx={{}}){{
   const key=String(col?.col_key||'').toLowerCase();
   const label=String(col?.label||'').toLowerCase();
-  const text=(key+' '+label).replace(/[_-]+/g,' ').trim();
+  const type=String(col?.col_type||'').toLowerCase();
+  const text=(key+' '+label).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
   const longTextMeta=getLongTextMeta(col);
+  const ltrRole=ctx.isLtrTab?getLTRFieldRole(col):'';
+  if(isCalculatedFormField(col))return 'calculated';
   if(ctx.isLtrTab){{
-    if(['docno','title','reference'].some(v=>text.includes(v)))return 'Letter Information';
-    if(['direction','fromparty','toparty','parentletter','issueddate','receiveddate'].some(v=>key.includes(v)||text.includes(v)))return 'Correspondence Routing';
-    if(longTextMeta||['remarks','description','subject'].some(v=>text.includes(v)))return 'Narrative & References';
-    return 'Additional Details';
+    if(['docNo','title'].includes(ltrRole))return 'core';
+    if(['direction','fromParty','toParty','issuedDate','receivedDate','parentLetterRef','parentLetterId'].includes(ltrRole))return 'workflow';
+    if(['description','remarks'].includes(ltrRole)||longTextMeta)return 'notes';
   }}
-  if(ctx.isPrTab){{
-    if(['docno','title','reference','filelocation'].some(v=>text.includes(v)))return 'Document Details';
-    if(['date','status','reply','review','issue'].some(v=>text.includes(v)))return 'Dates & Status';
-    if(['qty','quantity','unit','amount','value','cost','price'].some(v=>text.includes(v)))return 'Commercial & Quantities';
-    if(longTextMeta||['remarks','notes','description','itemref'].some(v=>text.includes(v)))return 'Narrative & References';
-    return 'Document Details';
-  }}
-  if(['date','status','reply','review','issue','approval','return'].some(v=>text.includes(v)))return 'Dates & Status';
-  if(['qty','quantity','unit','amount','value','cost','price'].some(v=>text.includes(v)))return 'Commercial & Quantities';
-  if(['from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'Parties & Responsibility';
-  if(longTextMeta||['remarks','notes','description','subject','content','location','reference','originating'].some(v=>text.includes(v)))return 'Narrative & References';
-  return 'Document Details';
+  if(['date','datetime'].includes(type)||['date','issued','issue','submitted','submission','received','reply date','return date','expected','actual'].some(v=>text.includes(v)))return 'timeline';
+  if(['status','direction','approval','approved','review','workflow','response','stage','part b','part c','part d'].some(v=>text.includes(v)))return 'workflow';
+  if(['file','attachment','link','remarks','comment','note','description','subject','narrative','content'].some(v=>text.includes(v))||longTextMeta)return 'notes';
+  if(['item ref','dwg','drawing','ms ref','ms reference','parent letter','reference','ref no','spec','originating document','origin'].some(v=>text.includes(v)))return 'reference';
+  if(['qty','quantity','unit','amount','value','cost','price','total','brand'].some(v=>text.includes(v)))return 'commercial';
+  if(['docno','document no','letter ref','discipline','sub trade','trade','title','floor','prepared by','company','from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'core';
+  return 'other';
+}}
+
+function getDynamicFormSection(col, ctx){{
+  const semantic=classifyFormFieldSemantic(col,ctx);
+  const map={{
+    core:'Core Register Fields',
+    reference:'References / Technical Fields',
+    timeline:'Dates / Timeline',
+    workflow:'Status / Workflow',
+    notes:'Files / Notes',
+    calculated:'Calculated / System Fields',
+    commercial:'Commercial & Quantities',
+    other:'Other Dynamic Fields'
+  }};
+  return map[semantic]||'Other Dynamic Fields';
+}}
+
+function getDynamicFieldSpan(col, ctx={{}}){{
+  const key=String(col?.col_key||'').toLowerCase();
+  const label=String(col?.label||'').toLowerCase();
+  const type=String(col?.col_type||'').toLowerCase();
+  const text=(key+' '+label).replace(/[_-]+/g,' ');
+  const semantic=classifyFormFieldSemantic(col,ctx);
+  if(getLongTextMeta(col)||['textarea','long_text'].includes(type))return 'full';
+  if(semantic==='notes')return 'full';
+  if(['title','subject','description','remarks','filelocation','file location','pr details','item ref','dwg','ms ref','parent letter'].some(v=>text.includes(v)))return 'span-2';
+  if(semantic==='reference'&&text.length>24)return 'span-2';
+  return 'span-1';
+}}
+
+function getCalculatedDisplayValue(col,row){{
+  const key=String(col?.col_key||'');
+  if(key==='expectedReplyDate')return row?._expectedReplyDate||row?.expectedReplyDate||'';
+  if(key==='duration'||key==='_duration')return row?._duration||row?.duration||'';
+  return row?.[key]||'';
 }}
 
 function getOrCreateFormSection(root, sectionMap, title){{
