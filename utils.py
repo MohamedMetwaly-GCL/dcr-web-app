@@ -14,6 +14,41 @@ DEFAULT_HOLIDAYS = {
 
 _holidays_cache = None
 
+DEFAULT_EXPECTED_REPLY_RULE = {
+    "rev0_reply_days": 14,
+    "rev_reply_days": 7,
+    "calculation_mode": "working_days",
+    "weekend_mode": "friday_only",
+    "exclude_official_holidays": True,
+}
+
+_WEEKEND_DAYS = {
+    "none": set(),
+    "friday_only": {4},
+    "friday_saturday": {4, 5},
+}
+
+def normalize_expected_reply_rule(rule=None):
+    """Return a safe project expected-reply rule, preserving legacy defaults."""
+    src = rule if isinstance(rule, dict) else {}
+    out = dict(DEFAULT_EXPECTED_REPLY_RULE)
+    for key in ("rev0_reply_days", "rev_reply_days"):
+        try:
+            val = int(src.get(key, out[key]))
+            out[key] = max(0, val)
+        except Exception:
+            pass
+    calc = str(src.get("calculation_mode", out["calculation_mode"]) or "").strip().lower()
+    out["calculation_mode"] = calc if calc in ("calendar_days", "working_days") else "working_days"
+    weekend = str(src.get("weekend_mode", out["weekend_mode"]) or "").strip().lower()
+    out["weekend_mode"] = weekend if weekend in _WEEKEND_DAYS else "friday_only"
+    raw_exclude = src.get("exclude_official_holidays", out["exclude_official_holidays"])
+    if isinstance(raw_exclude, str):
+        out["exclude_official_holidays"] = raw_exclude.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        out["exclude_official_holidays"] = bool(raw_exclude)
+    return out
+
 def get_holidays():
     global _holidays_cache
     if _holidays_cache is not None:
@@ -33,19 +68,28 @@ def invalidate_holidays_cache():
     global _holidays_cache
     _holidays_cache = None
 
-def is_working_day(d):
+def is_working_day(d, weekend_mode="friday_only", exclude_official_holidays=True):
     if isinstance(d, str): d = datetime.date.fromisoformat(d)
-    # Friday = weekday 4 in Python (Mon=0 ... Fri=4 ... Sat=5 ... Sun=6)
-    return d.weekday() != 4 and d.strftime("%Y-%m-%d") not in get_holidays()
+    weekend_days = _WEEKEND_DAYS.get(weekend_mode, _WEEKEND_DAYS["friday_only"])
+    if d.weekday() in weekend_days:
+        return False
+    if exclude_official_holidays and d.strftime("%Y-%m-%d") in get_holidays():
+        return False
+    return True
 
-def add_working_days(start, days):
+def add_working_days(start, days, weekend_mode="friday_only", exclude_official_holidays=True):
     if not start: return None
     if isinstance(start, str): start = datetime.date.fromisoformat(start)
     d, added = start, 0
     while added < days:
         d += datetime.timedelta(days=1)
-        if is_working_day(d): added += 1
+        if is_working_day(d, weekend_mode, exclude_official_holidays): added += 1
     return d.strftime("%Y-%m-%d")
+
+def add_calendar_days(start, days):
+    if not start: return None
+    if isinstance(start, str): start = datetime.date.fromisoformat(start)
+    return (start + datetime.timedelta(days=int(days or 0))).strftime("%Y-%m-%d")
 
 def working_days_between(start, end):
     """
@@ -144,22 +188,31 @@ def doc_type_uses_revision(dt_code, records=None):
         return False
     return True
 
-def compute_expected_reply(issued_date, doc_no):
+def compute_expected_reply(issued_date, doc_no, rule=None):
     if not issued_date: return None
     try:
         rev = extract_rev(doc_no)
     except Exception:
         rev = 0
     try:
-        return add_working_days(issued_date, 14 if rev == 0 else 7)
+        cfg = normalize_expected_reply_rule(rule)
+        days = cfg["rev0_reply_days"] if rev == 0 else cfg["rev_reply_days"]
+        if cfg["calculation_mode"] == "calendar_days":
+            return add_calendar_days(issued_date, days)
+        return add_working_days(
+            issued_date,
+            days,
+            cfg["weekend_mode"],
+            cfg["exclude_official_holidays"],
+        )
     except Exception:
         return None
 
-def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True):
+def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, rule=None):
     """Returns True only if the doc type has an Expected Reply column and is past due."""
     if not has_expected_reply_col: return False
     if actual_reply: return False
-    exp = compute_expected_reply(issued_date, doc_no)
+    exp = compute_expected_reply(issued_date, doc_no, rule)
     if not exp: return False
     return datetime.date.fromisoformat(exp) < datetime.date.today()
 

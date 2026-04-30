@@ -78,6 +78,7 @@ def api_records(pid, dt_id):
     date_col_keys = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
     has_exp_reply = any(c["col_key"] == "expectedReplyDate" for c in cols)
     has_status    = any(c["col_key"] == "status" for c in cols)
+    expected_reply_rule = db.get_expected_reply_rule(pid)
     for row in records:
         if has_exp_reply:
             issued_date = row.get("issuedDate")
@@ -85,7 +86,7 @@ def api_records(pid, dt_id):
             exp = None
             if issued_date and doc_no:
                 try:
-                    exp = compute_expected_reply(issued_date, doc_no)
+                    exp = compute_expected_reply(issued_date, doc_no, expected_reply_rule)
                 except Exception as e:
                     logger.warning("expected_reply_calc_failed pid=%s dt_id=%s record_id=%s error=%s",
                                    pid, dt_id, row.get("_id",""), e)
@@ -96,7 +97,7 @@ def api_records(pid, dt_id):
         actual   = row.get("actualReplyDate","")
         dur = compute_duration(issued, actual)
         row["_duration"] = str(dur) if dur is not None else ""
-        row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply)
+        row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply, expected_reply_rule)
         row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
         # Format ALL date columns (any col_type=date)
         for dk in date_col_keys:

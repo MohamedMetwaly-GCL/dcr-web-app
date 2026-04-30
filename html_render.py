@@ -2390,6 +2390,13 @@ const SC={{...{sc_json},
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
   ['client','Client'],['landlord','Landlord'],['pmo','PMO'],['mainConsultant','Consultant'],
   ['mepConsultant','MEP'],['contractor','Contractor']];
+const DEFAULT_EXPECTED_REPLY_RULE={{
+  rev0_reply_days:14,
+  rev_reply_days:7,
+  calculation_mode:'working_days',
+  weekend_mode:'friday_only',
+  exclude_official_holidays:true
+}};
 const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,lists:{{}},prItemsCache:{{}}}};
 
 function isPRTab(){{
@@ -4079,6 +4086,32 @@ async function editProject(){{
     grid.appendChild(grp);
   }});
   body.appendChild(grid);
+  // Expected reply settings are stored in project JSON data and only affect future calculations.
+  const er={{...DEFAULT_EXPECTED_REPLY_RULE,...(proj.expected_reply_rule||{{}})}};
+  const erTitle=document.createElement('div');erTitle.className='stitle';erTitle.textContent='Expected Reply Rule';body.appendChild(erTitle);
+  const erNote=document.createElement('div');
+  erNote.style.cssText='font-size:10px;color:var(--mu);margin:-4px 0 8px;padding:6px 8px;background:var(--bg);border-radius:4px';
+  erNote.textContent='Project-specific rule for calculated Expected Reply dates. Existing saved records are not modified.';
+  body.appendChild(erNote);
+  const erGrid=document.createElement('div');erGrid.className='fgrid';
+  erGrid.innerHTML=`
+    <div class="fg"><label>REV00 Reply Days</label><input id="er-rev0-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev0_reply_days))?Number(er.rev0_reply_days):14}}"></div>
+    <div class="fg"><label>REV&gt;00 Reply Days</label><input id="er-rev-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev_reply_days))?Number(er.rev_reply_days):7}}"></div>
+    <div class="fg"><label>Calculation Mode</label><select id="er-calc-mode">
+      <option value="calendar_days" ${{er.calculation_mode==='calendar_days'?'selected':''}}>Calendar Days</option>
+      <option value="working_days" ${{er.calculation_mode!=='calendar_days'?'selected':''}}>Working Days</option>
+    </select></div>
+    <div class="fg"><label>Weekend Rule</label><select id="er-weekend-mode">
+      <option value="friday_only" ${{er.weekend_mode==='friday_only'?'selected':''}}>Friday Only</option>
+      <option value="friday_saturday" ${{er.weekend_mode==='friday_saturday'?'selected':''}}>Friday + Saturday</option>
+      <option value="none" ${{er.weekend_mode==='none'?'selected':''}}>None</option>
+    </select></div>
+    <div class="fg"><label>Exclude Official Holidays</label><select id="er-exclude-holidays">
+      <option value="yes" ${{er.exclude_official_holidays!==false?'selected':''}}>Yes</option>
+      <option value="no" ${{er.exclude_official_holidays===false?'selected':''}}>No</option>
+    </select></div>
+  `;
+  body.appendChild(erGrid);
   // Logo section
   const lt=document.createElement('div');lt.className='stitle';lt.textContent='Company Logos';body.appendChild(lt);
   const lg=document.createElement('div');lg.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:12px';
@@ -4109,6 +4142,15 @@ async function saveProject(){{
       labels[key]=lblEl.value.trim();
   }});
   data._labels=labels;
+  const rev0Days=parseInt(document.getElementById('er-rev0-days')?.value||'14',10);
+  const revDays=parseInt(document.getElementById('er-rev-days')?.value||'7',10);
+  data.expected_reply_rule={{
+    rev0_reply_days:Number.isFinite(rev0Days)&&rev0Days>=0?rev0Days:14,
+    rev_reply_days:Number.isFinite(revDays)&&revDays>=0?revDays:7,
+    calculation_mode:document.getElementById('er-calc-mode')?.value||'working_days',
+    weekend_mode:document.getElementById('er-weekend-mode')?.value||'friday_only',
+    exclude_official_holidays:(document.getElementById('er-exclude-holidays')?.value||'yes')==='yes'
+  }};
   const r=await apiFetch('/api/project/'+PID,{{method:'POST',body:JSON.stringify(data)}});
   if(r===null)return;
   if(r.ok){{

@@ -604,6 +604,16 @@ def get_project(pid):
     data.pop("id", None); data.pop("name", None); data.pop("code", None)
     return {"id": r["id"], "name": r["name"], "code": r["code"], **data}
 
+def get_expected_reply_rule(pid):
+    """Read the project-level expected reply rule from projects.data JSON."""
+    try:
+        from utils import normalize_expected_reply_rule
+        project = get_project(pid) or {}
+        return normalize_expected_reply_rule(project.get("expected_reply_rule"))
+    except Exception:
+        from utils import DEFAULT_EXPECTED_REPLY_RULE
+        return dict(DEFAULT_EXPECTED_REPLY_RULE)
+
 def save_project(pid, name, code, extra: dict):
     if isinstance(extra, dict):
         extra.pop("id", None); extra.pop("name", None); extra.pop("code", None)
