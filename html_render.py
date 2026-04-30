@@ -1760,6 +1760,9 @@ body.dark #regtbl tr.rv td{{background:#101a29;color:#b8c8da}}
 body.dark #regtbl tbody tr:hover td{{background:#1e3147;color:#eef5ff}}
 body.dark #regtbl tbody tr.ov:hover td{{background:#4a2a24;color:#ffe1d2}}
 body.dark #regtbl tbody tr.rv:hover td{{background:#1e3147;color:#eef5ff}}
+body.dark #regtbl tbody tr.row-selected td{{background:#1d3a5a!important;color:#f3f8ff!important;box-shadow:inset 0 1px 0 rgba(147,197,253,.2),inset 0 -1px 0 rgba(147,197,253,.2)}}
+body.dark #regtbl tbody tr.row-selected td:first-child{{box-shadow:inset 4px 0 0 #93c5fd,inset 0 1px 0 rgba(147,197,253,.2),inset 0 -1px 0 rgba(147,197,253,.2)}}
+body.dark #regtbl tbody tr.row-selected:hover td{{background:#25496d!important;color:#fff!important}}
 body.dark .flink{{color:#93c5fd}}
 body.dark .tool-dd-menu{{background:#162132;border-color:#304257}}
 body.dark .tool-dd-menu button{{color:#e2e8f0}}
@@ -1844,6 +1847,9 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 #regtbl tbody tr:hover td{{background:#dce8f5;color:var(--tx)}}
 #regtbl tbody tr.ov:hover td{{background:#ffe7e7;color:#3b1f1f}}
 #regtbl tbody tr.rv:hover td{{background:#fff4d8;color:#3b2a12}}
+#regtbl tbody tr.row-selected td{{background:#d7e8fb!important;color:#10233a!important;box-shadow:inset 0 1px 0 rgba(37,99,168,.18),inset 0 -1px 0 rgba(37,99,168,.18)}}
+#regtbl tbody tr.row-selected td:first-child{{box-shadow:inset 4px 0 0 #2563a8,inset 0 1px 0 rgba(37,99,168,.18),inset 0 -1px 0 rgba(37,99,168,.18)}}
+#regtbl tbody tr.row-selected:hover td{{background:#c8def6!important;color:#10233a!important}}
 .sr{{text-align:center;color:var(--mu);font-size:10px;min-width:28px}}
 .chkcell{{text-align:center;width:28px;padding:4px!important}}
 .chkcell input{{width:14px;height:14px;cursor:pointer;accent-color:var(--pr)}}
@@ -2384,7 +2390,7 @@ const SC={{...{sc_json},
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
   ['client','Client'],['landlord','Landlord'],['pmo','PMO'],['mainConsultant','Consultant'],
   ['mepConsultant','MEP'],['contractor','Contractor']];
-const state={{tab:null,cols:[],recs:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,lists:{{}},prItemsCache:{{}}}};
+const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,lists:{{}},prItemsCache:{{}}}};
 
 function isPRTab(){{
   const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
@@ -2660,7 +2666,7 @@ function renderTabs(dts){{
 }}
 
 function switchTab(id){{
-  state.tab=id;state.recs=null;state.filters={{}};state.sortCol=null;
+  state.tab=id;state.recs=null;state.visibleRows=[];state.selectedRowId=null;state.filters={{}};state.sortCol=null;
   document.getElementById('srchbox').value='';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
   updateLTRQuickBar();
@@ -2764,6 +2770,7 @@ async function loadRecords(){{
   if(!data)return;
   state.recs=data.records; state.allTabCols=data.columns||[]; state.cols=data.columns.filter(c=>c.visible);
   if(isLTRTab())state.cols=state.cols.filter(c=>!isLTRInternalField(c)&&!isLTRExcludedField(c));
+  if(!state.recs.some(r=>String(r._id)===String(state.selectedRowId)))state.selectedRowId=null;
   state.prItemsCache=data.pr_items_map||{{}};
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
@@ -2831,10 +2838,46 @@ function buildHead(){{
 }}
 
 function parseDocNo(docNo){{
-  // Extract base number and rev from "DS-001 REV00" format
-  const m=(docNo||'').match(/^([A-Za-z]+)-([0-9]+) REV([0-9]+)$/i);
-  if(m)return{{prefix:m[1],num:parseInt(m[2]),rev:parseInt(m[3])}};
-  return{{prefix:docNo||'',num:0,rev:0}};
+  const raw=String(docNo||'').trim();
+  const revMatch=raw.match(/\\bREV\\s*([0-9]+)\\b/i);
+  const rev=revMatch?parseInt(revMatch[1],10):0;
+  const withoutRev=raw.replace(/\\s*\\bREV\\s*[0-9]+\\b\\s*$/i,'').trim();
+  const m=withoutRev.match(/^(.*?)-(\\d+)$/);
+  if(m)return{{prefix:m[1],num:parseInt(m[2],10),width:m[2].length,rev,base:withoutRev,raw}};
+  return{{prefix:raw,num:0,width:3,rev,base:withoutRev||raw,raw}};
+}}
+
+function buildDocNoFromParts(p,num,rev){{
+  return `${{p.prefix}}-${{String(num).padStart(p.width||3,'0')}} REV${{String(rev).padStart(2,'0')}}`;
+}}
+
+function incrementRevisionNumber(docNo){{
+  const raw=String(docNo||'').trim();
+  const m=raw.match(/\\bREV\\s*([0-9]+)\\b/i);
+  if(!m)return '';
+  const next=String(parseInt(m[1],10)+1).padStart(m[1].length,'0');
+  return raw.replace(/\\bREV\\s*[0-9]+\\b/i,'REV'+next);
+}}
+
+function suggestNextDocNoFromRows(rows){{
+  const parsed=(rows||[]).map(r=>parseDocNo(r.docNo||'')).filter(p=>p&&p.num>0);
+  if(!parsed.length)return '';
+  const families=new Map();
+  parsed.forEach(p=>{{
+    const key=String(p.prefix||'').toLowerCase();
+    if(!families.has(key))families.set(key,[]);
+    families.get(key).push(p);
+  }});
+  if(families.size!==1)return '';
+  const family=[...families.values()][0];
+  if(!family.length)return '';
+  family.sort((a,b)=>a.num-b.num);
+  const base=family[family.length-1];
+  return buildDocNoFromParts(base,base.num+1,0);
+}}
+
+function suggestNextDocNoFromVisibleRows(){{
+  return suggestNextDocNoFromRows(state.visibleRows||[]);
 }}
 
 function sortByDocNo(rows){{
@@ -2896,6 +2939,24 @@ function checkGap(docNo,recs,editId){{
   return null;
 }}
 
+function getSelectedRegisterRow(){{
+  if(!state.selectedRowId)return null;
+  return (state.recs||[]).find(r=>String(r._id)===String(state.selectedRowId))||null;
+}}
+
+function setSelectedRegisterRow(id){{
+  state.selectedRowId=id||null;
+  document.querySelectorAll('#regtbl tbody tr.row-selected').forEach(tr=>tr.classList.remove('row-selected'));
+  if(state.selectedRowId){{
+    const tr=document.querySelector(`#regtbl tbody tr[data-rec-id="${{CSS.escape(String(state.selectedRowId))}}"]`);
+    if(tr)tr.classList.add('row-selected');
+  }}
+}}
+
+function isInteractiveRowTarget(target){{
+  return !!target.closest('button,a,input,select,textarea,label,.pr-items-row');
+}}
+
 function renderRows(){{
   const body=document.getElementById('tbody');body.innerHTML='';
   const isPrTab=isPRTab();
@@ -2922,6 +2983,7 @@ function renderRows(){{
   }}else{{
     rows=sortByDocNo(rows);
   }}
+  state.visibleRows=rows;
   const emptyEl=document.getElementById('empty');
   const tblEl=document.getElementById('regtbl');
   if(rows.length===0){{
@@ -2949,6 +3011,12 @@ function renderRows(){{
   let sr=1;
   rows.forEach((row,idx)=>{{
     const tr=document.createElement('tr');
+    tr.dataset.recId=row._id;
+    if(String(state.selectedRowId||'')===String(row._id))tr.classList.add('row-selected');
+    tr.onclick=e=>{{
+      if(isInteractiveRowTarget(e.target))return;
+      setSelectedRegisterRow(row._id);
+    }};
     if(row._overdue)tr.classList.add('ov');
     else if(row._isRev)tr.classList.add('rv');
     else if(idx%2===1)tr.classList.add('alt');
@@ -3420,16 +3488,39 @@ let _st;
 function doSearch(){{clearTimeout(_st);_st=setTimeout(()=>loadRecords(),250);}}
 
 // Add/Edit Record
-function addRecord(){{state.editId=null;document.getElementById('rec-title').textContent='Add Document';buildForm(null);openM('rec-modal');}}
+function buildRevisionDraftFromSelected(){{
+  if(isLTRTab())return null;
+  const selected=getSelectedRegisterRow();
+  if(!selected)return null;
+  const nextDocNo=incrementRevisionNumber(selected.docNo||'');
+  if(!nextDocNo)return null;
+  return {{...selected,docNo:nextDocNo,_cloneSourceId:selected._id}};
+}}
+
+function addRecord(){{
+  state.editId=null;
+  const draft=buildRevisionDraftFromSelected();
+  if(draft){{
+    document.getElementById('rec-title').textContent='Add Revision Draft';
+    buildForm(draft,{{mode:'revisionDraft'}});
+  }}else{{
+    document.getElementById('rec-title').textContent='Add Document';
+    buildForm(null,{{suggestedDocNo:suggestNextDocNoFromVisibleRows()}});
+  }}
+  openM('rec-modal');
+}}
 function editRec(id){{state.editId=id;const row=state.recs.find(r=>r._id===id);if(!row)return;document.getElementById('rec-title').textContent='Edit Document';buildForm(row);openM('rec-modal');}}
 
-async function buildForm(row){{
+async function buildForm(row,opts={{}}){{
   const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols)return;
   const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today']);
   const formRoot=document.getElementById('rec-form');formRoot.innerHTML='';
   const sectionBodies={{}};
   let nextNo='';
-  if(!row){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
+  if(!row){{
+    nextNo=String(opts.suggestedDocNo||'').trim();
+    if(!nextNo){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
+  }}
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
   const isLtrTab=isLTRTab();
@@ -3932,7 +4023,7 @@ function updBulk(){{
   const ca=document.getElementById('chkall');if(ca)ca.checked=all.length>0&&checked.length===all.length;
 }}
 function selAll(v){{document.querySelectorAll('.chkcell input[data-id]').forEach(cb=>cb.checked=v);updBulk();}}
-function clearSel(){{document.querySelectorAll('.chkcell input').forEach(cb=>cb.checked=false);updBulk();}}
+function clearSel(){{document.querySelectorAll('.chkcell input').forEach(cb=>cb.checked=false);setSelectedRegisterRow(null);updBulk();}}
 async function bulkDel(){{
   const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
   if(!ids.length||!confirm('Delete '+ids.length+' records?'))return;
