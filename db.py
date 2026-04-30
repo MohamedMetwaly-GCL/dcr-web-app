@@ -514,6 +514,14 @@ def delete_user(username):
 def change_pw(username, new_pw):
     exe("UPDATE users SET pw_hash=%s WHERE username=%s", (hash_pw(new_pw), username))
 
+def set_user_role(username, role):
+    role = str(role or "").strip().lower()
+    if role not in ("viewer", "editor", "admin", "superadmin"):
+        return False
+    exe("UPDATE users SET role=%s WHERE username=%s", (role, username))
+    exe("UPDATE sessions SET role=%s WHERE username=%s", (role, username))
+    return True
+
 # ── Sessions ──────────────────────────────────────────────────
 SESSION_TTL = 8 * 3600
 

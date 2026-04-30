@@ -47,6 +47,14 @@ def api_users_action():
     if action == "change_password":
         db.change_pw(data.get("username",""), data.get("password",""))
         return jsonify(ok=True)
+    if action == "update_role":
+        uname = data.get("username","").strip().lower()
+        role = data.get("role","viewer")
+        if uname == "admin" and role != "superadmin":
+            return jsonify(ok=False, error="Cannot demote protected super admin"), 400
+        if not db.set_user_role(uname, role):
+            return jsonify(ok=False, error="Invalid role"), 400
+        return jsonify(ok=True)
     if action == "assign":
         db.assign_project(data.get("username",""), data.get("project_id",""))
         return jsonify(ok=True)

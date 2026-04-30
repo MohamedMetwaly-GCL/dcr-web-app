@@ -1543,6 +1543,19 @@ async function openAdmin(){{
       ${{u.username!=='admin'?`<button class="btn btn-sc btn-sm" onclick="chgPw('${{u.username}}')">🔑 PW</button>
         <button class="btn btn-er btn-sm" onclick="delUsr('${{u.username}}')">✕</button>`:
         '<span style="font-size:10px;color:var(--mu)">(protected)</span>'}}`;
+    if(u.username!=='admin'){{
+      const roleSel=document.createElement('select');
+      roleSel.id='role-'+u.username;
+      roleSel.className='btn btn-sc btn-sm';
+      roleSel.style.cssText='height:28px;padding:2px 7px';
+      roleSel.innerHTML=['viewer','editor','admin','superadmin'].map(r=>`<option value="${{r}}" ${{u.role===r?'selected':''}}>${{r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}}</option>`).join('');
+      const roleBtn=document.createElement('button');
+      roleBtn.className='btn btn-pr btn-sm';
+      roleBtn.textContent='Save Role';
+      roleBtn.onclick=()=>updUsrRole(u.username);
+      row.insertBefore(roleSel,row.children[1]||null);
+      row.insertBefore(roleBtn,row.children[2]||null);
+    }}
     body.appendChild(row);
     if(u.role!=='superadmin'){{
       const ad=document.createElement('div');
@@ -1600,6 +1613,14 @@ async function chgPw(u){{
 }}
 
 // ── Audit Log ────────────────────────────────────────────────
+async function updUsrRole(u){{
+  const role=document.getElementById('role-'+u)?.value;
+  if(!role)return;
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_role',username:u,role}})}});
+  if(r&&r.ok){{toast('Role updated','ok');closeM('admin-modal');openAdmin();}}
+  else toast((r&&r.error)||'Role update failed','er');
+}}
+
 let _auditOffset=0,_auditHasMore=true;
 const ACTION_COLORS={{
   'ADD':'#166534','EDIT':'#1d4ed8','DELETE':'#991b1b',
@@ -2228,7 +2249,7 @@ body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:l
     <div class="mbody"><div class="record-form-shell" id="rec-form"></div></div>
     <div class="mfoot record-modal-actions">
       <button class="btn btn-sc" onclick="closeM('rec-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="saveRecord()">Save</button>
+      <button class="btn btn-pr" id="rec-save-btn" onclick="saveRecord()">Save</button>
     </div>
   </div>
 </div>
@@ -2397,7 +2418,7 @@ const DEFAULT_EXPECTED_REPLY_RULE={{
   weekend_mode:'friday_only',
   exclude_official_holidays:true
 }};
-const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,revisionDraftActive:false,lists:{{}},prItemsCache:{{}}}};
+const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,revisionDraftActive:false,savingRecord:false,lists:{{}},prItemsCache:{{}}}};
 
 function isPRTab(){{
   const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
@@ -3553,6 +3574,7 @@ function buildRevisionDraftFromSelected(){{
 function addRecord(){{
   state.editId=null;
   state.revisionDraftActive=false;
+  state.savingRecord=false;setRecordSaveState(false);
   const draft=buildRevisionDraftFromSelected();
   if(draft===false)return;
   if(draft){{
@@ -3565,10 +3587,38 @@ function addRecord(){{
   }}
   openM('rec-modal');
 }}
-function editRec(id){{state.editId=id;state.revisionDraftActive=false;const row=state.recs.find(r=>r._id===id);if(!row)return;document.getElementById('rec-title').textContent='Edit Document';buildForm(row);openM('rec-modal');}}
+function editRec(id){{state.editId=id;state.revisionDraftActive=false;state.savingRecord=false;setRecordSaveState(false);const row=state.recs.find(r=>r._id===id);if(!row)return;document.getElementById('rec-title').textContent='Edit Document';buildForm(row);openM('rec-modal');}}
+
+function setRecordSaveState(isSaving){{
+  const btn=document.getElementById('rec-save-btn');
+  if(!btn)return;
+  btn.disabled=!!isSaving;
+  btn.textContent=isSaving?'Saving...':'Save';
+  btn.style.opacity=isSaving?'.72':'';
+  btn.style.cursor=isSaving?'wait':'';
+}}
+
+function releaseRecordSave(){{
+  state.savingRecord=false;
+  setRecordSaveState(false);
+}}
+
+function getOrderedRecordFormCols(allCols,isLtrTab){{
+  const byKey=new Map((allCols||[]).map(c=>[c.col_key,c]));
+  const used=new Set();
+  const ordered=[];
+  const addCol=(col)=>{{
+    if(!col||used.has(col.col_key))return;
+    if(isLtrTab&&(isLTRInternalField(col)||isLTRExcludedField(col)))return;
+    ordered.push(col);used.add(col.col_key);
+  }};
+  (state.cols||[]).forEach(vc=>addCol(byKey.get(vc.col_key)||vc));
+  (allCols||[]).forEach(col=>addCol(col));
+  return ordered;
+}}
 
 async function buildForm(row,opts={{}}){{
-  const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols)return;
+  const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols){{releaseRecordSave();return;}}
   const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today']);
   const formRoot=document.getElementById('rec-form');formRoot.innerHTML='';
   const sectionBodies={{}};
@@ -3580,7 +3630,7 @@ async function buildForm(row,opts={{}}){{
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
   const isLtrTab=isLTRTab();
-  const formCols=isLtrTab?allCols.filter(c=>c.visible&&!isLTRInternalField(c)&&!isLTRExcludedField(c)):allCols;
+  const formCols=getOrderedRecordFormCols(allCols,isLtrTab);
   const ltrParentIdCol=isLtrTab?getLTRColForRole(allCols,'parentLetterId'):null;
   let ltrParentOptions=[];
   if(isLtrTab){{
@@ -4016,7 +4066,10 @@ function durChoice(docNo){{
 }}
 
 async function saveRecord(){{
-  const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols)return;
+  if(state.savingRecord)return;
+  state.savingRecord=true;setRecordSaveState(true);
+  try{{
+  const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols){{releaseRecordSave();return;}}
   const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today']);
   const data={{}};
   for(const col of allCols){{
@@ -4031,20 +4084,23 @@ async function saveRecord(){{
     const issued=String(getLTRValue(data,allCols,'issuedDate')||'').trim();
     const received=String(getLTRValue(data,allCols,'receivedDate')||'').trim();
     const parentId=String(getLTRValue(data,allCols,'parentLetterId')||'').trim();
-    if(direction==='sent'&&!issued){{toast('Issue Date is required for Sent letters','er');return;}}
-    if(direction==='received'&&!received){{toast('Received Date is required for Received letters','er');return;}}
-    if(state.editId&&parentId&&parentId===state.editId){{toast('A letter cannot reference itself as parent','er');return;}}
+    if(direction==='sent'&&!issued){{toast('Issue Date is required for Sent letters','er');releaseRecordSave();return;}}
+    if(direction==='received'&&!received){{toast('Received Date is required for Received letters','er');releaseRecordSave();return;}}
+    if(state.editId&&parentId&&parentId===state.editId){{toast('A letter cannot reference itself as parent','er');releaseRecordSave();return;}}
   }}
   if(isNOCTab()&&!String(data.voBaseValue||'').trim()&&String(data.voValueWithSIAndVAT||'').trim()){{
     const autoBase=getNocAutoBaseValue(data);
     if(autoBase)data.voBaseValue=autoBase;
   }}
-  if(!data.docNo){{toast('Document No. required','er');return;}}
+  if(!data.docNo){{toast('Document No. required','er');releaseRecordSave();return;}}
     // Duration is computed server-side automatically
-  const valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
+  let valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
   if(valErr&&valErr.startsWith('GAP')){{
-    if(!confirm('⚠ Sequence gap detected: '+valErr.replace('GAP:','')+'. Continue anyway?'))return;
-  }}else if(valErr){{toast('⚠ '+valErr,'er');return;}}
+    const ok=confirm('Sequence gap detected: '+valErr.replace('GAP:','')+'. Continue anyway?');
+    if(!ok){{releaseRecordSave();return;}}
+    valErr=null;
+  }}
+  if(valErr){{toast('Validation error: '+valErr,'er');releaseRecordSave();return;}}
   if(state.editId)data._id=state.editId;
   const r=await apiFetch('/api/records/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify(data)}});
   if(r&&r.ok){{
@@ -4055,16 +4111,20 @@ async function saveRecord(){{
       try{{
         const prRes=await apiFetch('/api/pr_items/'+recId,{{method:'POST',body:JSON.stringify({{items}})}});
         if(prRes&&prRes.ok)state.prItemsCache[recId]=items;
-        else {{toast('Items save failed','er');return;}}
+        else {{toast('Items save failed','er');releaseRecordSave();return;}}
       }}catch(e){{
-        toast('Items save failed: '+e.message,'er');return;
+        toast('Items save failed: '+e.message,'er');releaseRecordSave();return;
       }}
     }}
     if(wasRevisionDraft)clearSel();
     state.revisionDraftActive=false;
-    closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');
+    closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');releaseRecordSave();
   }}
-  else toast('Error saving','er');
+  else {{toast('Error saving','er');releaseRecordSave();}}
+  }}catch(e){{
+    toast('Error saving: '+e.message,'er');
+    releaseRecordSave();
+  }}
 }}
 
 async function delRec(id){{
@@ -4424,6 +4484,19 @@ async function openAdmin(){{
         <button class="btn btn-er btn-sm" onclick="delUsr('${{u.username}}')">✕</button>`:
         '<span style="font-size:10px;color:var(--mu)">(protected)</span>'}}`;
     body.appendChild(row);
+    if(u.username!=='admin'){{
+      const roleSel=document.createElement('select');
+      roleSel.id='role-'+u.username;
+      roleSel.className='btn btn-sc btn-sm';
+      roleSel.style.cssText='height:28px;padding:2px 7px';
+      roleSel.innerHTML=['viewer','editor','admin','superadmin'].map(r=>`<option value="${{r}}" ${{u.role===r?'selected':''}}>${{r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}}</option>`).join('');
+      const roleBtn=document.createElement('button');
+      roleBtn.className='btn btn-pr btn-sm';
+      roleBtn.textContent='Save Role';
+      roleBtn.onclick=()=>updUsrRole(u.username);
+      row.insertBefore(roleSel,row.children[1]||null);
+      row.insertBefore(roleBtn,row.children[2]||null);
+    }}
     if(u.role!=='superadmin'){{
       const ad=document.createElement('div');ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
       ad.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:4px">Project access:</div>';
@@ -4472,6 +4545,14 @@ async function delUsr(u){{if(!confirm('Delete user: '+u+'?'))return;
 async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)return;
   await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
   toast('✔ Password changed','ok');
+}}
+
+async function updUsrRole(u){{
+  const role=document.getElementById('role-'+u)?.value;
+  if(!role)return;
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_role',username:u,role}})}});
+  if(r&&r.ok){{toast('Role updated','ok');closeM('admin-modal');openAdmin();}}
+  else toast((r&&r.error)||'Role update failed','er');
 }}
 
 // Export/Import
