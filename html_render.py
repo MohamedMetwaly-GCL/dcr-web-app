@@ -110,8 +110,8 @@ body.dark .mfoot{background:#101a29}
 .form-section-grid .fg{min-width:0}
 .form-section-grid .fg label{margin-bottom:2px}
 .form-section-grid .fg.span-2{grid-column:span 2}
-.form-section-grid textarea{min-height:82px;resize:vertical}
-.form-section-grid .fg.full textarea{min-height:98px}
+.form-section-grid textarea{min-height:52px;resize:vertical;overflow:hidden}
+.form-section-grid .fg.full textarea{min-height:58px}
 body.dark .form-section{background:linear-gradient(180deg,#162132,#101a28);border-color:#2b3c4f;box-shadow:none}
 body.dark .stitle,body.dark .form-section-title{color:#93c5fd}
 body.dark .form-section-sub,body.dark .fg label{color:#cbd5e1}
@@ -136,8 +136,8 @@ body.dark .fg input::placeholder,body.dark .fg textarea::placeholder{color:#7f93
   .form-section-grid .fg.span-2,.form-section-grid .fg.full{grid-column:1/-1}
   .form-section-grid .fg label{font-size:9px;margin-bottom:2px}
   .fg input,.fg select,.fg textarea{padding:6px 8px;font-size:11px}
-  .form-section-grid textarea{min-height:68px}
-  .form-section-grid .fg.full textarea{min-height:78px}
+  .form-section-grid textarea{min-height:48px}
+  .form-section-grid .fg.full textarea{min-height:54px}
   .stitle{font-size:9px;margin:7px 0 4px;padding-bottom:3px}
   .slist{max-height:150px;padding:3px;gap:2px}
   .sitem{gap:5px;padding:3px 5px;font-size:10px}
@@ -1987,7 +1987,8 @@ body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:l
   font-size:11px;font-family:inherit;outline:none}}
 #rec-modal .record-modal{{width:min(96vw,980px)!important;max-width:980px!important}}
 #rec-modal .mbody{{padding:14px 16px 12px}}
-.record-modal-actions{{gap:10px;flex-wrap:wrap}}
+#rec-modal .record-modal-actions{{gap:10px;flex-wrap:wrap;border-top:1px solid rgba(148,163,184,.34);background:linear-gradient(180deg,rgba(248,250,252,.96),#eef4fb);box-shadow:0 -10px 24px rgba(15,23,42,.10);z-index:5}}
+body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:linear-gradient(180deg,#142033,#101a29);box-shadow:0 -12px 26px rgba(0,0,0,.28)}}
 .record-modal-actions .btn{{min-height:38px}}
 #pr-items-editor{{overflow-x:auto;padding-bottom:2px}}
 .pr-items-editor table{{min-width:560px}}
@@ -3373,6 +3374,22 @@ function bindDirectionalInput(el){{
   sync();
 }}
 
+function bindAutoGrowTextarea(ta){{
+  if(!ta||ta.tagName!=='TEXTAREA')return;
+  const grow=()=>{{
+    ta.style.height='auto';
+    ta.style.height=Math.min(Math.max(ta.scrollHeight,42),220)+'px';
+  }};
+  ta.addEventListener('input',grow);
+  ta.addEventListener('change',grow);
+  requestAnimationFrame(grow);
+}}
+
+function bindSmartTextarea(ta){{
+  bindDirectionalInput(ta);
+  bindAutoGrowTextarea(ta);
+}}
+
 function getLongTextMeta(col){{
   const key=String(col?.col_key||'');
   const label=String(col?.label||'');
@@ -3385,23 +3402,23 @@ function getLongTextMeta(col){{
     (/\\bms\\b/.test(text)&&(text.includes('ref')||text.includes('reference')||text.includes('no')));
   const isItemRefLike=isItemRefField(col);
   if(isContentLike)return {{
-    rows:5,
-    style:'resize:vertical; min-height:100px',
+    rows:2,
+    style:'resize:vertical; min-height:58px; overflow:hidden',
     placeholder:'Use Enter to put each item on a separate line'
   }};
   if(isRemarksLike)return {{
-    rows:3,
-    style:'resize:vertical; min-height:76px',
+    rows:2,
+    style:'resize:vertical; min-height:52px; overflow:hidden',
     placeholder:'Use Enter for multiline remarks'
   }};
   if(isMsLike)return {{
-    rows:3,
-    style:'resize:vertical; min-height:76px',
+    rows:2,
+    style:'resize:vertical; min-height:52px; overflow:hidden',
     placeholder:'Use Enter to put each MS on a separate line'
   }};
   if(isItemRefLike)return {{
-    rows:3,
-    style:'resize:vertical; min-height:76px',
+    rows:2,
+    style:'resize:vertical; min-height:52px; overflow:hidden',
     placeholder:'Use Enter to put each item reference / DWG No. on a separate line'
   }};
   return null;
@@ -3636,7 +3653,7 @@ async function buildForm(row,opts={{}}){{
   const formRoot=document.getElementById('rec-form');formRoot.innerHTML='';
   const sectionBodies={{}};
   let nextNo='';
-  const isAddMode=!row&&!opts.mode;
+  const isAddMode=!state.editId;
   if(!row){{
     nextNo=String(opts.suggestedDocNo||'').trim();
     if(!nextNo){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
@@ -3692,7 +3709,7 @@ async function buildForm(row,opts={{}}){{
       if(isAddMode)continue;
       const inp=document.createElement('input');inp.id='f-'+key;inp.value=getCalculatedDisplayValue(col,row);
       inp.readOnly=true;
-      inp.placeholder='Calculated automatically';
+      inp.placeholder='';
       inp.style.cssText='background:var(--bg);font-weight:700;color:var(--mu)';
       grp.appendChild(inp);
       getOrCreateFormSection(formRoot,sectionBodies,getDynamicFormSection(col,ctx)).appendChild(grp);
@@ -3700,10 +3717,10 @@ async function buildForm(row,opts={{}}){{
     }}
     if(isPrTab&&prDetailsKey&&key===prDetailsKey){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
-      ta.rows=3;
-      ta.style.cssText='resize:vertical;min-height:80px';
+      ta.rows=2;
+      ta.style.cssText='resize:vertical;min-height:52px;overflow:hidden';
       ta.placeholder='Leave blank to auto-generate from items';
-      bindDirectionalInput(ta);
+      bindSmartTextarea(ta);
       grp.appendChild(ta);
       const hint=document.createElement('div');
       hint.style.cssText='font-size:10px;color:var(--mu);margin-top:4px';
@@ -3762,10 +3779,10 @@ async function buildForm(row,opts={{}}){{
     else if(isLtrTab&&['title','description','remarks'].includes(getLTRFieldRole(col))){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val||'';
       const role=getLTRFieldRole(col);
-      ta.rows=role==='description'?4:3;
-      ta.style.cssText=role==='description'?'resize:vertical; min-height:96px':'resize:vertical; min-height:76px';
+      ta.rows=2;
+      ta.style.cssText=role==='description'?'resize:vertical; min-height:58px; overflow:hidden':'resize:vertical; min-height:52px; overflow:hidden';
       ta.placeholder=role==='title'?'Use Enter for a multiline subject':'Use Enter for multiline text';
-      bindDirectionalInput(ta);
+      bindSmartTextarea(ta);
       grp.appendChild(ta);
     }}
     else if(col.col_type==='dropdown'&&col.list_name){{
@@ -3814,7 +3831,7 @@ async function buildForm(row,opts={{}}){{
       ta.rows=longTextMeta.rows;
       ta.style.cssText=longTextMeta.style;
       ta.placeholder=longTextMeta.placeholder;
-      bindDirectionalInput(ta);
+      bindSmartTextarea(ta);
       grp.appendChild(ta);
     }}
     else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';bindDirectionalInput(inp);grp.appendChild(inp);}}
@@ -4018,10 +4035,10 @@ function classifyFormFieldSemantic(col, ctx={{}}){{
     if(['direction','fromParty','toParty','issuedDate','receivedDate','parentLetterRef','parentLetterId'].includes(ltrRole))return 'workflow';
     if(['description','remarks'].includes(ltrRole)||longTextMeta)return 'notes';
   }}
+  if(['item ref','dwg','drawing','ms ref','ms reference','spec ref','technical ref','tech ref','parent ref','parent technical','parent letter','reference','ref no','code ref','originating document','origin'].some(v=>text.includes(v)))return 'reference';
   if(['date','datetime'].includes(type)||['date','issued','issue','submitted','submission','received','reply date','return date','expected','actual'].some(v=>text.includes(v)))return 'timeline';
   if(['status','direction','approval','approved','review','workflow','response','stage','part b','part c','part d'].some(v=>text.includes(v)))return 'workflow';
-  if(['file','attachment','link','remarks','comment','note','description','subject','narrative','content'].some(v=>text.includes(v))||longTextMeta)return 'notes';
-  if(['item ref','dwg','drawing','ms ref','ms reference','parent letter','reference','ref no','spec','originating document','origin'].some(v=>text.includes(v)))return 'reference';
+  if(['file location','original file','file','attachment','attach','link','url','remarks','comment','note','description','subject','narrative','content'].some(v=>text.includes(v))||longTextMeta)return 'notes';
   if(['qty','quantity','unit','amount','value','cost','price','total','brand'].some(v=>text.includes(v)))return 'commercial';
   if(['docno','document no','letter ref','discipline','sub trade','trade','title','floor','prepared by','company','from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'core';
   return 'other';
@@ -4057,8 +4074,16 @@ function getDynamicFieldSpan(col, ctx={{}}){{
 
 function getCalculatedDisplayValue(col,row){{
   const key=String(col?.col_key||'');
+  const label=String(col?.label||'').toLowerCase();
+  const type=String(col?.col_type||'').toLowerCase();
   if(key==='expectedReplyDate')return row?._expectedReplyDate||row?.expectedReplyDate||'';
-  if(key==='duration'||key==='_duration')return row?._duration||row?.duration||'';
+  if(key==='duration'||key==='_duration'||label.includes('duration')||label==='dur.'||key.toLowerCase().includes('duration'))return row?._duration||row?.[key]||row?.duration||'';
+  if(type==='duration_calc'){{
+    const[ds,de]=(col.list_name||'issuedDate,actualReplyDate').split(',');
+    return calcWD(row?.[ds.trim()]||'',row?.[de.trim()]||'');
+  }}
+  if(key.toLowerCase().includes('overdue'))return row?._overdue?'Yes':(row?.[key]||'');
+  if(key.toLowerCase().includes('aging'))return row?.[key]||'';
   return row?.[key]||'';
 }}
 
