@@ -361,14 +361,16 @@ def _field_width_role(col):
         return "very_long"
     if "title" in hay or "subject" in hay:
         return "very_long"
+    if "status" in hay:
+        return "status"
     if "item description" in hay or "description" in hay or "scope" in hay:
         return "long"
     if "remarks" in hay or "comment" in hay or "note" in hay:
         return "long"
     if "file" in hay or "location" in hay or "link" in hay:
-        return "long"
+        return "file_link"
     if "ms ref" in hay or "dwg" in hay or "item ref" in hay or "parent letter" in hay or "reference" in hay:
-        return "medium_wide"
+        return "technical_ref"
     if "prepared" in hay or "engineer" in hay or "person" in hay:
         return "medium_wide"
     if label_l in ("from", "to") or key_l in ("from", "to"):
@@ -379,13 +381,11 @@ def _field_width_role(col):
         return "medium"
     if "sub trade" in hay or "trade" in hay or "brand" in hay or "floor" in hay or "level" in hay:
         return "medium"
-    if "status" in hay:
-        return "compact"
     if "duration" in hay:
         return "compact"
-    if "date" in hay:
+    if "date" in hay or "issued" in hay or "submitted" in hay or "received" in hay or "reply" in hay:
         return "date"
-    if "direction" in hay or "revision" in hay:
+    if "direction" in hay or "revision" in hay or re.search(r"\brev\b", hay) or "code" in hay:
         return "compact"
     if "qty" in hay or "quantity" in hay or "unit" in hay:
         return "compact"
@@ -395,13 +395,16 @@ def _field_width_role(col):
 def _excel_width_from_role(role):
     return {
         "serial": 5.5,
-        "document_no": 28,
-        "very_long": 56,
+        "document_no": 30,
+        "very_long": 58,
         "long": 42,
-        "medium_wide": 26,
+        "technical_ref": 31,
+        "status": 25,
+        "file_link": 15,
+        "medium_wide": 24,
         "medium": 18,
         "date": 14,
-        "compact": 11,
+        "compact": 9.5,
         "default": 16,
     }.get(role, 16)
 
@@ -415,24 +418,30 @@ def _excel_width_from_web_px(px, role):
         return None
     min_by_role = {
         "serial": 5,
-        "document_no": 24,
-        "very_long": 42,
-        "long": 30,
+        "document_no": 28,
+        "very_long": 48,
+        "long": 28,
+        "technical_ref": 26,
+        "status": 23,
+        "file_link": 12,
         "medium_wide": 22,
         "medium": 15,
         "date": 13,
-        "compact": 9,
+        "compact": 8.5,
         "default": 13,
     }
     max_by_role = {
         "serial": 8,
         "document_no": 36,
-        "very_long": 68,
-        "long": 52,
+        "very_long": 72,
+        "long": 54,
+        "technical_ref": 40,
+        "status": 30,
+        "file_link": 18,
         "medium_wide": 34,
         "medium": 26,
         "date": 18,
-        "compact": 18,
+        "compact": 14,
         "default": 24,
     }
     width = px / 7.2
@@ -472,6 +481,8 @@ def _excel_sheet_column_widths(cols, dt_name=None, web_widths=None):
             label = str(col.get("label", "") or "").lower()
             if "subject" in label:
                 widths[i] = max(widths[i], 58)
+            elif "letter ref" in label or key in {"letterref", "letter_ref", "docno"}:
+                widths[i] = max(widths[i], 31)
             elif key in {"from", "to", "fromparty", "toparty"}:
                 widths[i] = max(widths[i], 22)
             elif "parent letter" in label:
@@ -490,6 +501,56 @@ def _excel_sheet_column_widths(cols, dt_name=None, web_widths=None):
     return widths
 
 
+def _excel_col_hay(col_key, label):
+    key = str(col_key or "").strip().lower()
+    label_l = re.sub(r"[_./-]+", " ", str(label or "").strip().lower())
+    return f"{key} {label_l}".strip()
+
+
+def _is_excel_date_col(col_key, label):
+    hay = _excel_col_hay(col_key, label)
+    key = str(col_key or "").strip().lower()
+    date_tokens = (
+        "date", "issued", "submitted", "submission", "received", "reply",
+        "expected", "actual", "rec from", "rec by", "sent"
+    )
+    if key in {"duration", "_sr"} or "prepared by" in hay or "reply status" in hay:
+        return False
+    return any(token in hay for token in date_tokens)
+
+
+def _parse_excel_date_value(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    text = text.replace("T", " ")
+    text = re.sub(r"\s+\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?$", "", text)
+    text = re.sub(r"\s+", " ", text)
+    for fmt in (
+        "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y",
+        "%d/%b/%Y", "%d-%b-%Y", "%d %b %Y", "%d/%B/%Y", "%d-%B-%Y",
+    ):
+        try:
+            return datetime.datetime.strptime(text, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+def _excel_cell_value(col_key, label, value):
+    if _is_excel_date_col(col_key, label):
+        parsed = _parse_excel_date_value(value)
+        if parsed:
+            return parsed
+    return value
+
+
 def _excel_center_col(col_key, label):
     key = str(col_key or "").strip()
     label_l = str(label or "").strip().lower()
@@ -497,19 +558,34 @@ def _excel_center_col(col_key, label):
         key in {"_sr", "duration", "issuedDate", "expectedReplyDate", "actualReplyDate"}
         or "date" in key.lower()
         or "date" in label_l
+        or key == "status"
+        or "status" in label_l
     )
 
 
-def _excel_row_height(values, base=20):
+def _excel_row_height(values, cols=None, widths=None, base=19):
     max_lines = 1
-    for value in values:
+    cols = cols or []
+    widths = widths or []
+    for idx, value in enumerate(values):
         text = str(value or "")
         if not text:
             continue
+        col = cols[idx] if idx < len(cols) else {}
+        width = widths[idx] if idx < len(widths) else 18
+        hay = _excel_col_hay(col.get("col_key", ""), col.get("label", ""))
         explicit = text.count("\n") + 1
-        wrapped = max(1, min(4, (len(text) // 55) + 1))
-        max_lines = max(max_lines, explicit, wrapped)
-    return max(base, min(62, 15 * max_lines))
+        chars_per_line = max(14, int(width * 1.25))
+        wrapped = max(1, (max((len(part) for part in text.split("\n")), default=0) // chars_per_line) + 1)
+        line_cap = 2 if ("status" in hay or "document no" in hay or "letter ref" in hay) else 3
+        if "title" in hay or "subject" in hay or "remarks" in hay or "description" in hay or "pr detail" in hay:
+            line_cap = 4
+        max_lines = max(max_lines, min(line_cap, max(explicit, wrapped)))
+    return max(base, min(48, 14 * max_lines + 4))
+
+
+def _excel_wrap_cell(col_key, label):
+    return not (str(col_key or "") in {"duration", "_sr"} or _is_excel_date_col(col_key, label))
 
 
 def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, pr_details_key=None, web_widths=None):
@@ -552,15 +628,15 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     dt_name = (dt.get("name") if dt else "") or (dt.get("id") if dt else "") or "REGISTER"
     mcell(1, f"DOCUMENT CONTROL REGISTER  -  {str(dt_name).upper()}",
           PRIMARY, bold=True, sz=13)
-    ws.row_dimensions[1].height = 36
+    ws.row_dimensions[1].height = 30
 
     info = "   |   ".join(f"{k}: {v}" for k,v in [
         ("Project",proj.get("name","")),("Code",proj.get("code","")),
         ("Client",proj.get("client","")),("Consultant",proj.get("mainConsultant","")),
-        ("Exported",datetime.datetime.now().strftime("%d/%b/%Y %H:%M"))] if v)
+        ("Exported",datetime.datetime.now().strftime("%d-%m-%Y %H:%M"))] if v)
     mcell(2, info, PL, sz=9)
-    ws.row_dimensions[2].height = 18
-    ws.row_dimensions[3].height = 4
+    ws.row_dimensions[2].height = 16
+    ws.row_dimensions[3].height = 3
 
     ws.freeze_panes = "A5"
     ws.print_title_rows = "4:4"
@@ -580,7 +656,7 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
         c.fill = fill(PRIMARY)
         c.alignment = Alignment(horizontal="center",vertical="center",wrap_text=True)
         c.border = thin()
-    ws.row_dimensions[4].height = 24
+    ws.row_dimensions[4].height = 22
 
     has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in all_cols)
     sr = 1
@@ -613,6 +689,7 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                 else:                           val = str(row.get(key,"") or "")
                 val = _format_multiline_display_value(key, col["label"], val)
                 row_values.append(val)
+                cell_value = _excel_cell_value(key, col["label"], val)
 
                 if key == "fileLocation" and val and val.startswith("http"):
                     c = ws.cell(row=rn, column=ci)
@@ -620,7 +697,9 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                     c.hyperlink = val
                     c.font = Font(size=9,name="Arial",color="2563A8",underline="single")
                 else:
-                    c = ws.cell(row=rn, column=ci, value=val)
+                    c = ws.cell(row=rn, column=ci, value=cell_value)
+                    if isinstance(cell_value, datetime.date):
+                        c.number_format = "DD-MM-YYYY"
                     if key == "duration" and val == "0":
                         c.value = 0
                     if key=="status" and val:
@@ -635,9 +714,12 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                         c.font = Font(size=10,name="Arial",
                                       color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
                 c.border    = thin()
-                c.alignment = Alignment(vertical="center", wrap_text=True,
-                                        horizontal="center" if _excel_center_col(key, col["label"]) else "left")
-            ws.row_dimensions[rn].height = _excel_row_height(row_values, base=20)
+                c.alignment = Alignment(
+                    vertical="center",
+                    wrap_text=_excel_wrap_cell(key, col["label"]),
+                    horizontal="center" if _excel_center_col(key, col["label"]) else "left",
+                )
+            ws.row_dimensions[rn].height = _excel_row_height(row_values, all_cols, col_widths, base=19)
             if not is_rev: sr += 1
         total_row = 5 + len(records)
 
