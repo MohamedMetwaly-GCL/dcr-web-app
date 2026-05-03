@@ -399,8 +399,8 @@ def _excel_width_from_role(role):
         "very_long": 58,
         "long": 42,
         "technical_ref": 31,
-        "status": 25,
-        "file_link": 15,
+        "status": 27,
+        "file_link": 17,
         "medium_wide": 24,
         "medium": 18,
         "date": 14,
@@ -422,8 +422,8 @@ def _excel_width_from_web_px(px, role):
         "very_long": 48,
         "long": 28,
         "technical_ref": 26,
-        "status": 23,
-        "file_link": 12,
+        "status": 25,
+        "file_link": 15,
         "medium_wide": 22,
         "medium": 15,
         "date": 13,
@@ -436,8 +436,8 @@ def _excel_width_from_web_px(px, role):
         "very_long": 72,
         "long": 54,
         "technical_ref": 40,
-        "status": 30,
-        "file_link": 18,
+        "status": 32,
+        "file_link": 22,
         "medium_wide": 34,
         "medium": 26,
         "date": 18,
@@ -504,7 +504,7 @@ def _excel_sheet_column_widths(cols, dt_name=None, web_widths=None):
 def _excel_col_hay(col_key, label):
     key = str(col_key or "").strip().lower()
     label_l = re.sub(r"[_./-]+", " ", str(label or "").strip().lower())
-    return f"{key} {label_l}".strip()
+    return re.sub(r"\s+", " ", f"{key} {label_l}").strip()
 
 
 def _is_excel_date_col(col_key, label):
@@ -512,11 +512,20 @@ def _is_excel_date_col(col_key, label):
     key = str(col_key or "").strip().lower()
     date_tokens = (
         "date", "issued", "submitted", "submission", "received", "reply",
-        "expected", "actual", "rec from", "rec by", "sent"
+        "expected", "actual", "rec from", "rec by", "received from", "received by", "sent"
     )
     if key in {"duration", "_sr"} or "prepared by" in hay or "reply status" in hay:
         return False
-    return any(token in hay for token in date_tokens)
+    return any(token in hay for token in date_tokens) or bool(re.search(r"\brec\b", hay))
+
+
+def _looks_like_excel_date_value(value):
+    text = str(value or "").strip()
+    if not text:
+        return False
+    text = text.replace("T", " ")
+    text = re.sub(r"\s+\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?$", "", text)
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d{2}[-/.]\d{2}[-/.]\d{4}|[0-3]?\d[-/ ][A-Za-z]{3,9}[-/ ]\d{4}", text))
 
 
 def _parse_excel_date_value(value):
@@ -544,7 +553,7 @@ def _parse_excel_date_value(value):
 
 
 def _excel_cell_value(col_key, label, value):
-    if _is_excel_date_col(col_key, label):
+    if _is_excel_date_col(col_key, label) or _looks_like_excel_date_value(value):
         parsed = _parse_excel_date_value(value)
         if parsed:
             return parsed
@@ -581,7 +590,7 @@ def _excel_row_height(values, cols=None, widths=None, base=19):
         if "title" in hay or "subject" in hay or "remarks" in hay or "description" in hay or "pr detail" in hay:
             line_cap = 4
         max_lines = max(max_lines, min(line_cap, max(explicit, wrapped)))
-    return max(base, min(48, 14 * max_lines + 4))
+    return max(base, min(34, 13 * max_lines + 4))
 
 
 def _excel_wrap_cell(col_key, label):
