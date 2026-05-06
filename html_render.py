@@ -3638,6 +3638,79 @@ function isCalculatedFormField(col){{
     ['auto_date','auto_num','duration_calc'].includes(type);
 }}
 
+function normalizeNocFieldText(col){{
+  const rawKey=String(col?.col_key||'');
+  const rawLabel=String(col?.label||'');
+  const spacedKey=rawKey.replace(/([a-z])([A-Z])/g,'$1 $2');
+  const text=(spacedKey+' '+rawLabel).toLowerCase().replace(/[_./()&+\\-]+/g,' ').replace(/\\s+/g,' ').trim();
+  const compact=text.replace(/\\s+/g,'');
+  const keyCompact=spacedKey.toLowerCase().replace(/[_./()&+\\-]+/g,' ').replace(/\\s+/g,'').trim();
+  return {{text,compact,keyCompact}};
+}}
+
+function getNocFieldProfile(col){{
+  const meta=normalizeNocFieldText(col);
+  const has=(...terms)=>terms.some(term=>meta.text.includes(term)||meta.compact.includes(term.replace(/\\s+/g,'')));
+  const profile=(section,rank,span='span-1')=>({{section,rank,span}});
+  const exact={{
+    docno:profile('NOC Core',10,'span-1'),
+    nocno:profile('NOC Core',10,'span-1'),
+    vono:profile('NOC Core',20,'span-1'),
+    originatingdocument:profile('NOC Core',30,'span-2'),
+    title:profile('NOC Details',110,'full'),
+    nocsubject:profile('NOC Details',110,'full'),
+    nocdescription:profile('NOC Details',120,'full'),
+    partaissuedate:profile('NOC Part Workflow',210,'span-1'),
+    partbreturndate:profile('NOC Part Workflow',220,'span-1'),
+    partbstatus:profile('NOC Part Workflow',230,'span-1'),
+    partcissuedate:profile('NOC Part Workflow',240,'span-1'),
+    partdreturndate:profile('NOC Part Workflow',250,'span-1'),
+    partdstatus:profile('NOC Part Workflow',260,'span-1'),
+    voissuedate:profile('VO / Commercial',310,'span-1'),
+    submittedcost:profile('VO / Commercial',320,'span-1'),
+    vobasevalue:profile('VO / Commercial',330,'span-1'),
+    vovaluewithsiandvat:profile('VO / Commercial',340,'span-1'),
+    finalapprovedcost:profile('VO / Commercial',350,'span-1'),
+    remarks:profile('Remarks / Files',410,'full'),
+    originalfile:profile('Remarks / Files',420,'span-2'),
+    filelocation:profile('Remarks / Files',430,'span-2')
+  }};
+  if(exact[meta.keyCompact])return exact[meta.keyCompact];
+
+  if(has('noc no','document no'))return profile('NOC Core',10,'span-1');
+  if(has('vo no','variation order no'))return profile('NOC Core',20,'span-1');
+  if(has('originating document','originating doc','origin document'))return profile('NOC Core',30,'span-2');
+
+  if(has('noc subject','subject','title'))return profile('NOC Details',110,'full');
+  if(has('noc description','description','scope'))return profile('NOC Details',120,'full');
+
+  if(has('part a issue'))return profile('NOC Part Workflow',210,'span-1');
+  if(has('part b return'))return profile('NOC Part Workflow',220,'span-1');
+  if(has('part b status'))return profile('NOC Part Workflow',230,'span-1');
+  if(has('part c issue'))return profile('NOC Part Workflow',240,'span-1');
+  if(has('part d return'))return profile('NOC Part Workflow',250,'span-1');
+  if(has('part d status'))return profile('NOC Part Workflow',260,'span-1');
+
+  if(has('vo issue'))return profile('VO / Commercial',310,'span-1');
+  if(has('submitted cost'))return profile('VO / Commercial',320,'span-1');
+  if(has('vo base value','base value'))return profile('VO / Commercial',330,'span-1');
+  if(has('vo value','including si','incl si','vat'))return profile('VO / Commercial',340,'span-1');
+  if(has('final approved cost','approved cost'))return profile('VO / Commercial',350,'span-1');
+
+  if(has('remarks','remark','comment','notes'))return profile('Remarks / Files',410,'full');
+  if(has('original file'))return profile('Remarks / Files',420,'span-2');
+  if(has('file location','attachment','attach','link','url','file'))return profile('Remarks / Files',430,'span-2');
+
+  return profile('Other NOC Fields',900,'span-1');
+}}
+
+function buildNocFormFields(allCols,isLtrTab){{
+  return buildDynamicOrderedFormFields(allCols,isLtrTab)
+    .map((col,idx)=>({{col,idx,profile:getNocFieldProfile(col),calculated:isCalculatedFormField(col)}}))
+    .sort((a,b)=>(Number(a.calculated)-Number(b.calculated))||(a.profile.rank-b.profile.rank)||(a.idx-b.idx))
+    .map(x=>x.col);
+}}
+
 function buildDynamicOrderedFormFields(allCols,isLtrTab){{
   const byKey=new Map((allCols||[]).map(c=>[c.col_key,c]));
   const used=new Set();
@@ -3652,8 +3725,8 @@ function buildDynamicOrderedFormFields(allCols,isLtrTab){{
   return [...ordered,...calculated];
 }}
 
-function getOrderedRecordFormCols(allCols,isLtrTab){{
-  return buildDynamicOrderedFormFields(allCols,isLtrTab);
+function getOrderedRecordFormCols(allCols,isLtrTab,isNocTab=false){{
+  return isNocTab?buildNocFormFields(allCols,isLtrTab):buildDynamicOrderedFormFields(allCols,isLtrTab);
 }}
 
 async function buildForm(row,opts={{}}){{
@@ -3670,7 +3743,7 @@ async function buildForm(row,opts={{}}){{
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
   const isLtrTab=isLTRTab();
-  const formCols=getOrderedRecordFormCols(allCols,isLtrTab);
+  const formCols=getOrderedRecordFormCols(allCols,isLtrTab,isNocTab);
   const ltrParentIdCol=isLtrTab?getLTRColForRole(allCols,'parentLetterId'):null;
   let ltrParentOptions=[];
   if(isLtrTab){{
@@ -3682,15 +3755,7 @@ async function buildForm(row,opts={{}}){{
   state.cols=formCols.filter(c=>c.visible);
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   state.cols=prevCols;
-  const nocSections={{
-    'Basic Info':['docNo','title','nocDescription','originatingDocument','remarks'],
-    'Part A':['partAIssueDate'],
-    'Part B':['partBReturnDate','partBStatus'],
-    'Part C':['partCIssueDate','submittedCost'],
-    'Part D':['partDReturnDate','partDStatus','finalApprovedCost'],
-    'Variation Order':['voNo','voIssueDate','voBaseValue','voValueWithSIAndVAT'],
-  }};
-  const nocSectionForKey=(key)=>Object.entries(nocSections).find(([,keys])=>keys.includes(key))?.[0]||null;
+
   let nocStageInp=null,nocBaseInp=null,nocTotalInp=null;
   if(isNocTab){{
     const sf=makeReadOnlyField('Stage Progress',getNocStageProgress(row||{{}}));
@@ -4007,6 +4072,12 @@ function getFormSectionHint(title){{
     'Other Dynamic Fields':'Additional fields configured for this document type',
     'Commercial & Quantities':'Values, quantities, and related numeric fields',
     'PR Items':'Line items and grouped procurement details',
+    'NOC Core':'Primary NOC identifiers and originating reference',
+    'NOC Details':'Subject and description of the change notice',
+    'NOC Part Workflow':'Part A/B/C/D dates and status sequence',
+    'VO / Commercial':'Variation order and commercial values',
+    'Remarks / Files':'Remarks, original files, links, and attachments',
+    'Other NOC Fields':'Additional NOC fields configured for this project',
     'Letter Information':'Reference and headline details for the letter',
     'Correspondence Routing':'Direction, parties, and linked parent correspondence',
     'Additional Details':'Remaining project-specific fields'
@@ -4015,6 +4086,12 @@ function getFormSectionHint(title){{
 }}
 
 const FORM_SECTION_ORDER=[
+  'NOC Core',
+  'NOC Details',
+  'NOC Part Workflow',
+  'VO / Commercial',
+  'Remarks / Files',
+  'Other NOC Fields',
   'Core Register Fields',
   'References / Technical Fields',
   'Dates / Timeline',
@@ -4054,6 +4131,7 @@ function classifyFormFieldSemantic(col, ctx={{}}){{
 }}
 
 function getDynamicFormSection(col, ctx){{
+  if(ctx?.isNocTab)return getNocFieldProfile(col).section;
   const semantic=classifyFormFieldSemantic(col,ctx);
   const map={{
     core:'Core Register Fields',
@@ -4069,6 +4147,7 @@ function getDynamicFormSection(col, ctx){{
 }}
 
 function getDynamicFieldSpan(col, ctx={{}}){{
+  if(ctx?.isNocTab)return getNocFieldProfile(col).span;
   const key=String(col?.col_key||'').toLowerCase();
   const label=String(col?.label||'').toLowerCase();
   const type=String(col?.col_type||'').toLowerCase();
