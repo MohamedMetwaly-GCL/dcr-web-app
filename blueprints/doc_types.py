@@ -31,7 +31,8 @@ def api_add_doc_type(pid):
     name = data.get("name","").strip()
     if not code or not name:
         return jsonify(ok=False, error="Code and name required"), 400
-    db.add_doc_type(pid, code, name)
+    override = data.get("expected_reply_override") or {}
+    db.add_doc_type(pid, code, name, override)
     return jsonify(ok=True)
 
 
@@ -45,6 +46,8 @@ def api_rename_doc_type(pid, dt_id):
         db.exe("UPDATE doc_types SET code=%s WHERE id=%s AND project_id=%s", (new_code, dt_id, pid))
     if new_name:
         db.exe("UPDATE doc_types SET name=%s WHERE id=%s AND project_id=%s", (new_name, dt_id, pid))
+    if "expected_reply_override" in data:
+        db.save_doc_type_expected_reply_override(pid, dt_id, data.get("expected_reply_override") or {})
     return jsonify(ok=True)
 
 @doc_types_bp.route("/api/doc_types/<pid>/reorder", methods=["POST"])

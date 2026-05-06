@@ -2307,17 +2307,30 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 <!-- ADD DOC TYPE -->
 <div class="overlay hidden" id="dt-modal">
   <div class="modal" style="max-width:420px">
-    <div class="mhdr"><span>Add Document Type</span>
+    <div class="mhdr"><span id="dt-modal-title">Add Document Type</span>
       <button class="xbtn" onclick="closeM('dt-modal')">✕</button></div>
     <div class="mbody">
+      <input type="hidden" id="dt-edit-id">
       <div class="fgrid">
         <div class="fg"><label>Code</label><input id="dt-code" placeholder="e.g. MS"></div>
         <div class="fg"><label>Name</label><input id="dt-name" placeholder="e.g. Method Statement"></div>
       </div>
+      <div class="stitle" style="margin-top:12px">Expected Reply Override</div>
+      <div style="font-size:10px;color:var(--mu);margin:-4px 0 8px;padding:6px 8px;background:var(--bg);border-radius:4px">
+        Optional day-count override for this document type only. Calculation mode, weekend rule, and holidays still inherit from the project.
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;margin-bottom:8px">
+        <input type="checkbox" id="dt-er-use" onchange="toggleDocTypeReplyOverride()">
+        Use Custom Reply Days For This Document Type
+      </label>
+      <div class="fgrid" id="dt-er-fields" style="display:none">
+        <div class="fg"><label>REV00 Reply Days</label><input id="dt-er-rev0" type="number" min="0" step="1" value="14"></div>
+        <div class="fg"><label>REV&gt;00 Reply Days</label><input id="dt-er-rev" type="number" min="0" step="1" value="7"></div>
+      </div>
     </div>
     <div class="mfoot">
       <button class="btn btn-sc" onclick="closeM('dt-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="saveDocType()">Add</button>
+      <button class="btn btn-pr" id="dt-save-btn" onclick="saveDocType()">Add</button>
     </div>
   </div>
 </div>
@@ -2752,7 +2765,7 @@ function tabMenu(id,e){{
   m.innerHTML=`
     <div onclick="renameDT('${{id}}','${{dt.code||id}}','${{(dt.name||'').replace(/'/g,\"\\\\'\")}}')"
       style="padding:8px 14px;cursor:pointer;font-size:12px"
-      onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''">✏ Rename</div>
+      onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''">✏ Type Settings</div>
     <div onclick="moveDT('${{id}}',-1)" style="padding:8px 14px;cursor:${{idx>0?'pointer':'not-allowed'}};font-size:12px;opacity:${{idx>0?'1':'.45'}}"
       onmouseover="if(${{idx>0}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">⬅ Move Left</div>
     <div onclick="moveDT('${{id}}',1)" style="padding:8px 14px;cursor:${{idx>=0&&idx<(state.dtList||[]).length-1?'pointer':'not-allowed'}};font-size:12px;opacity:${{idx>=0&&idx<(state.dtList||[]).length-1?'1':'.45'}}"
@@ -2763,14 +2776,10 @@ function tabMenu(id,e){{
   setTimeout(()=>document.addEventListener('click',()=>m.remove(),{{once:true}}),10);
 }}
 
-async function renameDT(id,oldCode,oldName){{
-  const newCode=prompt('Tab code (short):',oldCode);
-  if(newCode===null)return;
-  const newName=prompt('Full name:',oldName);
-  if(newName===null)return;
-  await apiFetch('/api/doc_types/'+PID+'/'+id,{{method:'PATCH',
-    body:JSON.stringify({{code:newCode.trim().toUpperCase(),name:newName.trim()}})}});
-  await loadDTs(true);toast('✔ Renamed','ok');
+function renameDT(id,oldCode,oldName){{
+  const dt=(state.dtList||[]).find(d=>d.id===id)||{{id,code:oldCode,name:oldName}};
+  setDocTypeModalMode(dt);
+  openM('dt-modal');
 }}
 
 async function delDT(id){{
@@ -4359,13 +4368,56 @@ async function saveProject(){{
 }}
 
 // Doc Types
-function addDocType(){{document.getElementById('dt-code').value='';document.getElementById('dt-name').value='';openM('dt-modal');}}
+function normalizeDocTypeReplyOverride(dt){{
+  const o=dt?.expected_reply_override||{{}};
+  return {{
+    use_expected_reply_override:!!(o.use_expected_reply_override||o.enabled),
+    rev0_reply_days_override:Number.isFinite(Number(o.rev0_reply_days_override))?Number(o.rev0_reply_days_override):14,
+    rev_reply_days_override:Number.isFinite(Number(o.rev_reply_days_override))?Number(o.rev_reply_days_override):7
+  }};
+}}
+function toggleDocTypeReplyOverride(){{
+  const on=document.getElementById('dt-er-use')?.checked;
+  const fields=document.getElementById('dt-er-fields');
+  if(fields)fields.style.display=on?'grid':'none';
+}}
+function setDocTypeModalMode(dt=null){{
+  const edit=!!dt;
+  document.getElementById('dt-modal-title').textContent=edit?'Document Type Settings':'Add Document Type';
+  document.getElementById('dt-save-btn').textContent=edit?'Save':'Add';
+  document.getElementById('dt-edit-id').value=edit?dt.id:'';
+  document.getElementById('dt-code').value=edit?(dt.code||dt.id||''):'';
+  document.getElementById('dt-name').value=edit?(dt.name||''):'';
+  document.getElementById('dt-code').disabled=edit;
+  const o=normalizeDocTypeReplyOverride(dt||{{}});
+  document.getElementById('dt-er-use').checked=o.use_expected_reply_override;
+  document.getElementById('dt-er-rev0').value=o.rev0_reply_days_override;
+  document.getElementById('dt-er-rev').value=o.rev_reply_days_override;
+  toggleDocTypeReplyOverride();
+}}
+function collectDocTypeReplyOverride(){{
+  const rev0=parseInt(document.getElementById('dt-er-rev0')?.value||'14',10);
+  const rev=parseInt(document.getElementById('dt-er-rev')?.value||'7',10);
+  return {{
+    use_expected_reply_override:!!document.getElementById('dt-er-use')?.checked,
+    rev0_reply_days_override:Number.isFinite(rev0)&&rev0>=0?rev0:14,
+    rev_reply_days_override:Number.isFinite(rev)&&rev>=0?rev:7
+  }};
+}}
+function addDocType(){{setDocTypeModalMode(null);openM('dt-modal');}}
 async function saveDocType(){{
+  const editId=document.getElementById('dt-edit-id').value.trim();
   const code=document.getElementById('dt-code').value.trim().toUpperCase();
   const name=document.getElementById('dt-name').value.trim();
   if(!code||!name){{toast('Code and name required','er');return;}}
-  await apiFetch('/api/doc_types/'+PID,{{method:'POST',body:JSON.stringify({{code,name}})}});
-  closeM('dt-modal');await loadDTs();switchTab(code);toast('✔ Type added','ok');
+  const payload={{code,name,expected_reply_override:collectDocTypeReplyOverride()}};
+  if(editId){{
+    await apiFetch('/api/doc_types/'+PID+'/'+editId,{{method:'PATCH',body:JSON.stringify(payload)}});
+    closeM('dt-modal');await loadDTs(true);toast('Type settings saved','ok');
+  }}else{{
+    await apiFetch('/api/doc_types/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
+    closeM('dt-modal');await loadDTs();switchTab(code);toast('Type added','ok');
+  }}
 }}
 
 // Lists

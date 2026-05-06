@@ -22,6 +22,12 @@ DEFAULT_EXPECTED_REPLY_RULE = {
     "exclude_official_holidays": True,
 }
 
+DEFAULT_DOC_TYPE_EXPECTED_REPLY_OVERRIDE = {
+    "use_expected_reply_override": False,
+    "rev0_reply_days_override": 14,
+    "rev_reply_days_override": 7,
+}
+
 _WEEKEND_DAYS = {
     "none": set(),
     "friday_only": {4},
@@ -47,6 +53,35 @@ def normalize_expected_reply_rule(rule=None):
         out["exclude_official_holidays"] = raw_exclude.strip().lower() in ("1", "true", "yes", "on")
     else:
         out["exclude_official_holidays"] = bool(raw_exclude)
+    return out
+
+def normalize_doc_type_expected_reply_override(override=None):
+    """Return safe optional document-type day overrides."""
+    src = override if isinstance(override, dict) else {}
+    out = dict(DEFAULT_DOC_TYPE_EXPECTED_REPLY_OVERRIDE)
+    raw_enabled = src.get("use_expected_reply_override", src.get("enabled", out["use_expected_reply_override"]))
+    if isinstance(raw_enabled, str):
+        out["use_expected_reply_override"] = raw_enabled.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        out["use_expected_reply_override"] = bool(raw_enabled)
+    for key in ("rev0_reply_days_override", "rev_reply_days_override"):
+        try:
+            val = int(src.get(key, out[key]))
+            out[key] = max(0, val)
+        except Exception:
+            pass
+    return out
+
+def apply_doc_type_expected_reply_override(rule=None, override=None):
+    """
+    Merge optional doc-type day counts into a project rule.
+    Calculation mode, weekend rule, and holiday exclusion always remain project-level.
+    """
+    out = normalize_expected_reply_rule(rule)
+    dt = normalize_doc_type_expected_reply_override(override)
+    if dt["use_expected_reply_override"]:
+        out["rev0_reply_days"] = dt["rev0_reply_days_override"]
+        out["rev_reply_days"] = dt["rev_reply_days_override"]
     return out
 
 def get_holidays():

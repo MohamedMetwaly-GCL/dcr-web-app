@@ -78,7 +78,7 @@ def api_records(pid, dt_id):
     date_col_keys = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
     has_exp_reply = any(c["col_key"] == "expectedReplyDate" for c in cols)
     has_status    = any(c["col_key"] == "status" for c in cols)
-    expected_reply_rule = db.get_expected_reply_rule(pid)
+    expected_reply_rule = db.get_expected_reply_rule(pid, dt_id)
     for row in records:
         if has_exp_reply:
             issued_date = row.get("issuedDate")

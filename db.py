@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS doc_types (
     name       TEXT NOT NULL,
     code       TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
+    data       JSONB NOT NULL DEFAULT '{}',
     PRIMARY KEY (id, project_id)
 );
 CREATE TABLE IF NOT EXISTS columns_config (
@@ -137,6 +138,7 @@ CREATE TABLE IF NOT EXISTS dropdown_lists (
     meta        TEXT DEFAULT NULL,
     UNIQUE (project_id, list_name, item_value)
 );
+ALTER TABLE doc_types ADD COLUMN IF NOT EXISTS data JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE dropdown_lists ADD COLUMN IF NOT EXISTS meta TEXT DEFAULT NULL;
 CREATE TABLE IF NOT EXISTS audit_log (
     id          SERIAL PRIMARY KEY,
@@ -612,12 +614,16 @@ def get_project(pid):
     data.pop("id", None); data.pop("name", None); data.pop("code", None)
     return {"id": r["id"], "name": r["name"], "code": r["code"], **data}
 
-def get_expected_reply_rule(pid):
-    """Read the project-level expected reply rule from projects.data JSON."""
+def get_expected_reply_rule(pid, dt_id=None):
+    """Read the project rule and optionally apply doc-type day overrides."""
     try:
-        from utils import normalize_expected_reply_rule
+        from utils import normalize_expected_reply_rule, apply_doc_type_expected_reply_override
         project = get_project(pid) or {}
-        return normalize_expected_reply_rule(project.get("expected_reply_rule"))
+        rule = normalize_expected_reply_rule(project.get("expected_reply_rule"))
+        if dt_id:
+            override = get_doc_type_expected_reply_override(pid, dt_id)
+            return apply_doc_type_expected_reply_override(rule, override)
+        return rule
     except Exception:
         from utils import DEFAULT_EXPECTED_REPLY_RULE
         return dict(DEFAULT_EXPECTED_REPLY_RULE)
@@ -671,14 +677,45 @@ def save_logo(pid, key, data):
         (pid, key, data))
 
 # ── Doc Types ─────────────────────────────────────────────────
-def get_doc_types(pid):
-    return q("SELECT * FROM doc_types WHERE project_id=%s ORDER BY sort_order, id", (pid,))
+def _normalize_doc_type_row(row):
+    if not row:
+        return None
+    data = row.get("data") or {}
+    if isinstance(data, str):
+        try: data = json.loads(data)
+        except Exception: data = {}
+    if not isinstance(data, dict): data = {}
+    data.pop("id", None); data.pop("project_id", None); data.pop("name", None); data.pop("code", None); data.pop("sort_order", None)
+    return {"id": row["id"], "project_id": row["project_id"], "name": row["name"], "code": row["code"], "sort_order": row.get("sort_order", 0), **data}
 
-def add_doc_type(pid, code, name):
+def get_doc_types(pid):
+    rows = q("SELECT * FROM doc_types WHERE project_id=%s ORDER BY sort_order, id", (pid,))
+    return [_normalize_doc_type_row(r) for r in rows]
+
+def get_doc_type(pid, dt_id):
+    return _normalize_doc_type_row(q("SELECT * FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid), one=True))
+
+def get_doc_type_expected_reply_override(pid, dt_id):
+    try:
+        from utils import normalize_doc_type_expected_reply_override
+        dt = get_doc_type(pid, dt_id) or {}
+        return normalize_doc_type_expected_reply_override(dt.get("expected_reply_override"))
+    except Exception:
+        from utils import DEFAULT_DOC_TYPE_EXPECTED_REPLY_OVERRIDE
+        return dict(DEFAULT_DOC_TYPE_EXPECTED_REPLY_OVERRIDE)
+
+def save_doc_type_expected_reply_override(pid, dt_id, override):
+    dt = get_doc_type(pid, dt_id) or {}
+    data = {k: v for k, v in dt.items() if k not in ("id", "project_id", "name", "code", "sort_order")}
+    data["expected_reply_override"] = override or {}
+    exe("UPDATE doc_types SET data=%s::jsonb WHERE id=%s AND project_id=%s", (json.dumps(data), dt_id, pid))
+
+def add_doc_type(pid, code, name, expected_reply_override=None):
     r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM doc_types WHERE project_id=%s", (pid,), one=True)
     order = r["n"] if r else 0
-    exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-        (code, pid, name, code, order))
+    data = {"expected_reply_override": expected_reply_override or {}}
+    exe("INSERT INTO doc_types(id,project_id,name,code,sort_order,data) VALUES(%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING",
+        (code, pid, name, code, order, json.dumps(data)))
     for ck, lbl, ct, ln, so, visible in _doc_type_col_specs(code, name):
         exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
                VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
