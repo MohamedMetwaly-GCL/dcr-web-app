@@ -2649,7 +2649,7 @@ function getPrDetailsColKey(){{
 
 function getPrManualDetails(row){{
   const detailsKey=getPrDetailsColKey();
-  return detailsKey?String(row?.[detailsKey]||'').replace(/\s+/g,' ').trim():'';
+  return detailsKey?String(row?.[detailsKey]||'').replace(/\\s+/g,' ').trim():'';
 }}
 
 function getPrAutoSummary(row){{
@@ -4148,11 +4148,54 @@ function compactSingleFieldFormSections(root){{
   }});
 }}
 
-function classifyFormFieldSemantic(col, ctx={{}}){{
+function getFormFieldText(col){{
   const key=String(col?.col_key||'').toLowerCase();
   const label=String(col?.label||'').toLowerCase();
+  return (key+' '+label).replace(/[_./()&+\\-]+/g,' ').replace(/\\s+/g,' ').trim();
+}}
+
+function hasFormTerm(text, terms){{
+  const compact=text.replace(/\\s+/g,'');
+  return terms.some(term=>text.includes(term)||compact.includes(String(term).replace(/\\s+/g,'')));
+}}
+
+function isGenericTimelineField(col){{
   const type=String(col?.col_type||'').toLowerCase();
-  const text=(key+' '+label).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
+  const text=getFormFieldText(col);
+  if(['date','datetime'].includes(type))return true;
+  if(hasFormTerm(text,['date','issued','issue date','submitted','submission','received','received date','reply date','return date','expected reply','actual reply','consultant reply','pmo reply']))return true;
+  return hasFormTerm(text,['rec from','rec by','received from','received by']);
+}}
+
+function isGenericWorkflowField(col){{
+  const text=getFormFieldText(col);
+  return hasFormTerm(text,['status','consultant status','pmo status','direction','approval','approved','review','workflow','response','reply status','decision','stage','part b status','part d status']);
+}}
+
+function isGenericFileNoteField(col){{
+  const text=getFormFieldText(col);
+  if(hasFormTerm(text,['details of instruction','verbal instruction']))return false;
+  return hasFormTerm(text,['original file','file location','file link','attachment','attach','link','url','remarks','remark','comment','comments','notes','note','description','narrative','content']);
+}}
+
+function isGenericReferenceField(col){{
+  const text=getFormFieldText(col);
+  return hasFormTerm(text,['item ref','dwg','drawing','approved dwg','ms ref','ms reference','spec ref','technical ref','tech ref','parent ref','parent technical','parent letter','reference','ref no','code ref','originating document','details of instruction','verbal instruction']);
+}}
+
+function isGenericCommercialField(col){{
+  const text=getFormFieldText(col);
+  return hasFormTerm(text,['qty','quantity','unit','amount','value','cost','price','rate','total']);
+}}
+
+function isGenericCoreField(col){{
+  const text=getFormFieldText(col);
+  if(isGenericTimelineField(col)||isGenericWorkflowField(col)||isGenericFileNoteField(col)||isGenericCommercialField(col)||isCalculatedFormField(col))return false;
+  if(hasFormTerm(text,['originating document']))return false;
+  return hasFormTerm(text,['docno','document no','letter ref','noc no','pr no','discipline','sub trade','trade','title','subject','floor','location','brand','origin','originator','prepared by','preparedby','company','responsible party','client','consultant','contractor','recipient']);
+}}
+
+function classifyFormFieldSemantic(col, ctx={{}}){{
   const longTextMeta=getLongTextMeta(col);
   const ltrRole=ctx.isLtrTab?getLTRFieldRole(col):'';
   if(isCalculatedFormField(col))return 'calculated';
@@ -4161,12 +4204,12 @@ function classifyFormFieldSemantic(col, ctx={{}}){{
     if(['direction','fromParty','toParty','issuedDate','receivedDate','parentLetterRef','parentLetterId'].includes(ltrRole))return 'workflow';
     if(['description','remarks'].includes(ltrRole)||longTextMeta)return 'notes';
   }}
-  if(['docno','document no','letter ref','discipline','sub trade','trade','title','subject','floor','brand','origin','prepared by','company','from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'core';
-  if(['item ref','dwg','drawing','ms ref','ms reference','spec ref','technical ref','tech ref','parent ref','parent technical','parent letter','reference','ref no','code ref','originating document','origin'].some(v=>text.includes(v)))return 'reference';
-  if(['qty','quantity','unit','amount','value','cost','price','rate','total'].some(v=>text.includes(v)))return 'commercial';
-  if(['date','datetime'].includes(type)||['date','issued','issue','submitted','submission','received','reply date','return date','expected','actual'].some(v=>text.includes(v)))return 'timeline';
-  if(['status','direction','approval','approved','review','workflow','response','stage','part b','part c','part d'].some(v=>text.includes(v)))return 'workflow';
-  if(['file location','original file','file','attachment','attach','link','url','remarks','comment','note','description','narrative','content'].some(v=>text.includes(v))||longTextMeta)return 'notes';
+  if(isGenericTimelineField(col))return 'timeline';
+  if(isGenericWorkflowField(col))return 'workflow';
+  if(isGenericReferenceField(col))return 'reference';
+  if(isGenericCommercialField(col))return 'commercial';
+  if(isGenericFileNoteField(col)||longTextMeta)return 'notes';
+  if(isGenericCoreField(col))return 'core';
   return 'other';
 }}
 function getDynamicFormSection(col, ctx){{
