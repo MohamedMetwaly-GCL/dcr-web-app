@@ -31,6 +31,11 @@ def api_add_doc_type(pid):
     name = data.get("name","").strip()
     if not code or not name:
         return jsonify(ok=False, error="Code and name required"), 400
+    dup = db.q("""SELECT id FROM doc_types
+                  WHERE project_id=%s AND (LOWER(code)=LOWER(%s) OR LOWER(name)=LOWER(%s))
+                  LIMIT 1""", (pid, code, name), one=True)
+    if dup:
+        return jsonify(ok=False, error="Document type code/name already exists"), 400
     override = data.get("expected_reply_override") or {}
     db.add_doc_type(pid, code, name, override)
     return jsonify(ok=True)
@@ -40,12 +45,19 @@ def api_add_doc_type(pid):
 def api_rename_doc_type(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    new_code = data.get("code","").strip().upper()
-    new_name = data.get("name","").strip()
-    if new_code:
-        db.exe("UPDATE doc_types SET code=%s WHERE id=%s AND project_id=%s", (new_code, dt_id, pid))
-    if new_name:
-        db.exe("UPDATE doc_types SET name=%s WHERE id=%s AND project_id=%s", (new_name, dt_id, pid))
+    new_code = data.get("code", "").strip().upper()
+    new_name = data.get("name", "").strip()
+    if not new_code or not new_name:
+        return jsonify(ok=False, error="Code and name required"), 400
+    existing = db.q("SELECT id FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid), one=True)
+    if not existing:
+        return jsonify(ok=False, error="Document type not found"), 404
+    dup = db.q("""SELECT id FROM doc_types
+                  WHERE project_id=%s AND id<>%s AND (LOWER(code)=LOWER(%s) OR LOWER(name)=LOWER(%s))
+                  LIMIT 1""", (pid, dt_id, new_code, new_name), one=True)
+    if dup:
+        return jsonify(ok=False, error="Document type code/name already exists"), 400
+    db.exe("UPDATE doc_types SET code=%s, name=%s WHERE id=%s AND project_id=%s", (new_code, new_name, dt_id, pid))
     if "expected_reply_override" in data:
         db.save_doc_type_expected_reply_override(pid, dt_id, data.get("expected_reply_override") or {})
     return jsonify(ok=True)

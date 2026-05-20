@@ -588,13 +588,31 @@ def _project_scope_clause(column, pid=None, project_ids=None):
 
 # ── Projects ──────────────────────────────────────────────────
 def get_projects(project_ids=None):
+    order_sql = """ORDER BY
+        CASE WHEN (data->>'dashboard_order') ~ '^-?[0-9]+$' THEN (data->>'dashboard_order')::int ELSE 999999 END,
+        id"""
     ids = _clean_project_ids(project_ids)
     if ids is None:
-        return q("SELECT * FROM projects ORDER BY id")
+        return q(f"SELECT * FROM projects {order_sql}")
     if not ids:
         return []
     ph = ",".join(["%s"] * len(ids))
-    return q(f"SELECT * FROM projects WHERE id IN ({ph}) ORDER BY id", ids)
+    return q(f"SELECT * FROM projects WHERE id IN ({ph}) {order_sql}", ids)
+
+
+def reorder_projects(order):
+    for i, pid in enumerate([str(v).strip() for v in (order or []) if str(v).strip()]):
+        r = q("SELECT data FROM projects WHERE id=%s", (pid,), one=True)
+        if not r:
+            continue
+        data = r.get("data") or {}
+        if isinstance(data, str):
+            try: data = json.loads(data)
+            except Exception: data = {}
+        if not isinstance(data, dict):
+            data = {}
+        data["dashboard_order"] = i
+        exe("UPDATE projects SET data=%s::jsonb WHERE id=%s", (json.dumps(data), pid))
 
 def get_projects_for_user(username, role=None):
     user_role = str(role or "").strip().lower()
@@ -631,7 +649,15 @@ def get_expected_reply_rule(pid, dt_id=None):
 def save_project(pid, name, code, extra: dict):
     if isinstance(extra, dict):
         extra.pop("id", None); extra.pop("name", None); extra.pop("code", None)
-    jdata = json.dumps(extra or {})
+    extra = extra or {}
+    current = q("SELECT data FROM projects WHERE id=%s", (pid,), one=True)
+    current_data = current.get("data") if current else {}
+    if isinstance(current_data, str):
+        try: current_data = json.loads(current_data)
+        except Exception: current_data = {}
+    if isinstance(current_data, dict) and "dashboard_order" in current_data and "dashboard_order" not in extra:
+        extra["dashboard_order"] = current_data.get("dashboard_order")
+    jdata = json.dumps(extra)
     exe("""INSERT INTO projects(id,name,code,data) VALUES(%s,%s,%s,%s::jsonb)
            ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data""",
         (pid, name, code, jdata))

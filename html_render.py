@@ -1055,6 +1055,10 @@ function renderCards(d,pid){{
         <b style="color:#f59e0b">${{p.pending}}</b></div>
       <div class="prog"><div class="progf" style="width:${{p.pct}}%;background:${{col}}"></div></div>
       <div style="font-size:10px;color:${{col}};font-weight:700;margin-top:3px">${{p.pct}}%</div>
+      ${{(ROLE==='superadmin'||ROLE==='admin')&&!pid?`<div style="position:absolute;right:6px;bottom:6px;display:flex;gap:4px">
+        <button class="del-pbtn" title="Move project up" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">Up</button>
+        <button class="del-pbtn" title="Move project down" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">Down</button>
+      </div>`:''}}
       ${{ROLE==='superadmin'?`<button class="del-pbtn" onclick="event.preventDefault();delProject('${{p.id}}','${{p.name}}')">🗑</button>`:''}}
     </div>`;
     g.appendChild(a);
@@ -1067,6 +1071,20 @@ function renderCards(d,pid){{
 }}
 
 // ── Overview Charts ───────────────────────────────────────
+async function moveProject(id,delta){{
+  const idx=STATS.findIndex(p=>p.id===id);
+  const next=idx+delta;
+  if(idx<0||next<0||next>=STATS.length)return;
+  [STATS[idx],STATS[next]]=[STATS[next],STATS[idx]];
+  const order=STATS.map(p=>p.id);
+  await apiFetch('/api/projects/reorder',{{method:'POST',body:JSON.stringify({{order}})}});
+  document.getElementById('proj-sel').innerHTML=
+    '<option value="">All Projects</option>'+
+    STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
+  renderAll(_currentPid,_currentDisc);
+  toast('Project order updated','ok');
+}}
+
 function renderCharts(d){{
   const dark=document.body.classList.contains('dark');
   const gridColor=dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.05)';
@@ -4097,8 +4115,8 @@ const FORM_SECTION_ORDER=[
   'References / Technical Fields',
   'Dates / Timeline',
   'Status / Workflow',
-  'Files / Notes',
   'Commercial & Quantities',
+  'Files / Notes',
   'Other Dynamic Fields',
   'Calculated / System Fields',
   'PR Items'
@@ -4122,15 +4140,14 @@ function classifyFormFieldSemantic(col, ctx={{}}){{
     if(['direction','fromParty','toParty','issuedDate','receivedDate','parentLetterRef','parentLetterId'].includes(ltrRole))return 'workflow';
     if(['description','remarks'].includes(ltrRole)||longTextMeta)return 'notes';
   }}
+  if(['docno','document no','letter ref','discipline','sub trade','trade','title','subject','floor','prepared by','company','from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'core';
   if(['item ref','dwg','drawing','ms ref','ms reference','spec ref','technical ref','tech ref','parent ref','parent technical','parent letter','reference','ref no','code ref','originating document','origin'].some(v=>text.includes(v)))return 'reference';
+  if(['qty','quantity','unit','amount','value','cost','price','total','brand'].some(v=>text.includes(v)))return 'commercial';
   if(['date','datetime'].includes(type)||['date','issued','issue','submitted','submission','received','reply date','return date','expected','actual'].some(v=>text.includes(v)))return 'timeline';
   if(['status','direction','approval','approved','review','workflow','response','stage','part b','part c','part d'].some(v=>text.includes(v)))return 'workflow';
-  if(['file location','original file','file','attachment','attach','link','url','remarks','comment','note','description','subject','narrative','content'].some(v=>text.includes(v))||longTextMeta)return 'notes';
-  if(['qty','quantity','unit','amount','value','cost','price','total','brand'].some(v=>text.includes(v)))return 'commercial';
-  if(['docno','document no','letter ref','discipline','sub trade','trade','title','floor','prepared by','company','from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'core';
+  if(['file location','original file','file','attachment','attach','link','url','remarks','comment','note','description','narrative','content'].some(v=>text.includes(v))||longTextMeta)return 'notes';
   return 'other';
 }}
-
 function getDynamicFormSection(col, ctx){{
   if(ctx?.isNocTab)return getNocFieldProfile(col).section;
   const semantic=classifyFormFieldSemantic(col,ctx);
@@ -4468,7 +4485,7 @@ function setDocTypeModalMode(dt=null){{
   document.getElementById('dt-edit-id').value=edit?dt.id:'';
   document.getElementById('dt-code').value=edit?(dt.code||dt.id||''):'';
   document.getElementById('dt-name').value=edit?(dt.name||''):'';
-  document.getElementById('dt-code').disabled=edit;
+  document.getElementById('dt-code').disabled=false;
   const o=normalizeDocTypeReplyOverride(dt||{{}});
   document.getElementById('dt-er-use').checked=o.use_expected_reply_override;
   document.getElementById('dt-er-rev0').value=o.rev0_reply_days_override;

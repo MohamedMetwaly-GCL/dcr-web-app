@@ -67,6 +67,15 @@ def api_create_project():
     db.create_project(pid, name, code, creator=u["username"])
     return jsonify(ok=True)
 
+@projects_bp.route("/api/projects/reorder", methods=["POST"])
+def api_reorder_projects():
+    u = current_user()
+    if not u or str(u.get("role", "")).lower() not in ("superadmin", "admin"):
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    db.reorder_projects(data.get("order", []))
+    return jsonify(ok=True)
+
 @projects_bp.route("/api/projects/delete/<pid>", methods=["POST"])
 @require_superadmin
 def api_delete_project(pid):
