@@ -110,6 +110,10 @@ body.dark .mfoot{background:#101a29}
 .form-section-grid .fg{min-width:0}
 .form-section-grid .fg label{margin-bottom:2px}
 .form-section-grid .fg.span-2{grid-column:span 2}
+.form-section.compact-one{padding:7px 9px 6px;box-shadow:none}
+.form-section.compact-one .form-section-header{margin-bottom:4px}
+.form-section.compact-one .form-section-sub{display:none}
+.form-section.compact-one .form-section-grid{gap:4px 8px}
 .form-section-grid textarea{min-height:52px;resize:vertical;overflow:hidden}
 .form-section-grid .fg.full textarea{min-height:58px}
 body.dark .form-section{background:linear-gradient(180deg,#162132,#101a28);border-color:#2b3c4f;box-shadow:none}
@@ -3417,12 +3421,20 @@ function bindSmartTextarea(ta){{
   bindAutoGrowTextarea(ta);
 }}
 
+function isCompactCoreFormField(col){{
+  const key=String(col?.col_key||'').toLowerCase();
+  const label=String(col?.label||'').toLowerCase();
+  const text=(key+' '+label).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
+  return ['brand','origin','originator','prepared by','preparedby','discipline','sub trade','sub-trade','floor','document no','docno','letter ref','letterref'].some(v=>text.includes(v));
+}}
+
 function getLongTextMeta(col){{
   const key=String(col?.col_key||'');
   const label=String(col?.label||'');
   const k=key.toLowerCase();
   const l=label.toLowerCase();
   const text=(k+' '+l).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
+  if(isCompactCoreFormField(col))return null;
   const isContentLike=['content','description'].some(v=>text.includes(v));
   const isRemarksLike=['remarks','notes'].some(v=>text.includes(v));
   const isMsLike=text.includes('ms ref')||text.includes('msref')||text.includes('ms reference')||
@@ -3966,6 +3978,7 @@ async function buildForm(row,opts={{}}){{
     initPrItemsEditor([], legacyText);
     if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
   }}
+  if(!isNocTab)compactSingleFieldFormSections(formRoot);
 }}
 
 function addPrItemRow(item={{}}){{
@@ -4127,6 +4140,14 @@ function getFormSectionOrder(title){{
   return idx>=0?idx:FORM_SECTION_ORDER.length;
 }}
 
+function compactSingleFieldFormSections(root){{
+  (root||document).querySelectorAll('.form-section').forEach(sec=>{{
+    const fields=[...sec.querySelectorAll('.form-section-grid > .fg')];
+    const compact=fields.length===1&&!fields[0].classList.contains('full')&&!fields[0].classList.contains('span-2');
+    sec.classList.toggle('compact-one',compact);
+  }});
+}}
+
 function classifyFormFieldSemantic(col, ctx={{}}){{
   const key=String(col?.col_key||'').toLowerCase();
   const label=String(col?.label||'').toLowerCase();
@@ -4140,9 +4161,9 @@ function classifyFormFieldSemantic(col, ctx={{}}){{
     if(['direction','fromParty','toParty','issuedDate','receivedDate','parentLetterRef','parentLetterId'].includes(ltrRole))return 'workflow';
     if(['description','remarks'].includes(ltrRole)||longTextMeta)return 'notes';
   }}
-  if(['docno','document no','letter ref','discipline','sub trade','trade','title','subject','floor','prepared by','company','from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'core';
+  if(['docno','document no','letter ref','discipline','sub trade','trade','title','subject','floor','brand','origin','prepared by','company','from','to','party','client','consultant','contractor','originator','recipient'].some(v=>text.includes(v)))return 'core';
   if(['item ref','dwg','drawing','ms ref','ms reference','spec ref','technical ref','tech ref','parent ref','parent technical','parent letter','reference','ref no','code ref','originating document','origin'].some(v=>text.includes(v)))return 'reference';
-  if(['qty','quantity','unit','amount','value','cost','price','total','brand'].some(v=>text.includes(v)))return 'commercial';
+  if(['qty','quantity','unit','amount','value','cost','price','rate','total'].some(v=>text.includes(v)))return 'commercial';
   if(['date','datetime'].includes(type)||['date','issued','issue','submitted','submission','received','reply date','return date','expected','actual'].some(v=>text.includes(v)))return 'timeline';
   if(['status','direction','approval','approved','review','workflow','response','stage','part b','part c','part d'].some(v=>text.includes(v)))return 'workflow';
   if(['file location','original file','file','attachment','attach','link','url','remarks','comment','note','description','narrative','content'].some(v=>text.includes(v))||longTextMeta)return 'notes';
@@ -4171,6 +4192,7 @@ function getDynamicFieldSpan(col, ctx={{}}){{
   const type=String(col?.col_type||'').toLowerCase();
   const text=(key+' '+label).replace(/[_-]+/g,' ');
   const semantic=classifyFormFieldSemantic(col,ctx);
+  if(isCompactCoreFormField(col))return 'span-1';
   if(getLongTextMeta(col)||['textarea','long_text'].includes(type))return 'full';
   if(semantic==='notes')return 'full';
   if(['title','subject','description','remarks','filelocation','file location','pr details','item ref','dwg','ms ref','parent letter'].some(v=>text.includes(v)))return 'span-2';
