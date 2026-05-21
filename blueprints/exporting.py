@@ -514,9 +514,15 @@ def _is_excel_date_col(col_key, label):
         "date", "issued", "submitted", "submission", "received", "reply",
         "expected", "actual", "rec from", "rec by", "received from", "received by", "sent"
     )
-    if key in {"duration", "_sr"} or "prepared by" in hay or "reply status" in hay:
+    if _is_excel_duration_col(col_key, label) or key == "_sr" or "prepared by" in hay or "reply status" in hay:
         return False
     return any(token in hay for token in date_tokens) or bool(re.search(r"\brec\b", hay))
+
+
+def _is_excel_duration_col(col_key, label):
+    key = str(col_key or "").strip().lower()
+    hay = _excel_col_hay(col_key, label)
+    return key == "duration" or "duration" in hay or re.search(r"\bdur\.?\b", hay) is not None
 
 
 def _looks_like_excel_date_value(value):
@@ -564,7 +570,8 @@ def _excel_center_col(col_key, label):
     key = str(col_key or "").strip()
     label_l = str(label or "").strip().lower()
     return (
-        key in {"_sr", "duration", "issuedDate", "expectedReplyDate", "actualReplyDate"}
+        key in {"_sr", "issuedDate", "expectedReplyDate", "actualReplyDate"}
+        or _is_excel_duration_col(col_key, label)
         or "date" in key.lower()
         or "date" in label_l
         or key == "status"
@@ -594,7 +601,7 @@ def _excel_row_height(values, cols=None, widths=None, base=19):
 
 
 def _excel_wrap_cell(col_key, label):
-    return not (str(col_key or "") in {"duration", "_sr"} or _is_excel_date_col(col_key, label))
+    return not (str(col_key or "") == "_sr" or _is_excel_duration_col(col_key, label) or _is_excel_date_col(col_key, label))
 
 
 def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, pr_details_key=None, web_widths=None):
@@ -635,6 +642,9 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
         return c
 
     dt_name = (dt.get("name") if dt else "") or (dt.get("id") if dt else "") or "REGISTER"
+    pid = (proj or {}).get("id")
+    dt_id = (dt or {}).get("id")
+    expected_reply_rule = db.get_expected_reply_rule(pid, dt_id) if pid and dt_id else None
     mcell(1, f"DOCUMENT CONTROL REGISTER  -  {str(dt_name).upper()}",
           PRIMARY, bold=True, sz=13)
     ws.row_dimensions[1].height = 30
@@ -680,16 +690,16 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
         for ri, row in enumerate(records):
             rn   = 5 + ri
             is_rev = extract_rev(row.get("docNo","")) > 0
-            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col)
+            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col, expected_reply_rule)
             bg     = OV if ov else (ALT if sr%2==0 else WHITE)
             row_values = []
 
             for ci, col in enumerate(all_cols, 1):
                 key = col["col_key"]
                 if key=="_sr":                  val = "" if is_rev else str(sr)
-                elif key=="expectedReplyDate":  val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo")))
-                elif key=="duration":
-                    dur_val = compute_duration(row.get("issuedDate"),row.get("actualReplyDate"))
+                elif key=="expectedReplyDate":  val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo"), expected_reply_rule))
+                elif _is_excel_duration_col(key, col["label"]):
+                    dur_val = compute_duration(row.get("issuedDate"), row.get("actualReplyDate"), expected_reply_rule)
                     val = str(dur_val) if dur_val is not None else ""
                 elif key=="issuedDate":         val = format_date(row.get(key,""))
                 elif key=="actualReplyDate":    val = format_date(row.get(key,""))
@@ -709,7 +719,7 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                     c = ws.cell(row=rn, column=ci, value=cell_value)
                     if isinstance(cell_value, datetime.date):
                         c.number_format = "DD-MM-YYYY"
-                    if key == "duration" and val == "0":
+                    if _is_excel_duration_col(key, col["label"]) and val == "0":
                         c.value = 0
                     if key=="status" and val:
                         bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
