@@ -160,12 +160,19 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
                         header.append(col_map[n_v])
                     else:
                         header.append(v_str)
+                import logging
+                logging.error(f"NOC_DEBUG - DB cols map keys: {list(col_map.keys())}")
+                logging.error(f"NOC_DEBUG - Raw Excel Header: {vals}")
+                logging.error(f"NOC_DEBUG - Parsed Header: {header}")
             continue
         row_data = {header[i]: v for i, v in enumerate(vals)
                     if i < len(header) and header[i] and header[i] not in ("Sr.","sr","")}
         if not _has_meaningful_values(row_data):
             skipped_blank += 1
             continue
+        import logging
+        if imported < 2:
+            logging.error(f"NOC_DEBUG - Row {imported+1} Extracted Data: {row_data}")
         try:
             action = _save_import_row(pid, dt_id, row_data)
             imported += 1
