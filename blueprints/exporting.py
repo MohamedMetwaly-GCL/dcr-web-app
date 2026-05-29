@@ -690,16 +690,18 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
         for ri, row in enumerate(records):
             rn   = 5 + ri
             is_rev = extract_rev(row.get("docNo","")) > 0
-            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col, expected_reply_rule)
+            status_val = row.get("status")
+            action_val = row.get("action")
+            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=status_val, action=action_val)
             bg     = OV if ov else (ALT if sr%2==0 else WHITE)
             row_values = []
 
             for ci, col in enumerate(all_cols, 1):
                 key = col["col_key"]
                 if key=="_sr":                  val = "" if is_rev else str(sr)
-                elif key=="expectedReplyDate":  val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo"), expected_reply_rule))
+                elif key=="expectedReplyDate":  val = format_date(compute_expected_reply(row.get("issuedDate"),row.get("docNo"), expected_reply_rule, status=status_val, action=action_val))
                 elif _is_excel_duration_col(key, col["label"]):
-                    dur_val = compute_duration(row.get("issuedDate"), row.get("actualReplyDate"), expected_reply_rule)
+                    dur_val = compute_duration(row.get("issuedDate"), row.get("actualReplyDate"), expected_reply_rule, status=status_val, action=action_val)
                     val = str(dur_val) if dur_val is not None else ""
                 elif key=="issuedDate":         val = format_date(row.get(key,""))
                 elif key=="actualReplyDate":    val = format_date(row.get(key,""))
@@ -1238,20 +1240,23 @@ def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
     data    = [hdr_row]
     row_meta = []   # (bg, is_header)
 
+
     sr = 1
     has_exp_col_pdf = any(c["col_key"]=="expectedReplyDate" for c in hdr_cols)
     for row in records:
         is_rev = extract_rev(row.get("docNo","")) > 0
-        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col_pdf)
+        status_val = row.get("status")
+        action_val = row.get("action")
+        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col_pdf, rule=None, status=status_val, action=action_val)
         cells  = []
         for c in hdr_cols:
             key = c["col_key"]
             if key == "_sr":
                 val = "" if is_rev else str(sr)
             elif key == "expectedReplyDate":
-                val = format_date(compute_expected_reply(row.get("issuedDate"), row.get("docNo")))
+                val = format_date(compute_expected_reply(row.get("issuedDate"), row.get("docNo"), rule=None, status=status_val, action=action_val))
             elif key == "duration":
-                val = str(compute_duration(row.get("issuedDate"), row.get("actualReplyDate")) or "")
+                val = str(compute_duration(row.get("issuedDate"), row.get("actualReplyDate"), rule=None, status=status_val, action=action_val) or "")
             elif key in ("issuedDate","actualReplyDate"):
                 val = format_date(row.get(key,""))
             elif pr_details_key and key == pr_details_key:

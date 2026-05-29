@@ -174,13 +174,16 @@ def days_between_by_rule(start, end, rule=None):
         cfg["exclude_official_holidays"],
     )
 
-def compute_duration(issued_date, actual_reply, rule=None):
+def compute_duration(issued_date, actual_reply, rule=None, status=None, action=None):
     """
     Working days between issued and reply dates.
     If actual_reply is absent → compute from issued to Yesterday (today-1).
     If issued_date is absent → return None.
     Never returns negative.
     """
+    chk = f"{status or ''} {action or ''}".upper()
+    if "FOR INFORMATION" in chk or "FI" in re.findall(r'[A-Z]+', chk):
+        return None
     if not issued_date:
         return None
     if actual_reply:
@@ -247,7 +250,11 @@ def doc_type_uses_revision(dt_code, records=None):
         return False
     return True
 
-def compute_expected_reply(issued_date, doc_no, rule=None):
+def compute_expected_reply(issued_date, doc_no, rule=None, status=None, action=None):
+    chk = f"{status or ''} {action or ''}".upper()
+    if "FOR INFORMATION" in chk or "FI" in re.findall(r'[A-Z]+', chk):
+        return None
+
     if not issued_date: return None
     try:
         rev = extract_rev(doc_no)
@@ -267,11 +274,11 @@ def compute_expected_reply(issued_date, doc_no, rule=None):
     except Exception:
         return None
 
-def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, rule=None):
+def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, rule=None, status=None, action=None):
     """Returns True only if the doc type has an Expected Reply column and is past due."""
     if not has_expected_reply_col: return False
     if actual_reply: return False
-    exp = compute_expected_reply(issued_date, doc_no, rule)
+    exp = compute_expected_reply(issued_date, doc_no, rule, status, action)
     if not exp: return False
     return datetime.date.fromisoformat(exp) < datetime.date.today()
 

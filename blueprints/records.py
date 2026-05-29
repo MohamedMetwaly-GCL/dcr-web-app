@@ -86,7 +86,7 @@ def api_records(pid, dt_id):
             exp = None
             if issued_date and doc_no:
                 try:
-                    exp = compute_expected_reply(issued_date, doc_no, expected_reply_rule)
+                    exp = compute_expected_reply(issued_date, doc_no, expected_reply_rule, row.get("status"), row.get("action"))
                 except Exception as e:
                     logger.warning("expected_reply_calc_failed pid=%s dt_id=%s record_id=%s error=%s",
                                    pid, dt_id, row.get("_id",""), e)
@@ -95,14 +95,10 @@ def api_records(pid, dt_id):
             row["_expectedReplyDate"] = ""
         issued   = row.get("issuedDate","")
         actual   = row.get("actualReplyDate","")
-        dur = compute_duration(issued, actual, expected_reply_rule)
+        status_val = row.get("status")
+        action_val = row.get("action")
+        dur = compute_duration(issued, actual, expected_reply_rule, status_val, action_val)
         row["_duration"] = str(dur) if dur is not None else ""
-        row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply, expected_reply_rule)
-        row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
-        # Format ALL date columns (any col_type=date)
-        for dk in date_col_keys:
-            if dk in row and row[dk]:
-                row["_fmt_" + dk] = format_date(row[dk])
         # Standard aliases
         row["_issuedFmt"]  = format_date(row.get("issuedDate",""))
         row["_replyFmt"]   = format_date(row.get("actualReplyDate",""))
