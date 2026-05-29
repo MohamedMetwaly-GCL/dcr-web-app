@@ -3153,8 +3153,19 @@ function renderRows(){{
       else if(key==='status'||isStatusLikeField(col)){{
         val=row[key]||((isLtrTab&&ltrRole)?getLTRValue(row,state.allTabCols,ltrRole):'');
         if(val){{
-          td.innerHTML=val.split(',').map(s=>{{s=s.trim();const[bg,fg]=SC[s]||['e5e7eb','374151'];
-            return `<span class="sbadge" style="background:#${{bg}};color:#${{fg}}">${{s}}</span>`;}}).join('');
+          td.innerHTML=val.split(',').map(s=>{{
+            s=s.trim();
+            let [bg,fg]=SC[s]||['e5e7eb','374151'];
+            if(!SC[s]){{
+              const up=s.toUpperCase();
+              if(up.includes('CANCELLED')) [bg,fg]=['6c757d','ffffff'];
+              else if(/^A(-|\\s|$)/.test(up) || up.includes('APPROVED')) [bg,fg]=['bbf7d0','166534'];
+              else if(/^B(-|\\s|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
+              else if(/^C(-|\\s|$)/.test(up) || up.includes('REVISE')) [bg,fg]=['fed7aa','9a3412'];
+              else if(/^D(-|\\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
+            }}
+            return `<span class="sbadge" style="background:#${{bg}};color:#${{fg}}">${{s}}</span>`;
+          }}).join('');
           tr.appendChild(td);return;
         }}
       }}
