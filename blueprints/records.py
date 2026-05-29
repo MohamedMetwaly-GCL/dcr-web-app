@@ -99,6 +99,12 @@ def api_records(pid, dt_id):
         action_val = row.get("action")
         dur = compute_duration(issued, actual, expected_reply_rule, status_val, action_val)
         row["_duration"] = str(dur) if dur is not None else ""
+        row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply, expected_reply_rule, status_val, action_val)
+        row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
+        # Format ALL date columns (any col_type=date)
+        for dk in date_col_keys:
+            if dk in row and row[dk]:
+                row["_fmt_" + dk] = format_date(row[dk])
         # Standard aliases
         row["_issuedFmt"]  = format_date(row.get("issuedDate",""))
         row["_replyFmt"]   = format_date(row.get("actualReplyDate",""))
