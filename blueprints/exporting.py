@@ -120,8 +120,17 @@ def _save_import_row(pid, dt_id, row_data):
 
 def _import_excel_worksheet(pid, dt_id, ws, cols):
     import datetime as _dt
+    import re
 
-    col_map = {c["label"]: c["col_key"] for c in cols}
+    def _norm(s):
+        return re.sub(r'[^a-z0-9]', '', str(s).lower()) if s else ""
+
+    col_map = {}
+    for c in cols:
+        col_map[str(c.get("label", "")).strip()] = c["col_key"]
+        col_map[_norm(c.get("label", ""))] = c["col_key"]
+        col_map[_norm(c.get("col_key", ""))] = c["col_key"]
+
     header = None
     imported = 0
     created = 0
@@ -140,8 +149,17 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
             skipped_blank += 1
             continue
         if header is None:
-            if any(v in col_map or v in ("Sr.","Document No.") for v in vals):
-                header = [col_map.get(v.strip(), v.strip()) for v in vals]
+            if any(str(v).strip() in col_map or _norm(v) in col_map or str(v).strip() in ("Sr.", "Document No.", "docNo") for v in vals if v):
+                header = []
+                for v in vals:
+                    v_str = str(v).strip() if v else ""
+                    n_v = _norm(v_str)
+                    if v_str in col_map:
+                        header.append(col_map[v_str])
+                    elif n_v in col_map:
+                        header.append(col_map[n_v])
+                    else:
+                        header.append(v_str)
             continue
         row_data = {header[i]: v for i, v in enumerate(vals)
                     if i < len(header) and header[i] and header[i] not in ("Sr.","sr","")}
