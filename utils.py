@@ -186,7 +186,7 @@ def compute_duration(issued_date, actual_reply, rule=None, status=None, action=N
         return None
     if not issued_date:
         return None
-    if actual_reply:
+    if actual_reply and str(actual_reply).strip().lower() not in ['none', 'null', '']:
         result = days_between_by_rule(issued_date, actual_reply, rule)
         return max(0, result) if result is not None else 0
     else:
@@ -277,7 +277,7 @@ def compute_expected_reply(issued_date, doc_no, rule=None, status=None, action=N
 def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, rule=None, status=None, action=None):
     """Returns True only if the doc type has an Expected Reply column and is past due."""
     if not has_expected_reply_col: return False
-    if actual_reply: return False
+    if actual_reply and str(actual_reply).strip().lower() not in ['none', 'null', '']: return False
     exp = compute_expected_reply(issued_date, doc_no, rule, status, action)
     if not exp: return False
     return datetime.date.fromisoformat(exp) < datetime.date.today()

@@ -1444,7 +1444,9 @@ def get_dashboard_stats(project_ids=None):
                 if not dt_has_status.get(dt["id"], False):
                     t += 1
                     _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
-                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both)
+                    status_val = d.get("status")
+                    action_val = d.get("action")
+                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, status=status_val, action=action_val)
                     if is_ov: ov += 1
                     if dt_has_discipline.get(dt["id"], False):
                         ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
@@ -1459,7 +1461,9 @@ def get_dashboard_stats(project_ids=None):
                 is_rj = (meta == "rejected")
                 is_pe = (meta == "pending")
                 _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
-                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both)
+                status_val = d.get("status")
+                action_val = d.get("action")
+                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, status=status_val, action=action_val)
                 if is_ap: ap += 1
                 if is_pe: pe += 1
                 if is_rj: rj += 1
@@ -1657,7 +1661,9 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14, projec
             "created_at": str(row.get("created_at") or ""),
         }
         if meta == "pending" and not d.get("actualReplyDate") and d.get("issuedDate"):
-            days_delay = compute_duration(d.get("issuedDate"), None) or 0
+            status_val = d.get("status")
+            action_val = d.get("action")
+            days_delay = compute_duration(d.get("issuedDate"), None, status=status_val, action=action_val) or 0
             if days_delay > pending_threshold:
                 pending_longest.append({**base, "issuedDate": d.get("issuedDate", ""), "days_delay": days_delay})
         elif meta == "rejected":
@@ -1828,7 +1834,9 @@ def get_aging_report(pid=None, project_ids=None):
         if d.get("actualReplyDate"): continue
         issued = d.get("issuedDate", "")
         if not issued: continue
-        days = compute_duration(issued, None) or 0
+        status_val = d.get("status")
+        action_val = d.get("action")
+        days = compute_duration(issued, None, status=status_val, action=action_val) or 0
         if days < 1: continue
         if days <= 7:    buckets["1-7"]   += 1
         elif days <= 14: buckets["8-14"]  += 1
@@ -1897,10 +1905,12 @@ def get_overdue_records(pid=None, project_ids=None):
         doc_no = d.get("docNo", "") or ""
         issued = d.get("issuedDate", "") or ""
         if not issued: continue
-        if is_overdue(issued, doc_no, None, True):
+        status_val = d.get("status")
+        action_val = d.get("action")
+        if is_overdue(issued, doc_no, None, True, status=status_val, action=action_val):
             try:
                 from utils import compute_duration
-                days = compute_duration(issued, None) or 0
+                days = compute_duration(issued, None, status=status_val, action=action_val) or 0
             except: days = 0
             result.append({
                 "project_id": row["project_id"],
