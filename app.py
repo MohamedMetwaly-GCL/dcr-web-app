@@ -270,9 +270,29 @@ def api_drive_sync(pid):
     
     return jsonify(ok=True)
 
+def drive_polling_job():
+    """Background thread to poll Google Drive every 15 minutes as a robust Failsafe/Sync mechanism."""
+    import time
+    while True:
+        time.sleep(15 * 60) # Wait 15 minutes
+        try:
+            projects = db.get_projects()
+            for p in projects:
+                folder_id = p.get("data", {}).get("drive_folder_id")
+                if folder_id:
+                    from drive_service import process_drive_folder
+                    process_drive_folder(folder_id)
+        except Exception as e:
+            print(f"[Drive Polling Error]: {e}")
+
 if __name__ == "__main__":
     db.init()
     db.cleanup_sessions()
+    
+    # Start the Drive Polling Daemon Thread
+    import threading
+    threading.Thread(target=drive_polling_job, daemon=True).start()
+    
     port = int(os.environ.get("PORT", 5000))
     print(f"[DCR Flask] Running on http://localhost:{port}")
     app.run(host="0.0.0.0", port=port, debug=not IS_RENDER)
