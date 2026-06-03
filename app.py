@@ -203,6 +203,7 @@ def api_next_doc_no(pid, dt_id):
 def api_audit():
     u = current_user()
     if not u or u.get("role") not in ("superadmin","admin"):
+
         return jsonify(error="Admin only"), 403
     pid      = request.args.get("pid")
     username = request.args.get("username")
@@ -219,6 +220,55 @@ def api_audit():
         projects=[{"id":p["id"],"name":p["name"],"code":p["code"]} for p in projects]
     )
 
+# ── API: Google Drive Webhooks ────────────────────────────────
+@app.route("/api/webhooks/drive", methods=["POST"])
+def api_webhook_drive():
+    """
+    Receives Push Notifications from Google Drive API.
+    Google sends headers like X-Goog-Resource-State, X-Goog-Channel-Id, etc.
+    """
+    state = request.headers.get("X-Goog-Resource-State")
+    if state == "sync":
+        return "OK", 200  # Initial setup event
+        
+    channel_id = request.headers.get("X-Goog-Channel-Id")
+    
+    # 1. Look up the folder_id associated with this channel_id from your DB/Config
+    # folder_id = get_folder_id_for_channel(channel_id)
+    folder_id = "YOUR_DRIVE_FOLDER_ID" # Placeholder
+    
+    # 2. Process the folder in a separate thread so Google gets an immediate 200 OK
+    if folder_id:
+        from drive_service import process_drive_folder
+        import threading
+        threading.Thread(target=process_drive_folder, args=(folder_id,)).start()
+        
+    return "OK", 200
+
+@app.route("/api/drive/sync/<pid>", methods=["POST"])
+def api_drive_sync(pid):
+    u = current_user()
+    if not u or not can_edit(pid):
+        return jsonify(error="Forbidden"), 403
+        
+    data = request.get_json(silent=True) or {}
+    folder_id = data.get("folder_id", "").strip()
+    if not folder_id:
+        return jsonify(error="No folder ID provided"), 400
+        
+    # Save folder_id to project data
+    proj = db.get_project(pid)
+    if proj:
+        proj["drive_folder_id"] = folder_id
+        import json
+        db.exe("UPDATE projects SET data=%s WHERE id=%s", (json.dumps(proj), pid))
+        
+    # Start sync process in background
+    from drive_service import process_drive_folder
+    import threading
+    threading.Thread(target=process_drive_folder, args=(folder_id,)).start()
+    
+    return jsonify(ok=True)
 
 if __name__ == "__main__":
     db.init()

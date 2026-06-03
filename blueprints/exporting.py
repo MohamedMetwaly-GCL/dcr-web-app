@@ -149,7 +149,18 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
             skipped_blank += 1
             continue
         if header is None:
-            if any(str(v).strip() in col_map or _norm(v) in col_map or str(v).strip() in ("Sr.", "Document No.", "docNo") for v in vals if v):
+            # Strict header detection to skip noisy/summary rows
+            is_header = False
+            matched_cols = 0
+            for v in vals:
+                if not v: continue
+                n_v = _norm(v)
+                if n_v in ("sr", "documentno", "docno", "nocno", "irno", "mirno", "ncrno"):
+                    is_header = True
+                if str(v).strip() in col_map or n_v in col_map:
+                    matched_cols += 1
+            
+            if is_header or matched_cols >= 3:
                 header = []
                 for v in vals:
                     v_str = str(v).strip() if v else ""
@@ -160,19 +171,14 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
                         header.append(col_map[n_v])
                     else:
                         header.append(v_str)
-                import logging
-                logging.error(f"NOC_DEBUG - DB cols map keys: {list(col_map.keys())}")
-                logging.error(f"NOC_DEBUG - Raw Excel Header: {vals}")
-                logging.error(f"NOC_DEBUG - Parsed Header: {header}")
             continue
+        
         row_data = {header[i]: v for i, v in enumerate(vals)
                     if i < len(header) and header[i] and header[i] not in ("Sr.","sr","")}
         if not _has_meaningful_values(row_data):
             skipped_blank += 1
             continue
-        import logging
-        if imported < 2:
-            logging.error(f"NOC_DEBUG - Row {imported+1} Extracted Data: {row_data}")
+            
         try:
             action = _save_import_row(pid, dt_id, row_data)
             imported += 1

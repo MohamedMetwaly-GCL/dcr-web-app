@@ -2008,3 +2008,12 @@ def reorder_columns(pid, dt_id, ordered_ids):
     for i, col_id in enumerate(ordered_ids):
         exe("UPDATE columns_config SET sort_order=%s WHERE id=%s AND project_id=%s",
             (i, col_id, pid))
+
+def update_record_link(doc_no, link):
+    """Updates the fileLocation (Drive Link) of a record by its docNo."""
+    import json
+    rows = q("SELECT id, data FROM records WHERE data->>'docNo' = %s", (doc_no,))
+    for r in rows:
+        d = r["data"] if isinstance(r["data"], dict) else {}
+        d["fileLocation"] = link
+        exe("UPDATE records SET data=%s WHERE id=%s", (json.dumps(d), r["id"]))
