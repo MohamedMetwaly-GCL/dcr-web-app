@@ -42,14 +42,16 @@ def get_drive_service():
 def extract_doc_no(name):
     """
     Extracts the document number from a file/folder name.
-    Matches standard DCR formats like 'PEM064-NOC-001 REV00'.
-    Modify regex if your naming convention differs.
+    Supports robust dynamic segments (e.g., MAT-EASTMAIN-B08-FF-001 REV00).
+    Requires at least one dash and ending with digits (optionally a letter).
     """
-    m = re.search(r'([A-Z0-9]+-[A-Z0-9]+-\d+\s+REV\d+)', name, re.IGNORECASE)
-    if m: return m.group(1).upper()
+    # 1. Match WITH Revision (e.g., ...-001 REV00)
+    m = re.search(r'((?:[A-Z0-9]+-)+\d+[A-Z]?\s+REV\d+)', name, re.IGNORECASE)
+    if m: 
+        return m.group(1).upper()
     
-    # Fallback for plain doc numbers without REV
-    m = re.search(r'([A-Z0-9]+-[A-Z0-9]+-\d+)', name, re.IGNORECASE)
+    # 2. Match WITHOUT Revision (e.g., ...-001)
+    m = re.search(r'((?:[A-Z0-9]+-)+\d+[A-Z]?)', name, re.IGNORECASE)
     return m.group(1).upper() if m else None
 
 def get_item_priority(full_path, mime_type):
