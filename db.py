@@ -1430,6 +1430,8 @@ def get_dashboard_stats(project_ids=None):
 
             pid_meta = meta_map.get(pid, {})
 
+            dt_rules = {dt["id"]: get_expected_reply_rule(pid, dt["id"]) for dt in dts}
+
             for base, revisions in doc_groups.items():
                 revisions.sort(key=lambda x: x[0])   # sort ascending by rev
                 latest_rev, d = revisions[-1]
@@ -1442,7 +1444,8 @@ def get_dashboard_stats(project_ids=None):
                     _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
                     status_val = d.get("status")
                     action_val = d.get("action")
-                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, status=status_val, action=action_val)
+                    dt_rule = dt_rules.get(dt["id"])
+                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val)
                     if is_ov: ov += 1
                     if dt_has_discipline.get(dt["id"], False):
                         ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
@@ -1459,7 +1462,8 @@ def get_dashboard_stats(project_ids=None):
                 _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
                 status_val = d.get("status")
                 action_val = d.get("action")
-                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, status=status_val, action=action_val)
+                dt_rule = dt_rules.get(dt["id"])
+                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val)
                 if is_ap: ap += 1
                 if is_pe: pe += 1
                 if is_rj: rj += 1
@@ -1624,6 +1628,8 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14, projec
             dt_has_exp.add(key)
         elif r["col_key"] == "status":
             dt_has_status.add(key)
+            
+    dt_rules = {r["dt_id"]: get_expected_reply_rule(pid, r["dt_id"]) for r in col_rows}
 
     workflow_dt_keys = {
         key for key, dt in dt_meta.items()
@@ -1659,7 +1665,8 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14, projec
         if meta == "pending" and not d.get("actualReplyDate") and d.get("issuedDate"):
             status_val = d.get("status")
             action_val = d.get("action")
-            days_delay = compute_duration(d.get("issuedDate"), None, status=status_val, action=action_val) or 0
+            dt_rule = dt_rules.get(row["dt_id"])
+            days_delay = compute_duration(d.get("issuedDate"), None, rule=dt_rule, status=status_val, action=action_val) or 0
             if days_delay > pending_threshold:
                 pending_longest.append({**base, "issuedDate": d.get("issuedDate", ""), "days_delay": days_delay})
         elif meta == "rejected":
@@ -1814,6 +1821,8 @@ def get_aging_report(pid=None, project_ids=None):
     for r in exp_rows:
         if r["col_key"] == "expectedReplyDate": dt_has_exp_a.add(r["dt_id"])
         elif r["col_key"] == "status":          dt_has_status_a.add(r["dt_id"])
+        
+    dt_rules = {r["dt_id"]: get_expected_reply_rule(pid, r["dt_id"]) for r in exp_rows}
     dt_with_exp = dt_has_exp_a & dt_has_status_a
     dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
     dt_rows = q(f"SELECT id, code, name FROM doc_types {dt_where}", dt_params)
@@ -1832,7 +1841,8 @@ def get_aging_report(pid=None, project_ids=None):
         if not issued: continue
         status_val = d.get("status")
         action_val = d.get("action")
-        days = compute_duration(issued, None, status=status_val, action=action_val) or 0
+        dt_rule = dt_rules.get(row["dt_id"])
+        days = compute_duration(issued, None, rule=dt_rule, status=status_val, action=action_val) or 0
         if days < 1: continue
         if days <= 7:    buckets["1-7"]   += 1
         elif days <= 14: buckets["8-14"]  += 1
@@ -1875,16 +1885,16 @@ def get_overdue_records(pid=None, project_ids=None):
     # Only dt_ids that have BOTH visible status AND visible expectedReplyDate
     # (types like Letters/PR that have no status column are excluded)
     col_where, col_params = _project_scope_clause("project_id", pid, project_ids)
-    exp_rows = q(
+    cols = q(
         "SELECT dt_id, col_key FROM columns_config"
         f" {col_where} AND col_key IN ('expectedReplyDate','status') AND visible=TRUE",
         col_params)
     dt_has_exp    = set()
     dt_has_status = set()
-    for r in exp_rows:
+    for r in cols:
         if r["col_key"] == "expectedReplyDate": dt_has_exp.add(r["dt_id"])
         elif r["col_key"] == "status":          dt_has_status.add(r["dt_id"])
-    # Must have BOTH to be considered overdue-eligible
+    dt_rules = {r["dt_id"]: get_expected_reply_rule(pid, r["dt_id"]) for r in cols}
     dt_with_exp = dt_has_exp & dt_has_status
     dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
     dt_rows = q(f"SELECT id, code, name FROM doc_types {dt_where}", dt_params)
@@ -1903,10 +1913,11 @@ def get_overdue_records(pid=None, project_ids=None):
         if not issued: continue
         status_val = d.get("status")
         action_val = d.get("action")
-        if is_overdue(issued, doc_no, None, True, status=status_val, action=action_val):
+        dt_rule = dt_rules.get(row["dt_id"])
+        if is_overdue(issued, doc_no, None, True, rule=dt_rule, status=status_val, action=action_val):
             try:
                 from utils import compute_duration
-                days = compute_duration(issued, None, status=status_val, action=action_val) or 0
+                days = compute_duration(issued, None, rule=dt_rule, status=status_val, action=action_val) or 0
             except: days = 0
             result.append({
                 "project_id": row["project_id"],
