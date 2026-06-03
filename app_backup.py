@@ -270,45 +270,6 @@ def api_drive_sync(pid):
     
     return jsonify(ok=True)
 
-# ── Distribution Matrix API ──────────────────────────────────────
-@app.route("/api/distribution/<pid>", methods=["GET"])
-def api_get_distribution(pid):
-    """Get the full distribution matrix for a project."""
-    try:
-        u = current_user()
-        if not u: return jsonify(error="LOGIN_REQUIRED"), 403
-        if not can_view_project(pid): return jsonify(error="Forbidden"), 403
-        data = db.get_distribution(pid)
-        return jsonify(data)
-    except Exception as e:
-        print(f"[Distribution GET Error]: {e}")
-        return jsonify(error="Server error"), 500
-
-@app.route("/api/distribution/<pid>", methods=["POST"])
-def api_save_distribution(pid):
-    """Save/update a distribution row for a project.
-    Body: {doc_type_id, event_type, emails: [...]}
-    Requires DC role or admin+.
-    """
-    try:
-        u = current_user()
-        if not u: return jsonify(error="LOGIN_REQUIRED"), 403
-        if not (u["role"] in ("superadmin", "admin") or db.user_is_dc(u["username"], pid)):
-            return jsonify(error="Forbidden – DC role required"), 403
-        body = request.get_json(silent=True) or {}
-        doc_type_id = body.get("doc_type_id", "").strip()
-        event_type  = body.get("event_type", "").strip()
-        emails      = body.get("emails", [])
-        if not doc_type_id or not event_type:
-            return jsonify(error="doc_type_id and event_type required"), 400
-        if not isinstance(emails, list):
-            return jsonify(error="emails must be a list"), 400
-        db.upsert_distribution(pid, doc_type_id, event_type, emails)
-        return jsonify(ok=True)
-    except Exception as e:
-        print(f"[Distribution POST Error]: {e}")
-        return jsonify(error="Server error"), 500
-
 def drive_polling_job():
     """Background thread to poll Google Drive every 15 minutes as a robust Failsafe/Sync mechanism."""
     import time

@@ -49,7 +49,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     username   TEXT PRIMARY KEY,
     pw_hash    TEXT NOT NULL,
-    role       TEXT NOT NULL DEFAULT 'viewer'
+    role       TEXT NOT NULL DEFAULT 'viewer',
+    email      TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
@@ -66,7 +67,25 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS user_projects (
     username   TEXT NOT NULL,
     project_id TEXT NOT NULL,
+    is_dc      BOOLEAN DEFAULT FALSE,
     PRIMARY KEY (username, project_id)
+);
+CREATE TABLE IF NOT EXISTS project_distribution (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    doc_type_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    emails JSONB NOT NULL DEFAULT '[]',
+    UNIQUE(project_id, doc_type_id, event_type)
+);
+CREATE TABLE IF NOT EXISTS notification_queue (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    recipient_email TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body_html TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS logos (
     project_id TEXT NOT NULL,
@@ -117,6 +136,8 @@ CREATE TABLE IF NOT EXISTS pr_items (
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS row_type TEXT NOT NULL DEFAULT 'item';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE user_projects ADD COLUMN IF NOT EXISTS is_dc BOOLEAN DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_pr_items_record ON pr_items(record_id);
 CREATE TABLE IF NOT EXISTS app_settings (
     key        TEXT PRIMARY KEY,
@@ -498,11 +519,11 @@ def get_user(username):
     return q("SELECT * FROM users WHERE username=%s", (username,), one=True)
 
 def get_all_users():
-    return q("SELECT username, role FROM users ORDER BY username")
+    return q("SELECT username, role, email FROM users ORDER BY username")
 
-def add_user(username, pw, role="viewer"):
-    exe("INSERT INTO users(username,pw_hash,role) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
-        (username, hash_pw(pw), role))
+def add_user(username, pw, role="viewer", email=None):
+    exe("INSERT INTO users(username,pw_hash,role,email) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+        (username, hash_pw(pw), role, email))
 
 def delete_user(username):
     exe("DELETE FROM sessions WHERE username=%s", (username,))
@@ -519,6 +540,12 @@ def set_user_role(username, role):
     exe("UPDATE users SET role=%s WHERE username=%s", (role, username))
     exe("UPDATE sessions SET role=%s WHERE username=%s", (role, username))
     return True
+
+def set_user_email(username, email):
+    exe("UPDATE users SET email=%s WHERE username=%s", (email, username))
+
+def set_user_project_dc(username, project_id, is_dc):
+    exe("UPDATE user_projects SET is_dc=%s WHERE username=%s AND project_id=%s", (is_dc, username, project_id))
 
 # ── Sessions ──────────────────────────────────────────────────
 SESSION_TTL = 8 * 3600
@@ -544,19 +571,75 @@ def cleanup_sessions():
 
 # ── User ↔ Project ────────────────────────────────────────────
 def get_user_projects(username):
-    return [r["project_id"] for r in
-            q("SELECT project_id FROM user_projects WHERE username=%s", (username,))]
+    # Returns a list of dicts: {"project_id": "...", "is_dc": True/False}
+    return [{"project_id": r["project_id"], "is_dc": r.get("is_dc", False)} for r in
+            q("SELECT project_id, is_dc FROM user_projects WHERE username=%s", (username,))]
 
-def assign_project(username, project_id):
-    exe("INSERT INTO user_projects(username,project_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
-        (username, project_id))
+def assign_project(username, project_id, is_dc=False):
+    exe("INSERT INTO user_projects(username,project_id,is_dc) VALUES(%s,%s,%s) ON CONFLICT (username,project_id) DO UPDATE SET is_dc=EXCLUDED.is_dc",
+        (username, project_id, is_dc))
 
 def unassign_project(username, project_id):
     exe("DELETE FROM user_projects WHERE username=%s AND project_id=%s", (username, project_id))
 
 def get_project_users(project_id):
-    return [r["username"] for r in
-            q("SELECT username FROM user_projects WHERE project_id=%s", (project_id,))]
+    return [{"username": r["username"], "is_dc": r.get("is_dc", False)} for r in
+            q("SELECT username, is_dc FROM user_projects WHERE project_id=%s", (project_id,))]
+
+def get_project_dc(project_id):
+    """Return the DC user record (with email) for a given project, or None."""
+    rows = q(
+        """SELECT u.username, u.email
+           FROM users u
+           JOIN user_projects up ON u.username = up.username
+           WHERE up.project_id = %s AND up.is_dc = TRUE
+           LIMIT 1""",
+        (project_id,), one=True
+    )
+    return rows
+
+def user_is_dc(username, project_id):
+    """Return True if the given user is the DC for the project."""
+    r = q("SELECT is_dc FROM user_projects WHERE username=%s AND project_id=%s",
+          (username, project_id), one=True)
+    return bool(r and r.get("is_dc"))
+
+# ── Distribution Matrix ────────────────────────────────────────
+def get_distribution(project_id):
+    """Return all distribution rows for a project as a nested dict:
+       {doc_type_id: {event_type: [emails]}}"""
+    rows = q("SELECT doc_type_id, event_type, emails FROM project_distribution WHERE project_id=%s",
+             (project_id,))
+    result = {}
+    for r in rows:
+        result.setdefault(r["doc_type_id"], {})[r["event_type"]] = r["emails"]
+    return result
+
+def upsert_distribution(project_id, doc_type_id, event_type, emails):
+    """Insert or update a distribution row."""
+    exe("""INSERT INTO project_distribution(project_id, doc_type_id, event_type, emails)
+           VALUES(%s,%s,%s,%s)
+           ON CONFLICT(project_id, doc_type_id, event_type)
+           DO UPDATE SET emails=EXCLUDED.emails""",
+        (project_id, doc_type_id, event_type, json.dumps(emails)))
+
+# ── Notification Queue ─────────────────────────────────────────
+def enqueue_notification(project_id, recipient_email, subject, body_html):
+    """Add an email to the notification queue."""
+    exe("""INSERT INTO notification_queue(project_id, recipient_email, subject, body_html)
+           VALUES(%s,%s,%s,%s)""",
+        (project_id, recipient_email, subject, body_html))
+
+def get_pending_notifications(limit=50):
+    """Return pending notifications for the background worker to send."""
+    return q("SELECT * FROM notification_queue WHERE status='pending' ORDER BY created_at LIMIT %s",
+             (limit,))
+
+def mark_notification_sent(nid):
+    exe("UPDATE notification_queue SET status='sent' WHERE id=%s", (nid,))
+
+def mark_notification_failed(nid):
+    exe("UPDATE notification_queue SET status='failed' WHERE id=%s", (nid,))
 
 def _clean_project_ids(project_ids):
     if project_ids is None:

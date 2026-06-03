@@ -34,9 +34,10 @@ def api_users_action():
         uname = data.get("username","").strip().lower()
         pw    = data.get("password","")
         role  = data.get("role","viewer")
+        email = data.get("email","")
         if not uname or not pw:
             return jsonify(ok=False, error="Username and password required"), 400
-        db.add_user(uname, pw, role)
+        db.add_user(uname, pw, role, email)
         return jsonify(ok=True)
     if action == "delete":
         uname = data.get("username","")
@@ -55,8 +56,11 @@ def api_users_action():
         if not db.set_user_role(uname, role):
             return jsonify(ok=False, error="Invalid role"), 400
         return jsonify(ok=True)
+    if action == "update_email":
+        db.set_user_email(data.get("username","").strip().lower(), data.get("email",""))
+        return jsonify(ok=True)
     if action == "assign":
-        db.assign_project(data.get("username",""), data.get("project_id",""))
+        db.assign_project(data.get("username",""), data.get("project_id",""), data.get("is_dc", False))
         return jsonify(ok=True)
     if action == "unassign":
         db.unassign_project(data.get("username",""), data.get("project_id",""))
@@ -73,9 +77,11 @@ def api_user_projects(username):
 @users_bp.route("/api/whoami")
 def api_whoami():
     u = current_user()
-    if not u: return jsonify(username="guest", role="guest", projects=[])
+    if not u: return jsonify(username="guest", role="guest", projects=[], dc_projects=[])
     projs = get_allowed_project_ids(u)
-    return jsonify(username=u["username"], role=u["role"], projects=projs)
+    # Build list of project_ids where user is the DC
+    dc_projects = [p["project_id"] for p in db.get_user_projects(u["username"]) if p.get("is_dc")]
+    return jsonify(username=u["username"], role=u["role"], projects=projs, dc_projects=dc_projects)
 
 
 @users_bp.route("/api/change_password", methods=["POST"])

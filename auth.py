@@ -58,7 +58,7 @@ def get_allowed_project_ids(user=None):
         return []
     if u["role"] in ("superadmin", "admin"):
         return [p["id"] for p in db.get_projects()]
-    return db.get_user_projects(u["username"])
+    return [p["project_id"] for p in db.get_user_projects(u["username"])]
 
 
 def has_project_access(username, project_id, role=None):
@@ -68,7 +68,7 @@ def has_project_access(username, project_id, role=None):
     user_role = str(role or "").strip().lower()
     if user_role in ("superadmin", "admin"):
         return True
-    return project_id in db.get_user_projects(username)
+    return project_id in [p["project_id"] for p in db.get_user_projects(username)]
 
 
 def can_view_project(project_id, user=None):
@@ -82,11 +82,7 @@ def can_view_project(project_id, user=None):
 
 
 def require_superadmin(fn):
-    """Decorator: allow only users with role == 'superadmin'.
-
-    Returns HTTP 403 + {error: "Forbidden"} for everyone else,
-    including unauthenticated callers and admin/editor/viewer roles.
-    """
+    """Decorator: allow only users with role == 'superadmin'."""
     @wraps(fn)
     def wrapper(*a, **kw):
         u = current_user()
@@ -97,20 +93,12 @@ def require_superadmin(fn):
 
 
 def can_edit(project_id):
-    """Return True if the current user has write access to project_id.
-
-    Rules (in priority order):
-      superadmin  -- always yes, all projects
-      admin       -- always yes, all projects
-      editor      -- yes only if explicitly assigned to this project
-      viewer      -- always no
-      guest       -- always no
-    """
+    """Return True if the current user has write access to project_id."""
     u = current_user()
     if not u:
         return False
     if u["role"] in ("superadmin", "admin"):
         return True
     if u["role"] == "editor":
-        return project_id in db.get_user_projects(u["username"])
+        return project_id in [p["project_id"] for p in db.get_user_projects(u["username"])]
     return False
