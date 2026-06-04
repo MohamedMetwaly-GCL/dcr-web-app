@@ -431,7 +431,12 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   backdrop-filter:blur(10px);
   box-shadow:0 0 40px rgba(126,200,50,.15),0 8px 32px rgba(0,0,0,.3);
 }}
-.ll-logo img{{width:80px;height:auto;filter:drop-shadow(0 4px 12px rgba(0,0,0,.3))}}
+.ll-logo img{
+  width:80px;height:auto;
+  /* Remove white background from logo image */
+  mix-blend-mode:screen;
+  filter:drop-shadow(0 2px 8px rgba(0,0,0,.2));
+}
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
 .ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:36px}}
@@ -459,7 +464,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 /* ── RIGHT PANEL: Clean Form ── */
 .login-right{{
   flex:1;display:flex;align-items:center;justify-content:center;
-  background:#f4f6f9;padding:40px 32px;
+  background:#eef1f6;padding:40px 32px;
   position:relative;
 }}
 
@@ -469,8 +474,14 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   background:linear-gradient(90deg,#1a2f4e 0%,#7ec832 50%,#00b4a6 100%);
 }}
 
+/* White card wrapping the form for depth */
 .login-form-wrap{{
-  width:100%;max-width:360px;
+  width:100%;max-width:380px;
+  background:#fff;
+  border-radius:16px;
+  padding:36px 32px 28px;
+  box-shadow:0 8px 32px rgba(26,47,78,.12),0 1px 4px rgba(0,0,0,.06);
+  border:1px solid rgba(221,227,237,.8);
 }}
 
 .lf-title{{
@@ -478,26 +489,27 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 }}
 .lf-sub{{font-size:12px;color:#6b7a94;margin-bottom:32px;}}
 
-.fld{{margin-bottom:18px}}
+.fld{{margin-bottom:20px}}
 .fld label{{
   display:block;font-size:10.5px;font-weight:700;color:#4a5568;
   text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;
 }}
+/* Always show border — no invisible fields */
 .fld input{{
   width:100%;padding:13px 15px;
-  border:1.5px solid #dde3ed;
+  border:1.5px solid #d0d7e3;
   border-radius:10px;
   font-family:inherit;font-size:14px;
   outline:none;transition:all .2s;
-  background:#fff;color:#1a2636;
+  background:#fafbfd;color:#1a2636;
 }}
 .fld input:focus{{border-color:#1a2f4e;box-shadow:0 0 0 3px rgba(26,47,78,.1);background:#fff}}
 .fld input::placeholder{{color:#a0aec0}}
 
 .err{{
   background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;
-  padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:18px;display:none;
-  display:flex;align-items:center;gap:6px;
+  padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:18px;
+  align-items:center;gap:6px;
 }}
 
 .btn-login{{
