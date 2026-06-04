@@ -2726,8 +2726,13 @@ function updateClock(){{document.getElementById('s-clock').textContent=new Date(
 let _WHOAMI = null;
 
 async function loadDTs(keepTab=false){{
-  if(!_WHOAMI) _WHOAMI = await apiFetch('/api/whoami').catch(()=>null);
-  const dts=await apiFetch('/api/doc_types/'+PID); if(!dts)return;
+  // Fetch whoami (for DC button) and doc types in parallel — no sequential delay
+  const [whoamiResult, dts] = await Promise.all([
+    _WHOAMI ? Promise.resolve(_WHOAMI) : apiFetch('/api/whoami').catch(()=>null),
+    apiFetch('/api/doc_types/'+PID)
+  ]);
+  if(!_WHOAMI) _WHOAMI = whoamiResult;
+  if(!dts)return;
   renderTabs(dts);
   ensureLTRProjectLists();
   await refreshCounts();
