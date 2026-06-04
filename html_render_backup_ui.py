@@ -47,161 +47,24 @@ def _user_info_html(u):
 
 BASE_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap');
-
-/* ═══════════════════════════════════════════════════════
-   GAS CHILL DCR — Enterprise Design Token System v2.0
-   Brand: Navy #1a2f4e | Green #7ec832 | Teal #00b4a6
-   Mode:  Light Data / Dark Shell
-═══════════════════════════════════════════════════════ */
-:root{
-  /* ── Brand ── */
-  --brand-navy:   #1a2f4e;
-  --brand-navy-2: #243347;
-  --brand-navy-3: #0f1d2e;
-  --brand-green:  #7ec832;
-  --brand-green-d:#5ea01e;
-  --brand-teal:   #00b4a6;
-
-  /* ── Shell (Topbar, Sidebar, Modal headers) ── */
-  --shell-bg:     #1a2f4e;
-  --shell-bg2:    #243347;
-  --shell-border: rgba(255,255,255,.1);
-  --shell-text:   #f1f5f9;
-  --shell-muted:  rgba(255,255,255,.6);
-
-  /* ── Data Surface (Tables, Cards, Forms) ── */
-  --pr:#1a2f4e;
-  --pl:#2563a8;
-  --ac:#7ec832;
-  --bg:#f4f6f9;
-  --bg2:#eef1f6;
-  --wh:#ffffff;
-  --bd:#dde3ed;
-  --tx:#1a2636;
-  --mu:#6b7a94;
-
-  /* ── Semantic ── */
-  --ok:#16a34a;
-  --er:#ef4444;
-  --wa:#f59e0b;
-  --pu:#7c3aed;
-  --info:#00b4a6;
-
-  /* ── KPI accent borders ── */
-  --kpi-total:   #1a2f4e;
-  --kpi-ok:      #16a34a;
-  --kpi-warn:    #f59e0b;
-  --kpi-danger:  #ef4444;
-  --kpi-purple:  #7c3aed;
-  --kpi-teal:    #00b4a6;
-
-  /* ── Shape ── */
-  --rd:6px;
-  --rd-lg:10px;
-  --shadow-sm:0 1px 4px rgba(0,0,0,.07);
-  --shadow-md:0 4px 14px rgba(0,0,0,.10);
-  --shadow-lg:0 24px 64px rgba(0,0,0,.20);
-}
-
+:root{--pr:#1a3a5c;--pl:#2563a8;--ac:#f0a500;--bg:#f0f4f8;--wh:#fff;--bd:#dde3ed;
+  --tx:#1e2a3a;--mu:#6b7a94;--ok:#16a34a;--er:#ef4444;--wa:#f59e0b;--rd:6px}
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{font-family:'Inter','Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
-body.dark{--pr:#60a5fa;--pl:#93c5fd;--ac:#7ec832;--bg:#0f172a;--wh:#162132;--bd:#304257;
-  --tx:#e2e8f0;--mu:#9fb0c6;--shell-bg:#0a1929;--shell-bg2:#0f2238;--bg2:#0f172a}
-/* ── TOPBAR: Dark Navy Shell ── */
-#topbar{
-  background:var(--shell-bg);
-  color:var(--shell-text);
-  height:52px;
-  display:flex;
-  align-items:center;
-  padding:0 18px;
-  gap:10px;
-  box-shadow:0 2px 12px rgba(0,0,0,.35);
-  flex-shrink:0;
-  position:relative;
-  z-index:100;
-  border-bottom:1px solid rgba(126,200,50,.2);
-}
-body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(126,200,50,.15)}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
+body.dark{--pr:#17314d;--pl:#60a5fa;--ac:#f6c453;--bg:#0f172a;--wh:#162132;--bd:#304257;
+  --tx:#e2e8f0;--mu:#9fb0c6}
+#topbar{background:var(--pr);color:#fff;height:46px;display:flex;align-items:center;
+  padding:0 14px;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.25);flex-shrink:0;position:relative;z-index:100}
+body.dark #topbar{background:#0d1f33}
 #topbar .sp{flex:1}
-
-/* Topbar brand line — subtle green accent at bottom */
-#topbar::after{
-  content:'';
-  position:absolute;
-  bottom:0;left:0;right:0;
-  height:2px;
-  background:linear-gradient(90deg,var(--brand-green) 0%,var(--brand-teal) 60%,transparent 100%);
-  opacity:.7;
-}
-
-/* Topbar logo area */
-.topbar-brand{
-  display:flex;align-items:center;gap:8px;text-decoration:none;flex-shrink:0;
-}
-.topbar-brand-icon{
-  width:32px;height:32px;border-radius:8px;
-  background:linear-gradient(135deg,var(--brand-green),var(--brand-teal));
-  display:flex;align-items:center;justify-content:center;
-  font-size:16px;font-weight:900;color:#fff;flex-shrink:0;
-  box-shadow:0 2px 8px rgba(126,200,50,.35);
-}
-.topbar-brand-text{
-  font-size:12px;font-weight:700;color:var(--shell-text);
-  letter-spacing:.3px;line-height:1.2;
-}
-.topbar-brand-sub{
-  font-size:9px;color:var(--shell-muted);font-weight:400;letter-spacing:.5px;
-}
-
-/* Topbar buttons */
-.tb-btn{
-  background:rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.15);
-  color:rgba(255,255,255,.9);
-  padding:6px 12px;
-  border-radius:var(--rd);
-  cursor:pointer;
-  font-size:11.5px;
-  font-weight:500;
-  font-family:inherit;
-  text-decoration:none;
-  display:inline-flex;
-  align-items:center;
-  gap:5px;
-  transition:all .15s;
-  letter-spacing:.2px;
-}
-.tb-btn:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.3);transform:translateY(-1px)}
-.tb-btn:active{transform:translateY(0)}
-.tb-btn.glow{
-  background:rgba(126,200,50,.2);
-  border-color:rgba(126,200,50,.5);
-  color:#c7f078;
-  font-weight:700;
-}
-.tb-btn.glow:hover{background:rgba(126,200,50,.3);border-color:rgba(126,200,50,.7)}
-
-/* Topbar user chip */
-.topbar-user{
-  display:inline-flex;align-items:center;gap:7px;
-  padding:4px 10px 4px 5px;
-  border-radius:20px;
-  background:rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.12);
-  color:rgba(255,255,255,.9);
-  font-size:11.5px;
-  font-weight:500;
-}
-.topbar-user-avatar{
-  width:24px;height:24px;border-radius:50%;
-  background:linear-gradient(135deg,var(--brand-green),var(--brand-teal));
-  display:flex;align-items:center;justify-content:center;
-  font-size:10px;font-weight:800;color:#fff;flex-shrink:0;
-}
+.tb-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;
+  padding:5px 11px;border-radius:var(--rd);cursor:pointer;font-size:12px;font-family:inherit;
+  text-decoration:none;display:inline-block;transition:background .15s}
+.tb-btn:hover{background:rgba(255,255,255,.28)}
+.tb-btn.glow{background:rgba(240,165,0,.3);border-color:rgba(240,165,0,.7);font-weight:700}
 .topbar-title-short{display:none}
+.topbar-user{display:inline-flex;align-items:center;gap:6px;color:rgba(255,255,255,.85);font-size:11px}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;
   display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
 .overlay.hidden{display:none!important}
@@ -210,18 +73,9 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   animation:mIn .18s ease}
 body.dark .modal{background:var(--wh);color:var(--tx);box-shadow:0 24px 64px rgba(0,0,0,.48)}
 @keyframes mIn{from{transform:translateY(-14px);opacity:0}}
-.mhdr{
-  background:linear-gradient(135deg,var(--brand-navy) 0%,var(--brand-navy-2) 100%);
-  color:#fff;
-  padding:13px 18px;
-  font-weight:700;font-size:13px;
-  display:flex;justify-content:space-between;align-items:center;
-  flex-shrink:0;
-  border-radius:10px 10px 0 0;
-  border-bottom:2px solid rgba(126,200,50,.25);
-  letter-spacing:.2px;
-}
-body.dark .mhdr{background:linear-gradient(135deg,#0a1929 0%,#0f2238 100%)}
+.mhdr{background:var(--pr);color:#fff;padding:12px 18px;font-weight:700;font-size:13px;
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;border-radius:10px 10px 0 0}
+body.dark .mhdr{background:#17314d}
 .mbody{padding:16px 18px;overflow-y:auto;flex:1}
 .mfoot{padding:10px 18px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;
   gap:8px;background:var(--bg);flex-shrink:0;border-radius:0 0 10px 10px}
@@ -235,45 +89,16 @@ body.dark .mfoot{background:#101a29}
 .fg input,.fg select,.fg textarea{width:100%;padding:7px 10px;border:1.5px solid var(--bd);
   border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none;transition:border-color .2s;
   background:var(--wh);color:var(--tx)}
-.fg input:focus,.fg select:focus,.fg textarea:focus{
-  border-color:var(--brand-navy);
-  box-shadow:0 0 0 3px rgba(26,47,78,.12);
-  outline:none;
-}
-/* KPI counter animation */
-@keyframes kpi-count-up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.kval.animated{animation:kpi-count-up .4s ease forwards}
-/* Topbar separator line */
-.tb-sep{width:1px;height:22px;background:rgba(255,255,255,.15);flex-shrink:0}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--pl);box-shadow:0 0 0 2px rgba(37,99,168,.1)}
 .btn{padding:7px 16px;border-radius:var(--rd);cursor:pointer;font-family:inherit;
   font-size:12px;font-weight:600;border:1px solid transparent;transition:all .15s}
-.btn-pr{
-  background:linear-gradient(135deg,var(--brand-navy) 0%,#1e3d6e 100%);
-  color:#fff;
-  box-shadow:0 2px 6px rgba(26,47,78,.25);
-}
-.btn-pr:hover{
-  background:linear-gradient(135deg,#243347 0%,var(--brand-navy) 100%);
-  box-shadow:0 4px 12px rgba(26,47,78,.35);
-  transform:translateY(-1px);
-}
+.btn-pr{background:var(--pr);color:#fff}.btn-pr:hover{background:var(--pl)}
 .btn-sc{background:var(--bg);color:var(--tx);border-color:var(--bd)}.btn-sc:hover{background:var(--bd)}
 .btn-ok{background:var(--ok);color:#fff}
 .btn-er{background:var(--er);color:#fff}
 .btn-sm{padding:4px 10px;font-size:11px}
-.stitle{
-  font-size:10.5px;font-weight:700;
-  color:var(--brand-navy);
-  text-transform:uppercase;
-  letter-spacing:.6px;
-  margin:12px 0 7px;
-  padding-bottom:5px;
-  padding-left:8px;
-  border-bottom:2px solid var(--brand-green);
-  border-left:3px solid var(--brand-navy);
-  background:linear-gradient(90deg,rgba(126,200,50,.07) 0%,transparent 80%);
-  border-radius:0 3px 3px 0;
-}
+.stitle{font-size:10.5px;font-weight:700;color:var(--pr);text-transform:uppercase;
+  letter-spacing:.5px;margin:10px 0 6px;padding-bottom:4px;border-bottom:1.5px solid var(--pr)}
 #tab-overview > .stitle:first-child{display:none}
 .record-form-shell{display:flex;flex-direction:column;gap:9px}
 .form-section{background:linear-gradient(180deg,#fcfdff,#f7fafe);border:1px solid var(--bd);border-radius:12px;
@@ -386,221 +211,64 @@ def render_login():
     logo_src = url_for("static", filename=logo_name) + f"?v={logo_ver}"
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gas Chill DCR — Sign In</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>DCR — Login</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:hidden}}
-
-/* ── Split Layout ── */
-.login-wrap{{
-  display:flex;height:100vh;width:100vw;
-}}
-
-/* ── LEFT PANEL: Dark Navy Brand Shell ── */
-.login-left{{
-  width:42%;
-  background:linear-gradient(160deg,#0f1d2e 0%,#1a2f4e 45%,#0d2a1f 100%);
-  display:flex;flex-direction:column;justify-content:center;align-items:center;
-  padding:48px 40px;position:relative;overflow:hidden;flex-shrink:0;
-}}
-
-/* Dot grid pattern overlay */
-.login-left::before{{
-  content:'';position:absolute;inset:0;
-  background-image:radial-gradient(rgba(126,200,50,.18) 1px, transparent 1px);
-  background-size:28px 28px;pointer-events:none;
-}}
-/* Bottom gradient fade */
-.login-left::after{{
-  content:'';position:absolute;bottom:0;left:0;right:0;height:40%;
-  background:linear-gradient(to top,rgba(15,29,46,.8),transparent);
-  pointer-events:none;
-}}
-
-.ll-content{{position:relative;z-index:1;text-align:center;width:100%}}
-
-.ll-logo{{
-  width:100px;height:100px;
-  border-radius:24px;
-  background:rgba(255,255,255,.06);
-  border:1px solid rgba(126,200,50,.2);
-  display:flex;align-items:center;justify-content:center;
-  margin:0 auto 24px;
-  backdrop-filter:blur(10px);
-  box-shadow:0 0 40px rgba(126,200,50,.15),0 8px 32px rgba(0,0,0,.3);
-}}
-.ll-logo img{{width:80px;height:auto;filter:drop-shadow(0 4px 12px rgba(0,0,0,.3))}}
-
-.ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
-.ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:36px}}
-
-/* Divider */
-.ll-divider{{
-  width:48px;height:2px;margin:0 auto 28px;
-  background:linear-gradient(90deg,transparent,#7ec832,transparent);
-}}
-
-.ll-desc{{font-size:13px;color:rgba(255,255,255,.55);line-height:1.7;max-width:260px;margin:0 auto 40px}}
-
-/* Stats */
-.ll-stats{{display:flex;justify-content:center;gap:28px}}
-.ll-stat{{text-align:center}}
-.ll-stat-num{{font-size:22px;font-weight:800;color:#7ec832;letter-spacing:-1px;font-variant-numeric:tabular-nums}}
-.ll-stat-lbl{{font-size:9px;color:rgba(255,255,255,.45);font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-top:2px}}
-
-/* Bottom brand text */
-.ll-footer{{
-  position:absolute;bottom:24px;left:0;right:0;z-index:1;
-  text-align:center;font-size:10px;color:rgba(255,255,255,.25);letter-spacing:.5px;
-}}
-
-/* ── RIGHT PANEL: Clean Form ── */
-.login-right{{
-  flex:1;display:flex;align-items:center;justify-content:center;
-  background:#f4f6f9;padding:40px 32px;
-  position:relative;
-}}
-
-/* Subtle top accent bar */
-.login-right::before{{
-  content:'';position:absolute;top:0;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,#1a2f4e 0%,#7ec832 50%,#00b4a6 100%);
-}}
-
-.login-form-wrap{{
-  width:100%;max-width:360px;
-}}
-
-.lf-title{{
-  font-size:22px;font-weight:800;color:#1a2f4e;margin-bottom:4px;letter-spacing:-.3px;
-}}
-.lf-sub{{font-size:12px;color:#6b7a94;margin-bottom:32px;}}
-
-.fld{{margin-bottom:18px}}
-.fld label{{
-  display:block;font-size:10.5px;font-weight:700;color:#4a5568;
-  text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;
-}}
-.fld input{{
-  width:100%;padding:13px 15px;
-  border:1.5px solid #dde3ed;
-  border-radius:10px;
-  font-family:inherit;font-size:14px;
-  outline:none;transition:all .2s;
-  background:#fff;color:#1a2636;
-}}
-.fld input:focus{{border-color:#1a2f4e;box-shadow:0 0 0 3px rgba(26,47,78,.1);background:#fff}}
-.fld input::placeholder{{color:#a0aec0}}
-
-.err{{
-  background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;
-  padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:18px;display:none;
-  display:flex;align-items:center;gap:6px;
-}}
-
-.btn-login{{
-  width:100%;padding:14px 16px;
-  background:linear-gradient(135deg,#1a2f4e 0%,#243347 100%);
-  color:#fff;border:none;border-radius:10px;
-  font-family:inherit;font-size:14px;font-weight:700;
-  letter-spacing:.3px;cursor:pointer;
-  transition:all .2s;
-  box-shadow:0 4px 14px rgba(26,47,78,.3);
-  display:flex;align-items:center;justify-content:center;gap:8px;
-}}
-.btn-login:hover{{
-  background:linear-gradient(135deg,#243347 0%,#1a2f4e 100%);
-  transform:translateY(-2px);
-  box-shadow:0 8px 24px rgba(26,47,78,.4);
-}}
+body{{font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;align-items:center;
+  justify-content:center;margin:0;overflow:hidden;background:linear-gradient(135deg,#8BC34A 0%,#5f9f56 24%,#2F4F64 100%)}}
+.shell{{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:50px 16px 48px}}
+.card{{background:rgba(255,255,255,.98);border-radius:16px;box-shadow:0 26px 70px rgba(18,34,46,.28);
+  width:100%;max-width:360px;overflow:hidden;backdrop-filter:blur(6px)}}
+.brand-band{{height:10px;background:linear-gradient(90deg,#8BC34A,#2F4F64)}}
+.cbody{{padding:17px 18px 13px}}
+.logo-wrap{{display:flex;justify-content:center;align-items:center;margin-bottom:2px;padding:2px;background:transparent;border-radius:12px}}
+.logo-wrap img{{width:min(100%,262px);height:auto;display:block;background:transparent;filter:drop-shadow(0 8px 16px rgba(47,79,100,.1))}}
+.title{{font-size:27px;font-weight:800;letter-spacing:.35px;color:#2F4F64;text-align:center;margin-bottom:2px}}
+.subtitle{{font-size:13px;color:#6d7b87;text-align:center;margin-bottom:9px}}
+.fld{{margin-bottom:7px}}
+.fld label{{display:block;font-size:11px;font-weight:700;color:#4f6370;text-transform:uppercase;letter-spacing:.55px;margin-bottom:7px}}
+.fld input{{width:100%;padding:13px 15px;border:1.5px solid #d9e2e8;border-radius:11px;font-family:inherit;font-size:14px;
+  outline:none;transition:border-color .2s, box-shadow .2s, background .2s;background:#fbfdff;color:#1f2f3b}}
+.fld input:focus{{border-color:#8BC34A;box-shadow:0 0 0 4px rgba(139,195,74,.18);background:#fff}}
+.err{{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:16px;display:none}}
+.btn-login{{width:100%;padding:14px 16px;background:#2F4F64;color:#fff;border:none;border-radius:11px;font-family:inherit;
+  font-size:14px;font-weight:800;letter-spacing:.25px;cursor:pointer;transition:transform .18s, box-shadow .18s, background .18s}}
+.btn-login:hover{{transform:translateY(-1px);box-shadow:0 12px 28px rgba(47,79,100,.26);background:#284355}}
 .btn-login:active{{transform:translateY(0)}}
-
-.lf-footer{{
-  margin-top:20px;text-align:center;font-size:11px;color:#94a3b8;
-}}
-.lf-footer a{{color:#7ec832;text-decoration:none;font-weight:600}}
-
-/* ── Mobile: Stack vertically ── */
-@media(max-width:700px){{
-  .login-wrap{{flex-direction:column}}
-  .login-left{{width:100%;min-height:220px;padding:32px 20px;}}
-  .ll-logo{{width:70px;height:70px;margin-bottom:14px;}}
-  .ll-logo img{{width:56px}}
-  .ll-brand{{font-size:20px}}
-  .ll-stats{{gap:20px;margin-top:0}}
-  .ll-stat-num{{font-size:18px}}
-  .login-right{{padding:28px 20px}}
-  .ll-desc{{display:none}}
+.hint{{text-align:center;color:#7d8a95;font-size:11px;margin-top:7px}}
+@media(max-width:480px){{
+  .shell{{padding:38px 12px 34px}}
+  .cbody{{padding:15px 15px 13px}}
+  .title{{font-size:24px}}
+  .subtitle{{margin-bottom:9px}}
+  .fld{{margin-bottom:7px}}
+  .logo-wrap img{{width:min(100%,214px)}}
 }}
 </style></head><body>
-<div class="login-wrap">
-
-  <!-- LEFT: Dark Navy Brand Panel -->
-  <div class="login-left">
-    <div class="ll-content">
-      <div class="ll-logo">
-        <img src="{logo_src}" alt="Gas Chill">
-      </div>
-      <div class="ll-brand">GAS CHILL</div>
-      <div class="ll-tagline">Energy. Redefined.</div>
-      <div class="ll-divider"></div>
-      <div class="ll-desc">
-        Enterprise Document Control Register — Managing engineering submissions across all active projects with precision.
-      </div>
-      <div class="ll-stats">
-        <div class="ll-stat">
-          <div class="ll-stat-num">DCR</div>
-          <div class="ll-stat-lbl">Platform</div>
-        </div>
-        <div class="ll-stat">
-          <div class="ll-stat-num">v2</div>
-          <div class="ll-stat-lbl">Version</div>
-        </div>
-        <div class="ll-stat">
-          <div class="ll-stat-num">24/7</div>
-          <div class="ll-stat-lbl">Access</div>
-        </div>
-      </div>
-    </div>
-    <div class="ll-footer">Gas Chill &nbsp;|&nbsp; Document Control System</div>
-  </div>
-
-  <!-- RIGHT: Clean Login Form -->
-  <div class="login-right">
-    <div class="login-form-wrap">
-      <div class="lf-title">Welcome Back</div>
-      <div class="lf-sub">Sign in to your workspace to continue</div>
-      <div class="err" id="err" style="display:none"></div>
-      <div class="fld">
-        <label>Username</label>
-        <input id="un" type="text" autofocus autocomplete="username" placeholder="Enter your username">
-      </div>
-      <div class="fld">
-        <label>Password</label>
-        <input id="pw" type="password" autocomplete="current-password" placeholder="Enter your password">
-      </div>
-      <button class="btn-login" onclick="login()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-        Sign In
-      </button>
-      <div class="lf-footer">
-        Gas Chill Document Control Register &nbsp;&mdash;&nbsp; Secure Access
-      </div>
+<div class="shell">
+  <div class="card">
+    <div class="brand-band"></div>
+    <div class="cbody">
+      <div class="logo-wrap"><img src="{logo_src}" alt="Gas Chill"></div>
+      <div class="title">Document Control System</div>
+      <div class="subtitle">Secure Project Access</div>
+      <div class="err" id="err"></div>
+      <div class="fld"><label>Username</label><input id="un" type="text" autofocus autocomplete="username" placeholder="Enter your username"></div>
+      <div class="fld"><label>Password</label><input id="pw" type="password" autocomplete="current-password" placeholder="Enter your password"></div>
+      <button class="btn-login" onclick="login()">Sign In</button>
+      <p class="hint">Gas Chill Document Control Register</p>
     </div>
   </div>
-
 </div>
 <script>
-document.getElementById('pw').onkeydown=e=>{{if(e.key==='Enter')login();}};
-document.getElementById('un').onkeydown=e=>{{if(e.key==='Enter')document.getElementById('pw').focus();}};
+document.getElementById('pw').onkeydown=e=>{{if(e.key==='Enter')login()}};
+document.getElementById('un').onkeydown=e=>{{if(e.key==='Enter')document.getElementById('pw').focus()}};
 async function login(){{
   const un=document.getElementById('un').value.trim();
   const pw=document.getElementById('pw').value;
   const err=document.getElementById('err');
   err.style.display='none';
-  if(!un||!pw){{err.textContent='Please enter username and password';err.style.display='flex';return;}}
+  if(!un||!pw){{err.textContent='Please enter username and password';err.style.display='block';return;}}
   const r=await fetch('/login',{{method:'POST',credentials:'include',
     headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{username:un,password:pw}})}});
   const d=await r.json();
@@ -655,70 +323,19 @@ body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap,body
 body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap{{background:#101a29!important}}
 body.dark .ltr-party-card{{background:#162132!important}}
 
-/* ── KPIs — Enterprise Edition ── */
-.kpi-grid{{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
-  gap:8px;
-  margin-bottom:12px;
-}}
-.kpi{{
-  background:var(--wh);
-  border-radius:var(--rd-lg);
-  padding:12px 14px 10px;
-  min-height:88px;
-  box-shadow:var(--shadow-sm);
-  border-top:3px solid var(--kpi-total);
-  cursor:default;
-  transition:transform .2s,box-shadow .2s;
-  display:flex;flex-direction:column;justify-content:center;
-  position:relative;overflow:hidden;
-}}
-/* Subtle background glow on hover */
-.kpi::before{{
-  content:'';
-  position:absolute;inset:0;
-  background:linear-gradient(135deg,rgba(126,200,50,.04) 0%,transparent 60%);
-  opacity:0;transition:opacity .2s;pointer-events:none;
-}}
-.kpi:hover{{transform:translateY(-3px);box-shadow:var(--shadow-md)}}
-.kpi:hover::before{{opacity:1}}
-.kpi.ok{{border-top-color:var(--kpi-ok)}}
-.kpi.wa{{border-top-color:var(--kpi-warn)}}
-.kpi.er{{border-top-color:var(--kpi-danger)}}
-.kpi.pu{{border-top-color:var(--kpi-purple)}}
-.kpi.tl{{border-top-color:var(--kpi-teal)}}
-.kval{{
-  font-size:30px;font-weight:800;
-  color:var(--brand-navy);
-  line-height:1;margin-bottom:5px;
-  font-variant-numeric:tabular-nums;
-  font-family:'IBM Plex Mono','Inter',monospace;
-  letter-spacing:-1px;
-}}
-.kpi.ok .kval{{color:var(--kpi-ok)}}
-.kpi.wa .kval{{color:var(--kpi-warn)}}
-.kpi.er .kval{{color:var(--kpi-danger)}}
-.kpi.pu .kval{{color:var(--kpi-purple)}}
-.kpi.tl .kval{{color:var(--kpi-teal)}}
-.klbl{{
-  font-size:9.5px;color:var(--mu);font-weight:700;
-  text-transform:uppercase;letter-spacing:.6px;
-  margin-top:0;line-height:1.3;
-}}
-.ktrend{{
-  font-size:10px;color:var(--mu);margin-top:4px;
-  display:flex;align-items:center;gap:3px;
-}}
-/* Dark mode KPIs */
-body.dark .kpi{{background:var(--wh);}}
-body.dark .kval{{color:#93c5fd}}
-body.dark .kpi.ok .kval{{color:#86efac}}
-body.dark .kpi.wa .kval{{color:#fcd34d}}
-body.dark .kpi.er .kval{{color:#fca5a5}}
-body.dark .kpi.pu .kval{{color:#c4b5fd}}
-body.dark .kpi.tl .kval{{color:#5eead4}}
-body.dark .klbl{{color:#b8c8da}}
+/* ── KPIs ── */
+.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:7px;margin-bottom:10px}}
+.kpi{{background:var(--wh);border-radius:10px;padding:9px 11px;min-height:82px;
+  box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid var(--pr);cursor:default;
+  transition:transform .15s,box-shadow .15s;display:flex;flex-direction:column;justify-content:center}}
+.kpi:hover{{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.12)}}
+.kpi.ok{{border-left-color:var(--ok)}}.kpi.wa{{border-left-color:var(--wa)}}
+.kpi.er{{border-left-color:var(--er)}}.kpi.pu{{border-left-color:#7c3aed}}
+.kval{{font-size:28px;font-weight:800;color:var(--pr);line-height:1;margin-bottom:4px}}
+.kpi.ok .kval{{color:var(--ok)}}.kpi.wa .kval{{color:var(--wa)}}
+.kpi.er .kval{{color:var(--er)}}.kpi.pu .kval{{color:#7c3aed}}
+.klbl{{font-size:9px;color:#54657d;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:0}}
+.ktrend{{font-size:10px;color:var(--mu);margin-top:3px}}
 
 /* ── Toolbar ── */
 .psel-bar{{display:flex;align-items:center;gap:8px;background:var(--wh);padding:7px 10px;
@@ -760,12 +377,7 @@ canvas{{max-height:174px}}
   overflow:hidden;text-decoration:none;color:inherit;display:block;
   transition:transform .15s,box-shadow .15s;position:relative;min-height:132px}}
 .pcard:hover{{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.12)}}
-.pchdr{{
-  background:linear-gradient(135deg,var(--brand-navy) 0%,var(--brand-navy-2) 100%);
-  padding:10px 12px;
-  display:flex;align-items:center;justify-content:space-between;
-  border-bottom:2px solid rgba(126,200,50,.3);
-}}
+.pchdr{{background:var(--pr);padding:8px 10px;display:flex;align-items:center;justify-content:space-between}}
 .pcbody{{padding:7px 10px 8px;display:flex;flex-direction:column;gap:2px}}
 .prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:1px}}
 .prog{{height:5px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:4px}}
@@ -781,22 +393,11 @@ canvas{{max-height:174px}}
   -webkit-overflow-scrolling:touch}}
 .tbl-wrap:hover{{box-shadow:0 4px 14px rgba(0,0,0,.07)}}
 .dt-tbl{{width:100%;min-width:760px;border-collapse:collapse;font-size:12px}}
-.dt-tbl th{{
-  background:var(--brand-navy);color:#fff;padding:9px 10px;
-  text-align:left;font-weight:600;white-space:nowrap;font-size:11px;
-  letter-spacing:.3px;text-transform:uppercase;font-size:10.5px;
-  position:sticky;top:0;z-index:2;
-}}
-.dt-tbl th:first-child{{border-radius:0}}
-.dt-tbl td{{
-  padding:6px 10px;
-  border-bottom:1px solid #e8eef6;
-  font-variant-numeric:tabular-nums;
-  transition:background .12s ease;
-  line-height:1.5;
-}}
-.dt-tbl tr:hover td{{background:#eef5ff}}
-.dt-tbl .alt td{{background:#f8fafc}}
+.dt-tbl th{{background:#183754;color:#fff;padding:7px 10px;
+  text-align:left;font-weight:600;white-space:nowrap;font-size:11px}}
+.dt-tbl td{{padding:4px 10px;border-bottom:1px solid #dde5ef;font-variant-numeric:tabular-nums;transition:background .12s ease}}
+.dt-tbl tr:hover td{{background:#f1f6fb}}
+.dt-tbl .alt td{{background:#fbfcfe}}
 .dt-summary-row.warn td{{background:#fff4e8}}
 .dt-summary-row.warn:hover td{{background:#feeccc}}
 body.dark .dt-summary-row.warn td{{background:#35271e}}
