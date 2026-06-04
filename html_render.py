@@ -424,14 +424,12 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 .ll-logo{{
   width:100px;height:100px;
   border-radius:24px;
-  background:rgba(255,255,255,.06);
-  border:1px solid rgba(126,200,50,.2);
+  background:#fff;
   display:flex;align-items:center;justify-content:center;
   margin:0 auto 24px;
-  backdrop-filter:blur(10px);
-  box-shadow:0 0 40px rgba(126,200,50,.15),0 8px 32px rgba(0,0,0,.3);
+  box-shadow:0 12px 32px rgba(0,0,0,.25),0 0 0 4px rgba(255,255,255,.05);
 }}
-.ll-logo img{{width:80px;height:auto;mix-blend-mode:screen;filter:drop-shadow(0 2px 8px rgba(0,0,0,.2))}}
+.ll-logo img{{width:80px;height:auto;}}
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
 .ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:36px}}
