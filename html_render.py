@@ -2715,6 +2715,9 @@ function escHtml(v){{
     .replaceAll("'",'&#39;');
 }}
 
+// _WHOAMI: must be declared BEFORE the IIFE that calls loadDTs()
+let _WHOAMI = null;
+
 // Init
 (async()=>{{
   await Promise.all([loadDTs(), loadLists()]);
@@ -2722,9 +2725,6 @@ function escHtml(v){{
 }})();
 
 function updateClock(){{document.getElementById('s-clock').textContent=new Date().toLocaleString('en-GB');}}
-// _WHOAMI: fetched once at page-start, reused everywhere (zero extra API calls)
-let _WHOAMI = null;
-
 async function loadDTs(keepTab=false){{
   // Fetch whoami (for DC button) and doc types in parallel — no sequential delay
   const [whoamiResult, dts] = await Promise.all([
