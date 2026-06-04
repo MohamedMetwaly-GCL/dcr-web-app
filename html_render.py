@@ -422,14 +422,14 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 .ll-content{{position:relative;z-index:1;text-align:center;width:100%}}
 
 .ll-logo{{
-  width:100px;height:100px;
-  border-radius:24px;
-  background:#fff;
   display:flex;align-items:center;justify-content:center;
   margin:0 auto 24px;
-  box-shadow:0 12px 32px rgba(0,0,0,.25),0 0 0 4px rgba(255,255,255,.05);
 }}
-.ll-logo img{{width:80px;height:auto;}}
+.ll-logo img{{
+  width:75px;height:75px;
+  object-fit:contain;
+  filter:drop-shadow(0 4px 12px rgba(0,0,0,.35));
+}}
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
 .ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:36px}}
@@ -531,8 +531,8 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 @media(max-width:700px){{
   .login-wrap{{flex-direction:column}}
   .login-left{{width:100%;min-height:220px;padding:32px 20px;}}
-  .ll-logo{{width:70px;height:70px;margin-bottom:14px;}}
-  .ll-logo img{{width:56px}}
+  .ll-logo{{margin-bottom:14px;}}
+  .ll-logo img{{width:60px;height:60px;}}
   .ll-brand{{font-size:20px}}
   .ll-stats{{gap:20px;margin-top:0}}
   .ll-stat-num{{font-size:18px}}
