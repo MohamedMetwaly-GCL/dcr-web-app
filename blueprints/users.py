@@ -79,8 +79,12 @@ def api_whoami():
     u = current_user()
     if not u: return jsonify(username="guest", role="guest", projects=[], dc_projects=[])
     projs = get_allowed_project_ids(u)
-    # Build list of project_ids where user is the DC
-    dc_projects = [p["project_id"] for p in db.get_user_projects(u["username"]) if p.get("is_dc")]
+    # Admins/superadmins have global access — dc_projects is not applicable
+    if u["role"] in ("superadmin", "admin"):
+        return jsonify(username=u["username"], role=u["role"], projects=projs, dc_projects=[])
+    # For regular users: single query to get assigned projects with is_dc flag
+    user_projects = db.get_user_projects(u["username"])
+    dc_projects = [p["project_id"] for p in user_projects if p.get("is_dc")]
     return jsonify(username=u["username"], role=u["role"], projects=projs, dc_projects=dc_projects)
 
 

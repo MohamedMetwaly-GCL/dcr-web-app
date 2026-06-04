@@ -2722,8 +2722,11 @@ function escHtml(v){{
 }})();
 
 function updateClock(){{document.getElementById('s-clock').textContent=new Date().toLocaleString('en-GB');}}
+// _WHOAMI: fetched once at page-start, reused everywhere (zero extra API calls)
+let _WHOAMI = null;
 
 async function loadDTs(keepTab=false){{
+  if(!_WHOAMI) _WHOAMI = await apiFetch('/api/whoami').catch(()=>null);
   const dts=await apiFetch('/api/doc_types/'+PID); if(!dts)return;
   renderTabs(dts);
   ensureLTRProjectLists();
@@ -4514,8 +4517,8 @@ async function editProject(){{
 
   // ── Distribution Matrix (visible to DC & Admins) ──────────────
   try {{
-    const whoami = await apiFetch('/api/whoami').catch(()=>null);
-    const isDCOrAdmin = whoami && (whoami.role==='superadmin'||whoami.role==='admin'||(whoami.dc_projects||[]).includes(pid));
+    // Use cached whoami (loaded once at page start) — no extra API call
+    const isDCOrAdmin = _WHOAMI && (_WHOAMI.role==='superadmin'||_WHOAMI.role==='admin'||(_WHOAMI.dc_projects||[]).includes(PID));
     if(isDCOrAdmin) {{
       const distTitle=document.createElement('div');distTitle.className='stitle';distTitle.style.marginTop='18px';
       distTitle.innerHTML='📇 Distribution Matrix';body.appendChild(distTitle);
@@ -4527,7 +4530,7 @@ async function editProject(){{
       distBtn.className='btn btn-sc';
       distBtn.style.cssText='width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px';
       distBtn.innerHTML='📇 Open Distribution Matrix';
-      distBtn.onclick=()=>openDistributionMatrix(CUR_PROJ_ID||'');
+      distBtn.onclick=()=>openDistributionMatrix(PID);
       body.appendChild(distBtn);
     }}
   }} catch(e){{ console.error('[DistMatrix UI]',e); }}
