@@ -382,7 +382,8 @@ def render_login():
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     logo_name = "logo-login.png"
     logo_file = os.path.join(static_dir, logo_name)
-    logo_ver = str(int(os.path.getmtime(logo_file))) if os.path.exists(logo_file) else "1"
+    import time
+    logo_ver = str(int(os.path.getmtime(logo_file))) + "_" + str(int(time.time())) if os.path.exists(logo_file) else "1"
     logo_src = url_for("static", filename=logo_name) + f"?v={logo_ver}"
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
