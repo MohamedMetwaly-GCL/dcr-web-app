@@ -431,12 +431,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   backdrop-filter:blur(10px);
   box-shadow:0 0 40px rgba(126,200,50,.15),0 8px 32px rgba(0,0,0,.3);
 }}
-.ll-logo img{
-  width:80px;height:auto;
-  /* Remove white background from logo image */
-  mix-blend-mode:screen;
-  filter:drop-shadow(0 2px 8px rgba(0,0,0,.2));
-}
+.ll-logo img{{width:80px;height:auto;mix-blend-mode:screen;filter:drop-shadow(0 2px 8px rgba(0,0,0,.2))}}
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
 .ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:36px}}
