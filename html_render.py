@@ -369,6 +369,41 @@ table tbody tr:hover td, .dt-tbl tbody tr:hover td, #regtbl tbody tr:hover td { 
     line-height: 1.2 !important;
 }
 #regtbl td { max-width: 400px; /* Provides a flexible upper bound for resizer plugin */ }
+
+/* === PHASE 3: TOP BAR & TABS REDESIGN === */
+#projbar { background: #ffffff !important; border-bottom: 1px solid #e2e8f0 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; padding: 12px 20px !important; display: flex !important; align-items: center !important; gap: 20px !important; }
+body.dark #projbar { background: #111b2a !important; border-bottom: 1px solid #1e293b !important; box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; }
+
+#projbar-main { display: flex !important; flex-wrap: nowrap !important; gap: 32px !important; align-items: center !important; flex: 1 !important; overflow-x: auto !important; scrollbar-width: none !important; }
+#projbar-main::-webkit-scrollbar { display: none !important; }
+
+#projbar-primary, #projbar-extra { display: flex !important; flex-direction: row !important; gap: 32px !important; align-items: center !important; }
+#projbar .pf { display: flex !important; flex-direction: column !important; gap: 4px !important; border: none !important; padding: 0 !important; min-width: max-content !important; }
+#projbar .pf-lbl { font-size: 10px !important; font-weight: 700 !important; text-transform: uppercase !important; color: #64748b !important; letter-spacing: 0.5px !important; }
+body.dark #projbar .pf-lbl { color: #94a3b8 !important; }
+#projbar .pf-val { font-size: 13px !important; font-weight: 600 !important; color: #0f172a !important; white-space: nowrap !important; }
+body.dark #projbar .pf-val { color: #f8fafc !important; }
+#projbar .pf.primary:last-child .pf-val { font-size: 15px !important; font-weight: 800 !important; color: var(--brand-teal) !important; }
+
+.proj-edit-btn { background: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important; padding: 8px 16px !important; border-radius: 9999px !important; font-size: 12px !important; font-weight: 600 !important; transition: all 0.2s ease !important; box-shadow: none !important; cursor: pointer !important; }
+.proj-edit-btn:hover { background: #e2e8f0 !important; color: #0f172a !important; }
+body.dark .proj-edit-btn { background: #1e293b !important; color: #cbd5e1 !important; border-color: #334155 !important; }
+body.dark .proj-edit-btn:hover { background: #334155 !important; color: #f8fafc !important; }
+
+/* Tabs Bar */
+#tabsbar { background: var(--brand-navy) !important; padding: 12px 20px !important; display: flex !important; gap: 10px !important; align-items: center !important; overflow-x: auto !important; scrollbar-width: none !important; border-bottom: none !important; }
+#tabsbar::-webkit-scrollbar { display: none !important; }
+body.dark #tabsbar { background: #0a1420 !important; }
+
+.tab-btn { background: rgba(255,255,255,0.06) !important; border: 1px solid rgba(255,255,255,0.1) !important; color: rgba(255,255,255,0.7) !important; border-radius: 9999px !important; padding: 8px 16px !important; font-size: 13px !important; font-weight: 600 !important; display: inline-flex !important; align-items: center !important; gap: 10px !important; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important; cursor: pointer !important; }
+.tab-btn:hover { background: rgba(255,255,255,0.15) !important; color: #ffffff !important; transform: translateY(-1px) !important; }
+.tab-btn.active { background: var(--brand-teal) !important; color: #ffffff !important; border-color: var(--brand-teal) !important; box-shadow: 0 4px 14px rgba(0, 180, 166, 0.35) !important; }
+
+.tcnt { background: rgba(0,0,0,0.25) !important; color: #ffffff !important; padding: 2px 8px !important; border-radius: 9999px !important; font-size: 11px !important; font-weight: 700 !important; transition: all 0.2s !important; }
+.tab-btn.active .tcnt { background: #ffffff !important; color: var(--brand-teal) !important; }
+
+.tab-add { background: transparent !important; border: 1px dashed rgba(255,255,255,0.3) !important; color: rgba(255,255,255,0.6) !important; border-radius: 50% !important; width: 32px !important; height: 32px !important; display: flex !important; align-items: center !important; justify-content: center !important; font-size: 18px !important; cursor: pointer !important; transition: all 0.2s !important; flex-shrink: 0 !important; }
+.tab-add:hover { background: rgba(255,255,255,0.1) !important; color: #ffffff !important; border-color: rgba(255,255,255,0.6) !important; transform: scale(1.05) !important; }
 </style>"""
 
 SHARED_JS = """
