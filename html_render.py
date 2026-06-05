@@ -330,7 +330,15 @@ body.dark .fg input::placeholder,body.dark .fg textarea::placeholder{color:#7f93
   box-shadow:0 4px 16px rgba(0,0,0,.2);transform:translateY(80px);opacity:0;
   transition:all .3s;pointer-events:none;max-width:320px}
 #toast.show{transform:none;opacity:1}
-#toast.ok{background:#16a34a}#toast.er{background:#ef4444}#toast.wa{background:#f59e0b;color:#000}
+#toast.ok{background:#16a34a}#toast.er{background:#ef4444}#toast.wa{background:#f59e0b;color:#000}/* === FORCED TABLE OVERRIDES === */
+table.table-bordered td, table.table-bordered th { border-left: none !important; border-right: none !important; border-bottom: 1px solid #e2e8f0 !important; }
+table tbody tr:nth-child(even) td { background-color: #f8fafc !important; }
+table tbody tr:hover td { background-color: #eef5ff !important; }
+table tbody td.docno-cell { 
+    font-family: 'Consolas', 'Courier New', monospace !important; 
+    font-weight: 600 !important; 
+    color: var(--brand-teal) !important;
+}
 </style>"""
 
 SHARED_JS = """
@@ -3603,6 +3611,7 @@ function renderRows(){{
       const k=key.toLowerCase();
       const longTextMeta=getLongTextMeta(col);
       if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
+      if(col.col_type==='docno'||key==='docNo')td.classList.add('docno-cell');
       if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}
       else if(key==='duration')val=row._duration||'';
       else if(col.col_type==='duration_calc'){{
