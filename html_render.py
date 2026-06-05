@@ -475,12 +475,17 @@ body.dark .stitle { color: #f8fafc !important; background: linear-gradient(90deg
     color: #64748b !important;
     font-size: 11px !important;
     letter-spacing: 0.5px !important;
-    padding-left: 5px !important;
-    padding-bottom: 0 !important;
-    margin-bottom: -10px !important;
+    padding: 0 !important;
+    margin-bottom: 8px !important;
 }
 body.dark #proj-modal input[id^="lbl-"] { color: #94a3b8 !important; }
-#proj-modal input[id^="lbl-"]:focus { border-bottom: 1px dashed var(--brand-teal) !important; border-radius: 0 !important; }
+#proj-modal input[id^="lbl-"]:focus { border-bottom: 1px dashed var(--brand-teal) !important; border-radius: 0 !important; outline: none !important; }
+
+#proj-modal input[id^="pf-"] {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 6px !important;
+}
+body.dark #proj-modal input[id^="pf-"] { border-color: #334155 !important; }
 
 /* Force Save Holidays to behave like Primary Button */
 #hol-save { background: linear-gradient(135deg, var(--brand-teal) 0%, #00998c 100%) !important; color: #ffffff !important; border: none !important; box-shadow: 0 4px 12px rgba(0, 180, 166, 0.25) !important; padding: 9px 20px !important; font-size: 13px !important; border-radius: 8px !important; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important; }
