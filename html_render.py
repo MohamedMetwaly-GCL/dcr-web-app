@@ -801,21 +801,28 @@ canvas{{max-height:174px}}
 .tbl-wrap:hover{{box-shadow:0 4px 14px rgba(0,0,0,.07)}}
 .dt-tbl{{width:100%;min-width:760px;border-collapse:collapse;font-size:12px}}
 .dt-tbl th{{
-  background:var(--brand-navy);color:#fff;padding:9px 10px;
-  text-align:left;font-weight:600;white-space:nowrap;font-size:11px;
-  letter-spacing:.3px;text-transform:uppercase;font-size:10.5px;
+  background:var(--brand-navy);color:#fff;padding:12px 14px;
+  text-align:left;font-weight:600;white-space:nowrap;
+  letter-spacing:.3px;text-transform:uppercase;font-size:11px;
   position:sticky;top:0;z-index:2;
 }}
-.dt-tbl th:first-child{{border-radius:0}}
+.dt-tbl th:first-child{{border-radius:0;position:sticky;left:0;z-index:3}}
 .dt-tbl td{{
-  padding:6px 10px;
-  border-bottom:1px solid #e8eef6;
+  padding:10px 14px;
+  border-bottom:1px solid #e2e8f0;
   font-variant-numeric:tabular-nums;
   transition:background .12s ease;
   line-height:1.5;
 }}
+.dt-tbl tr:nth-child(even) td{{background:#f8fafc}}
 .dt-tbl tr:hover td{{background:#eef5ff}}
-.dt-tbl .alt td{{background:#f8fafc}}
+.dt-tbl td:first-child{{
+  position:sticky;left:0;z-index:1;background:#fff;
+  font-family:'Consolas','Courier New',monospace;
+  font-weight:600;color:var(--brand-teal);
+}}
+.dt-tbl tr:nth-child(even) td:first-child{{background:#f8fafc}}
+.dt-tbl tr:hover td:first-child{{background:#eef5ff}}
 .dt-summary-row.warn td{{background:#fff4e8}}
 .dt-summary-row.warn:hover td{{background:#feeccc}}
 body.dark .dt-summary-row.warn td{{background:#35271e}}
@@ -2362,7 +2369,8 @@ body.dark .pr-items-grid{{background:#162132;border-color:#304257}}
 body.dark .pr-items-grid-head{{background:#17314d;color:#dbeafe;border-color:#304257}}
 body.dark .pr-items-cell{{background:#162132;color:#d7e1ec;border-color:#253648}}
 body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#304257}}
-.sbadge{{display:inline-block;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700}}
+.sbadge{{display:inline-flex;align-items:center;gap:6px;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap}}
+.sbadge::before{{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;display:block}}
 .flink{{color:var(--pl);text-decoration:underline;cursor:pointer;font-size:11px}}
 .ovdate{{color:#dc2626;font-weight:700}}
 .mlcell{{white-space:pre-line!important;word-break:break-word}}
