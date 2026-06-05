@@ -2528,6 +2528,7 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 #main{{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0}}
 #tblwrap{{flex:1;overflow:auto;min-width:0;-webkit-overflow-scrolling:touch}}
 #regtbl{{width:100%;border-collapse:collapse;min-width:980px;font-size:12px}}
+.sr{{text-align:center;color:var(--mu);font-size:10px;min-width:40px;white-space:nowrap}}
 #regtbl thead{{position:sticky;top:0;z-index:20}}
 #regtbl th{{background:var(--pr);color:#fff;padding:8px;text-align:left;font-weight:600;
   white-space:nowrap;border-right:1px solid rgba(255,255,255,.1);cursor:pointer;user-select:none;position:relative}}
@@ -2550,7 +2551,6 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 #regtbl tbody tr.row-selected td{{background:#d7e8fb!important;color:#10233a!important;box-shadow:inset 0 1px 0 rgba(37,99,168,.18),inset 0 -1px 0 rgba(37,99,168,.18)}}
 #regtbl tbody tr.row-selected td:first-child{{box-shadow:inset 4px 0 0 #2563a8,inset 0 1px 0 rgba(37,99,168,.18),inset 0 -1px 0 rgba(37,99,168,.18)}}
 #regtbl tbody tr.row-selected:hover td{{background:#c8def6!important;color:#10233a!important}}
-.sr{{text-align:center;color:var(--mu);font-size:10px;min-width:28px}}
 .chkcell{{text-align:center;width:28px;padding:4px!important}}
 .chkcell input{{width:14px;height:14px;cursor:pointer;accent-color:var(--pr)}}
 .acts{{white-space:nowrap;width:64px}}
@@ -2732,7 +2732,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #regtbl td{{padding:4px 6px!important;line-height:1.18;max-width:190px}}
   .chkcell{{width:26px;padding:3px!important}}
   .chkcell input{{width:13px;height:13px}}
-  .sr{{font-size:9px;min-width:24px}}
+  .sr{{font-size:9px;min-width:34px;white-space:nowrap}}
   .sbadge{{padding:2px 7px;font-size:9px;line-height:1.15}}
   #sbar{{padding:2px 8px;font-size:9px;gap:9px;line-height:1.2;justify-content:space-between}}
   #ltr-quickbar{{padding:4px 8px!important;gap:4px!important;display:flex!important;flex-direction:row!important}}
@@ -3532,8 +3532,8 @@ function buildHead(){{
   const sr=document.createElement('th');sr.textContent='Sr.';
   const _srW=state.colWidths&&state.colWidths['_sr'];
   sr.dataset.key='_sr';
-  sr.style.cssText=(isMobileRegister()?'width:26px;min-width:26px;max-width:26px;':(_srW?'width:'+_srW+'px;min-width:'+_srW+'px;max-width:'+_srW+'px;':'width:34px;'))
-    +'white-space:normal;word-break:normal;cursor:default';
+  sr.style.cssText=(isMobileRegister()?'width:34px;min-width:34px;max-width:34px;':(_srW?'width:'+_srW+'px;min-width:'+_srW+'px;max-width:'+_srW+'px;':'width:40px;min-width:40px;'))
+    +'white-space:nowrap;cursor:default';
   hr.appendChild(sr);
   state.cols.forEach(col=>{{
     const th=document.createElement('th');th.dataset.key=col.col_key;
@@ -3811,8 +3811,8 @@ function renderRows(){{
     tr.appendChild(tc);
     const tsr=document.createElement('td');tsr.className='sr';
     const _srTdW=state.colWidths&&state.colWidths['_sr'];
-    if(isMobileRegister())tsr.style.cssText='width:26px;min-width:26px;max-width:26px';
-    else if(_srTdW)tsr.style.cssText='width:'+_srTdW+'px;min-width:'+_srTdW+'px;max-width:'+_srTdW+'px';
+    if(isMobileRegister())tsr.style.cssText='width:34px;min-width:34px;max-width:34px;white-space:nowrap;';
+    else if(_srTdW)tsr.style.cssText='width:'+_srTdW+'px;min-width:'+_srTdW+'px;max-width:'+_srTdW+'px;white-space:nowrap;';
     tsr.textContent=row._isRev?'':sr;tr.appendChild(tsr);
     state.cols.forEach(col=>{{
       const td=document.createElement('td');const key=col.col_key;let val='';
