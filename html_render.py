@@ -334,6 +334,7 @@ body.dark .fg input::placeholder,body.dark .fg textarea::placeholder{color:#7f93
 /* 1. Remove Vertical Borders & Force Zebra Striping */
 table, .dt-tbl, #regtbl { border-collapse: collapse !important; }
 table td, table th, .dt-tbl td, .dt-tbl th, #regtbl td, #regtbl th { border-left: none !important; border-right: none !important; border-bottom: 1px solid #e2e8f0 !important; }
+#regtbl thead tr:first-child th { border-bottom: none !important; }
 
 /* Proper background inherit for sticky columns */
 #regtbl tbody tr td { background-color: inherit !important; }
@@ -344,6 +345,13 @@ table td, table th, .dt-tbl td, .dt-tbl th, #regtbl td, #regtbl th { border-left
 body.dark #regtbl tbody tr { background-color: var(--bg); }
 body.dark #regtbl tbody tr:nth-child(even) { background-color: #1e293b; }
 body.dark #regtbl tbody tr:hover { background-color: #334155; }
+
+/* Overdue Styling for rows */
+#regtbl tbody tr.ov td { background-color: inherit !important; }
+#regtbl tbody tr.ov, #regtbl tbody tr.ov:nth-child(even) { background-color: #fef2f2 !important; }
+#regtbl tbody tr.ov:hover { background-color: #ffe7e7 !important; }
+body.dark #regtbl tbody tr.ov, body.dark #regtbl tbody tr.ov:nth-child(even) { background-color: #3a231f !important; }
+body.dark #regtbl tbody tr.ov:hover { background-color: #4a2a24 !important; }
 
 /* 2. Frozen Columns (Checkbox, Sr, Document No) */
 #regtbl th:nth-child(1), #regtbl td:nth-child(1) { width: 32px !important; min-width: 32px !important; max-width: 32px !important; position: sticky !important; left: 0 !important; z-index: 5 !important; background-color: inherit !important; }
@@ -516,14 +524,14 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
 /* === PHASE 5 UI POLISH === */
 .sbadge::before { display: none !important; }
 #projbar .pf { flex: 1 1 auto !important; min-width: 0 !important; }
-#projbar .pf-val { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+#projbar .pf-val { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; max-width: none !important; }
 
 /* Topbar Project Info (Moved from projbar) */
 #topbar-proj-info:hover { background: rgba(255,255,255,0.08); }
 #topbar-proj-info .pf { display: flex; flex-direction: column; gap: 2px; }
 #topbar-proj-info .pf-lbl { font-size: 9px; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
-#topbar-proj-info .pf-val { font-size: 15px; color: #ffffff; font-weight: 800; white-space: nowrap; }
-#topbar-proj-info .pf.primary:first-child .pf-val { font-size: 14px; color: var(--brand-teal); }
+#topbar-proj-info .pf-val { font-size: 15px; color: #ffffff; font-weight: 800; white-space: nowrap; max-width: none !important; }
+#topbar-proj-info .pf.primary .pf-val { font-size: 14px; color: var(--brand-teal); }
 </style>"""
 
 SHARED_JS = """
@@ -576,7 +584,7 @@ def render_login():
     logo_name = "logo-login.png"
     logo_file = os.path.join(static_dir, logo_name)
     import time
-    logo_ver = str(int(os.path.getmtime(logo_file))) + "_v3_" + str(int(time.time())) if os.path.exists(logo_file) else "1"
+    logo_ver = str(int(os.path.getmtime(logo_file))) if os.path.exists(logo_file) else "1"
     logo_src = url_for("static", filename=logo_name) + f"?v={logo_ver}"
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
