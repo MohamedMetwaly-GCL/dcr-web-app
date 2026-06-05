@@ -330,36 +330,32 @@ body.dark .fg input::placeholder,body.dark .fg textarea::placeholder{color:#7f93
   box-shadow:0 4px 16px rgba(0,0,0,.2);transform:translateY(80px);opacity:0;
   transition:all .3s;pointer-events:none;max-width:320px}
 #toast.show{transform:none;opacity:1}
-#toast.ok{background:#16a34a}#toast.er{background:#ef4444}#toast.wa{background:#f59e0b;color:#000}/* === FORCED TABLE OVERRIDES (HOTFIX) === */
-table.table-bordered td, table.table-bordered th { border-left: none !important; border-right: none !important; border-bottom: 1px solid #e2e8f0 !important; }
-table tbody tr:nth-child(even) td { background-color: #f8fafc !important; }
-table tbody tr:hover td { background-color: #eef5ff !important; }
+#toast.ok{background:#16a34a}#toast.er{background:#ef4444}#toast.wa{background:#f59e0b;color:#000}/* === BULLETPROOF DATA TABLE UX HOTFIX === */
+/* 1. Remove Vertical Borders & Force Zebra Striping */
+table, .dt-tbl, #regtbl { border-collapse: collapse !important; }
+table td, table th, .dt-tbl td, .dt-tbl th, #regtbl td, #regtbl th { border-left: none !important; border-right: none !important; border-bottom: 1px solid #e2e8f0 !important; }
+table tbody tr:nth-child(even) td, .dt-tbl tbody tr:nth-child(even) td, #regtbl tbody tr:nth-child(even) td { background-color: #f8fafc !important; }
+table tbody tr:hover td, .dt-tbl tbody tr:hover td, #regtbl tbody tr:hover td { background-color: #eef5ff !important; }
 
-/* Status Pill Badges */
-.sbadge { border-radius: 9999px !important; padding: 4px 12px !important; display: inline-flex !important; align-items: center !important; gap: 6px !important; max-width: 100% !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
-
-/* Frozen Columns (Checkbox, Sr, Document No) */
-#regtbl th:nth-child(1), table.table tbody tr td:nth-child(1) { position: sticky !important; left: 0 !important; z-index: 5 !important; background-color: #ffffff !important; }
-#regtbl th:nth-child(2), table.table tbody tr td:nth-child(2) { position: sticky !important; left: 32px !important; z-index: 5 !important; background-color: #ffffff !important; }
-#regtbl th.docno-cell, table.table tbody tr td.docno-cell, #regtbl th:nth-child(3), table.table tbody tr td:nth-child(3) { 
+/* 2. Frozen Columns (Checkbox, Sr, Document No) */
+#regtbl th:nth-child(1), #regtbl td:nth-child(1) { position: sticky !important; left: 0 !important; z-index: 5 !important; background-color: #ffffff !important; }
+#regtbl th:nth-child(2), #regtbl td:nth-child(2) { position: sticky !important; left: 32px !important; z-index: 5 !important; background-color: #ffffff !important; }
+#regtbl th.docno-cell, #regtbl td.docno-cell, #regtbl th:nth-child(3), #regtbl td:nth-child(3) { 
     position: sticky !important; left: 66px !important; z-index: 5 !important; background-color: #ffffff !important; 
     box-shadow: 2px 0 5px -2px rgba(0,0,0,0.1) !important;
-    font-family: 'Consolas', 'Courier New', monospace !important; 
-    font-weight: 600 !important; 
-    color: var(--brand-teal) !important;
+    font-family: 'Consolas', 'Courier New', monospace !important; font-weight: 600 !important; color: var(--brand-teal) !important;
 }
 
-/* Zebra Striping for Frozen Columns */
-table.table tbody tr:nth-child(even) td:nth-child(1),
-table.table tbody tr:nth-child(even) td:nth-child(2),
-table.table tbody tr:nth-child(even) td:nth-child(3),
-table.table tbody tr:nth-child(even) td.docno-cell { background-color: #f8fafc !important; }
+/* Zebra Striping & Hover for Frozen Columns */
+#regtbl tbody tr:nth-child(even) td:nth-child(1), #regtbl tbody tr:nth-child(even) td:nth-child(2), #regtbl tbody tr:nth-child(even) td:nth-child(3), #regtbl tbody tr:nth-child(even) td.docno-cell { background-color: #f8fafc !important; }
+#regtbl tbody tr:hover td:nth-child(1), #regtbl tbody tr:hover td:nth-child(2), #regtbl tbody tr:hover td:nth-child(3), #regtbl tbody tr:hover td.docno-cell { background-color: #eef5ff !important; }
 
 /* Header z-index for Frozen Columns */
-#regtbl th:nth-child(1), #regtbl th:nth-child(2), #regtbl th:nth-child(3), #regtbl th.docno-cell { 
-    z-index: 6 !important; 
-    background-color: var(--brand-navy) !important; 
-}
+#regtbl th:nth-child(1), #regtbl th:nth-child(2), #regtbl th:nth-child(3), #regtbl th.docno-cell { z-index: 10 !important; background-color: var(--brand-navy) !important; }
+
+/* 3. Status Pill Badges & Resizing */
+.sbadge { border-radius: 9999px !important; padding: 4px 12px !important; display: inline-flex !important; align-items: center !important; gap: 6px !important; max-width: 100% !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+#regtbl td { max-width: 400px; /* Provides a flexible upper bound for resizer plugin */ }
 </style>"""
 
 SHARED_JS = """
