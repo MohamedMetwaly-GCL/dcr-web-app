@@ -374,14 +374,26 @@ table tbody tr:hover td, .dt-tbl tbody tr:hover td, #regtbl tbody tr:hover td { 
 #projbar { background: #ffffff !important; border-bottom: 1px solid #e2e8f0 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; padding: 12px 20px !important; display: flex !important; align-items: center !important; gap: 20px !important; }
 body.dark #projbar { background: #111b2a !important; border-bottom: 1px solid #1e293b !important; box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; }
 
+/* Increase Logo Size */
+#projbar img { max-height: 50px !important; width: auto !important; max-width: none !important; }
+
 #projbar-main { display: flex !important; flex-wrap: nowrap !important; gap: 32px !important; align-items: center !important; flex: 1 !important; overflow-x: auto !important; scrollbar-width: none !important; }
 #projbar-main::-webkit-scrollbar { display: none !important; }
 
-#projbar-primary, #projbar-extra { display: flex !important; flex-direction: row !important; gap: 32px !important; align-items: center !important; }
-#projbar .pf { display: flex !important; flex-direction: column !important; gap: 4px !important; border: none !important; padding: 0 !important; min-width: max-content !important; }
+#projbar-primary, #projbar-extra { display: flex !important; flex-direction: row !important; gap: 32px !important; align-items: center !important; flex: 1 1 auto !important; }
+#projbar .pf { display: flex !important; flex-direction: column !important; gap: 4px !important; border: none !important; padding: 0 !important; min-width: max-content !important; flex: 1 1 auto !important; }
 #projbar .pf-lbl { font-size: 10px !important; font-weight: 700 !important; text-transform: uppercase !important; color: #64748b !important; letter-spacing: 0.5px !important; }
 body.dark #projbar .pf-lbl { color: #94a3b8 !important; }
-#projbar .pf-val { font-size: 13px !important; font-weight: 600 !important; color: #0f172a !important; white-space: nowrap !important; }
+
+/* Prevent Text Truncation */
+#projbar .pf-val { 
+    font-size: 13px !important; font-weight: 600 !important; color: #0f172a !important; 
+    white-space: normal !important; 
+    word-break: break-word !important;
+    text-overflow: clip !important;
+    display: block !important;
+    -webkit-line-clamp: unset !important;
+}
 body.dark #projbar .pf-val { color: #f8fafc !important; }
 #projbar .pf.primary:last-child .pf-val { font-size: 15px !important; font-weight: 800 !important; color: var(--brand-teal) !important; }
 
