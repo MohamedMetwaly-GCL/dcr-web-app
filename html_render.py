@@ -566,7 +566,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
       </div>
       <div class="ll-divider"></div>
       <div class="ll-desc">
-        Enterprise Document Control Register — Managing engineering submissions across all active projects with precision.
+        Enterprise Document Control System — Managing engineering submissions across all active projects with precision.
       </div>
       <div class="ll-stats">
         <div class="ll-stat">
@@ -605,7 +605,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
         Sign In
       </button>
       <div class="lf-footer">
-        Gas Chill Document Control Register &nbsp;&mdash;&nbsp; Secure Access
+        Gas Chill Document Control System &nbsp;&mdash;&nbsp; Secure Access
       </div>
     </div>
   </div>
