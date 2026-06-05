@@ -1546,7 +1546,7 @@ def get_dashboard_stats(project_ids=None):
                 status_val = d.get("status")
                 action_val = d.get("action")
                 dt_rule = dt_rules.get(dt["id"])
-                is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val)
+                is_ov = is_pe and is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val)
                 if is_ap: ap += 1
                 if is_pe: pe += 1
                 if is_rj: rj += 1
@@ -1986,6 +1986,13 @@ def get_overdue_records(pid=None, project_ids=None):
                        next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),
                        next((d["name"] for d in dt_rows if d["id"] == dt_id), "")
                    )}
+    
+    list_where, list_params = _project_scope_clause("project_id", pid, project_ids)
+    meta_rows = q(f"SELECT project_id, item_value, meta FROM dropdown_lists {list_where} AND list_name LIKE %s AND meta IS NOT NULL", list_params + ["status%"])
+    meta_map = {}
+    for r in meta_rows:
+        meta_map.setdefault(r["project_id"], {})[r["item_value"]] = r["meta"]
+
     result = []
     for row in rows:
         if row["dt_id"] not in dt_with_exp: continue
@@ -1997,6 +2004,11 @@ def get_overdue_records(pid=None, project_ids=None):
         status_val = d.get("status")
         action_val = d.get("action")
         dt_rule = dt_rules.get(row["dt_id"])
+        
+        meta = resolve_status_meta(status_val, meta_map.get(row["project_id"], {}))
+        if meta != "pending":
+            continue
+
         if is_overdue(issued, doc_no, None, True, rule=dt_rule, status=status_val, action=action_val):
             try:
                 from utils import compute_duration

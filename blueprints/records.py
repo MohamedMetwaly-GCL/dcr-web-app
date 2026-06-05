@@ -79,6 +79,7 @@ def api_records(pid, dt_id):
     has_exp_reply = any(c["col_key"] == "expectedReplyDate" for c in cols)
     has_status    = any(c["col_key"] == "status" for c in cols)
     expected_reply_rule = db.get_expected_reply_rule(pid, dt_id)
+    status_meta = db.get_status_meta_map(pid)
     for row in records:
         if has_exp_reply:
             issued_date = row.get("issuedDate")
@@ -99,7 +100,9 @@ def api_records(pid, dt_id):
         action_val = row.get("action")
         dur = compute_duration(issued, actual, expected_reply_rule, status_val, action_val)
         row["_duration"] = str(dur) if dur is not None else ""
-        row["_overdue"]    = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply, expected_reply_rule, status_val, action_val)
+        
+        meta = db.resolve_status_meta(status_val, status_meta) if has_status else "pending"
+        row["_overdue"]    = (meta == "pending") and is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply, expected_reply_rule, status_val, action_val)
         row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
         # Format ALL date columns (any col_type=date)
         for dk in date_col_keys:
