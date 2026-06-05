@@ -429,7 +429,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 .ll-logo img{{
   width:140px;height:auto;
   object-fit:contain;
-  filter:drop-shadow(0 6px 16px rgba(0,0,0,.4));
+  filter:drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
 }}
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
