@@ -433,7 +433,13 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 }}
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
-.ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:36px}}
+.ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:24px}}
+
+.valmore-logo {{ display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 36px; opacity: 0.8; }}
+.valmore-icon {{ width: 18px; height: 18px; background: #fff; color: #1a2f4e; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; font-weight: 800; font-size: 14px; }}
+.valmore-text {{ display: flex; align-items: baseline; }}
+.v-main {{ font-family: Georgia, serif; font-size: 16px; color: #fff; letter-spacing: 0.5px; }}
+.v-sub {{ font-family: 'Inter', sans-serif; font-size: 8px; color: #fff; letter-spacing: 2px; margin-left: 4px; font-weight: 600; text-transform: uppercase; }}
 
 /* Divider */
 .ll-divider{{
@@ -551,6 +557,13 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
       </div>
       <div class="ll-brand">GAS CHILL</div>
       <div class="ll-tagline">Energy. Redefined.</div>
+      <div class="valmore-logo">
+        <div class="valmore-icon"><span>V</span></div>
+        <div class="valmore-text">
+          <span class="v-main">Valmore</span>
+          <span class="v-sub">HOLDING</span>
+        </div>
+      </div>
       <div class="ll-divider"></div>
       <div class="ll-desc">
         Enterprise Document Control Register — Managing engineering submissions across all active projects with precision.
