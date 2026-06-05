@@ -421,6 +421,50 @@ body.dark #tabsbar { background: #0a1420 !important; }
 
 .tab-add { flex-shrink: 0 !important; background: transparent !important; border: 1px dashed rgba(255,255,255,0.3) !important; color: rgba(255,255,255,0.6) !important; border-radius: 50% !important; width: 32px !important; height: 32px !important; display: flex !important; align-items: center !important; justify-content: center !important; font-size: 18px !important; cursor: pointer !important; transition: all 0.2s !important; }
 .tab-add:hover { background: rgba(255,255,255,0.1) !important; color: #ffffff !important; border-color: rgba(255,255,255,0.6) !important; transform: scale(1.05) !important; }
+/* === PHASE 4: MODALS, FORMS & BUTTONS REDESIGN === */
+.overlay { backdrop-filter: blur(5px) !important; background: rgba(15, 23, 42, 0.6) !important; }
+body.dark .overlay { background: rgba(0, 0, 0, 0.75) !important; }
+
+.modal { border-radius: 16px !important; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35) !important; border: 1px solid rgba(255, 255, 255, 0.8) !important; overflow: hidden !important; }
+body.dark .modal { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important; border-color: rgba(255, 255, 255, 0.1) !important; }
+
+.mhdr { background: #ffffff !important; color: #0f172a !important; padding: 20px 24px !important; font-size: 16px !important; border-bottom: 1px solid #e2e8f0 !important; font-weight: 800 !important; }
+body.dark .mhdr { background: #111b2a !important; color: #f8fafc !important; border-bottom-color: #1e293b !important; }
+
+.mfoot { padding: 16px 24px !important; background: #f8fafc !important; border-top: 1px solid #e2e8f0 !important; gap: 12px !important; border-radius: 0 0 16px 16px !important; }
+body.dark .mfoot { background: #0b131e !important; border-top-color: #1e293b !important; }
+
+.xbtn { color: #64748b !important; background: rgba(0,0,0,0.04) !important; border-radius: 50% !important; width: 32px !important; height: 32px !important; display: flex !important; align-items: center !important; justify-content: center !important; font-size: 16px !important; transition: all 0.2s !important; }
+.xbtn:hover { background: rgba(239, 68, 68, 0.1) !important; color: #ef4444 !important; transform: rotate(90deg) !important; opacity: 1 !important; }
+body.dark .xbtn { color: #94a3b8 !important; background: rgba(255,255,255,0.05) !important; }
+
+.form-section { background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; padding: 16px !important; box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important; }
+body.dark .form-section { background: #111b2a !important; border-color: #1e293b !important; }
+
+.fg label { font-size: 11px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase !important; letter-spacing: 0.5px !important; margin-bottom: 6px !important; }
+body.dark .fg label { color: #94a3b8 !important; }
+
+.fg input, .fg select, .fg textarea { padding: 10px 14px !important; font-size: 13px !important; border-radius: 8px !important; border: 1.5px solid #cbd5e1 !important; background: #f8fafc !important; color: #0f172a !important; font-weight: 500 !important; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02) !important; }
+.fg input:hover, .fg select:hover, .fg textarea:hover { background: #ffffff !important; border-color: #94a3b8 !important; }
+.fg input:focus, .fg select:focus, .fg textarea:focus { background: #ffffff !important; border-color: var(--brand-teal) !important; box-shadow: 0 0 0 4px rgba(0, 180, 166, 0.15) !important; outline: none !important; }
+
+body.dark .fg input, body.dark .fg select, body.dark .fg textarea { background: #0f172a !important; border-color: #334155 !important; color: #f8fafc !important; }
+body.dark .fg input:hover, body.dark .fg select:hover, body.dark .fg textarea:hover { background: #1e293b !important; border-color: #475569 !important; }
+body.dark .fg input:focus, body.dark .fg select:focus, body.dark .fg textarea:focus { background: #1e293b !important; border-color: var(--brand-teal) !important; box-shadow: 0 0 0 4px rgba(0, 180, 166, 0.2) !important; }
+
+.btn { padding: 9px 20px !important; font-size: 13px !important; border-radius: 8px !important; font-weight: 600 !important; letter-spacing: 0.3px !important; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: 6px !important; }
+
+.btn-pr { background: linear-gradient(135deg, var(--brand-teal) 0%, #00998c 100%) !important; color: #ffffff !important; border: none !important; box-shadow: 0 4px 12px rgba(0, 180, 166, 0.25) !important; }
+.btn-pr:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 16px rgba(0, 180, 166, 0.35) !important; background: linear-gradient(135deg, #00d2c2 0%, var(--brand-teal) 100%) !important; }
+.btn-pr:active { transform: translateY(0) !important; box-shadow: 0 2px 8px rgba(0, 180, 166, 0.25) !important; }
+
+.btn-sc { background: #ffffff !important; color: #475569 !important; border: 1px solid #cbd5e1 !important; box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important; }
+.btn-sc:hover { background: #f8fafc !important; color: #0f172a !important; border-color: #94a3b8 !important; }
+body.dark .btn-sc { background: #1e293b !important; color: #cbd5e1 !important; border-color: #334155 !important; }
+body.dark .btn-sc:hover { background: #334155 !important; color: #f8fafc !important; border-color: #475569 !important; }
+
+.stitle { font-size: 12px !important; font-weight: 800 !important; color: var(--brand-navy) !important; text-transform: uppercase !important; letter-spacing: 0.8px !important; margin: 16px 0 10px !important; padding-bottom: 6px !important; padding-left: 10px !important; border-bottom: 2px solid var(--brand-green) !important; border-left: 4px solid var(--brand-navy) !important; background: linear-gradient(90deg, rgba(126,200,50,0.07) 0%, transparent 100%) !important; border-radius: 0 4px 4px 0 !important; }
+body.dark .stitle { color: #f8fafc !important; background: linear-gradient(90deg, rgba(126,200,50,0.1) 0%, transparent 100%) !important; border-left-color: var(--brand-teal) !important; }
 </style>"""
 
 SHARED_JS = """
