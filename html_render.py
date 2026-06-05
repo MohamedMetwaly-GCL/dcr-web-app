@@ -377,15 +377,17 @@ body.dark #projbar { background: #111b2a !important; border-bottom: 1px solid #1
 /* Optimize Logo Size */
 #projbar img { max-height: 40px !important; width: auto !important; max-width: none !important; object-fit: contain !important; margin: 0 !important; }
 
-#projbar-main { display: flex !important; flex-wrap: nowrap !important; gap: 20px !important; align-items: flex-start !important; flex: 1 !important; overflow-x: auto !important; scrollbar-width: none !important; }
+#projbar-main { display: flex !important; flex-wrap: nowrap !important; gap: 30px !important; align-items: flex-start !important; justify-content: flex-start !important; flex: 1 1 auto !important; overflow-x: auto !important; scrollbar-width: none !important; }
 #projbar-main::-webkit-scrollbar { display: none !important; }
 
-#projbar-primary, #projbar-extra { display: flex !important; flex-direction: row !important; gap: 20px !important; align-items: flex-start !important; flex: 1 1 auto !important; }
-#projbar .pf { display: flex !important; flex-direction: column !important; gap: 2px !important; border: none !important; padding: 0 !important; min-width: max-content !important; flex: 1 1 auto !important; }
+/* Destroy artificial boundaries so all items flow naturally in projbar-main */
+#projbar-primary, #projbar-extra { display: contents !important; }
+
+#projbar .pf { display: flex !important; flex-direction: column !important; gap: 2px !important; border: none !important; padding: 0 !important; flex: 0 1 auto !important; max-width: none !important; min-width: max-content !important; }
 #projbar .pf-lbl { font-size: 9.5px !important; font-weight: 700 !important; text-transform: uppercase !important; color: #64748b !important; letter-spacing: 0.3px !important; }
 body.dark #projbar .pf-lbl { color: #94a3b8 !important; }
 
-/* Prevent Text Truncation */
+/* Prevent Unnecessary Text Truncation/Wrap but allow it if absolutely out of space */
 #projbar .pf-val { 
     font-size: 12.5px !important; font-weight: 600 !important; color: #0f172a !important; 
     white-space: normal !important; 
