@@ -370,7 +370,7 @@ def resolve_status_meta(status_value, pid_meta=None):
 def _is_non_workflow_dt(dt_code="", dt_name=""):
     code = str(dt_code or "").strip().lower()
     name = str(dt_name or "").strip().lower()
-    return code in ("pr", "ltr") or "requisition" in name or "letter" in name
+    return code in ("pr", "ltr", "si", "ei") or "requisition" in name or "letter" in name or "site instruction" in name or "engineer instruction" in name
 
 def _is_pr_dt(dt_code="", dt_name=""):
     code = str(dt_code or "").strip().lower()
