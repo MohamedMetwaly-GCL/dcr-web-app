@@ -338,8 +338,9 @@ table tbody tr:nth-child(even) td, .dt-tbl tbody tr:nth-child(even) td, #regtbl 
 table tbody tr:hover td, .dt-tbl tbody tr:hover td, #regtbl tbody tr:hover td { background-color: #eef5ff !important; }
 
 /* 2. Frozen Columns (Checkbox, Sr, Document No) */
-#regtbl th:nth-child(1), #regtbl td:nth-child(1) { position: sticky !important; left: 0 !important; z-index: 5 !important; background-color: #ffffff !important; }
-#regtbl th:nth-child(2), #regtbl td:nth-child(2) { position: sticky !important; left: 32px !important; z-index: 5 !important; background-color: #ffffff !important; }
+/* Force exact widths to prevent gaps between sticky columns */
+#regtbl th:nth-child(1), #regtbl td:nth-child(1) { width: 32px !important; min-width: 32px !important; max-width: 32px !important; position: sticky !important; left: 0 !important; z-index: 5 !important; background-color: #ffffff !important; }
+#regtbl th:nth-child(2), #regtbl td:nth-child(2) { width: 34px !important; min-width: 34px !important; max-width: 34px !important; position: sticky !important; left: 32px !important; z-index: 5 !important; background-color: #ffffff !important; }
 #regtbl th.docno-cell, #regtbl td.docno-cell, #regtbl th:nth-child(3), #regtbl td:nth-child(3) { 
     position: sticky !important; left: 66px !important; z-index: 5 !important; background-color: #ffffff !important; 
     box-shadow: 2px 0 5px -2px rgba(0,0,0,0.1) !important;
@@ -353,8 +354,20 @@ table tbody tr:hover td, .dt-tbl tbody tr:hover td, #regtbl tbody tr:hover td { 
 /* Header z-index for Frozen Columns */
 #regtbl th:nth-child(1), #regtbl th:nth-child(2), #regtbl th:nth-child(3), #regtbl th.docno-cell { z-index: 10 !important; background-color: var(--brand-navy) !important; }
 
-/* 3. Status Pill Badges & Resizing */
-.sbadge { border-radius: 9999px !important; padding: 4px 12px !important; display: inline-flex !important; align-items: center !important; gap: 6px !important; max-width: 100% !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+/* 3. Status Pill Badges & Resizing (Allow Wrapping) */
+.sbadge { 
+    border-radius: 9999px !important; 
+    padding: 4px 12px !important; 
+    display: inline-flex !important; 
+    align-items: center !important; 
+    justify-content: center !important;
+    gap: 6px !important; 
+    max-width: 100% !important; 
+    white-space: normal !important; /* Allow text to wrap */
+    word-break: break-word !important;
+    text-align: left !important;
+    line-height: 1.2 !important;
+}
 #regtbl td { max-width: 400px; /* Provides a flexible upper bound for resizer plugin */ }
 </style>"""
 
