@@ -336,13 +336,13 @@ table tbody tr:nth-child(even) td { background-color: #f8fafc !important; }
 table tbody tr:hover td { background-color: #eef5ff !important; }
 
 /* Status Pill Badges */
-.sbadge { border-radius: 9999px !important; padding: 4px 12px !important; display: inline-flex !important; align-items: center !important; gap: 6px !important; }
+.sbadge { border-radius: 9999px !important; padding: 4px 12px !important; display: inline-flex !important; align-items: center !important; gap: 6px !important; max-width: 100% !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
 
 /* Frozen Columns (Checkbox, Sr, Document No) */
-#regtbl th:nth-child(1), #regtbl td:nth-child(1) { position: sticky !important; left: 0 !important; z-index: 2 !important; background-color: #fff !important; }
-#regtbl th:nth-child(2), #regtbl td:nth-child(2) { position: sticky !important; left: 32px !important; z-index: 2 !important; background-color: #fff !important; }
-#regtbl th.docno-cell, #regtbl td.docno-cell, #regtbl th:nth-child(3), #regtbl td:nth-child(3) { 
-    position: sticky !important; left: 66px !important; z-index: 2 !important; background-color: #fff !important; 
+#regtbl th:nth-child(1), table.table tbody tr td:nth-child(1) { position: sticky !important; left: 0 !important; z-index: 5 !important; background-color: #ffffff !important; }
+#regtbl th:nth-child(2), table.table tbody tr td:nth-child(2) { position: sticky !important; left: 32px !important; z-index: 5 !important; background-color: #ffffff !important; }
+#regtbl th.docno-cell, table.table tbody tr td.docno-cell, #regtbl th:nth-child(3), table.table tbody tr td:nth-child(3) { 
+    position: sticky !important; left: 66px !important; z-index: 5 !important; background-color: #ffffff !important; 
     box-shadow: 2px 0 5px -2px rgba(0,0,0,0.1) !important;
     font-family: 'Consolas', 'Courier New', monospace !important; 
     font-weight: 600 !important; 
@@ -350,14 +350,14 @@ table tbody tr:hover td { background-color: #eef5ff !important; }
 }
 
 /* Zebra Striping for Frozen Columns */
-#regtbl tbody tr:nth-child(even) td:nth-child(1),
-#regtbl tbody tr:nth-child(even) td:nth-child(2),
-#regtbl tbody tr:nth-child(even) td:nth-child(3),
-#regtbl tbody tr:nth-child(even) td.docno-cell { background-color: #f8fafc !important; }
+table.table tbody tr:nth-child(even) td:nth-child(1),
+table.table tbody tr:nth-child(even) td:nth-child(2),
+table.table tbody tr:nth-child(even) td:nth-child(3),
+table.table tbody tr:nth-child(even) td.docno-cell { background-color: #f8fafc !important; }
 
 /* Header z-index for Frozen Columns */
 #regtbl th:nth-child(1), #regtbl th:nth-child(2), #regtbl th:nth-child(3), #regtbl th.docno-cell { 
-    z-index: 3 !important; 
+    z-index: 6 !important; 
     background-color: var(--brand-navy) !important; 
 }
 </style>"""
