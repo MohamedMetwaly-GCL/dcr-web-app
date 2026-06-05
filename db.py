@@ -336,7 +336,11 @@ def _status_meta_from_tokens(status_value, pid_meta=None):
             return meta
     return None
 
-def resolve_status_meta(status_value, pid_meta=None):
+import functools
+
+@functools.lru_cache(maxsize=4096)
+def _resolve_status_meta_cached(status_value, pid_meta_tuple):
+    pid_meta = dict(pid_meta_tuple) if pid_meta_tuple else None
     status = str(status_value or "").strip()
     if not status:
         return "pending"
@@ -366,6 +370,10 @@ def resolve_status_meta(status_value, pid_meta=None):
     if token_meta:
         return token_meta
     return "pending"
+
+def resolve_status_meta(status_value, pid_meta=None):
+    pid_meta_tuple = tuple(sorted(pid_meta.items())) if pid_meta else None
+    return _resolve_status_meta_cached(status_value, pid_meta_tuple)
 
 def _is_non_workflow_dt(dt_code="", dt_name=""):
     code = str(dt_code or "").strip().lower()

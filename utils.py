@@ -112,6 +112,9 @@ def is_working_day(d, weekend_mode="friday_only", exclude_official_holidays=True
         return False
     return True
 
+import functools
+
+@functools.lru_cache(maxsize=8192)
 def add_working_days(start, days, weekend_mode="friday_only", exclude_official_holidays=True):
     if not start: return None
     if isinstance(start, str): start = datetime.date.fromisoformat(start)
@@ -121,6 +124,7 @@ def add_working_days(start, days, weekend_mode="friday_only", exclude_official_h
         if is_working_day(d, weekend_mode, exclude_official_holidays): added += 1
     return d.strftime("%Y-%m-%d")
 
+@functools.lru_cache(maxsize=8192)
 def add_calendar_days(start, days):
     if not start: return None
     if isinstance(start, str): start = datetime.date.fromisoformat(start)
