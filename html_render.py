@@ -371,33 +371,32 @@ table tbody tr:hover td, .dt-tbl tbody tr:hover td, #regtbl tbody tr:hover td { 
 #regtbl td { max-width: 400px; /* Provides a flexible upper bound for resizer plugin */ }
 
 /* === PHASE 3: TOP BAR & TABS REDESIGN === */
-#projbar { background: #ffffff !important; border-bottom: 1px solid #e2e8f0 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; padding: 6px 16px !important; display: flex !important; align-items: flex-start !important; gap: 16px !important; min-height: 56px !important; }
-body.dark #projbar { background: #111b2a !important; border-bottom: 1px solid #1e293b !important; box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; }
+#projbar { background: #ffffff !important; border-bottom: 1px solid #e2e8f0 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; padding: 8px 16px !important; display: flex !important; flex-wrap: nowrap !important; align-items: flex-start !important; gap: 20px !important; overflow-x: auto !important; scrollbar-width: thin !important; scrollbar-color: rgba(0,0,0,0.2) transparent !important; }
+#projbar::-webkit-scrollbar { height: 6px !important; display: block !important; }
+#projbar::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.2) !important; border-radius: 4px !important; }
+body.dark #projbar { background: #111b2a !important; border-bottom: 1px solid #1e293b !important; box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; scrollbar-color: rgba(255,255,255,0.2) transparent !important; }
+body.dark #projbar::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.2) !important; }
 
-/* Optimize Logo Size */
-#projbar img { max-height: 40px !important; width: auto !important; max-width: none !important; object-fit: contain !important; margin: 0 !important; }
+/* Force Logo Size */
+#projbar img { height: 45px !important; width: auto !important; max-width: none !important; object-fit: contain !important; margin: 0 !important; flex: 0 0 auto !important; }
 
-#projbar-main { display: flex !important; flex-wrap: nowrap !important; gap: 30px !important; align-items: flex-start !important; justify-content: flex-start !important; flex: 1 1 auto !important; overflow-x: auto !important; scrollbar-width: none !important; }
-#projbar-main::-webkit-scrollbar { display: none !important; }
+/* Force Single Row for Main Container */
+#projbar-main { display: flex !important; flex-wrap: nowrap !important; gap: 20px !important; align-items: flex-start !important; justify-content: flex-start !important; flex: 0 0 auto !important; max-width: none !important; width: auto !important; }
 
 /* Destroy artificial boundaries so all items flow naturally in projbar-main */
 #projbar-primary, #projbar-extra { display: contents !important; }
 
-#projbar .pf { display: flex !important; flex-direction: column !important; gap: 2px !important; border: none !important; padding: 0 !important; flex: 1 1 auto !important; max-width: none !important; min-width: 0 !important; }
-#projbar .pf.primary:last-child { flex: 2 1 auto !important; }
+/* Force Flex Items to not shrink or wrap */
+#projbar .pf { display: flex !important; flex-direction: column !important; gap: 2px !important; border: none !important; padding: 0 !important; flex: 0 0 auto !important; max-width: none !important; width: auto !important; }
 
 #projbar .pf-lbl { font-size: 9.5px !important; font-weight: 700 !important; text-transform: uppercase !important; color: #64748b !important; letter-spacing: 0.3px !important; }
 body.dark #projbar .pf-lbl { color: #94a3b8 !important; }
 
-/* Prevent Unnecessary Text Truncation/Wrap but allow it if absolutely out of space */
+/* Prevent Text Truncation and Wrapping entirely */
 #projbar .pf-val { 
-    font-size: 12.5px !important; font-weight: 600 !important; color: #0f172a !important; 
-    white-space: normal !important; 
-    word-break: break-word !important;
-    text-overflow: clip !important;
+    font-size: 13px !important; font-weight: 600 !important; color: #0f172a !important; 
+    white-space: nowrap !important; 
     display: block !important;
-    -webkit-line-clamp: unset !important;
-    line-height: 1.2 !important;
 }
 body.dark #projbar .pf-val { color: #f8fafc !important; }
 #projbar .pf.primary:last-child .pf-val { font-size: 14px !important; font-weight: 800 !important; color: var(--brand-teal) !important; }
