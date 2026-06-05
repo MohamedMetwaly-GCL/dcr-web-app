@@ -383,7 +383,9 @@ body.dark #projbar { background: #111b2a !important; border-bottom: 1px solid #1
 /* Destroy artificial boundaries so all items flow naturally in projbar-main */
 #projbar-primary, #projbar-extra { display: contents !important; }
 
-#projbar .pf { display: flex !important; flex-direction: column !important; gap: 2px !important; border: none !important; padding: 0 !important; flex: 0 1 auto !important; max-width: none !important; min-width: max-content !important; }
+#projbar .pf { display: flex !important; flex-direction: column !important; gap: 2px !important; border: none !important; padding: 0 !important; flex: 1 1 auto !important; max-width: none !important; min-width: 0 !important; }
+#projbar .pf.primary:last-child { flex: 2 1 auto !important; }
+
 #projbar .pf-lbl { font-size: 9.5px !important; font-weight: 700 !important; text-transform: uppercase !important; color: #64748b !important; letter-spacing: 0.3px !important; }
 body.dark #projbar .pf-lbl { color: #94a3b8 !important; }
 
