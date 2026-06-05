@@ -465,6 +465,20 @@ body.dark .btn-sc:hover { background: #334155 !important; color: #f8fafc !import
 
 .stitle { font-size: 12px !important; font-weight: 800 !important; color: var(--brand-navy) !important; text-transform: uppercase !important; letter-spacing: 0.8px !important; margin: 16px 0 10px !important; padding-bottom: 6px !important; padding-left: 10px !important; border-bottom: 2px solid var(--brand-green) !important; border-left: 4px solid var(--brand-navy) !important; background: linear-gradient(90deg, rgba(126,200,50,0.07) 0%, transparent 100%) !important; border-radius: 0 4px 4px 0 !important; }
 body.dark .stitle { color: #f8fafc !important; background: linear-gradient(90deg, rgba(126,200,50,0.1) 0%, transparent 100%) !important; border-left-color: var(--brand-teal) !important; }
+
+/* === PHASE 4 POLISH: Buttons & Scrollbars === */
+.btn-er { background: transparent !important; color: #94a3b8 !important; border: 1px solid transparent !important; box-shadow: none !important; }
+.btn-er:hover { background: #ef4444 !important; color: #ffffff !important; border-color: #ef4444 !important; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25) !important; transform: translateY(-1px) !important; }
+
+.btn-ok { background: linear-gradient(135deg, var(--brand-teal) 0%, #00998c 100%) !important; color: #ffffff !important; border: none !important; box-shadow: 0 4px 12px rgba(0, 180, 166, 0.25) !important; }
+.btn-ok:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 16px rgba(0, 180, 166, 0.35) !important; background: linear-gradient(135deg, #00d2c2 0%, var(--brand-teal) 100%) !important; }
+.btn-ok:active { transform: translateY(0) !important; box-shadow: 0 2px 8px rgba(0, 180, 166, 0.25) !important; }
+
+.mbody::-webkit-scrollbar, .slist::-webkit-scrollbar, .tool-dd-menu::-webkit-scrollbar { width: 6px !important; height: 6px !important; display: block !important; }
+.mbody::-webkit-scrollbar-thumb, .slist::-webkit-scrollbar-thumb, .tool-dd-menu::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.2) !important; border-radius: 4px !important; }
+body.dark .mbody::-webkit-scrollbar-thumb, body.dark .slist::-webkit-scrollbar-thumb, body.dark .tool-dd-menu::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.2) !important; }
+.mbody, .slist, .tool-dd-menu { scrollbar-width: thin !important; scrollbar-color: rgba(0,0,0,0.2) transparent !important; }
+body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: rgba(255,255,255,0.2) transparent !important; }
 </style>"""
 
 SHARED_JS = """
