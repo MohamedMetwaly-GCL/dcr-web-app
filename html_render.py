@@ -466,6 +466,26 @@ body.dark .btn-sc:hover { background: #334155 !important; color: #f8fafc !import
 .stitle { font-size: 12px !important; font-weight: 800 !important; color: var(--brand-navy) !important; text-transform: uppercase !important; letter-spacing: 0.8px !important; margin: 16px 0 10px !important; padding-bottom: 6px !important; padding-left: 10px !important; border-bottom: 2px solid var(--brand-green) !important; border-left: 4px solid var(--brand-navy) !important; background: linear-gradient(90deg, rgba(126,200,50,0.07) 0%, transparent 100%) !important; border-radius: 0 4px 4px 0 !important; }
 body.dark .stitle { color: #f8fafc !important; background: linear-gradient(90deg, rgba(126,200,50,0.1) 0%, transparent 100%) !important; border-left-color: var(--brand-teal) !important; }
 
+/* === PHASE 4 POLISH: Labels & Inline fixes === */
+#proj-modal input[id^="lbl-"] {
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-weight: 700 !important;
+    color: #64748b !important;
+    font-size: 11px !important;
+    letter-spacing: 0.5px !important;
+    padding-left: 5px !important;
+    padding-bottom: 0 !important;
+    margin-bottom: -10px !important;
+}
+body.dark #proj-modal input[id^="lbl-"] { color: #94a3b8 !important; }
+#proj-modal input[id^="lbl-"]:focus { border-bottom: 1px dashed var(--brand-teal) !important; border-radius: 0 !important; }
+
+/* Force Save Holidays to behave like Primary Button */
+#hol-save { background: linear-gradient(135deg, var(--brand-teal) 0%, #00998c 100%) !important; color: #ffffff !important; border: none !important; box-shadow: 0 4px 12px rgba(0, 180, 166, 0.25) !important; padding: 9px 20px !important; font-size: 13px !important; border-radius: 8px !important; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important; }
+#hol-save:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 16px rgba(0, 180, 166, 0.35) !important; background: linear-gradient(135deg, #00d2c2 0%, var(--brand-teal) 100%) !important; }
+
 /* === PHASE 4 POLISH: Buttons & Scrollbars === */
 .btn-er { background: transparent !important; color: #94a3b8 !important; border: 1px solid transparent !important; box-shadow: none !important; }
 .btn-er:hover { background: #ef4444 !important; color: #ffffff !important; border-color: #ef4444 !important; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25) !important; transform: translateY(-1px) !important; }
