@@ -2198,7 +2198,7 @@ async function openAdmin(){{
       const roleSel=document.createElement('select');
       roleSel.id='role-'+u.username;
       roleSel.className='btn btn-sc btn-sm';
-      roleSel.style.cssText='height:28px;padding:2px 7px';
+      roleSel.style.cssText='height:auto;padding:4px 8px;outline:none;';
       roleSel.innerHTML=['viewer','editor','admin','superadmin'].map(r=>`<option value="${{r}}" ${{u.role===r?'selected':''}}>${{r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}}</option>`).join('');
       const roleBtn=document.createElement('button');
       roleBtn.className='btn btn-pr btn-sm';
@@ -2212,7 +2212,7 @@ async function openAdmin(){{
       const ad=document.createElement('div');
       ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
       ad.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:6px">Project access:</div>';
-      const assigned=await apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]);
+      const assigned=assigned_cached;
       const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:5px';
       projects.forEach(p=>{{
         const projAccess = assigned.find(a => a.project_id === p.id);
@@ -2226,15 +2226,23 @@ async function openAdmin(){{
         
         btn.onclick=async()=>{{
           const on=!!btn.dataset.on;
-          await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id,is_dc:false}})}});
-          openAdmin();
+          btn.dataset.on = on ? '' : '1';
+          const isOn = !on;
+          btn.style.borderColor = isDC?'#22c55e':(isOn?'#f0a500':'#e2e8f0');
+          btn.style.background = isOn?'#1a3a5c':'#f8fafc';
+          btn.style.color = isOn?'#fff':'#94a3b8';
+          btn.textContent = p.code + (isDC ? ' (DC)' : '');
+          try {{
+            await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id,is_dc:false}})}});
+          }} catch(e) {{ openAdmin(); }}
         }};
         
         btn.oncontextmenu = async (e) => {{
           e.preventDefault();
-          if(!isOn) return toast('User must be assigned to project first','wa');
+          const currIsOn = !!btn.dataset.on;
+          if(!currIsOn) return toast('User must be assigned to project first','wa');
           await apiFetch('/api/users', {{method:'POST', body:JSON.stringify({{action:'assign',username:u.username,project_id:p.id, is_dc: !isDC}})}});
-          openAdmin();
+          openAdmin(); // Reload to refresh isDC constant state accurately
         }};
         
         pl.appendChild(btn);
@@ -5642,9 +5650,12 @@ async function saveAddCol(){{
 async function openAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
   if(!users||!projects) return;
+  const assignments=await Promise.all(users.map(u=>u.role!=='superadmin'?apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]):Promise.resolve([])));
   const body=document.getElementById('admin-body'); body.innerHTML='';
   const utitle=document.createElement('div');utitle.className='stitle';utitle.textContent='👥 Users';body.appendChild(utitle);
+  let _i = 0;
   for(const u of users){{
+    const assigned_cached = assignments[_i++];
     const row=document.createElement('div');row.className='urow';
     row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
       <input id="email-${{u.username}}" placeholder="Email (e.g. dc@company.com)" value="${{u.email || ''}}" style="flex:1; margin-right: 8px; padding: 2px 6px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px;" onblur="updUsrEmail('${{u.username}}')">
@@ -5657,7 +5668,7 @@ async function openAdmin(){{
       const roleSel=document.createElement('select');
       roleSel.id='role-'+u.username;
       roleSel.className='btn btn-sc btn-sm';
-      roleSel.style.cssText='height:28px;padding:2px 7px';
+      roleSel.style.cssText='height:auto;padding:4px 8px;outline:none;';
       roleSel.innerHTML=['viewer','editor','admin','superadmin'].map(r=>`<option value="${{r}}" ${{u.role===r?'selected':''}}>${{r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}}</option>`).join('');
       const roleBtn=document.createElement('button');
       roleBtn.className='btn btn-pr btn-sm';
@@ -5669,7 +5680,7 @@ async function openAdmin(){{
     if(u.role!=='superadmin'){{
       const ad=document.createElement('div');ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
       ad.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:4px">Project access:</div>';
-      const assigned=await apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]);
+      const assigned=assigned_cached;
       const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:5px';
       projects.forEach(p=>{{
         const projAccess = assigned.find(a => a.project_id === p.id);
@@ -5683,15 +5694,23 @@ async function openAdmin(){{
         
         btn.onclick=async()=>{{
           const on=!!btn.dataset.on;
-          await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id,is_dc:false}})}});
-          openAdmin();
+          btn.dataset.on = on ? '' : '1';
+          const isOn = !on;
+          btn.style.borderColor = isDC?'#22c55e':(isOn?'#f0a500':'#e2e8f0');
+          btn.style.background = isOn?'#1a3a5c':'#f8fafc';
+          btn.style.color = isOn?'#fff':'#94a3b8';
+          btn.textContent = p.code + (isDC ? ' (DC)' : '');
+          try {{
+            await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id,is_dc:false}})}});
+          }} catch(e) {{ openAdmin(); }}
         }};
         
         btn.oncontextmenu = async (e) => {{
           e.preventDefault();
-          if(!isOn) return toast('User must be assigned to project first','wa');
+          const currIsOn = !!btn.dataset.on;
+          if(!currIsOn) return toast('User must be assigned to project first','wa');
           await apiFetch('/api/users', {{method:'POST', body:JSON.stringify({{action:'assign',username:u.username,project_id:p.id, is_dc: !isDC}})}});
-          openAdmin();
+          openAdmin(); // Reload to refresh isDC constant state accurately
         }};
         
         pl.appendChild(btn);
