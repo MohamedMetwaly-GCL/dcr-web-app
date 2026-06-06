@@ -3853,9 +3853,9 @@ function renderRows(){{
           tr.appendChild(td);return;
         }}
       }}
-      else if(key==='fileLocation'){{
+      else if(col.col_type==='url' || key==='fileLocation'){{
         const url=row[key]||'';
-        if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">View</a>`;tr.appendChild(td);return;}}
+        if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">View File</a>`;tr.appendChild(td);return;}}
       }}
       else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val=getPrSummary(row);
       else val=String(row[key]||'');

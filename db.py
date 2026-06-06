@@ -250,6 +250,7 @@ LTR_COLS = [
     ("remarks", "Remarks", "text", None, 7, False),
     ("parentLetterId", "Parent Letter ID", "text", None, 8, False),
     ("parentLetterRef", "Response Ref", "text", None, 9, True),
+    ("fileLocation", "Drive Link", "url", None, 10, True),
 ]
 
 # Default meta categories for known status values
@@ -432,13 +433,14 @@ def _sync_noc_doc_type(pid, dt_id="NOC", dt_name="Notice of Change"):
             ON CONFLICT(project_id,dt_id,col_key) DO UPDATE
             SET label=EXCLUDED.label,
                 col_type=EXCLUDED.col_type,
-                list_name=EXCLUDED.list_name
+                list_name=EXCLUDED.list_name,
+                sort_order=COALESCE(columns_config.sort_order, EXCLUDED.sort_order)
         """, (pid, dt_id, ck, lbl, ct, ln, visible, so))
     _ensure_noc_lists(pid)
 
 def _sync_ltr_doc_type(pid, dt_id="LTR", dt_name="Letters"):
     specs = _doc_type_col_specs("LTR", dt_name)
-    blocked_keys = ["description", "fileLocation", "status"]
+    blocked_keys = ["description", "status"]
     exe(
         "DELETE FROM columns_config WHERE project_id=%s AND dt_id=%s AND col_key = ANY(%s)",
         (pid, dt_id, blocked_keys),
@@ -450,6 +452,7 @@ def _sync_ltr_doc_type(pid, dt_id="LTR", dt_name="Letters"):
             ON CONFLICT(project_id,dt_id,col_key) DO UPDATE
             SET col_type=EXCLUDED.col_type,
                 list_name=EXCLUDED.list_name,
+                sort_order=COALESCE(columns_config.sort_order, EXCLUDED.sort_order),
                 visible=CASE
                     WHEN columns_config.col_key='parentLetterId' THEN FALSE
                     ELSE columns_config.visible
