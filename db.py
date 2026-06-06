@@ -478,7 +478,8 @@ def _sync_all_ltr_doc_types():
                 _sync_ltr_doc_type(pid, dt["id"], dt.get("name", "Letters"))
 
 def _cleanup_custom_columns():
-    exe("DELETE FROM columns_config WHERE col_key LIKE 'custom_%' AND (label ILIKE '%file location%' OR label ILIKE '%drive link%') AND dt_id IN (SELECT id FROM doc_types WHERE UPPER(code)='LTR' OR name ILIKE '%letter%' OR name ILIKE '%correspondence%')")
+    exe("DELETE FROM columns_config WHERE col_key LIKE %s AND (label ILIKE %s OR label ILIKE %s) AND dt_id IN (SELECT id FROM doc_types WHERE UPPER(code)='LTR' OR name ILIKE %s OR name ILIKE %s)",
+        ('custom_%', '%file location%', '%drive link%', '%letter%', '%correspondence%'))
 
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
