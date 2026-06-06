@@ -3183,7 +3183,7 @@ function isLTRExcludedField(col){{
   if(!isLTRTab())return false;
   const role=getLTRFieldRole(col);
   const key=String(col?.col_key||'').trim().toLowerCase();
-  return ['description','fileLocation','status'].includes(role)||['description','filelocation','status'].includes(key);
+  return ['description','status'].includes(role)||['description','status'].includes(key);
 }}
 
 function isLTRInternalField(col){{
