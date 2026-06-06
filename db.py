@@ -205,7 +205,7 @@ DEFAULT_COLS = [
     ("status","Status","dropdown","status",9),
     ("duration","Duration (days)","auto_num",None,10),
     ("remarks","Remarks","text",None,11),
-    ("fileLocation","File Location","link",None,12),
+    ("fileLocation","Drive Link","url",None,12),
 ]
 
 NOC_STATUS_VALUES = [
@@ -235,6 +235,7 @@ NOC_COLS = [
     ("voIssueDate", "VO Issue Date", "date", None, 14, False),
     ("voBaseValue", "VO Base Value (EGP)", "number", None, 15, False),
     ("voValueWithSIAndVAT", "VO Value (EGP) Including SI & VAT", "number", None, 16, True),
+    ("fileLocation", "Drive Link", "url", None, 17, True),
 ]
 
 LTR_DIRECTION_VALUES = ["Sent", "Received"]
@@ -481,6 +482,9 @@ def _cleanup_custom_columns():
     exe("DELETE FROM columns_config WHERE col_key LIKE %s AND (label ILIKE %s OR label ILIKE %s) AND dt_id IN (SELECT id FROM doc_types WHERE UPPER(code)='LTR' OR name ILIKE %s OR name ILIKE %s)",
         ('custom_%', '%file location%', '%drive link%', '%letter%', '%correspondence%'))
 
+def _global_rename_filelocation():
+    exe("UPDATE columns_config SET label='Drive Link', col_type='url' WHERE col_key='fileLocation'")
+
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
     for stmt in stmts:
@@ -491,6 +495,7 @@ def init():
                 logger.warning("db_schema_note error=%s", e)
     _ensure_admin()
     _cleanup_custom_columns()
+    _global_rename_filelocation()
     _sync_all_noc_doc_types()
     _sync_all_ltr_doc_types()
 
