@@ -454,6 +454,7 @@ def _sync_ltr_doc_type(pid, dt_id="LTR", dt_name="Letters"):
                 list_name=EXCLUDED.list_name,
                 sort_order=COALESCE(columns_config.sort_order, EXCLUDED.sort_order),
                 visible=CASE
+                    WHEN EXCLUDED.col_key='fileLocation' THEN TRUE
                     WHEN columns_config.col_key='parentLetterId' THEN FALSE
                     ELSE columns_config.visible
                 END
@@ -464,17 +465,20 @@ def _sync_all_noc_doc_types():
     projects = q("SELECT id FROM projects")
     for p in projects:
         pid = p["id"]
-        dt = q("SELECT id, name, code FROM doc_types WHERE project_id=%s AND (UPPER(code)='NOC' OR UPPER(id)='NOC') LIMIT 1", (pid,), one=True)
-        if dt:
-            _sync_noc_doc_type(pid, dt["id"], dt.get("name", "Notice of Change"))
+        for dt in q("SELECT id, name, code FROM doc_types WHERE project_id=%s", (pid,)):
+            if _is_noc_dt(dt["code"], dt["name"]):
+                _sync_noc_doc_type(pid, dt["id"], dt.get("name", "Notice of Change"))
 
 def _sync_all_ltr_doc_types():
     projects = q("SELECT id FROM projects")
     for p in projects:
         pid = p["id"]
-        dt = q("SELECT id, name, code FROM doc_types WHERE project_id=%s AND (UPPER(code)='LTR' OR UPPER(id)='LTR') LIMIT 1", (pid,), one=True)
-        if dt:
-            _sync_ltr_doc_type(pid, dt["id"], dt.get("name", "Letters"))
+        for dt in q("SELECT id, name, code FROM doc_types WHERE project_id=%s", (pid,)):
+            if _is_ltr_dt(dt["code"], dt["name"]):
+                _sync_ltr_doc_type(pid, dt["id"], dt.get("name", "Letters"))
+
+def _cleanup_custom_columns():
+    exe("DELETE FROM columns_config WHERE col_key LIKE 'custom_%' AND (label ILIKE '%file location%' OR label ILIKE '%drive link%') AND dt_id IN (SELECT id FROM doc_types WHERE UPPER(code)='LTR' OR name ILIKE '%letter%' OR name ILIKE '%correspondence%')")
 
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
@@ -485,6 +489,7 @@ def init():
             if "already exists" not in str(e).lower():
                 logger.warning("db_schema_note error=%s", e)
     _ensure_admin()
+    _cleanup_custom_columns()
     _sync_all_noc_doc_types()
     _sync_all_ltr_doc_types()
 
