@@ -691,9 +691,12 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     mcell(1, brand_text, PRIMARY, bold=True, sz=14)
     ws.row_dimensions[1].height = 30
 
-    info = f"DOCUMENT CONTROL REGISTER  -  {str(dt_name).upper()}   |   Exported: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}"
-    mcell(2, info, PL, sz=10)
-    ws.row_dimensions[2].height = 20
+    info = "   |   ".join(f"{k}: {v}" for k,v in [
+        ("Project",proj.get("name","")),("Code",proj.get("code","")),
+        ("Client",proj.get("client","")),("Consultant",proj.get("mainConsultant","")),
+        ("Exported",datetime.datetime.now().strftime("%d-%m-%Y %H:%M"))] if v)
+    mcell(2, info, PL, sz=9)
+    ws.row_dimensions[2].height = 16
     ws.row_dimensions[3].height = 3
 
     ws.freeze_panes = "A5"
@@ -789,24 +792,20 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     if total_row >= 4:
         ws.auto_filter.ref = f"A4:{get_column_letter(nc)}{max(4, total_row - 1)}"
         
-    # TRUE AUTO-FIT
-    for col_idx in range(1, ws.max_column + 1):
+    # TRUE AUTO-FIT (Safe & Accurate)
+    for col_idx in range(1, nc + 1):
         col_letter = get_column_letter(col_idx)
-        max_length = 0
-        for row in range(1, ws.max_row + 1):
-            cell = ws.cell(row=row, column=col_idx)
-            # Skip checking lengths for merged cells to avoid errors
-            if hasattr(cell, 'coordinate') and cell.coordinate in ws.merged_cells:
-                continue
-            try:
-                if cell.row <= 3: continue
-                if cell.value:
-                    lines = str(cell.value).split('\n')
-                    longest = max(len(l) for l in lines) if lines else 0
-                    max_length = max(max_length, longest)
-            except: pass
-        adjusted = min(55, max_length + 5)
-        ws.column_dimensions[col_letter].width = max(12, adjusted)
+        max_length = len(str(ws.cell(row=4, column=col_idx).value or ""))
+        
+        for row_idx_data in range(5, total_row):
+            cell = ws.cell(row=row_idx_data, column=col_idx)
+            val = str(cell.value or "")
+            lines = val.split('\n')
+            longest = max(len(l) for l in lines) if lines else 0
+            max_length = max(max_length, longest)
+            
+        adjusted = min(65, max_length + 3)
+        ws.column_dimensions[col_letter].width = max(10, adjusted)
 
 
 
@@ -870,10 +869,19 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
             c = ws.cell(row=row_idx, column=i, value=val)
             c.font = Font(color="1E2A3A")
             c.fill = fill(bg)
+            c.alignment = Alignment(horizontal="center", vertical="center")
             c.border = thin()
-            c.alignment = Alignment(horizontal="center" if i > 2 else "left")
         ws.row_dimensions[row_idx].height = 20
         row_idx += 1
+
+    # Dashboard Auto-Fit
+    for col_idx in range(2, 6): # B to E
+        col_letter = get_column_letter(col_idx)
+        max_length = len(str(ws.cell(row=5, column=col_idx).value or ""))
+        for r_idx in range(6, row_idx):
+            val = str(ws.cell(row=r_idx, column=col_idx).value or "")
+            max_length = max(max_length, len(val))
+        ws.column_dimensions[col_letter].width = max_length + 8
 
     row_idx += 1
     c = ws.cell(row=row_idx, column=2, value="TOTALS")
