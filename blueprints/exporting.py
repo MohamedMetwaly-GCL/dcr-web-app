@@ -1347,7 +1347,7 @@ def api_export(pid, dt_id):
 
 def _build_executive_summary_pdf(pid, dt_id=None):
     from flask import render_template
-    import pdfkit
+
     import datetime
     
     proj = db.get_project(pid) or {}
@@ -1419,28 +1419,21 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         logo_r=logo_r
     )
     
-    options = {
-        'page-size': 'A4',
-        'margin-top': '0.5in',
-        'margin-right': '0.5in',
-        'margin-bottom': '0.5in',
-        'margin-left': '0.5in',
-        'encoding': "UTF-8",
-        'enable-local-file-access': "",
-        'no-outline': None
-    }
+    from xhtml2pdf import pisa
     
-    import shutil
-    wk_path = shutil.which("wkhtmltopdf") or "/usr/bin/wkhtmltopdf"
-    config = pdfkit.configuration(wkhtmltopdf=wk_path)
+    result = io.BytesIO()
+    pisa_status = pisa.CreatePDF(html, dest=result)
     
-    pdf_bytes = pdfkit.from_string(html, False, options=options, configuration=config)
-    return io.BytesIO(pdf_bytes)
+    if pisa_status.err:
+        raise Exception("Error generating PDF via xhtml2pdf")
+        
+    result.seek(0)
+    return result
 
 @exporting_bp.route("/api/export_pdf/<pid>/<dt_id>")
 def api_export_pdf(pid, dt_id):
     try:
-        import pdfkit
+
         buf = _build_executive_summary_pdf(pid, dt_id)
         fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
         return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
@@ -1452,7 +1445,7 @@ def api_export_pdf(pid, dt_id):
 @exporting_bp.route("/api/export_pdf_all/<pid>")
 def api_export_pdf_all(pid):
     try:
-        import pdfkit
+
         buf = _build_executive_summary_pdf(pid, "all")
         fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_Executive_Summary.pdf"
         return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
