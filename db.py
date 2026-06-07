@@ -645,21 +645,41 @@ def get_daily_digest(pid, doc_type_ids):
     from datetime import date
     today_str = date.today().isoformat()
     if not doc_type_ids: return {"received": [], "issued": [], "replied": []}
-    rows = q("SELECT id, dt_id, data FROM records WHERE project_id=%s AND dt_id = ANY(%s)", (pid, list(doc_type_ids)))
+    
+    # Query only records that match today's date in the relevant fields using PostgreSQL JSONB operators
+    sql = """
+        SELECT id, dt_id, data FROM records 
+        WHERE project_id=%s AND dt_id IN %s
+        AND (
+            data->>'receivedDate' = %s OR
+            data->>'issuedDate' = %s OR
+            data->>'partAIssueDate' = %s OR
+            data->>'partCIssueDate' = %s OR
+            data->>'actualReplyDate' = %s OR
+            data->>'partBReturnDate' = %s OR
+            data->>'partDReturnDate' = %s
+        )
+    """
+    params = (pid, tuple(doc_type_ids), today_str, today_str, today_str, today_str, today_str, today_str, today_str)
+    rows = q(sql, params)
+    
     received, issued, replied = [], [], []
     for r in rows:
         d = r.get("data") or {}
         if d.get("receivedDate") == today_str: received.append(r)
         if d.get("issuedDate") == today_str or d.get("partAIssueDate") == today_str or d.get("partCIssueDate") == today_str: issued.append(r)
         if d.get("actualReplyDate") == today_str or d.get("partBReturnDate") == today_str or d.get("partDReturnDate") == today_str: replied.append(r)
+        
     def format_rec(rec):
         d = rec.get("data") or {}
         return {
-            "id": rec["id"], "dt_id": rec["dt_id"],
-            "docNo": d.get("docNo") or d.get("record_id") or "Untitled",
-            "title": d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject",
-            "status": d.get("status") or d.get("partDStatus") or d.get("partBStatus") or ""
+            "id": str(rec.get("id", "")),
+            "dt_id": str(rec.get("dt_id", "")),
+            "docNo": str(d.get("docNo") or d.get("record_id") or "Untitled"),
+            "title": str(d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject"),
+            "status": str(d.get("status") or d.get("partDStatus") or d.get("partBStatus") or "")
         }
+        
     return {
         "received": [format_rec(x) for x in received],
         "issued": [format_rec(x) for x in issued],
