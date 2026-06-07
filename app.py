@@ -309,6 +309,149 @@ def api_save_distribution(pid):
         print(f"[Distribution POST Error]: {e}")
         return jsonify(error="Server error"), 500
 
+@app.route("/api/project_users/<pid>", methods=["GET"])
+def api_project_users(pid):
+    try:
+        u = current_user()
+        if not u: return jsonify(error="LOGIN_REQUIRED"), 403
+        if not can_view_project(pid): return jsonify(error="Forbidden"), 403
+        return jsonify(db.get_project_users_full(pid))
+    except Exception as e:
+        return jsonify(error="Server error"), 500
+
+import hashlib
+import os
+MAGIC_SECRET = os.environ.get("MAGIC_SECRET", "super_secret_magic_dcr_key")
+
+def _generate_magic_token(pid, dt_id):
+    return hashlib.sha256(f"{pid}:{dt_id}:{MAGIC_SECRET}".encode()).hexdigest()[:16]
+
+@app.route("/api/magic/generate/<pid>/<dt_id>", methods=["POST"])
+def api_generate_magic_link(pid, dt_id):
+    try:
+        u = current_user()
+        if not u: return jsonify(error="LOGIN_REQUIRED"), 403
+        if not can_view_project(pid): return jsonify(error="Forbidden"), 403
+        token = _generate_magic_token(pid, dt_id)
+        # Generate absolute URL without hardcoding domain (using request.host_url)
+        link = f"{request.host_url.rstrip('/')}/magic/{pid}/{dt_id}?token={token}"
+        return jsonify(ok=True, link=link)
+    except Exception as e:
+        return jsonify(error="Server error"), 500
+
+@app.route("/magic/<pid>/<dt_id>", methods=["GET"])
+def magic_digest_view(pid, dt_id):
+    token = request.args.get("token", "")
+    expected = _generate_magic_token(pid, dt_id)
+    if token != expected:
+        return "Invalid or unauthorized magic link.", 403
+    
+    # We will build a lightweight HTML template inline or via render_template_string
+    # But since DCR uses html_render for SPA, we can return a simple HTML page.
+    digest = db.get_daily_digest(pid, [dt_id])
+    
+    from flask import render_template_string
+    template = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Daily Digest</title>
+        <style>
+            body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #0f172a; padding: 20px; margin: 0; }
+            .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            h2 { font-size: 18px; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+            .h-recv { color: #2563eb; border-color: #bfdbfe; }
+            .h-sent { color: #ea580c; border-color: #fed7aa; }
+            .h-repl { color: #16a34a; border-color: #bbf7d0; }
+            .item { padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+            .item:last-child { border: none; padding-bottom: 0; }
+            .docno { font-weight: bold; color: #334155; }
+            .title { color: #64748b; margin-top: 4px; font-size: 13px; }
+            .empty { color: #94a3b8; font-size: 14px; font-style: italic; }
+        </style>
+    </head>
+    <body>
+        <h1 style="font-size:20px;text-align:center;color:#0f172a;margin-bottom:24px;">📋 Daily Digest - Today</h1>
+        
+        <div class="card">
+            <h2 class="h-recv">📥 Received Today ({{ digest.received|length }})</h2>
+            {% for doc in digest.received %}
+            <div class="item">
+                <div class="docno">{{ doc.docNo }}</div>
+                <div class="title">{{ doc.title }}</div>
+            </div>
+            {% else %}
+            <div class="empty">No documents received today.</div>
+            {% endfor %}
+        </div>
+        
+        <div class="card">
+            <h2 class="h-sent">📤 Issued/Sent Today ({{ digest.issued|length }})</h2>
+            {% for doc in digest.issued %}
+            <div class="item">
+                <div class="docno">{{ doc.docNo }}</div>
+                <div class="title">{{ doc.title }}</div>
+            </div>
+            {% else %}
+            <div class="empty">No documents issued today.</div>
+            {% endfor %}
+        </div>
+        
+        <div class="card">
+            <h2 class="h-repl">✅ Replied Today ({{ digest.replied|length }})</h2>
+            {% for doc in digest.replied %}
+            <div class="item">
+                <div class="docno">{{ doc.docNo }}</div>
+                <div class="title">{{ doc.title }}</div>
+                {% if doc.status %}<div style="margin-top:4px;font-size:12px;font-weight:bold;color:#475569;">Status: {{ doc.status }}</div>{% endif %}
+            </div>
+            {% else %}
+            <div class="empty">No documents replied today.</div>
+            {% endfor %}
+        </div>
+    </body>
+    </html>
+    """
+    return render_template_string(template, digest=digest)
+
+@app.route("/api/daily_digest/<pid>", methods=["GET"])
+def api_daily_digest(pid):
+    try:
+        u = current_user()
+        if not u: return jsonify(error="LOGIN_REQUIRED"), 403
+        
+        projects_to_check = []
+        if pid == "all":
+            from auth import get_allowed_project_ids
+            projects_to_check = get_allowed_project_ids(u)
+        else:
+            if not can_view_project(pid): return jsonify(error="Forbidden"), 403
+            projects_to_check = [pid]
+            
+        combined_digest = {"received": [], "issued": [], "replied": []}
+        is_admin = u["role"] in ("superadmin", "admin")
+        
+        for p_id in projects_to_check:
+            dist = db.get_distribution(p_id)
+            assigned_dt_ids = []
+            for dt_id, events in dist.items():
+                users = events.get("access", [])
+                if is_admin or u["username"] in users:
+                    assigned_dt_ids.append(dt_id)
+            if assigned_dt_ids:
+                d = db.get_daily_digest(p_id, assigned_dt_ids)
+                combined_digest["received"].extend(d["received"])
+                combined_digest["issued"].extend(d["issued"])
+                combined_digest["replied"].extend(d["replied"])
+                
+        return jsonify(combined_digest)
+    except Exception as e:
+        print(f"[Daily Digest Error]: {e}")
+        return jsonify(error="Server error"), 500
+
+
 def drive_polling_job():
     """Background thread to poll Google Drive every 15 minutes as a robust Failsafe/Sync mechanism."""
     import time

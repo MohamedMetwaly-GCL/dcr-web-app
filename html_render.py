@@ -1269,8 +1269,18 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
     <button class="tbtn" onclick="showTab('analytics')">📈 Analytics</button>
     <button class="tbtn" onclick="showTab('overdue')">⚠️ Overdue</button>
     <button class="tbtn" onclick="showTab('executive')">📋 Executive</button>
+    <button class="tbtn" onclick="showTab('daily-digest')">🌟 Daily Digest</button>
     {audit_btn}
   </div>
+
+
+    <!-- TAB: DAILY DIGEST -->
+    <div id="tab-daily-digest" class="tab-pane">
+      <div class="stitle">🌟 Daily Digest</div>
+      <div id="daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
+        <div style="color:var(--mu);font-size:14px;">Loading Daily Digest...</div>
+      </div>
+    </div>
 
     <!-- TAB: OVERVIEW -->
     <div id="tab-overview" class="tab-pane active">
@@ -5259,113 +5269,125 @@ async function saveProject(){{
 }}
 
 // ── Distribution Matrix ──────────────────────────────────────
-async function openDistributionMatrix(pid) {{
-  if(!pid){{ toast('No project selected','er'); return; }}
-  const EVENTS = [
-    {{key:'On_Submission', label:'📤 On Submission', color:'#1d4ed8', hint:'Sent when a new document is received/submitted'}},
-    {{key:'On_Action',     label:'✅ On Action',     color:'#065f46', hint:'Sent instantly when a doc is Approved or Rejected'}},
-    {{key:'Daily_Digest',  label:'📋 Daily Digest',  color:'#7c3aed', hint:'End-of-day summary sent at 5pm'}}
-  ];
+async function openDistributionMatrix(pid) {
+  if(!pid){ toast('No project selected','er'); return; }
 
-  try {{
-    const [docTypes, savedDist] = await Promise.all([
+  try {
+    const [docTypes, savedDist, projUsers] = await Promise.all([
       apiFetch('/api/doc_types/'+pid).catch(()=>[]),
-      apiFetch('/api/distribution/'+pid).catch(()=>({{}}))
+      apiFetch('/api/distribution/'+pid).catch(()=>({})),
+      apiFetch('/api/project_users/'+pid).catch(()=>[])
     ]);
-    if(!docTypes || !docTypes.length){{ toast('No doc types found for this project','wa'); return; }}
+    if(!docTypes || !docTypes.length){ toast('No doc types found for this project','wa'); return; }
     
     const body = document.getElementById('dist-body');
     body.innerHTML = '';
 
-    // Helper: create tag-input widget
-    function makeTagInput(containerId, initialEmails, pid, dtId, evtKey) {{
+    function makeUserSelector(initialUsers, pid, dtId) {
       const wrap = document.createElement('div');
       wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border:1px solid var(--bd);border-radius:6px;min-height:36px;background:var(--bg);cursor:text;';
       
-      // Render existing tags
-      let emails = [...(initialEmails||[])];
+      let users = [...(initialUsers||[])];
       
-      function renderTags() {{
+      function renderTags() {
         wrap.innerHTML='';
-        emails.forEach((em,i)=>{{
+        users.forEach((em,i)=>{
           const chip=document.createElement('span');
           chip.style.cssText='display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:#dbeafe;color:#1e40af;font-size:11px;font-weight:600';
-          chip.innerHTML=em+' <span style="cursor:pointer;font-size:14px;line-height:1" onclick="this.parentNode.remove();emails.splice('+i+',1);saveDistRow()">✕</span>';
+          chip.innerHTML=em+' <span style="cursor:pointer;font-size:14px;line-height:1" onclick="this.parentNode.remove();users.splice('+i+',1);saveDistRow()">✕</span>';
           wrap.appendChild(chip);
-        }});
-        // Input field at the end
-        const inp=document.createElement('input');
-        inp.placeholder='Type email & press Enter...';
-        inp.style.cssText='border:none;outline:none;background:transparent;font-size:12px;min-width:180px;flex:1;color:var(--tx)';
-        inp.onkeydown=async(e)=>{{
-          if(e.key==='Enter'||e.key===','){{
-            e.preventDefault();
-            const val=inp.value.trim().toLowerCase().replace(/,$/,'');
-            if(val&&val.includes('@')&&!emails.includes(val)){{
-              emails.push(val);
-              await saveDistRow();
-              renderTags();
-            }} else if(val) toast('Invalid or duplicate email','wa');
-            inp.value='';
-          }}
-        }};
-        wrap.appendChild(inp);
-        wrap.onclick=()=>inp.focus();
-      }}
+        });
+        
+        const sel=document.createElement('select');
+        sel.style.cssText='border:none;outline:none;background:transparent;font-size:12px;min-width:180px;flex:1;color:var(--tx)';
+        sel.innerHTML = '<option value="">+ Add User...</option>';
+        projUsers.forEach(u => {
+          if(!users.includes(u.username)) {
+            sel.innerHTML += `<option value="${u.username}">${u.username} (${u.role})</option>`;
+          }
+        });
+        
+        sel.onchange=async(e)=>{
+          const val = sel.value;
+          if(val && !users.includes(val)) {
+            users.push(val);
+            await saveDistRow();
+            renderTags();
+          }
+        };
+        wrap.appendChild(sel);
+      }
       
-      async function saveDistRow() {{
-        try {{
-          const r = await apiFetch('/api/distribution/'+pid, {{
+      async function saveDistRow() {
+        try {
+          const r = await apiFetch('/api/distribution/'+pid, {
             method:'POST',
-            body: JSON.stringify({{doc_type_id:dtId, event_type:evtKey, emails}})
-          }});
+            body: JSON.stringify({doc_type_id:dtId, event_type:'access', emails:users})
+          });
           if(r&&r.ok) toast('✔ Saved','ok');
           else toast('Save failed','er');
-        }} catch(e){{ toast('Save error','er'); console.error(e); }}
-      }}
+        } catch(e){ toast('Save error','er'); console.error(e); }
+      }
       
       renderTags();
       return wrap;
-    }}
+    }
 
-    // Build table per doc type
-    docTypes.forEach(dt=>{{
+    docTypes.forEach(dt=>{
       const dtSect=document.createElement('div');
       dtSect.style.cssText='margin-bottom:20px;border:1px solid var(--bd);border-radius:8px;overflow:hidden';
 
       const dtHdr=document.createElement('div');
-      dtHdr.style.cssText='padding:10px 14px;background:var(--bg2,#f1f5f9);font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px';
-      dtHdr.innerHTML='<span style="font-size:16px">📄</span> '+dt.name+' <code style="font-size:10px;padding:1px 6px;border-radius:4px;background:#e2e8f0;color:#475569">'+dt.code+'</code>';
+      dtHdr.style.cssText='padding:10px 14px;background:var(--bg2,#f1f5f9);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:8px';
+      
+      const titleSpan = document.createElement('div');
+      titleSpan.innerHTML='<span style="font-size:16px">📄</span> '+dt.name+' <code style="font-size:10px;padding:1px 6px;border-radius:4px;background:#e2e8f0;color:#475569">'+dt.code+'</code>';
+      
+      const magicBtn = document.createElement('button');
+      magicBtn.className = 'btn-ok';
+      magicBtn.innerHTML = 'Generate Magic Link 🔗';
+      magicBtn.style.padding = '4px 10px';
+      magicBtn.style.fontSize = '12px';
+      magicBtn.onclick = async () => {
+        try {
+          const r = await apiFetch(`/api/magic/generate/${pid}/${dt.id}`, {method:'POST'});
+          if(r && r.ok) {
+            navigator.clipboard.writeText(r.link);
+            toast('Magic Link copied to clipboard!','ok');
+          } else toast('Failed to generate link', 'er');
+        } catch(e){ toast('Error','er'); }
+      };
+      
+      dtHdr.appendChild(titleSpan);
+      dtHdr.appendChild(magicBtn);
       dtSect.appendChild(dtHdr);
 
       const distRows=document.createElement('div');
       distRows.style.padding='12px 14px';
       
-      EVENTS.forEach(evt=>{{
-        const evtRow=document.createElement('div');
-        evtRow.style.cssText='display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:start;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--bd)';
-        
-        const evtLabel=document.createElement('div');
-        evtLabel.innerHTML='<span style="font-size:12px;font-weight:700;color:'+evt.color+'">'+evt.label+'</span><div style="font-size:10px;color:var(--mu);margin-top:2px">'+evt.hint+'</div>';
-        
-        const savedEmails = (savedDist[dt.id]||{{}})[evt.key]||[];
-        const tagInput = makeTagInput('tag-'+dt.id+'-'+evt.key, savedEmails, pid, dt.id, evt.key);
-        
-        evtRow.appendChild(evtLabel);
-        evtRow.appendChild(tagInput);
-        distRows.appendChild(evtRow);
-      }});
+      const evtRow=document.createElement('div');
+      evtRow.style.cssText='display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:start;margin-bottom:12px;padding-bottom:12px;border-bottom:none';
+      
+      const evtLabel=document.createElement('div');
+      evtLabel.innerHTML='<span style="font-size:12px;font-weight:700;color:#0f172a">Assigned Engineers</span><div style="font-size:10px;color:var(--mu);margin-top:2px">Users with access to daily digest</div>';
+      
+      const savedUsers = (savedDist[dt.id]||{})['access']||[];
+      const tagInput = makeUserSelector(savedUsers, pid, dt.id);
+      
+      evtRow.appendChild(evtLabel);
+      evtRow.appendChild(tagInput);
+      distRows.appendChild(evtRow);
       
       dtSect.appendChild(distRows);
       body.appendChild(dtSect);
-    }});
+    });
 
     openM('dist-modal');
-  }} catch(e){{
+  } catch(e){
     console.error('[DistMatrix]', e);
     toast('Error loading distribution matrix','er');
-  }}
-}}
+  }
+}
 
 async function syncDriveLinks(btn) {{
   const folderId = document.getElementById('proj-drive-id')?.value.trim();

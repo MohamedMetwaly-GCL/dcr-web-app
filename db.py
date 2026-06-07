@@ -626,6 +626,46 @@ def user_is_dc(username, project_id):
           (username, project_id), one=True)
     return bool(r and r.get("is_dc"))
 
+def get_project_users_full(project_id):
+    """Return all users assigned to the project PLUS all admins/superadmins."""
+    rows = q("""
+        SELECT username, role 
+        FROM users 
+        WHERE role IN ('admin', 'superadmin')
+        UNION
+        SELECT u.username, u.role
+        FROM user_projects up
+        JOIN users u ON u.username = up.username
+        WHERE up.project_id = %s
+        ORDER BY username
+    """, (project_id,))
+    return [dict(r) for r in rows]
+
+def get_daily_digest(pid, doc_type_ids):
+    from datetime import date
+    today_str = date.today().isoformat()
+    if not doc_type_ids: return {"received": [], "issued": [], "replied": []}
+    rows = q("SELECT id, dt_id, data FROM records WHERE project_id=%s AND dt_id = ANY(%s)", (pid, list(doc_type_ids)))
+    received, issued, replied = [], [], []
+    for r in rows:
+        d = r["data"]
+        if d.get("receivedDate") == today_str: received.append(r)
+        if d.get("issuedDate") == today_str or d.get("partAIssueDate") == today_str or d.get("partCIssueDate") == today_str: issued.append(r)
+        if d.get("actualReplyDate") == today_str or d.get("partBReturnDate") == today_str or d.get("partDReturnDate") == today_str: replied.append(r)
+    def format_rec(rec):
+        d = rec["data"]
+        return {
+            "id": rec["id"], "dt_id": rec["dt_id"],
+            "docNo": d.get("docNo") or d.get("record_id") or "Untitled",
+            "title": d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject",
+            "status": d.get("status") or d.get("partDStatus") or d.get("partBStatus") or ""
+        }
+    return {
+        "received": [format_rec(x) for x in received],
+        "issued": [format_rec(x) for x in issued],
+        "replied": [format_rec(x) for x in replied],
+    }
+
 # ── Distribution Matrix ────────────────────────────────────────
 def get_distribution(project_id):
     """Return all distribution rows for a project as a nested dict:
