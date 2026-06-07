@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Executive Summary - {{ proj.name }}</title>
+    <style>
+        @page { margin: 15mm; }
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 12px; color: #1e293b; line-height: 1.5; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #1e40af; padding-bottom: 10px; margin-bottom: 20px; }
+        .header-logo { max-height: 60px; max-width: 150px; object-fit: contain; }
+        .header-center { text-align: center; flex: 1; margin: 0 20px; }
+        .header-center h1 { margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase; }
+        .header-center p { margin: 5px 0 0; font-size: 14px; color: #475569; }
+        
+        .meta-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 30px; display: flex; justify-content: space-between; }
+        .meta-item { display: flex; flex-direction: column; }
+        .meta-label { font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold; margin-bottom: 4px; }
+        .meta-val { font-size: 14px; color: #0f172a; font-weight: bold; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+        th { background: #1e40af; color: white; text-align: left; padding: 10px; font-size: 12px; font-weight: bold; }
+        td { padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+        tr:nth-child(even) td { background: #f8fafc; }
+        
+        .total-row { background: #eff6ff !important; font-weight: bold; }
+        .total-row td { border-top: 2px solid #1e40af; border-bottom: none; }
+        
+        .footer { position: fixed; bottom: 0; width: 100%; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+        
+        .status-badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: bold; }
+        .bg-green { background: #dcfce7; color: #166534; }
+        .bg-red { background: #fee2e2; color: #991b1b; }
+        .bg-yellow { background: #fef9c3; color: #854d0e; }
+        .bg-gray { background: #f1f5f9; color: #475569; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            {% if logo_l %}
+            <img class="header-logo" src="data:image/png;base64,{{ logo_l }}" alt="Logo Left">
+            {% endif %}
+        </div>
+        <div class="header-center">
+            <h1>Executive Summary Report</h1>
+            <p>{{ proj.name }} ({{ proj.code }})</p>
+        </div>
+        <div>
+            {% if logo_r %}
+            <img class="header-logo" src="data:image/png;base64,{{ logo_r }}" alt="Logo Right">
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="meta-box">
+        <div class="meta-item">
+            <span class="meta-label">Generated On</span>
+            <span class="meta-val">{{ date }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Total Documents</span>
+            <span class="meta-val">{{ total_docs }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Completion Status</span>
+            <span class="meta-val">{{ "%.1f"|format(total_approved / total_docs * 100) if total_docs > 0 else 0 }}%</span>
+        </div>
+    </div>
+
+    <h2>Document Registers Summary</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Document Type</th>
+                <th style="text-align:center">Total Records</th>
+                <th style="text-align:center">Approved / Closed</th>
+                <th style="text-align:center">Pending / Overdue</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for dt in registers %}
+            <tr>
+                <td><strong>{{ dt.name }}</strong></td>
+                <td style="text-align:center">{{ dt.total }}</td>
+                <td style="text-align:center;color:#166534;font-weight:bold">{{ dt.approved }}</td>
+                <td style="text-align:center;color:#991b1b;font-weight:bold">{{ dt.pending }}</td>
+                <td>
+                    {% if dt.pending == 0 and dt.total > 0 %}
+                    <span class="status-badge bg-green">Up to date</span>
+                    {% elif dt.pending > 0 %}
+                    <span class="status-badge bg-yellow">Action Required</span>
+                    {% else %}
+                    <span class="status-badge bg-gray">Empty</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td>GRAND TOTAL</td>
+                <td style="text-align:center">{{ total_docs }}</td>
+                <td style="text-align:center">{{ total_approved }}</td>
+                <td style="text-align:center">{{ total_pending }}</td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="footer">
+        Generated from DCR System | Confidential & Proprietary | {{ date }}
+    </div>
+
+</body>
+</html>

@@ -782,7 +782,83 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
         ws.auto_filter.ref = f"A4:{get_column_letter(nc)}{max(4, total_row - 1)}"
 
 
-def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
+def _write_summary_dashboard(ws, proj, records_by_dt):
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    import datetime
+
+    PRIMARY = "1A3A5C"; WHITE = "FFFFFF"; LIGHT = "F8FAFC"
+    def fill(c): return PatternFill("solid", fgColor=c)
+    def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
+    
+    ws.sheet_view.showGridLines = False
+    for col, width in {"A":4, "B":30, "C":15, "D":15, "E":15}.items():
+        ws.column_dimensions[col].width = width
+
+    def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11, halign="center"):
+        c = ws.cell(row=row, column=2, value=val)
+        ws.merge_cells(f"B{row}:E{row}")
+        c.font = Font(bold=bold, color=fg, size=sz, name="Arial")
+        c.fill = fill(bg)
+        c.alignment = Alignment(horizontal=halign, vertical="center")
+        c.border = thin()
+        return c
+
+    mcell(2, f"EXECUTIVE SUMMARY DASHBOARD - {proj.get('name', 'PROJECT')}", PRIMARY, bold=True, sz=14)
+    ws.row_dimensions[2].height = 30
+    
+    mcell(3, f"Project Code: {proj.get('code','')} | Date: {datetime.datetime.now().strftime('%d-%m-%Y')}", "2563A8", sz=10)
+    ws.row_dimensions[3].height = 20
+
+    row_idx = 5
+    headers = ["Document Type", "Total Records", "Approved / Closed", "Pending / Overdue"]
+    for i, h in enumerate(headers, start=2):
+        c = ws.cell(row=row_idx, column=i, value=h)
+        c.font = Font(bold=True, color=WHITE)
+        c.fill = fill(PRIMARY)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = thin()
+    ws.row_dimensions[row_idx].height = 25
+    row_idx += 1
+
+    total_all = 0
+    total_approved = 0
+    total_pending = 0
+    
+    for dt_name, records in records_by_dt.items():
+        count = len(records)
+        if count == 0: continue
+        total_all += count
+        
+        approved = sum(1 for r in records if str(r.get("status", "")).strip().lower() in ("a - approved", "b - approved as noted", "closed", "replied"))
+        total_approved += approved
+        
+        pending = count - approved
+        total_pending += pending
+        
+        row_data = [dt_name, count, approved, pending]
+        bg = LIGHT if row_idx % 2 == 0 else WHITE
+        for i, val in enumerate(row_data, start=2):
+            c = ws.cell(row=row_idx, column=i, value=val)
+            c.font = Font(color="1E2A3A")
+            c.fill = fill(bg)
+            c.border = thin()
+            c.alignment = Alignment(horizontal="center" if i > 2 else "left")
+        ws.row_dimensions[row_idx].height = 20
+        row_idx += 1
+
+    row_idx += 1
+    c = ws.cell(row=row_idx, column=2, value="TOTALS")
+    c.font = Font(bold=True, color=PRIMARY)
+    c.border = thin()
+    for i, val in enumerate([total_all, total_approved, total_pending], start=3):
+        c = ws.cell(row=row_idx, column=i, value=val)
+        c.font = Font(bold=True, color=PRIMARY)
+        c.border = thin()
+        c.alignment = Alignment(horizontal="center")
+        c.fill = fill("E0E7FF")
+
+
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
@@ -1153,9 +1229,32 @@ def api_export_all(pid):
     def fill(c): return PatternFill("solid", fgColor=c)
     def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
 
+    from flask import request
+    days = request.args.get('days')
+    status_filter = request.args.get('status')
+    
+    cutoff = None
+    if days and days != 'all':
+        from datetime import datetime, timedelta
+        try: cutoff = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d")
+        except: pass
+
+    records_by_dt = {}
     for dt in dts:
         cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
         records = sorted(db.get_records(pid, dt["id"]), key=_doc_revision_sort_key)
+        
+        # Apply Filters
+        if cutoff:
+            records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
+        if status_filter == 'overdue':
+            from utils import is_overdue
+            expected_reply_rule = db.get_expected_reply_rule(pid, dt["id"])
+            has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
+            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
+            
+        records_by_dt[dt["name"] or dt["id"]] = records
+        
         is_pr = _is_pr_dt(dt)
         pr_details_key = _pr_details_key(cols) if is_pr else None
         pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
@@ -1165,6 +1264,10 @@ def api_export_all(pid):
 
     if not wb.sheetnames:
         ws = wb.create_sheet("Empty"); ws.cell(1,1,"No data")
+        
+    # Build Summary Dashboard
+    summary_ws = wb.create_sheet(title="Dashboard", index=0)
+    _write_summary_dashboard(summary_ws, proj, records_by_dt)
 
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     fname = f"{proj.get('code','DCR')}_All_Registers.xlsx"
@@ -1175,10 +1278,26 @@ def api_export_all(pid):
 @exporting_bp.route("/api/export/<pid>/<dt_id>")
 def api_export(pid, dt_id):
     import openpyxl
+    from flask import request
 
     proj    = db.get_project(pid) or {}
     cols    = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
     records = sorted(db.get_records(pid, dt_id), key=_doc_revision_sort_key)
+    
+    # Apply Filters
+    days = request.args.get('days')
+    status_filter = request.args.get('status')
+    if days and days != 'all':
+        from datetime import datetime, timedelta
+        try:
+            cutoff = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d")
+            records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
+        except: pass
+    if status_filter == 'overdue':
+        from utils import is_overdue
+        expected_reply_rule = db.get_expected_reply_rule(pid, dt_id)
+        has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
+        records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
     dts     = db.get_doc_types(pid)
     dt      = next((d for d in dts if d["id"] == dt_id), None)
     is_pr = _is_pr_dt(dt)
@@ -1348,41 +1467,138 @@ def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
     return buf
 
 
+def _build_executive_summary_pdf(pid, dt_id=None):
+    from flask import render_template
+    import pdfkit
+    import datetime
+    
+    proj = db.get_project(pid) or {}
+    dts = db.get_doc_types(pid)
+    
+    if dt_id and dt_id != "all":
+        dts = [d for d in dts if d["id"] == dt_id]
+        
+    registers_data = []
+    total_docs = 0
+    total_approved = 0
+    total_pending = 0
+    
+    # Check date filters
+    from flask import request
+    days = request.args.get('days')
+    status_filter = request.args.get('status')
+    cutoff = None
+    if days and days != 'all':
+        try: cutoff = (datetime.datetime.now() - datetime.timedelta(days=int(days))).strftime("%Y-%m-%d")
+        except: pass
+
+    for dt in dts:
+        records = db.get_records(pid, dt["id"])
+        
+        # Apply Filters
+        if cutoff:
+            records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
+        if status_filter == 'overdue':
+            from utils import is_overdue
+            expected_reply_rule = db.get_expected_reply_rule(pid, dt["id"])
+            cols = db.get_columns(pid, dt["id"])
+            has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
+            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
+
+        count = len(records)
+        if count == 0:
+            registers_data.append({"name": dt.get("name") or dt.get("id"), "total": 0, "approved": 0, "pending": 0})
+            continue
+            
+        approved = sum(1 for r in records if str(r.get("status", "")).strip().lower() in ("a - approved", "b - approved as noted", "closed", "replied"))
+        pending = count - approved
+        
+        total_docs += count
+        total_approved += approved
+        total_pending += pending
+        
+        registers_data.append({
+            "name": dt.get("name") or dt.get("id"),
+            "total": count,
+            "approved": approved,
+            "pending": pending
+        })
+        
+    logo_l = db.get_logo(pid, "logo_left")
+    logo_r = db.get_logo(pid, "logo_right")
+    if logo_l and "," in logo_l: logo_l = logo_l.split(",", 1)[1]
+    if logo_r and "," in logo_r: logo_r = logo_r.split(",", 1)[1]
+
+    html = render_template(
+        "executive_summary.html",
+        proj=proj,
+        date=datetime.datetime.now().strftime("%d-%m-%Y %H:%M"),
+        registers=registers_data,
+        total_docs=total_docs,
+        total_approved=total_approved,
+        total_pending=total_pending,
+        logo_l=logo_l,
+        logo_r=logo_r
+    )
+    
+    options = {
+        'page-size': 'A4',
+        'margin-top': '0.5in',
+        'margin-right': '0.5in',
+        'margin-bottom': '0.5in',
+        'margin-left': '0.5in',
+        'encoding': "UTF-8",
+        'no-outline': None
+    }
+    
+    pdf_bytes = pdfkit.from_string(html, False, options=options)
+    return io.BytesIO(pdf_bytes)
+
 @exporting_bp.route("/api/export_pdf/<pid>/<dt_id>")
 def api_export_pdf(pid, dt_id):
-    proj = db.get_project(pid) or {}
-    buf  = _build_pdf_for_dt(pid, dt_id, proj)
-    fname = f"{proj.get('code','DCR')}_{dt_id}_Register.pdf"
-    return send_file(buf, as_attachment=True, download_name=fname,
-                     mimetype="application/pdf")
+    try:
+        import pdfkit
+        buf = _build_executive_summary_pdf(pid, dt_id)
+    except Exception as e:
+        logger.warning(f"pdfkit failed, falling back to reportlab: {e}")
+        proj = db.get_project(pid) or {}
+        buf  = _build_pdf_for_dt(pid, dt_id, proj)
+    
+    fname = f"{db.get_project(pid).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
+    return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
 
 
 @exporting_bp.route("/api/export_pdf_all/<pid>")
 def api_export_pdf_all(pid):
-    from reportlab.platypus import SimpleDocTemplate, PageBreak
-    proj = db.get_project(pid) or {}
-    dts  = db.get_doc_types(pid)
-
-    # Build each DT as separate PDF bytes then merge
     try:
-        from pypdf import PdfWriter
-        writer = PdfWriter()
-        for dt in dts:
-            if not db.count_records(pid, dt["id"]): continue
-            single_buf = _build_pdf_for_dt(pid, dt["id"], proj)
-            from pypdf import PdfReader
-            reader = PdfReader(single_buf)
-            for page in reader.pages:
-                writer.add_page(page)
-        out = io.BytesIO()
-        writer.write(out); out.seek(0)
-    except ImportError:
-        # Fallback: just export first DT or give error
-        out = _build_pdf_for_dt(pid, dts[0]["id"], proj) if dts else io.BytesIO()
+        import pdfkit
+        buf = _build_executive_summary_pdf(pid, "all")
+    except Exception as e:
+        logger.warning(f"pdfkit failed, falling back to reportlab: {e}")
+        from reportlab.platypus import SimpleDocTemplate, PageBreak
+        proj = db.get_project(pid) or {}
+        dts  = db.get_doc_types(pid)
 
-    fname = f"{proj.get('code','DCR')}_All_Registers.pdf"
-    return send_file(out, as_attachment=True, download_name=fname,
-                     mimetype="application/pdf")
+        # Build each DT as separate PDF bytes then merge
+        try:
+            from pypdf import PdfWriter
+            writer = PdfWriter()
+            for dt in dts:
+                if not db.count_records(pid, dt["id"]): continue
+                single_buf = _build_pdf_for_dt(pid, dt["id"], proj)
+                from pypdf import PdfReader
+                reader = PdfReader(single_buf)
+                for page in reader.pages:
+                    writer.add_page(page)
+            out = io.BytesIO()
+            writer.write(out); out.seek(0)
+            buf = out
+        except ImportError:
+            # Fallback: just export first DT or give error
+            buf = _build_pdf_for_dt(pid, dts[0]["id"], proj) if dts else io.BytesIO()
+
+    fname = f"{db.get_project(pid).get('code','DCR')}_Executive_Summary.pdf"
+    return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
 
 
 @exporting_bp.route("/api/import/<pid>/<dt_id>", methods=["POST"])

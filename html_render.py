@@ -2947,15 +2947,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   <div id="toolbar">
     <div id="toolbar-actions">
       {edit_btns}
-      <div class="tool-dd" id="exp-dd">
-      <button class="tool-btn teal" onclick="toggleExpDD(event)">📥 Export ▾</button>
-      <div class="tool-dd-menu hidden" id="exp-menu">
-        <button onclick="doExport();closeExpDD()">📊 Excel — This Tab</button>
-        <button onclick="doExportAll();closeExpDD()">📊 Excel — All Tabs</button>
-        <button onclick="doExportPDF();closeExpDD()">📄 PDF — This Tab</button>
-        <button onclick="doExportAllPDF();closeExpDD()">📄 PDF — All Tabs</button>
-      </div>
-    </div>
+      <button class="tool-btn teal" onclick="openM('export-modal')">📥 Export ▾</button>
     <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
       {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
     </div>
@@ -3049,6 +3041,49 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <div class="mbody" id="dist-body" style="overflow-y:auto;max-height:calc(90vh - 130px)"></div>
     <div class="mfoot">
       <button class="btn btn-sc" onclick="closeM('dist-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="overlay hidden" id="export-modal">
+  <div class="modal" style="max-width:500px;">
+    <div class="mhdr"><span>📊 Export Center</span>
+      <button class="xbtn" onclick="closeM('export-modal')">✕</button></div>
+    <div class="mbody" style="padding:20px;">
+      <div style="margin-bottom:15px;">
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Format</label>
+        <select id="export-format" class="inp" style="width:100%;" onchange="document.getElementById('export-scope-wrap').style.display = this.value === 'excel' ? 'block' : 'none';">
+          <option value="excel">📊 Excel (.xlsx)</option>
+          <option value="pdf">📄 PDF Executive Summary</option>
+        </select>
+      </div>
+      <div id="export-scope-wrap" style="margin-bottom:15px;">
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Scope</label>
+        <select id="export-scope" class="inp" style="width:100%;">
+          <option value="all">All Documents</option>
+          <option value="current">Current Tab Only</option>
+        </select>
+      </div>
+      <div style="margin-bottom:15px;">
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Time Range</label>
+        <select id="export-time" class="inp" style="width:100%;">
+          <option value="all">All Time</option>
+          <option value="30">Last 30 Days</option>
+          <option value="7">Last 7 Days</option>
+        </select>
+      </div>
+      <div style="margin-bottom:15px;">
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Status</label>
+        <select id="export-status" class="inp" style="width:100%;">
+          <option value="all">All Statuses</option>
+          <option value="overdue">Overdue Only</option>
+        </select>
+      </div>
+    </div>
+    <div class="mfoot" style="justify-content:space-between;">
+      <button class="btn btn-sc" onclick="closeM('export-modal')">Cancel</button>
+      <button class="btn btn-pr" style="background:#2563eb;" onclick="executeAdvancedExport()">Export Now 🚀</button>
     </div>
   </div>
 </div>
@@ -5846,13 +5881,28 @@ async function updUsrRole(u){{
   else toast((r&&r.error)||'Role update failed','er');
 }}
 
-// Export/Import
-function doExport(){{if(state.tab)window.location='/api/export/'+PID+'/'+state.tab;}}
-function doExportPDF(){{if(state.tab)window.location='/api/export_pdf/'+PID+'/'+state.tab;}}
-function doExportAllPDF(){{window.location='/api/export_pdf_all/'+PID;}}
-function toggleExpDD(e){{e.stopPropagation();document.getElementById('exp-menu').classList.toggle('hidden');}}
-function closeExpDD(){{document.getElementById('exp-menu').classList.add('hidden');}}
-document.addEventListener('click',e=>{{if(!e.target.closest('#exp-dd'))closeExpDD();}});
+function executeAdvancedExport(){{
+  const format = document.getElementById('export-format').value;
+  const scope = document.getElementById('export-scope').value;
+  const time = document.getElementById('export-time').value;
+  const status = document.getElementById('export-status').value;
+  
+  let targetTab = (scope === 'current' && state.tab) ? state.tab : 'all';
+  
+  let baseUrl = '';
+  if(format === 'excel') baseUrl = `/api/export/${{PID}}/${{targetTab}}`;
+  if(format === 'pdf') baseUrl = `/api/export_pdf/${{PID}}/${{targetTab}}`;
+
+  const params = new URLSearchParams();
+  if(time !== 'all') params.set('days', time);
+  if(status !== 'all') params.set('status', status);
+  
+  const query = params.toString();
+  const finalUrl = query ? `${{baseUrl}}?${{query}}` : baseUrl;
+  
+  window.location = finalUrl;
+  closeM('export-modal');
+}}
 function doPrint(){{
   const orig=document.title;
   document.title='DCR Print';
