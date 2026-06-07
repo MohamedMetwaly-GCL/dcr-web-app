@@ -790,19 +790,23 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
         ws.auto_filter.ref = f"A4:{get_column_letter(nc)}{max(4, total_row - 1)}"
         
     # TRUE AUTO-FIT
-    for col in ws.columns:
+    for col_idx in range(1, ws.max_column + 1):
+        col_letter = get_column_letter(col_idx)
         max_length = 0
-        column = col[0].column_letter
-        for cell in col:
+        for row in range(1, ws.max_row + 1):
+            cell = ws.cell(row=row, column=col_idx)
+            # Skip checking lengths for merged cells to avoid errors
+            if hasattr(cell, 'coordinate') and cell.coordinate in ws.merged_cells:
+                continue
             try:
-                # ignore header row (row 1 & 2) so they don't break auto-fit
                 if cell.row <= 3: continue
-                lines = str(cell.value).split('\n')
-                longest = max(len(l) for l in lines) if lines else 0
-                max_length = max(max_length, longest)
+                if cell.value:
+                    lines = str(cell.value).split('\n')
+                    longest = max(len(l) for l in lines) if lines else 0
+                    max_length = max(max_length, longest)
             except: pass
         adjusted = min(55, max_length + 5)
-        ws.column_dimensions[column].width = max(12, adjusted)
+        ws.column_dimensions[col_letter].width = max(12, adjusted)
 
 
 
