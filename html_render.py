@@ -2110,7 +2110,7 @@ async function loadDailyDigest() {{
   if(!container) return;
   container.innerHTML = '<div style="color:var(--mu);font-size:14px;">Loading...</div>';
   try {{
-    const targetPid = PID || 'all';
+    const targetPid = window.PID || window._currentPid || 'all';
     const r = await apiFetch('/api/daily_digest/' + targetPid);
     if(!r) {{ container.innerHTML = '<div style="color:red">Failed to load digest (Null response).</div>'; return; }}
     if(r.error) {{
