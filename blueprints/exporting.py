@@ -1419,16 +1419,26 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         logo_r=logo_r
     )
     
-    from xhtml2pdf import pisa
+    options = {
+        'page-size': 'A4',
+        'margin-top': '0.5in',
+        'margin-right': '0.5in',
+        'margin-bottom': '0.5in',
+        'margin-left': '0.5in',
+        'encoding': "UTF-8",
+        'enable-local-file-access': "",
+        'no-outline': None
+    }
     
-    result = io.BytesIO()
-    pisa_status = pisa.CreatePDF(html, dest=result)
+    import shutil
+    import pdfkit
+    import io
     
-    if pisa_status.err:
-        raise Exception("Error generating PDF via xhtml2pdf")
-        
-    result.seek(0)
-    return result
+    wk_path = shutil.which("wkhtmltopdf") or "/usr/bin/wkhtmltopdf"
+    config = pdfkit.configuration(wkhtmltopdf=wk_path)
+    
+    pdf_bytes = pdfkit.from_string(html, False, options=options, configuration=config)
+    return io.BytesIO(pdf_bytes)
 
 @exporting_bp.route("/api/export_pdf/<pid>/<dt_id>")
 def api_export_pdf(pid, dt_id):
