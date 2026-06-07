@@ -1452,17 +1452,24 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             continue
             
         approved = sum(1 for r in records if str(r.get("status", "")).strip().lower() in ("a - approved", "b - approved as noted", "closed", "replied"))
-        pending = count - approved
+        is_ltr = "LTR" in (dt.get("name") or "").upper() or "LETTER" in (dt.get("name") or "").upper()
+        if is_ltr:
+            pending = 0
+            pending_display = "N/A"
+        else:
+            pending = count - approved
+            total_pending += pending
+            pending_display = pending
         
         total_docs += count
         total_approved += approved
-        total_pending += pending
         
         registers_data.append({
             "name": dt.get("name") or dt.get("id"),
             "total": count,
             "approved": approved,
             "pending": pending,
+            "pending_display": pending_display,
             "records": records,
             "cols": db.get_columns(pid, dt["id"])
         })
@@ -1473,7 +1480,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     if logo_r and "," in logo_r: logo_r = logo_r.split(",", 1)[1]
 
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch, mm
     from reportlab.lib import colors
@@ -1482,7 +1489,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     import base64
     
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
     elements = []
     styles = getSampleStyleSheet()
     
@@ -1540,11 +1547,14 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     
     for dt in registers_data:
         status_text = "Up to date" if dt["pending"] == 0 and dt["total"] > 0 else ("Action Required" if dt["pending"] > 0 else "Empty")
+        if dt.get("pending_display") == "N/A":
+            status_text = "N/A"
+            
         table_data.append([
             dt["name"],
             str(dt["total"]),
             str(dt["approved"]),
-            str(dt["pending"]),
+            str(dt.get("pending_display", dt["pending"])),
             status_text
         ])
     
@@ -1608,21 +1618,31 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         cols = [c for c in dt_data.get("cols", []) if c.get("visible")]
         if not cols: continue
         
-        header_row = ["No."] + [c["label"] for c in cols]
+        body_style = ParagraphStyle(
+            'BodyStyle',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=colors.HexColor("#1e293b"),
+            leading=10
+        )
+        
+        header_row = [Paragraph("No.", styles['Normal'])] + [Paragraph(c["label"], styles['Normal']) for c in cols]
         dt_table_data = [header_row]
         
         for idx, r in enumerate(records, 1):
-            row_data = [str(idx)]
+            row_data = [Paragraph(str(idx), body_style)]
             for c in cols:
                 key = c["col_key"]
                 val = str(r.get(key, "") or "")
-                # Limit length so PDF table cell doesn't break vertically if it's too huge
-                if len(val) > 100: val = val[:97] + "..."
-                row_data.append(val)
+                
+                if key == "status" and ", " in val:
+                    val = val.replace(", ", "<br/>")
+                    
+                row_data.append(Paragraph(val, body_style))
             dt_table_data.append(row_data)
             
-        # Calculate proportional widths based on 170mm total available width
-        w_per_col = (170 / len(cols)) * mm if len(cols) > 0 else 10*mm
+        # Calculate proportional widths based on landscape available width (297mm - 30mm margins = 267mm)
+        w_per_col = (255 / len(cols)) * mm if len(cols) > 0 else 10*mm
         dt_col_widths = [12*mm] + [w_per_col] * len(cols)
         
         dt_table = Table(dt_table_data, colWidths=dt_col_widths, repeatRows=1)
