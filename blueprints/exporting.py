@@ -686,13 +686,12 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     dt_id = (dt or {}).get("id")
     expected_reply_rule = db.get_expected_reply_rule(pid, dt_id) if pid and dt_id else None
     
-    brand_text = f"{proj.get('name', '')} - {proj.get('code', '')}".strip(" -")
-    if not brand_text: brand_text = "DCR SYSTEM"
+    brand_text = f"Document Control Register - {proj.get('name', '')} ({proj.get('code', '')})"
+    if not proj.get('name'): brand_text = "DCR SYSTEM"
     mcell(1, brand_text, PRIMARY, bold=True, sz=14)
     ws.row_dimensions[1].height = 30
 
     info = "   |   ".join(f"{k}: {v}" for k,v in [
-        ("Project",proj.get("name","")),("Code",proj.get("code","")),
         ("Client",proj.get("client","")),("Consultant",proj.get("mainConsultant","")),
         ("Exported",datetime.datetime.now().strftime("%d-%m-%Y %H:%M"))] if v)
     mcell(2, info, PL, sz=9)
@@ -766,7 +765,11 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                     if _is_excel_duration_col(key, col["label"]) and val == "0":
                         c.value = 0
                     if key=="status" and val:
-                        bg2, fg2 = STATUS_XL.get(val, ("F3F4F6","374151"))
+                        first_status = val.split(",")[0].strip() if "," in val else val
+                        if ", " in val:
+                            val = val.replace(", ", "\n")
+                            c.value = val # Update cell with newlines
+                        bg2, fg2 = STATUS_XL.get(first_status, ("F3F4F6","374151"))
                         c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
                     elif key=="docNo":
                         c.fill = fill(bg)
@@ -777,12 +780,17 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                         c.font = Font(size=10,name="Arial",
                                       color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
                 c.border    = thin()
-                c.alignment = Alignment(
-                    vertical="center",
-                    wrap_text=_excel_wrap_cell(key, col["label"]),
-                    horizontal="center" if _excel_center_col(key, col["label"]) else "left",
-                )
-            ws.row_dimensions[rn].height = _excel_row_height(row_values, all_cols, col_widths, base=19)
+                
+                # Apply requested status alignment
+                if key == "status":
+                    c.alignment = Alignment(vertical="center", horizontal="center", wrap_text=True)
+                else:
+                    c.alignment = Alignment(
+                        vertical="center",
+                        wrap_text=_excel_wrap_cell(key, col["label"]),
+                        horizontal="center" if _excel_center_col(key, col["label"]) else "left",
+                    )
+            # Row height will be calculated dynamically at the end
             if not is_rev: sr += 1
         total_row = 5 + len(records)
 
@@ -806,6 +814,29 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
             
         adjusted = min(65, max_length + 3)
         ws.column_dimensions[col_letter].width = max(10, adjusted)
+
+    # TRUE ROW HEIGHT AUTO-FIT
+    for row_idx_data in range(5, total_row):
+        max_lines = 1
+        for col_idx in range(1, nc + 1):
+            cell = ws.cell(row=row_idx_data, column=col_idx)
+            val = str(cell.value or "")
+            if not val: continue
+            
+            explicit = val.count('\n') + 1
+            col_letter = get_column_letter(col_idx)
+            width = ws.column_dimensions[col_letter].width or 15
+            chars_per_line = max(1, int(width * 1.1))
+            
+            wrapped = 0
+            for line in val.split('\n'):
+                wrapped += max(1, len(line) // chars_per_line + (1 if len(line) % chars_per_line > 0 else 0))
+                
+            cell_lines = max(explicit, wrapped)
+            if cell_lines > max_lines:
+                max_lines = cell_lines
+                
+        ws.row_dimensions[row_idx_data].height = max(20, min(100, max_lines * 15))
 
 
 
@@ -860,10 +891,15 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
         approved = sum(1 for r in records if str(r.get("status", "")).strip().lower() in ("a - approved", "b - approved as noted", "closed", "replied"))
         total_approved += approved
         
-        pending = count - approved
-        total_pending += pending
-        
-        row_data = [dt_name, count, approved, pending]
+        is_ltr = "LTR" in dt_name.upper() or "LETTER" in dt_name.upper()
+        if is_ltr:
+            pending_display = "N/A"
+        else:
+            pending = count - approved
+            total_pending += pending
+            pending_display = pending
+            
+        row_data = [dt_name, count, approved, pending_display]
         bg = LIGHT if row_idx % 2 == 0 else WHITE
         for i, val in enumerate(row_data, start=2):
             c = ws.cell(row=row_idx, column=i, value=val)
