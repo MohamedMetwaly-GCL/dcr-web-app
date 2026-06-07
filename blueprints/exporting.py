@@ -858,7 +858,7 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
         c.alignment = Alignment(horizontal="center")
         c.fill = fill("E0E7FF")
 
-
+def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
@@ -1573,7 +1573,7 @@ def api_export_pdf(pid, dt_id):
             proj = db.get_project(pid) or {}
             buf  = _build_pdf_for_dt(pid, dt_id, proj)
         
-        fname = f"{db.get_project(pid).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
+        fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
         return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
     except Exception as e:
         import traceback
@@ -1610,7 +1610,7 @@ def api_export_pdf_all(pid):
                 # Fallback: just export first DT or give error
                 buf = _build_pdf_for_dt(pid, dts[0]["id"], proj) if dts else io.BytesIO()
 
-        fname = f"{db.get_project(pid).get('code','DCR')}_Executive_Summary.pdf"
+        fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_Executive_Summary.pdf"
         return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
     except Exception as e:
         import traceback
