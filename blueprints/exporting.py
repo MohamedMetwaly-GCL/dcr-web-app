@@ -1407,38 +1407,130 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     if logo_l and "," in logo_l: logo_l = logo_l.split(",", 1)[1]
     if logo_r and "," in logo_r: logo_r = logo_r.split(",", 1)[1]
 
-    html = render_template(
-        "executive_summary.html",
-        proj=proj,
-        date=datetime.datetime.now().strftime("%d-%m-%Y %H:%M"),
-        registers=registers_data,
-        total_docs=total_docs,
-        total_approved=total_approved,
-        total_pending=total_pending,
-        logo_l=logo_l,
-        logo_r=logo_r
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch, mm
+    from reportlab.lib import colors
+    import io
+    from PIL import Image as PILImage
+    import base64
+    
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'TitleStyle',
+        parent=styles['Heading1'],
+        fontSize=20,
+        textColor=colors.HexColor("#0f172a"),
+        spaceAfter=5,
+        alignment=1 # Center
+    )
+    sub_style = ParagraphStyle(
+        'SubStyle',
+        parent=styles['Normal'],
+        fontSize=12,
+        textColor=colors.HexColor("#475569"),
+        spaceAfter=20,
+        alignment=1
     )
     
-    options = {
-        'page-size': 'A4',
-        'margin-top': '0.5in',
-        'margin-right': '0.5in',
-        'margin-bottom': '0.5in',
-        'margin-left': '0.5in',
-        'encoding': "UTF-8",
-        'enable-local-file-access': "",
-        'no-outline': None
-    }
+    # Title
+    elements.append(Paragraph("EXECUTIVE SUMMARY REPORT", title_style))
+    elements.append(Paragraph(f"{proj.get('name', 'Project')} ({proj.get('code', 'DCR')})", sub_style))
     
-    import shutil
-    import pdfkit
-    import io
+    # Meta Box
+    meta_data = [
+        ["Generated On", "Total Documents", "Completion Status"],
+        [
+            datetime.datetime.now().strftime("%d-%m-%Y %H:%M"),
+            str(total_docs),
+            f"{total_approved / total_docs * 100:.1f}%" if total_docs > 0 else "0%"
+        ]
+    ]
+    meta_table = Table(meta_data, colWidths=[60*mm, 60*mm, 60*mm])
+    meta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f8fafc")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#64748b")),
+        ('TEXTCOLOR', (0,1), (-1,1), colors.HexColor("#0f172a")),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 9),
+        ('FONTNAME', (0,1), (-1,1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,1), (-1,1), 12),
+        ('BOTTOMPADDING', (0,0), (-1,0), 2),
+        ('TOPPADDING', (0,1), (-1,1), 2),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+    ]))
+    elements.append(meta_table)
+    elements.append(Spacer(1, 20*mm))
     
-    wk_path = shutil.which("wkhtmltopdf") or "/usr/bin/wkhtmltopdf"
-    config = pdfkit.configuration(wkhtmltopdf=wk_path)
+    # Registers Table
+    elements.append(Paragraph("Document Registers Summary", styles['Heading2']))
+    table_data = [["Document Type", "Total Records", "Approved / Closed", "Pending / Overdue", "Status"]]
     
-    pdf_bytes = pdfkit.from_string(html, False, options=options, configuration=config)
-    return io.BytesIO(pdf_bytes)
+    for dt in registers_data:
+        status_text = "Up to date" if dt["pending"] == 0 and dt["total"] > 0 else ("Action Required" if dt["pending"] > 0 else "Empty")
+        table_data.append([
+            dt["name"],
+            str(dt["total"]),
+            str(dt["approved"]),
+            str(dt["pending"]),
+            status_text
+        ])
+    
+    # Grand Total
+    table_data.append([
+        "GRAND TOTAL",
+        str(total_docs),
+        str(total_approved),
+        str(total_pending),
+        ""
+    ])
+    
+    reg_table = Table(table_data, colWidths=[55*mm, 30*mm, 35*mm, 35*mm, 25*mm])
+    reg_style = [
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e40af")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,0), (0,-1), 'LEFT'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 10),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
+        ('TOPPADDING', (0,0), (-1,0), 8),
+        ('INNERGRID', (0,0), (-1,-2), 0.25, colors.HexColor("#e2e8f0")),
+        ('BOX', (0,0), (-1,-2), 0.25, colors.HexColor("#e2e8f0")),
+    ]
+    
+    # Zebra striping
+    for i in range(1, len(table_data)-1):
+        if i % 2 == 0:
+            reg_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#f8fafc")))
+            
+    # Highlight columns
+    for i in range(1, len(table_data)):
+        reg_style.append(('TEXTCOLOR', (2,i), (2,i), colors.HexColor("#166534"))) # Green approved
+        reg_style.append(('TEXTCOLOR', (3,i), (3,i), colors.HexColor("#991b1b"))) # Red pending
+        reg_style.append(('FONTNAME', (2,i), (3,i), 'Helvetica-Bold'))
+        
+    # Grand Total row styling
+    reg_style.extend([
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#eff6ff")),
+        ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+        ('LINEABOVE', (0,-1), (-1,-1), 1.5, colors.HexColor("#1e40af")),
+    ])
+    
+    reg_table.setStyle(TableStyle(reg_style))
+    elements.append(reg_table)
+    
+    # Build PDF
+    doc.build(elements)
+    buf.seek(0)
+    return buf
 
 @exporting_bp.route("/api/export_pdf/<pid>/<dt_id>")
 def api_export_pdf(pid, dt_id):
