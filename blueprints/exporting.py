@@ -1203,126 +1203,134 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
 
 @exporting_bp.route("/api/export_all/<pid>")
 def api_export_all(pid):
-    u = current_user()
-    if u: db.log_action(u["username"],"EXPORT_EXCEL",pid,detail="Export All")
-    import openpyxl
+    try:
+        u = current_user()
+        if u: db.log_action(u["username"],"EXPORT_EXCEL",pid,detail="Export All")
+        import openpyxl
 
-    proj    = db.get_project(pid) or {}
-    dts     = db.get_doc_types(pid)
-    wb      = openpyxl.Workbook()
-    wb.remove(wb.active)  # remove default sheet
+        proj    = db.get_project(pid) or {}
+        dts     = db.get_doc_types(pid)
+        wb      = openpyxl.Workbook()
+        wb.remove(wb.active)  # remove default sheet
 
-    PRIMARY="1A3A5C"; PL="2563A8"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
-    STATUS_XL = {
-        "A - Approved":              ("BBF7D0","166534"),
-        "B - Approved As Noted":     ("DCFCE7","14532D"),
-        "B,C - Approved & Resubmit": ("FED7AA","7C2D12"),
-        "C - Revise & Resubmit":     ("FCE7F3","831843"),
-        "D - Review not Required":   ("FECACA","7F1D1D"),
-        "Under Review":              ("FEF9C3","713F12"),
-        "Cancelled":                 ("EF4444","FFFFFF"),
-        "Open":                      ("FED7AA","7C2D12"),
-        "Closed":                    ("BFDBFE","1E3A5F"),
-        "Replied":                   ("D1FAE5","064E3B"),
-        "Pending":                   ("E0E7FF","312E81"),
-    }
-    def fill(c): return PatternFill("solid", fgColor=c)
-    def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
+        PRIMARY="1A3A5C"; PL="2563A8"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
+        STATUS_XL = {
+            "A - Approved":              ("BBF7D0","166534"),
+            "B - Approved As Noted":     ("DCFCE7","14532D"),
+            "B,C - Approved & Resubmit": ("FED7AA","7C2D12"),
+            "C - Revise & Resubmit":     ("FCE7F3","831843"),
+            "D - Review not Required":   ("FECACA","7F1D1D"),
+            "Under Review":              ("FEF9C3","713F12"),
+            "Cancelled":                 ("EF4444","FFFFFF"),
+            "Open":                      ("FED7AA","7C2D12"),
+            "Closed":                    ("BFDBFE","1E3A5F"),
+            "Replied":                   ("D1FAE5","064E3B"),
+            "Pending":                   ("E0E7FF","312E81"),
+        }
+        def fill(c): return PatternFill("solid", fgColor=c)
+        def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
 
-    from flask import request
-    days = request.args.get('days')
-    status_filter = request.args.get('status')
-    
-    cutoff = None
-    if days and days != 'all':
-        from datetime import datetime, timedelta
-        try: cutoff = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d")
-        except: pass
-
-    records_by_dt = {}
-    for dt in dts:
-        cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
-        records = sorted(db.get_records(pid, dt["id"]), key=_doc_revision_sort_key)
+        from flask import request
+        days = request.args.get('days')
+        status_filter = request.args.get('status')
         
-        # Apply Filters
-        if cutoff:
-            records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
-        if status_filter == 'overdue':
-            from utils import is_overdue
-            expected_reply_rule = db.get_expected_reply_rule(pid, dt["id"])
-            has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
-            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
+        cutoff = None
+        if days and days != 'all':
+            from datetime import datetime, timedelta
+            try: cutoff = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d")
+            except: pass
+
+        records_by_dt = {}
+        for dt in dts:
+            cols    = [c for c in db.get_columns(pid, dt["id"]) if c["visible"]]
+            records = sorted(db.get_records(pid, dt["id"]), key=_doc_revision_sort_key)
             
-        records_by_dt[dt["name"] or dt["id"]] = records
-        
-        is_pr = _is_pr_dt(dt)
-        pr_details_key = _pr_details_key(cols) if is_pr else None
-        pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
-        web_widths = db.get_col_widths(pid, dt["id"])
-        ws = wb.create_sheet(title=dt["id"][:31])
-        _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map, pr_details_key, web_widths)
+            # Apply Filters
+            if cutoff:
+                records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
+            if status_filter == 'overdue':
+                from utils import is_overdue
+                expected_reply_rule = db.get_expected_reply_rule(pid, dt["id"])
+                has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
+                records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
+                
+            records_by_dt[dt["name"] or dt["id"]] = records
+            
+            is_pr = _is_pr_dt(dt)
+            pr_details_key = _pr_details_key(cols) if is_pr else None
+            pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
+            web_widths = db.get_col_widths(pid, dt["id"])
+            ws = wb.create_sheet(title=dt["id"][:31])
+            _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map, pr_details_key, web_widths)
 
-    if not wb.sheetnames:
-        ws = wb.create_sheet("Empty"); ws.cell(1,1,"No data")
-        
-    # Build Summary Dashboard
-    summary_ws = wb.create_sheet(title="Dashboard", index=0)
-    _write_summary_dashboard(summary_ws, proj, records_by_dt)
+        if not wb.sheetnames:
+            ws = wb.create_sheet("Empty"); ws.cell(1,1,"No data")
+            
+        # Build Summary Dashboard
+        summary_ws = wb.create_sheet(title="Dashboard", index=0)
+        _write_summary_dashboard(summary_ws, proj, records_by_dt)
 
-    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
-    fname = f"{proj.get('code','DCR')}_All_Registers.xlsx"
-    return send_file(buf, as_attachment=True, download_name=fname,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+        fname = f"{proj.get('code','DCR')}_All_Registers.xlsx"
+        return send_file(buf, as_attachment=True, download_name=fname,
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as e:
+        import traceback
+        return traceback.format_exc(), 500
 
 
 @exporting_bp.route("/api/export/<pid>/<dt_id>")
 def api_export(pid, dt_id):
-    import openpyxl
-    from flask import request
+    try:
+        import openpyxl
+        from flask import request
 
-    proj    = db.get_project(pid) or {}
-    cols    = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
-    records = sorted(db.get_records(pid, dt_id), key=_doc_revision_sort_key)
-    
-    # Apply Filters
-    days = request.args.get('days')
-    status_filter = request.args.get('status')
-    if days and days != 'all':
-        from datetime import datetime, timedelta
-        try:
-            cutoff = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d")
-            records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
-        except: pass
-    if status_filter == 'overdue':
-        from utils import is_overdue
-        expected_reply_rule = db.get_expected_reply_rule(pid, dt_id)
-        has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
-        records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
-    dts     = db.get_doc_types(pid)
-    dt      = next((d for d in dts if d["id"] == dt_id), None)
-    is_pr = _is_pr_dt(dt)
-    pr_details_key = _pr_details_key(cols) if is_pr else None
-    pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
-    web_widths = db.get_col_widths(pid, dt_id)
+        proj    = db.get_project(pid) or {}
+        cols    = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
+        records = sorted(db.get_records(pid, dt_id), key=_doc_revision_sort_key)
+        
+        # Apply Filters
+        days = request.args.get('days')
+        status_filter = request.args.get('status')
+        if days and days != 'all':
+            from datetime import datetime, timedelta
+            try:
+                cutoff = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d")
+                records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
+            except: pass
+        if status_filter == 'overdue':
+            from utils import is_overdue
+            expected_reply_rule = db.get_expected_reply_rule(pid, dt_id)
+            has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
+            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
+        dts     = db.get_doc_types(pid)
+        dt      = next((d for d in dts if d["id"] == dt_id), None)
+        is_pr = _is_pr_dt(dt)
+        pr_details_key = _pr_details_key(cols) if is_pr else None
+        pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
+        web_widths = db.get_col_widths(pid, dt_id)
 
-    if is_pr:
-        buf = _build_pr_register_excel(proj, dt or {"id": dt_id, "name": dt_id}, records, pr_items_map, pr_details_key)
-        fname = f"{_safe_excel_name_part(proj.get('code','DCR'), 'DCR')}_{_safe_excel_name_part(dt_id, 'PR')}_Register.xlsx"
-        return send_file(
-            buf,
-            as_attachment=True,
-            download_name=fname,
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        if is_pr:
+            buf = _build_pr_register_excel(proj, dt or {"id": dt_id, "name": dt_id}, records, pr_items_map, pr_details_key)
+            fname = f"{_safe_excel_name_part(proj.get('code','DCR'), 'DCR')}_{_safe_excel_name_part(dt_id, 'PR')}_Register.xlsx"
+            return send_file(
+                buf,
+                as_attachment=True,
+                download_name=fname,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = dt_id[:31]
-    _write_register_excel_sheet(ws, proj, dt or {"id": dt_id, "name": dt_id}, cols, records, pr_items_map, pr_details_key, web_widths)
-    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
-    fname = f"{proj.get('code','DCR')}_{dt_id}_Register.xlsx"
-    return send_file(buf, as_attachment=True, download_name=fname,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = dt_id[:31]
+        _write_register_excel_sheet(ws, proj, dt or {"id": dt_id, "name": dt_id}, cols, records, pr_items_map, pr_details_key, web_widths)
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+        fname = f"{proj.get('code','DCR')}_{dt_id}_Register.xlsx"
+        return send_file(buf, as_attachment=True, download_name=fname,
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as e:
+        import traceback
+        return traceback.format_exc(), 500
 
 
 def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
@@ -1557,48 +1565,56 @@ def _build_executive_summary_pdf(pid, dt_id=None):
 @exporting_bp.route("/api/export_pdf/<pid>/<dt_id>")
 def api_export_pdf(pid, dt_id):
     try:
-        import pdfkit
-        buf = _build_executive_summary_pdf(pid, dt_id)
+        try:
+            import pdfkit
+            buf = _build_executive_summary_pdf(pid, dt_id)
+        except Exception as e:
+            logger.warning(f"pdfkit failed, falling back to reportlab: {e}")
+            proj = db.get_project(pid) or {}
+            buf  = _build_pdf_for_dt(pid, dt_id, proj)
+        
+        fname = f"{db.get_project(pid).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
+        return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
     except Exception as e:
-        logger.warning(f"pdfkit failed, falling back to reportlab: {e}")
-        proj = db.get_project(pid) or {}
-        buf  = _build_pdf_for_dt(pid, dt_id, proj)
-    
-    fname = f"{db.get_project(pid).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
-    return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
+        import traceback
+        return traceback.format_exc(), 500
 
 
 @exporting_bp.route("/api/export_pdf_all/<pid>")
 def api_export_pdf_all(pid):
     try:
-        import pdfkit
-        buf = _build_executive_summary_pdf(pid, "all")
-    except Exception as e:
-        logger.warning(f"pdfkit failed, falling back to reportlab: {e}")
-        from reportlab.platypus import SimpleDocTemplate, PageBreak
-        proj = db.get_project(pid) or {}
-        dts  = db.get_doc_types(pid)
-
-        # Build each DT as separate PDF bytes then merge
         try:
-            from pypdf import PdfWriter
-            writer = PdfWriter()
-            for dt in dts:
-                if not db.count_records(pid, dt["id"]): continue
-                single_buf = _build_pdf_for_dt(pid, dt["id"], proj)
-                from pypdf import PdfReader
-                reader = PdfReader(single_buf)
-                for page in reader.pages:
-                    writer.add_page(page)
-            out = io.BytesIO()
-            writer.write(out); out.seek(0)
-            buf = out
-        except ImportError:
-            # Fallback: just export first DT or give error
-            buf = _build_pdf_for_dt(pid, dts[0]["id"], proj) if dts else io.BytesIO()
+            import pdfkit
+            buf = _build_executive_summary_pdf(pid, "all")
+        except Exception as e:
+            logger.warning(f"pdfkit failed, falling back to reportlab: {e}")
+            from reportlab.platypus import SimpleDocTemplate, PageBreak
+            proj = db.get_project(pid) or {}
+            dts  = db.get_doc_types(pid)
 
-    fname = f"{db.get_project(pid).get('code','DCR')}_Executive_Summary.pdf"
-    return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
+            # Build each DT as separate PDF bytes then merge
+            try:
+                from pypdf import PdfWriter
+                writer = PdfWriter()
+                for dt in dts:
+                    if not db.count_records(pid, dt["id"]): continue
+                    single_buf = _build_pdf_for_dt(pid, dt["id"], proj)
+                    from pypdf import PdfReader
+                    reader = PdfReader(single_buf)
+                    for page in reader.pages:
+                        writer.add_page(page)
+                out = io.BytesIO()
+                writer.write(out); out.seek(0)
+                buf = out
+            except ImportError:
+                # Fallback: just export first DT or give error
+                buf = _build_pdf_for_dt(pid, dts[0]["id"], proj) if dts else io.BytesIO()
+
+        fname = f"{db.get_project(pid).get('code','DCR')}_Executive_Summary.pdf"
+        return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
+    except Exception as e:
+        import traceback
+        return traceback.format_exc(), 500
 
 
 @exporting_bp.route("/api/import/<pid>/<dt_id>", methods=["POST"])
