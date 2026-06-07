@@ -1509,6 +1509,7 @@ function showTab(name){{
   if(name==='analytics'){{analyticsLoaded=false;setTimeout(()=>loadAnalytics(),50);}}
   if(name==='overdue'){{overdueLoaded=false;loadOverdue();}}
   if(name==='executive'){{EXEC_DATA=null;loadExecutive();}}
+  if(name==='daily-digest'){{loadDailyDigest();}}
   if(name==='audit'){{loadAudit(true);}}
 }}
 
@@ -1543,6 +1544,7 @@ function filterProject(pid){{
   if(activeTab?.id==='tab-analytics'){{analyticsLoaded=false;loadAnalytics();}}
   if(activeTab?.id==='tab-overdue'){{overdueLoaded=false;loadOverdue();}}
   if(activeTab?.id==='tab-executive'){{EXEC_DATA=null;loadExecutive();}}
+  if(activeTab?.id==='tab-daily-digest'){{loadDailyDigest();}}
 }}
 function filterDisc(disc){{_currentDisc=disc;renderAll(_currentPid,disc);}}
 
@@ -2103,6 +2105,50 @@ function filterOverdue(){{
 }}
 
 // ── Executive Summary ─────────────────────────────────────
+async function loadDailyDigest() {{
+  const container = document.getElementById('daily-digest-content');
+  if(!container) return;
+  container.innerHTML = '<div style="color:var(--mu);font-size:14px;">Loading...</div>';
+  try {{
+    const targetPid = PID || 'all';
+    const r = await apiFetch('/api/daily_digest/' + targetPid);
+    if(!r) {{ container.innerHTML = '<div style="color:red">Failed to load digest.</div>'; return; }}
+    
+    let html = '';
+    
+    // Received Card
+    html += '<div class="panel" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:#1e40af;font-size:16px;">📥 Received Today (' + r.received.length + ')</div><div style="margin-top:12px;">';
+    if(r.received.length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents received today.</div>';
+    r.received.forEach(doc => {{
+      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div><div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div></div>';
+    }});
+    html += '</div></div>';
+
+    // Issued Card
+    html += '<div class="panel" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:#c2410c;font-size:16px;">📤 Issued Today (' + r.issued.length + ')</div><div style="margin-top:12px;">';
+    if(r.issued.length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents issued today.</div>';
+    r.issued.forEach(doc => {{
+      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div><div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div></div>';
+    }});
+    html += '</div></div>';
+
+    // Replied Card
+    html += '<div class="panel" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:#166534;font-size:16px;">✅ Replied Today (' + r.replied.length + ')</div><div style="margin-top:12px;">';
+    if(r.replied.length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents replied today.</div>';
+    r.replied.forEach(doc => {{
+      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div><div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div>';
+      if(doc.status) html += '<div style="margin-top:4px;font-size:11px;font-weight:700;color:var(--tx2);">Status: ' + doc.status + '</div>';
+      html += '</div>';
+    }});
+    html += '</div></div>';
+
+    container.innerHTML = html;
+  }} catch(e) {{
+    console.error(e);
+    container.innerHTML = '<div style="color:red">Error loading daily digest.</div>';
+  }}
+}}
+
 async function loadExecutive(){{
   if(EXEC_DATA)return;
   EXEC_DATA=await apiFetch('/api/executive_summary');
@@ -5269,71 +5315,71 @@ async function saveProject(){{
 }}
 
 // ── Distribution Matrix ──────────────────────────────────────
-async function openDistributionMatrix(pid) {
-  if(!pid){ toast('No project selected','er'); return; }
+async function openDistributionMatrix(pid) {{
+  if(!pid){{ toast('No project selected','er'); return; }}
 
-  try {
+  try {{
     const [docTypes, savedDist, projUsers] = await Promise.all([
       apiFetch('/api/doc_types/'+pid).catch(()=>[]),
-      apiFetch('/api/distribution/'+pid).catch(()=>({})),
+      apiFetch('/api/distribution/'+pid).catch(()=>({{}})),
       apiFetch('/api/project_users/'+pid).catch(()=>[])
     ]);
-    if(!docTypes || !docTypes.length){ toast('No doc types found for this project','wa'); return; }
+    if(!docTypes || !docTypes.length){{ toast('No doc types found for this project','wa'); return; }}
     
     const body = document.getElementById('dist-body');
     body.innerHTML = '';
 
-    function makeUserSelector(initialUsers, pid, dtId) {
+    function makeUserSelector(initialUsers, pid, dtId) {{
       const wrap = document.createElement('div');
       wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border:1px solid var(--bd);border-radius:6px;min-height:36px;background:var(--bg);cursor:text;';
       
       let users = [...(initialUsers||[])];
       
-      function renderTags() {
+      function renderTags() {{
         wrap.innerHTML='';
-        users.forEach((em,i)=>{
+        users.forEach((em,i)=>{{
           const chip=document.createElement('span');
           chip.style.cssText='display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:#dbeafe;color:#1e40af;font-size:11px;font-weight:600';
           chip.innerHTML=em+' <span style="cursor:pointer;font-size:14px;line-height:1" onclick="this.parentNode.remove();users.splice('+i+',1);saveDistRow()">✕</span>';
           wrap.appendChild(chip);
-        });
+        }});
         
         const sel=document.createElement('select');
         sel.style.cssText='border:none;outline:none;background:transparent;font-size:12px;min-width:180px;flex:1;color:var(--tx)';
         sel.innerHTML = '<option value="">+ Add User...</option>';
-        projUsers.forEach(u => {
-          if(!users.includes(u.username)) {
-            sel.innerHTML += `<option value="${u.username}">${u.username} (${u.role})</option>`;
-          }
-        });
+        projUsers.forEach(u => {{
+          if(!users.includes(u.username)) {{
+            sel.innerHTML += `<option value="${{u.username}}">${{u.username}} (${{u.role}})</option>`;
+          }}
+        }});
         
-        sel.onchange=async(e)=>{
+        sel.onchange=async(e)=>{{
           const val = sel.value;
-          if(val && !users.includes(val)) {
+          if(val && !users.includes(val)) {{
             users.push(val);
             await saveDistRow();
             renderTags();
-          }
-        };
+          }}
+        }};
         wrap.appendChild(sel);
-      }
+      }}
       
-      async function saveDistRow() {
-        try {
-          const r = await apiFetch('/api/distribution/'+pid, {
+      async function saveDistRow() {{
+        try {{
+          const r = await apiFetch('/api/distribution/'+pid, {{
             method:'POST',
-            body: JSON.stringify({doc_type_id:dtId, event_type:'access', emails:users})
-          });
+            body: JSON.stringify({{doc_type_id:dtId, event_type:'access', emails:users}})
+          }});
           if(r&&r.ok) toast('✔ Saved','ok');
           else toast('Save failed','er');
-        } catch(e){ toast('Save error','er'); console.error(e); }
-      }
+        }} catch(e){{ toast('Save error','er'); console.error(e); }}
+      }}
       
       renderTags();
       return wrap;
-    }
+    }}
 
-    docTypes.forEach(dt=>{
+    docTypes.forEach(dt=>{{
       const dtSect=document.createElement('div');
       dtSect.style.cssText='margin-bottom:20px;border:1px solid var(--bd);border-radius:8px;overflow:hidden';
 
@@ -5348,15 +5394,15 @@ async function openDistributionMatrix(pid) {
       magicBtn.innerHTML = 'Generate Magic Link 🔗';
       magicBtn.style.padding = '4px 10px';
       magicBtn.style.fontSize = '12px';
-      magicBtn.onclick = async () => {
-        try {
-          const r = await apiFetch(`/api/magic/generate/${pid}/${dt.id}`, {method:'POST'});
-          if(r && r.ok) {
+      magicBtn.onclick = async () => {{
+        try {{
+          const r = await apiFetch(`/api/magic/generate/${{pid}}/${{dt.id}}`, {{method:'POST'}});
+          if(r && r.ok) {{
             navigator.clipboard.writeText(r.link);
             toast('Magic Link copied to clipboard!','ok');
-          } else toast('Failed to generate link', 'er');
-        } catch(e){ toast('Error','er'); }
-      };
+          }} else toast('Failed to generate link', 'er');
+        }} catch(e){{ toast('Error','er'); }}
+      }};
       
       dtHdr.appendChild(titleSpan);
       dtHdr.appendChild(magicBtn);
@@ -5371,7 +5417,7 @@ async function openDistributionMatrix(pid) {
       const evtLabel=document.createElement('div');
       evtLabel.innerHTML='<span style="font-size:12px;font-weight:700;color:#0f172a">Assigned Engineers</span><div style="font-size:10px;color:var(--mu);margin-top:2px">Users with access to daily digest</div>';
       
-      const savedUsers = (savedDist[dt.id]||{})['access']||[];
+      const savedUsers = (savedDist[dt.id]||{{}})['access']||[];
       const tagInput = makeUserSelector(savedUsers, pid, dt.id);
       
       evtRow.appendChild(evtLabel);
@@ -5380,14 +5426,14 @@ async function openDistributionMatrix(pid) {
       
       dtSect.appendChild(distRows);
       body.appendChild(dtSect);
-    });
+    }});
 
     openM('dist-modal');
-  } catch(e){
+  }} catch(e){{
     console.error('[DistMatrix]', e);
     toast('Error loading distribution matrix','er');
-  }
-}
+  }}
+}}
 
 async function syncDriveLinks(btn) {{
   const folderId = document.getElementById('proj-drive-id')?.value.trim();
