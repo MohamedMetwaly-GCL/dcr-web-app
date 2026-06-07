@@ -531,7 +531,7 @@ def _excel_sheet_column_widths(cols, dt_name=None, web_widths=None):
 
     # Add safety padding for Auto-fit
     for i in range(len(widths)):
-        widths[i] += 7
+        widths[i] += 10
 
     return widths
 
@@ -649,7 +649,7 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     from openpyxl.utils import get_column_letter
 
     pr_items_map = pr_items_map or {}
-    PRIMARY = "1A3A5C"; PL = "2563A8"; WHITE = "FFFFFF"
+    PRIMARY = "1F4E78"; PL = "2563A8"; WHITE = "FFFFFF"
     ALT = "F8FAFC"; OV = "FFF5F5"; MUTED = "9CA3AF"
 
     STATUS_XL = {
@@ -667,7 +667,7 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     }
 
     def fill(c): return PatternFill("solid", fgColor=c)
-    def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
+    def thin(): s=Side(style="thin",color="B2B2B2"); return Border(left=s,right=s,top=s,bottom=s)
 
     ws.sheet_view.showGridLines = False
     all_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
@@ -796,9 +796,9 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
     from openpyxl.utils import get_column_letter
     import datetime
 
-    PRIMARY = "1A3A5C"; WHITE = "FFFFFF"; LIGHT = "F8FAFC"
+    PRIMARY = "1F4E78"; WHITE = "FFFFFF"; LIGHT = "F8FAFC"
     def fill(c): return PatternFill("solid", fgColor=c)
-    def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
+    def thin(): s=Side(style="thin",color="B2B2B2"); return Border(left=s,right=s,top=s,bottom=s)
     
     ws.sheet_view.showGridLines = False
     for col, width in {"A":4, "B":30, "C":15, "D":15, "E":15}.items():
@@ -878,7 +878,7 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     ws.sheet_view.showGridLines = False
     raw_ws.sheet_view.showGridLines = False
 
-    PRIMARY = "1A3A5C"
+    PRIMARY = "1F4E78"
     ACCENT = "2563A8"
     LIGHT = "F0F4F8"
     SECTION = "E8EEF6"
@@ -888,7 +888,7 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     MUTED = "64748B"
     TEXT = "1E2A3A"
 
-    thin_side = Side(style="thin", color="DDE3ED")
+    thin_side = Side(style="thin", color="B2B2B2")
     thin = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
     top_rule = Border(top=thin_side)
 
@@ -1222,7 +1222,7 @@ def api_export_all(pid):
         wb      = openpyxl.Workbook()
         wb.remove(wb.active)  # remove default sheet
 
-        PRIMARY="1A3A5C"; PL="2563A8"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
+        PRIMARY="1F4E78"; PL="2563A8"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
         STATUS_XL = {
             "A - Approved":              ("C6EFCE","064E3B"),
             "B - Approved As Noted":     ("C6EFCE","064E3B"),
@@ -1237,7 +1237,7 @@ def api_export_all(pid):
             "Pending":                   ("FFEB9C","713F12"),
         }
         def fill(c): return PatternFill("solid", fgColor=c)
-        def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
+        def thin(): s=Side(style="thin",color="B2B2B2"); return Border(left=s,right=s,top=s,bottom=s)
 
         from flask import request
         days = request.args.get('days')
@@ -1342,146 +1342,7 @@ def api_export(pid, dt_id):
         return traceback.format_exc(), 500
 
 
-def _build_pdf_for_dt(pid, dt_id, proj, buf=None):
-    """Build a PDF for one document type. Returns BytesIO."""
-    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
-                                    Paragraph, Spacer, HRFlowable)
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import mm
-    from reportlab.lib import colors as rl_colors
-    from xml.sax.saxutils import escape as xml_escape
 
-    buf = buf or io.BytesIO()
-    cols    = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
-    records = db.get_records(pid, dt_id)
-    dts     = db.get_doc_types(pid)
-    dt      = next((d for d in dts if d["id"] == dt_id), {"name": dt_id, "code": dt_id})
-    is_pr = _is_pr_dt(dt)
-    pr_details_key = _pr_details_key(cols) if is_pr else None
-    pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if is_pr else {}
-
-    PAGE = landscape(A4)
-    doc = SimpleDocTemplate(buf, pagesize=PAGE,
-                            leftMargin=10*mm, rightMargin=10*mm,
-                            topMargin=12*mm, bottomMargin=12*mm)
-    styles = getSampleStyleSheet()
-    DARK   = rl_colors.HexColor("#1A3A5C")
-    LIGHT  = rl_colors.HexColor("#F8FAFC")
-    OV_COL = rl_colors.HexColor("#FEF2F2")
-    REV_COL= rl_colors.HexColor("#F0F9FF")
-    ALT    = rl_colors.HexColor("#F0F4F8")
-
-    STATUS_PDF = {
-        "A - Approved":              rl_colors.HexColor("#BBF7D0"),
-        "B - Approved As Noted":     rl_colors.HexColor("#DCFCE7"),
-        "B,C - Approved & Resubmit": rl_colors.HexColor("#FED7AA"),
-        "C - Revise & Resubmit":     rl_colors.HexColor("#FCE7F3"),
-        "D - Review not Required":   rl_colors.HexColor("#FECACA"),
-        "Under Review":              rl_colors.HexColor("#FEF9C3"),
-        "Cancelled":                 rl_colors.HexColor("#EF4444"),
-        "Open":                      rl_colors.HexColor("#FED7AA"),
-        "Closed":                    rl_colors.HexColor("#BFDBFE"),
-        "Replied":                   rl_colors.HexColor("#D1FAE5"),
-        "Pending":                   rl_colors.HexColor("#E0E7FF"),
-    }
-
-    pstyle = ParagraphStyle("cell", fontName="Helvetica", fontSize=7, leading=9,
-                             wordWrap="LTR", spaceAfter=0, spaceBefore=0)
-    hstyle = ParagraphStyle("hdr", fontName="Helvetica-Bold", fontSize=7.5,
-                             leading=10, textColor=rl_colors.white)
-
-    hdr_cols = [{"col_key":"_sr","label":"Sr."}] + [{"col_key":c["col_key"],"label":c["label"]} for c in cols]
-
-    # Column widths (points)
-    W_MAP = {"_sr":18,"docNo":68,"discipline":55,"trade":55,"title":110,
-             "floor":38,"itemRef":48,"issuedDate":46,"expectedReplyDate":48,
-             "actualReplyDate":46,"status":80,"duration":34,"remarks":80,"fileLocation":60}
-    page_w = PAGE[0] - 20*mm
-    col_ws = [W_MAP.get(c["col_key"], 55) for c in hdr_cols]
-    scale  = page_w / sum(col_ws)
-    col_ws = [w * scale for w in col_ws]
-
-    # Build header row
-    hdr_row = [Paragraph(c["label"], hstyle) for c in hdr_cols]
-    data    = [hdr_row]
-    row_meta = []   # (bg, is_header)
-
-
-    sr = 1
-    has_exp_col_pdf = any(c["col_key"]=="expectedReplyDate" for c in hdr_cols)
-    for row in records:
-        is_rev = extract_rev(row.get("docNo","")) > 0
-        status_val = row.get("status")
-        action_val = row.get("action")
-        ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col_pdf, rule=None, status=status_val, action=action_val)
-        cells  = []
-        for c in hdr_cols:
-            key = c["col_key"]
-            if key == "_sr":
-                val = "" if is_rev else str(sr)
-            elif key == "expectedReplyDate":
-                val = format_date(compute_expected_reply(row.get("issuedDate"), row.get("docNo"), rule=None, status=status_val, action=action_val))
-            elif key == "duration":
-                val = str(compute_duration(row.get("issuedDate"), row.get("actualReplyDate"), rule=None, status=status_val, action=action_val) or "")
-            elif key in ("issuedDate","actualReplyDate"):
-                val = format_date(row.get(key,""))
-            elif pr_details_key and key == pr_details_key:
-                val = _resolve_pr_details_value(row, pr_items_map, pr_details_key) or str(row.get(key,"") or "")
-            else:
-                val = str(row.get(key,"") or "")
-            val = _format_multiline_display_value(key, c["label"], val)
-            cells.append(Paragraph(xml_escape(val).replace("\n", "<br/>"), pstyle))
-        data.append(cells)
-        if ov:     row_meta.append(OV_COL)
-        elif is_rev: row_meta.append(REV_COL)
-        elif sr % 2 == 0: row_meta.append(ALT)
-        else:      row_meta.append(rl_colors.white)
-        if not is_rev: sr += 1
-
-    # Build table style
-    ts = [
-        ("BACKGROUND", (0,0), (-1,0), DARK),
-        ("TEXTCOLOR",  (0,0), (-1,0), rl_colors.white),
-        ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
-        ("FONTSIZE",   (0,0), (-1,-1), 7),
-        ("ROWBACKGROUND", (0,0), (-1,0), DARK),
-        ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
-        ("TOPPADDING", (0,0), (-1,-1), 2),
-        ("BOTTOMPADDING",(0,0),(-1,-1), 2),
-        ("LEFTPADDING",(0,0),(-1,-1), 2),
-        ("RIGHTPADDING",(0,0),(-1,-1), 2),
-        ("GRID",       (0,0), (-1,-1), 0.3, rl_colors.HexColor("#CBD5E1")),
-    ]
-    # Row backgrounds
-    for i, bg in enumerate(row_meta, start=1):
-        ts.append(("BACKGROUND", (0,i), (-1,i), bg))
-    # Status column color
-    status_idx = next((i for i,c in enumerate(hdr_cols) if c["col_key"]=="status"), None)
-    if status_idx is not None:
-        for i, row in enumerate(records, start=1):
-            sv = row.get("status","")
-            bg = STATUS_PDF.get(sv)
-            if bg: ts.append(("BACKGROUND", (status_idx,i), (status_idx,i), bg))
-
-    tbl = Table(data, colWidths=col_ws, repeatRows=1)
-    tbl.setStyle(TableStyle(ts))
-
-    proj_name = proj.get("name","") if isinstance(proj, dict) else ""
-    title_st  = ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=12,
-                                textColor=DARK, spaceAfter=4)
-    sub_st    = ParagraphStyle("s", fontName="Helvetica", fontSize=9,
-                                textColor=rl_colors.HexColor("#64748B"), spaceAfter=8)
-
-    story = [
-        Paragraph(f"{dt['name'].upper()} — {proj_name}", title_st),
-        Paragraph(f"Project: {proj.get('code','')}  |  Exported: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}", sub_st),
-        HRFlowable(width="100%", thickness=1, color=DARK, spaceAfter=6),
-        tbl,
-    ]
-    doc.build(story)
-    buf.seek(0)
-    return buf
 
 
 def _build_executive_summary_pdf(pid, dt_id=None):
@@ -1570,8 +1431,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     }
     
     import shutil
-    wk_path = shutil.which("wkhtmltopdf")
-    config = pdfkit.configuration(wkhtmltopdf=wk_path) if wk_path else None
+    wk_path = shutil.which("wkhtmltopdf") or "/usr/bin/wkhtmltopdf"
+    config = pdfkit.configuration(wkhtmltopdf=wk_path)
     
     pdf_bytes = pdfkit.from_string(html, False, options=options, configuration=config)
     return io.BytesIO(pdf_bytes)
@@ -1579,14 +1440,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
 @exporting_bp.route("/api/export_pdf/<pid>/<dt_id>")
 def api_export_pdf(pid, dt_id):
     try:
-        try:
-            import pdfkit
-            buf = _build_executive_summary_pdf(pid, dt_id)
-        except Exception as e:
-            logger.warning(f"pdfkit failed, falling back to reportlab: {e}")
-            proj = db.get_project(pid) or {}
-            buf  = _build_pdf_for_dt(pid, dt_id, proj)
-        
+        import pdfkit
+        buf = _build_executive_summary_pdf(pid, dt_id)
         fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
         return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
     except Exception as e:
@@ -1597,33 +1452,8 @@ def api_export_pdf(pid, dt_id):
 @exporting_bp.route("/api/export_pdf_all/<pid>")
 def api_export_pdf_all(pid):
     try:
-        try:
-            import pdfkit
-            buf = _build_executive_summary_pdf(pid, "all")
-        except Exception as e:
-            logger.warning(f"pdfkit failed, falling back to reportlab: {e}")
-            from reportlab.platypus import SimpleDocTemplate, PageBreak
-            proj = db.get_project(pid) or {}
-            dts  = db.get_doc_types(pid)
-
-            # Build each DT as separate PDF bytes then merge
-            try:
-                from pypdf import PdfWriter
-                writer = PdfWriter()
-                for dt in dts:
-                    if not db.count_records(pid, dt["id"]): continue
-                    single_buf = _build_pdf_for_dt(pid, dt["id"], proj)
-                    from pypdf import PdfReader
-                    reader = PdfReader(single_buf)
-                    for page in reader.pages:
-                        writer.add_page(page)
-                out = io.BytesIO()
-                writer.write(out); out.seek(0)
-                buf = out
-            except ImportError:
-                # Fallback: just export first DT or give error
-                buf = _build_pdf_for_dt(pid, dts[0]["id"], proj) if dts else io.BytesIO()
-
+        import pdfkit
+        buf = _build_executive_summary_pdf(pid, "all")
         fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_Executive_Summary.pdf"
         return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
     except Exception as e:

@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["...", "wkhtmltopdf", "libfontconfig", "xorg.libXrender", "xorg.libXext", "fontconfig", "freetype"]
+aptPkgs = ["wkhtmltopdf"]
