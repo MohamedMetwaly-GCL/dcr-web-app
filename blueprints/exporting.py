@@ -685,16 +685,15 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     pid = (proj or {}).get("id")
     dt_id = (dt or {}).get("id")
     expected_reply_rule = db.get_expected_reply_rule(pid, dt_id) if pid and dt_id else None
-    mcell(1, f"DOCUMENT CONTROL REGISTER  -  {str(dt_name).upper()}",
-          PRIMARY, bold=True, sz=13)
+    
+    brand_text = f"{proj.get('name', '')} - {proj.get('code', '')}".strip(" -")
+    if not brand_text: brand_text = "DCR SYSTEM"
+    mcell(1, brand_text, PRIMARY, bold=True, sz=14)
     ws.row_dimensions[1].height = 30
 
-    info = "   |   ".join(f"{k}: {v}" for k,v in [
-        ("Project",proj.get("name","")),("Code",proj.get("code","")),
-        ("Client",proj.get("client","")),("Consultant",proj.get("mainConsultant","")),
-        ("Exported",datetime.datetime.now().strftime("%d-%m-%Y %H:%M"))] if v)
-    mcell(2, info, PL, sz=9)
-    ws.row_dimensions[2].height = 16
+    info = f"DOCUMENT CONTROL REGISTER  -  {str(dt_name).upper()}   |   Exported: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}"
+    mcell(2, info, PL, sz=10)
+    ws.row_dimensions[2].height = 20
     ws.row_dimensions[3].height = 3
 
     ws.freeze_panes = "A5"
@@ -789,6 +788,22 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     ws.row_dimensions[total_row].height = 22
     if total_row >= 4:
         ws.auto_filter.ref = f"A4:{get_column_letter(nc)}{max(4, total_row - 1)}"
+        
+    # TRUE AUTO-FIT
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                # ignore header row (row 1 & 2) so they don't break auto-fit
+                if cell.row <= 3: continue
+                lines = str(cell.value).split('\n')
+                longest = max(len(l) for l in lines) if lines else 0
+                max_length = max(max_length, longest)
+            except: pass
+        adjusted = min(55, max_length + 5)
+        ws.column_dimensions[column].width = max(12, adjusted)
+
 
 
 def _write_summary_dashboard(ws, proj, records_by_dt):
@@ -1399,7 +1414,9 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             "name": dt.get("name") or dt.get("id"),
             "total": count,
             "approved": approved,
-            "pending": pending
+            "pending": pending,
+            "records": records,
+            "cols": db.get_columns(pid, dt["id"])
         })
         
     logo_l = db.get_logo(pid, "logo_left")
@@ -1526,6 +1543,62 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     
     reg_table.setStyle(TableStyle(reg_style))
     elements.append(reg_table)
+    
+    # ---------------------------------------------------------
+    # Generate the missing pages: A separate table for each DT
+    # ---------------------------------------------------------
+    from reportlab.platypus import PageBreak
+    
+    for dt_data in registers_data:
+        records = dt_data.get("records", [])
+        if not records: continue
+        
+        elements.append(PageBreak())
+        elements.append(Paragraph(f"{dt_data['name']} - Document Register", styles['Heading2']))
+        elements.append(Spacer(1, 10*mm))
+        
+        cols = [c for c in dt_data.get("cols", []) if c.get("visible")]
+        if not cols: continue
+        
+        header_row = ["No."] + [c["label"] for c in cols]
+        dt_table_data = [header_row]
+        
+        for idx, r in enumerate(records, 1):
+            row_data = [str(idx)]
+            for c in cols:
+                key = c["col_key"]
+                val = str(r.get(key, "") or "")
+                # Limit length so PDF table cell doesn't break vertically if it's too huge
+                if len(val) > 100: val = val[:97] + "..."
+                row_data.append(val)
+            dt_table_data.append(row_data)
+            
+        # Calculate proportional widths based on 170mm total available width
+        w_per_col = (170 / len(cols)) * mm if len(cols) > 0 else 10*mm
+        dt_col_widths = [12*mm] + [w_per_col] * len(cols)
+        
+        dt_table = Table(dt_table_data, colWidths=dt_col_widths, repeatRows=1)
+        dt_table_style = [
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e40af")),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 9),
+            ('FONTSIZE', (0,1), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('INNERGRID', (0,0), (-1,-1), 0.25, colors.HexColor("#e2e8f0")),
+            ('BOX', (0,0), (-1,-1), 0.25, colors.HexColor("#e2e8f0")),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ]
+        
+        # Zebra striping
+        for i in range(1, len(dt_table_data)):
+            if i % 2 == 0:
+                dt_table_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#f8fafc")))
+                
+        dt_table.setStyle(TableStyle(dt_table_style))
+        elements.append(dt_table)
     
     # Build PDF
     doc.build(elements)
