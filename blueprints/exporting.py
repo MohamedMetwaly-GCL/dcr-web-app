@@ -1512,8 +1512,13 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     )
     
     # Title
-    elements.append(Paragraph("EXECUTIVE SUMMARY REPORT", title_style))
-    elements.append(Paragraph(f"{proj.get('name', 'Project')} ({proj.get('code', 'DCR')})", sub_style))
+    brand_title = f"Document Control Register - {proj.get('name', 'Project')}"
+    elements.append(Paragraph(brand_title, title_style))
+    sub_title = " | ".join(f"{k}: {v}" for k,v in [
+        ("Code", proj.get("code","")),
+        ("Client", proj.get("client","")),
+        ("Consultant", proj.get("mainConsultant",""))] if v)
+    elements.append(Paragraph(sub_title, sub_style))
     
     # Meta Box
     meta_data = [
@@ -1623,10 +1628,18 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             parent=styles['Normal'],
             fontSize=8,
             textColor=colors.HexColor("#1e293b"),
-            leading=10
+            leading=11
+        )
+        header_style = ParagraphStyle(
+            'HeaderStyle',
+            parent=styles['Normal'],
+            fontSize=9,
+            textColor=colors.whitesmoke,
+            alignment=1,
+            fontName='Helvetica-Bold'
         )
         
-        header_row = [Paragraph("No.", styles['Normal'])] + [Paragraph(c["label"], styles['Normal']) for c in cols]
+        header_row = [Paragraph("No.", header_style)] + [Paragraph(c["label"], header_style) for c in cols]
         dt_table_data = [header_row]
         
         for idx, r in enumerate(records, 1):
@@ -1641,29 +1654,52 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                 row_data.append(Paragraph(val, body_style))
             dt_table_data.append(row_data)
             
-        # Calculate proportional widths based on landscape available width (297mm - 30mm margins = 267mm)
-        w_per_col = (255 / len(cols)) * mm if len(cols) > 0 else 10*mm
-        dt_col_widths = [12*mm] + [w_per_col] * len(cols)
+        USABLE_WIDTH = 770 
+        w_list = []
+        for c in cols:
+            k = c["col_key"].lower()
+            if "id" in k or "no" in k: w_list.append(0.12)
+            elif "title" in k or "desc" in k or "sub" in k: w_list.append(0.30)
+            elif "type" in k: w_list.append(0.06)
+            elif "disc" in k or "trade" in k: w_list.append(0.10)
+            elif "stat" in k: w_list.append(0.10)
+            elif "rev" in k: w_list.append(0.05)
+            elif "date" in k: w_list.append(0.09)
+            elif "delay" in k or "dur" in k: w_list.append(0.05)
+            else: w_list.append(0.08)
+            
+        total_weight = sum(w_list)
+        if total_weight > 0:
+            dt_col_widths = [0.04 * USABLE_WIDTH] + [(w / total_weight) * (0.96 * USABLE_WIDTH) for w in w_list]
+        else:
+            dt_col_widths = [12*mm] + [10*mm] * len(cols)
         
         dt_table = Table(dt_table_data, colWidths=dt_col_widths, repeatRows=1)
         dt_table_style = [
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e40af")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
             ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,0), 9),
-            ('FONTSIZE', (0,1), (-1,-1), 8),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
             ('BOTTOMPADDING', (0,0), (-1,-1), 5),
             ('TOPPADDING', (0,0), (-1,-1), 5),
-            ('INNERGRID', (0,0), (-1,-1), 0.25, colors.HexColor("#e2e8f0")),
-            ('BOX', (0,0), (-1,-1), 0.25, colors.HexColor("#e2e8f0")),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#d1d5db")),
+            ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#d1d5db")),
         ]
         
-        # Zebra striping
+        status_col_idx = next((i for i, c in enumerate(cols) if c["col_key"] == "status"), -1)
+        status_col_table_idx = status_col_idx + 1 if status_col_idx >= 0 else -1
+        
         for i in range(1, len(dt_table_data)):
             if i % 2 == 0:
                 dt_table_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#f8fafc")))
+            
+            if status_col_table_idx > 0:
+                raw_stat = str(records[i-1].get("status", "")).lower()
+                if "approved" in raw_stat and "noted" not in raw_stat:
+                    dt_table_style.append(('BACKGROUND', (status_col_table_idx, i), (status_col_table_idx, i), colors.HexColor("#dcfce7")))
+                elif "noted" in raw_stat or "review" in raw_stat or "open" in raw_stat or "pending" in raw_stat:
+                    dt_table_style.append(('BACKGROUND', (status_col_table_idx, i), (status_col_table_idx, i), colors.HexColor("#fef9c3")))
+                elif "revise" in raw_stat or "rejected" in raw_stat or "cancelled" in raw_stat:
+                    dt_table_style.append(('BACKGROUND', (status_col_table_idx, i), (status_col_table_idx, i), colors.HexColor("#fee2e2")))
                 
         dt_table.setStyle(TableStyle(dt_table_style))
         elements.append(dt_table)
