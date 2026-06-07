@@ -529,6 +529,10 @@ def _excel_sheet_column_widths(cols, dt_name=None, web_widths=None):
             elif "ms ref" in label:
                 widths[i] = max(widths[i], 28)
 
+    # Add safety padding for Auto-fit
+    for i in range(len(widths)):
+        widths[i] += 7
+
     return widths
 
 
@@ -607,6 +611,11 @@ def _excel_center_col(col_key, label):
         or "date" in label_l
         or key == "status"
         or "status" in label_l
+        or "docno" in key.lower()
+        or "document" in label_l
+        or "rev" in key.lower()
+        or "revision" in label_l
+        or "delay" in label_l
     )
 
 
@@ -644,17 +653,17 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
     ALT = "F8FAFC"; OV = "FFF5F5"; MUTED = "9CA3AF"
 
     STATUS_XL = {
-        "A - Approved":              ("BBF7D0","166534"),
-        "B - Approved As Noted":     ("DCFCE7","14532D"),
-        "B,C - Approved & Resubmit": ("FED7AA","7C2D12"),
-        "C - Revise & Resubmit":     ("FCE7F3","831843"),
-        "D - Review not Required":   ("FECACA","7F1D1D"),
-        "Under Review":              ("FEF9C3","713F12"),
-        "Cancelled":                 ("EF4444","FFFFFF"),
-        "Open":                      ("FED7AA","7C2D12"),
-        "Closed":                    ("BFDBFE","1E3A5F"),
-        "Replied":                   ("D1FAE5","064E3B"),
-        "Pending":                   ("E0E7FF","312E81"),
+        "A - Approved":              ("C6EFCE","064E3B"),
+        "B - Approved As Noted":     ("C6EFCE","064E3B"),
+        "B,C - Approved & Resubmit": ("FFEB9C","713F12"),
+        "C - Revise & Resubmit":     ("FFC7CE","991B1B"),
+        "D - Review not Required":   ("FFC7CE","991B1B"),
+        "Under Review":              ("FFEB9C","713F12"),
+        "Cancelled":                 ("FFC7CE","991B1B"),
+        "Open":                      ("FFEB9C","713F12"),
+        "Closed":                    ("C6EFCE","064E3B"),
+        "Replied":                   ("C6EFCE","064E3B"),
+        "Pending":                   ("FFEB9C","713F12"),
     }
 
     def fill(c): return PatternFill("solid", fgColor=c)
@@ -1215,17 +1224,17 @@ def api_export_all(pid):
 
         PRIMARY="1A3A5C"; PL="2563A8"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
         STATUS_XL = {
-            "A - Approved":              ("BBF7D0","166534"),
-            "B - Approved As Noted":     ("DCFCE7","14532D"),
-            "B,C - Approved & Resubmit": ("FED7AA","7C2D12"),
-            "C - Revise & Resubmit":     ("FCE7F3","831843"),
-            "D - Review not Required":   ("FECACA","7F1D1D"),
-            "Under Review":              ("FEF9C3","713F12"),
-            "Cancelled":                 ("EF4444","FFFFFF"),
-            "Open":                      ("FED7AA","7C2D12"),
-            "Closed":                    ("BFDBFE","1E3A5F"),
-            "Replied":                   ("D1FAE5","064E3B"),
-            "Pending":                   ("E0E7FF","312E81"),
+            "A - Approved":              ("C6EFCE","064E3B"),
+            "B - Approved As Noted":     ("C6EFCE","064E3B"),
+            "B,C - Approved & Resubmit": ("FFEB9C","713F12"),
+            "C - Revise & Resubmit":     ("FFC7CE","991B1B"),
+            "D - Review not Required":   ("FFC7CE","991B1B"),
+            "Under Review":              ("FFEB9C","713F12"),
+            "Cancelled":                 ("FFC7CE","991B1B"),
+            "Open":                      ("FFEB9C","713F12"),
+            "Closed":                    ("C6EFCE","064E3B"),
+            "Replied":                   ("C6EFCE","064E3B"),
+            "Pending":                   ("FFEB9C","713F12"),
         }
         def fill(c): return PatternFill("solid", fgColor=c)
         def thin(): s=Side(style="thin",color="DDE3ED"); return Border(left=s,right=s,top=s,bottom=s)
@@ -1556,6 +1565,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         'margin-bottom': '0.5in',
         'margin-left': '0.5in',
         'encoding': "UTF-8",
+        'enable-local-file-access': "",
         'no-outline': None
     }
     
