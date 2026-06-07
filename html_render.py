@@ -5337,10 +5337,19 @@ async function openDistributionMatrix(pid) {{
       
       function renderTags() {{
         wrap.innerHTML='';
-        users.forEach((em,i)=>{{
-          const chip=document.createElement('span');
-          chip.style.cssText='display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:#dbeafe;color:#1e40af;font-size:11px;font-weight:600';
-          chip.innerHTML=em+' <span style="cursor:pointer;font-size:14px;line-height:1" onclick="this.parentNode.remove();users.splice('+i+',1);saveDistRow()">✕</span>';
+        users.forEach((em, i) => {{
+          const chip = document.createElement('span');
+          chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:#dbeafe;color:#1e40af;font-size:11px;font-weight:600';
+          chip.innerHTML = em;
+          const cross = document.createElement('span');
+          cross.innerHTML = '✕';
+          cross.style.cssText = 'cursor:pointer;font-size:14px;line-height:1';
+          cross.onclick = async () => {{
+            users = users.filter(u => u !== em);
+            await saveDistRow();
+            renderTags();
+          }};
+          chip.appendChild(cross);
           wrap.appendChild(chip);
         }});
         

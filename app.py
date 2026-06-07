@@ -453,12 +453,16 @@ def api_daily_digest(pid):
                     combined_digest["issued"].extend(d.get("issued", []))
                     combined_digest["replied"].extend(d.get("replied", []))
             except Exception as inner_e:
+                import traceback
+                traceback.print_exc()
                 print(f"[Daily Digest Loop Error] Project {p_id}: {inner_e}")
                 
         return jsonify(combined_digest)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"[Daily Digest Error]: {e}")
-        return jsonify(error="Server error"), 500
+        return jsonify(error=f"Server error: {str(e)}"), 500
 
 
 def drive_polling_job():
