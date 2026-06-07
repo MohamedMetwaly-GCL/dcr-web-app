@@ -650,6 +650,8 @@ def get_daily_digest(pid, doc_type_ids):
     sql = """
         SELECT id, dt_id, data FROM records 
         WHERE project_id=%s AND dt_id IN %s
+        AND data IS NOT NULL
+        AND jsonb_typeof(data) = 'object'
         AND (
             data->>'receivedDate' = %s OR
             data->>'issuedDate' = %s OR
@@ -698,7 +700,11 @@ def get_distribution(project_id):
     return result
 
 def upsert_distribution(project_id, doc_type_id, event_type, emails):
-    """Insert or update a distribution row."""
+    """Insert or update a distribution row, delete if empty."""
+    if not emails:
+        exe("DELETE FROM project_distribution WHERE project_id=%s AND doc_type_id=%s AND event_type=%s", 
+            (project_id, doc_type_id, event_type))
+        return
     exe("""INSERT INTO project_distribution(project_id, doc_type_id, event_type, emails)
            VALUES(%s,%s,%s,%s)
            ON CONFLICT(project_id, doc_type_id, event_type)
