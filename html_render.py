@@ -5890,8 +5890,11 @@ function executeAdvancedExport(){{
   let targetTab = (scope === 'current' && state.tab) ? state.tab : 'all';
   
   let baseUrl = '';
-  if(format === 'excel') baseUrl = `/api/export/${{PID}}/${{targetTab}}`;
-  if(format === 'pdf') baseUrl = `/api/export_pdf/${{PID}}/${{targetTab}}`;
+  if(format === 'excel') {
+    baseUrl = (targetTab === 'all') ? `/api/export_all/${{PID}}` : `/api/export/${{PID}}/${{targetTab}}`;
+  } else if (format === 'pdf') {
+    baseUrl = (targetTab === 'all') ? `/api/export_pdf_all/${{PID}}` : `/api/export_pdf/${{PID}}/${{targetTab}}`;
+  }
 
   const params = new URLSearchParams();
   if(time !== 'all') params.set('days', time);
