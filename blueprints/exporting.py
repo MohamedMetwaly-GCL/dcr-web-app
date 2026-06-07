@@ -1569,7 +1569,11 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         'no-outline': None
     }
     
-    pdf_bytes = pdfkit.from_string(html, False, options=options)
+    import shutil
+    wk_path = shutil.which("wkhtmltopdf")
+    config = pdfkit.configuration(wkhtmltopdf=wk_path) if wk_path else None
+    
+    pdf_bytes = pdfkit.from_string(html, False, options=options, configuration=config)
     return io.BytesIO(pdf_bytes)
 
 @exporting_bp.route("/api/export_pdf/<pid>/<dt_id>")
