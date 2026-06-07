@@ -34,7 +34,7 @@ app.register_blueprint(exporting_bp)
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, can_edit, can_view_project, get_allowed_project_ids
 
-PUBLIC_ENDPOINTS = {"login", "logout", "static"}
+PUBLIC_ENDPOINTS = {"login", "logout", "static", "magic_digest_view"}
 
 
 @app.before_request
@@ -434,17 +434,23 @@ def api_daily_digest(pid):
         is_admin = u["role"] in ("superadmin", "admin")
         
         for p_id in projects_to_check:
-            dist = db.get_distribution(p_id)
-            assigned_dt_ids = []
-            for dt_id, events in dist.items():
-                users = events.get("access", [])
-                if is_admin or u["username"] in users:
-                    assigned_dt_ids.append(dt_id)
+            if is_admin:
+                # Admins see all doc_types for the project
+                all_dts = db.get_doc_types(p_id)
+                assigned_dt_ids = [dt["id"] for dt in all_dts]
+            else:
+                dist = db.get_distribution(p_id)
+                assigned_dt_ids = []
+                for dt_id, events in dist.items():
+                    if isinstance(events, dict):
+                        users = events.get("access", [])
+                        if u["username"] in users:
+                            assigned_dt_ids.append(dt_id)
             if assigned_dt_ids:
                 d = db.get_daily_digest(p_id, assigned_dt_ids)
-                combined_digest["received"].extend(d["received"])
-                combined_digest["issued"].extend(d["issued"])
-                combined_digest["replied"].extend(d["replied"])
+                combined_digest["received"].extend(d.get("received", []))
+                combined_digest["issued"].extend(d.get("issued", []))
+                combined_digest["replied"].extend(d.get("replied", []))
                 
         return jsonify(combined_digest)
     except Exception as e:

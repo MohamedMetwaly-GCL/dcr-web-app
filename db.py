@@ -648,12 +648,12 @@ def get_daily_digest(pid, doc_type_ids):
     rows = q("SELECT id, dt_id, data FROM records WHERE project_id=%s AND dt_id = ANY(%s)", (pid, list(doc_type_ids)))
     received, issued, replied = [], [], []
     for r in rows:
-        d = r["data"]
+        d = r.get("data") or {}
         if d.get("receivedDate") == today_str: received.append(r)
         if d.get("issuedDate") == today_str or d.get("partAIssueDate") == today_str or d.get("partCIssueDate") == today_str: issued.append(r)
         if d.get("actualReplyDate") == today_str or d.get("partBReturnDate") == today_str or d.get("partDReturnDate") == today_str: replied.append(r)
     def format_rec(rec):
-        d = rec["data"]
+        d = rec.get("data") or {}
         return {
             "id": rec["id"], "dt_id": rec["dt_id"],
             "docNo": d.get("docNo") or d.get("record_id") or "Untitled",
