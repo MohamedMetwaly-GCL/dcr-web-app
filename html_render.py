@@ -2122,7 +2122,7 @@ async function loadDailyDigest() {{
   const selectedDate = dateInput ? dateInput.value : '';
   container.innerHTML = '<div style="color:var(--mu);font-size:14px;">Loading...</div>';
   try {{
-    let targetPid = typeof window.PID !== 'undefined' ? window.PID : (window._currentPid || 'all');
+    let targetPid = typeof window.PID !== 'undefined' ? window.PID : (typeof _currentPid !== 'undefined' && _currentPid ? _currentPid : 'all');
     const qs = selectedDate ? '?date=' + selectedDate : '';
     const r = await apiFetch('/api/daily_digest/' + targetPid + qs);
     if(!r) {{ container.innerHTML = '<div style="color:red">Failed to load digest (Null response).</div>'; return; }}
@@ -2139,9 +2139,11 @@ async function loadDailyDigest() {{
     html += '<div class="panel" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:#1e40af;font-size:16px;">📥 Received (' + (r.received||[]).length + ')</div><div style="margin-top:12px;">';
     if((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents received.</div>';
     (r.received||[]).forEach(doc => {{
-      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div>';
-      if(targetPid==='all') html += '<div style="font-size:10px;background:#f1f5f9;color:#475569;display:inline-block;padding:2px 6px;border-radius:4px;margin-top:4px;border:1px solid #cbd5e1;">'+(doc.project_code||doc.project_id)+'</div>';
-      html += '<div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div></div>';
+      html += '<div style="padding:6px 10px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:3px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">';
+      html += '<div style="font-weight:700;color:var(--tx);font-size:12px;word-break:break-all;">'+doc.docNo+'</div>';
+      if(targetPid==='all' && (doc.project_name || doc.project_id)) html += '<div style="font-size:9px;background:#f1f5f9;color:#475569;padding:1px 5px;border-radius:4px;white-space:nowrap;border:1px solid #cbd5e1;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
+      html += '</div><div style="color:var(--mu);font-size:11px;line-height:1.2;">'+doc.title+'</div></div>';
     }});
     html += '</div></div>';
 
@@ -2149,18 +2151,24 @@ async function loadDailyDigest() {{
     html += '<div class="panel" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:#c2410c;font-size:16px;">📤 Issued (' + (r.issued||[]).length + ')</div><div style="margin-top:12px;">';
     if((r.issued||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents issued.</div>';
     (r.issued||[]).forEach(doc => {{
-      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div>';
-      if(targetPid==='all') html += '<div style="font-size:10px;background:#fef3c7;color:#b45309;display:inline-block;padding:2px 6px;border-radius:4px;margin-top:4px;border:1px solid #fde68a;">'+(doc.project_code||doc.project_id)+'</div>';
-      html += '<div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div></div>';
+      html += '<div style="padding:6px 10px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:3px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">';
+      html += '<div style="font-weight:700;color:var(--tx);font-size:12px;word-break:break-all;">'+doc.docNo+'</div>';
+      if(targetPid==='all' && (doc.project_name || doc.project_id)) html += '<div style="font-size:9px;background:#fef3c7;color:#b45309;padding:1px 5px;border-radius:4px;white-space:nowrap;border:1px solid #fde68a;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
+      html += '</div><div style="color:var(--mu);font-size:11px;line-height:1.2;">'+doc.title+'</div></div>';
     }});
     html += '</div></div>';
 
     // Replied Card
-    html += '<div class="panel" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:#166534;font-size:16px;">✅ Replied Today (' + (r.replied||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.replied||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents replied today.</div>';
+    html += '<div class="panel" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:#166534;font-size:16px;">✅ Replied (' + (r.replied||[]).length + ')</div><div style="margin-top:12px;">';
+    if((r.replied||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents replied.</div>';
     (r.replied||[]).forEach(doc => {{
-      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div><div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div>';
-      if(doc.status) html += '<div style="margin-top:4px;font-size:11px;font-weight:700;color:var(--tx2);">Status: ' + doc.status + '</div>';
+      html += '<div style="padding:6px 10px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:3px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">';
+      html += '<div style="font-weight:700;color:var(--tx);font-size:12px;word-break:break-all;">'+doc.docNo+'</div>';
+      if(targetPid==='all' && (doc.project_name || doc.project_id)) html += '<div style="font-size:9px;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:4px;white-space:nowrap;border:1px solid #bbf7d0;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
+      html += '</div><div style="color:var(--mu);font-size:11px;line-height:1.2;">'+doc.title+'</div>';
+      if(doc.status) html += '<div style="font-size:10px;font-weight:700;color:var(--tx2);">Status: ' + doc.status + '</div>';
       html += '</div>';
     }});
     html += '</div></div>';
