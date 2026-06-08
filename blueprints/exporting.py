@@ -1480,7 +1480,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     if logo_l and "," in logo_l: logo_l = logo_l.split(",", 1)[1]
     if logo_r and "," in logo_r: logo_r = logo_r.split(",", 1)[1]
 
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageTemplate, Frame, NextPageTemplate, PageBreak
+    from reportlab.platypus import BaseDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageTemplate, Frame, NextPageTemplate, PageBreak
     from reportlab.lib.pagesizes import A4, A3, landscape, portrait
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch, mm
@@ -1517,7 +1517,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         pass
     
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A3), rightMargin=5*mm, leftMargin=5*mm, topMargin=10*mm, bottomMargin=10*mm)
+    doc = BaseDocTemplate(buf, pagesize=portrait(A4), rightMargin=5*mm, leftMargin=5*mm, topMargin=10*mm, bottomMargin=10*mm)
     
     frame_p = Frame(doc.leftMargin, doc.bottomMargin, portrait(A4)[0]-10*mm, portrait(A4)[1]-20*mm, id='portrait_frame')
     template_p = PageTemplate(id='Portrait', frames=frame_p, pagesize=portrait(A4))
@@ -1525,10 +1525,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     frame_l = Frame(5*mm, 5*mm, landscape(A3)[0]-10*mm, landscape(A3)[1]-10*mm, id='landscape_frame')
     template_l = PageTemplate(id='LandscapeA3', frames=frame_l, pagesize=landscape(A3))
     
-    doc.addPageTemplates([template_l, template_p])
+    doc.addPageTemplates([template_p, template_l])
     elements = []
-    # Start with Portrait by default
-    elements.append(NextPageTemplate('Portrait'))
     styles = getSampleStyleSheet()
     
     # Custom styles
@@ -1666,42 +1664,64 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         cols = [c for c in dt_data.get("cols", []) if c.get("visible")]
         if not cols: continue
         
-        body_style = ParagraphStyle(
-            'BodyStyle',
-            parent=styles['Normal'],
-            fontSize=8,
-            fontName=font_name,
-            textColor=colors.HexColor("#1e293b"),
-            leading=11
+        body_style_center = ParagraphStyle(
+            'BodyStyleCenter', parent=styles['Normal'], fontSize=8, fontName=font_name,
+            textColor=colors.HexColor("#1e293b"), leading=11, alignment=1
+        )
+        body_style_left = ParagraphStyle(
+            'BodyStyleLeft', parent=styles['Normal'], fontSize=8, fontName=font_name,
+            textColor=colors.HexColor("#1e293b"), leading=11, alignment=0
         )
         header_style = ParagraphStyle(
-            'HeaderStyle',
-            parent=styles['Normal'],
-            fontSize=9,
-            fontName=font_name_bold,
-            textColor=colors.whitesmoke,
-            alignment=1
+            'HeaderStyle', parent=styles['Normal'], fontSize=9, fontName=font_name_bold,
+            textColor=colors.whitesmoke, alignment=1
         )
         
+        def get_align(k):
+            k = str(k).lower()
+            if "title" in k or "desc" in k or "remark" in k or "floor" in k or "item" in k or "ref" in k or "dwg" in k or "subject" in k:
+                return body_style_left
+            return body_style_center
+            
         import html
         header_row = [Paragraph(fix_arabic("No."), header_style)] + [Paragraph(html.escape(fix_arabic(c["label"])), header_style) for c in cols]
         dt_table_data = [header_row]
         
         USABLE_WIDTH = 1150
         web_widths = dt_data.get("web_widths", {})
-        col_excel_widths = _excel_sheet_column_widths(cols, dt_name=dt_data['name'], web_widths=web_widths)
         
-        total_xl = sum(col_excel_widths)
-        if total_xl > 0:
-            dt_col_widths = [(w / total_xl) * USABLE_WIDTH for w in col_excel_widths]
+        px_widths = []
+        for c in cols:
+            k = c["col_key"].lower()
+            if web_widths and c["col_key"] in web_widths:
+                px = float(web_widths[c["col_key"]])
+            else:
+                if "id" in k or "no." in k or k == "no": px = 50
+                elif "title" in k or "desc" in k or "subject" in k: px = 300
+                elif "item" in k or "ref" in k or "dwg" in k: px = 200
+                elif "remark" in k: px = 250
+                elif "floor" in k: px = 150
+                elif "status" in k: px = 120
+                elif "date" in k: px = 100
+                elif "dur" in k: px = 80
+                elif "file" in k or "link" in k: px = 100
+                else: px = 120
+            px_widths.append(px)
+            
+        total_px = sum(px_widths)
+        if total_px > 0:
+            sr_prop = 40.0 / (total_px + 40.0)
+            dt_col_widths = [sr_prop * USABLE_WIDTH] + [(px / (total_px + 40.0)) * USABLE_WIDTH for px in px_widths]
         else:
             dt_col_widths = [12*mm] + [10*mm] * len(cols)
 
         for idx, r in enumerate(records, 1):
-            row_data = [Paragraph(str(idx), body_style)]
+            row_data = [Paragraph(str(idx), body_style_center)]
             for col_idx, c in enumerate(cols):
                 key = c["col_key"]
                 val = str(r.get(key, "") or "")
+                
+                cell_style = get_align(key)
                 import re
                 val = re.sub(r'\n+', '\n', val).strip()
                 
@@ -1721,13 +1741,12 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                     if key == "status" and ", " in safe_text:
                         safe_text = safe_text.replace(", ", "<br/>")
                     
-                row_data.append(Paragraph(safe_text, body_style))
+                row_data.append(Paragraph(safe_text, cell_style))
             dt_table_data.append(row_data)
         
         dt_table = Table(dt_table_data, colWidths=dt_col_widths, repeatRows=1)
         dt_table_style = [
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e40af")),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
             ('BOTTOMPADDING', (0,0), (-1,-1), 5),
             ('TOPPADDING', (0,0), (-1,-1), 5),
