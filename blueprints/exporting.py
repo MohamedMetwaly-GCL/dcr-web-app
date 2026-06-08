@@ -1649,14 +1649,14 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                 key = c["col_key"]
                 val = str(r.get(key, "") or "")
                 
+                if len(val) > 400:
+                    val = val[:397] + "..."
+                    
                 safe_text = html.escape(val)
                 safe_text = safe_text.replace('\n', '<br/>')
                 
                 if key == "status" and ", " in safe_text:
                     safe_text = safe_text.replace(", ", "<br/>")
-                    
-                if len(safe_text) > 400:
-                    safe_text = safe_text[:397] + "..."
                     
                 row_data.append(Paragraph(safe_text, body_style))
             dt_table_data.append(row_data)
