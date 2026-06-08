@@ -1471,7 +1471,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             "pending": pending,
             "pending_display": pending_display,
             "records": records,
-            "cols": db.get_columns(pid, dt["id"])
+            "cols": db.get_columns(pid, dt["id"]),
+            "web_widths": db.get_col_widths(pid, dt["id"])
         })
         
     logo_l = db.get_logo(pid, "logo_left")
@@ -1516,7 +1517,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         pass
     
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A3), rightMargin=5*mm, leftMargin=5*mm, topMargin=10*mm, bottomMargin=10*mm)
+    doc = SimpleDocTemplate(buf, pagesize=portrait(A4), rightMargin=5*mm, leftMargin=5*mm, topMargin=10*mm, bottomMargin=10*mm)
     
     frame_p = Frame(doc.leftMargin, doc.bottomMargin, portrait(A4)[0]-10*mm, portrait(A4)[1]-20*mm, id='portrait_frame')
     template_p = PageTemplate(id='Portrait', frames=frame_p, pagesize=portrait(A4))
@@ -1524,7 +1525,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     frame_l = Frame(5*mm, 5*mm, landscape(A3)[0]-10*mm, landscape(A3)[1]-10*mm, id='landscape_frame')
     template_l = PageTemplate(id='LandscapeA3', frames=frame_l, pagesize=landscape(A3))
     
-    doc.addPageTemplates([template_l, template_p])
+    doc.addPageTemplates([template_p, template_l])
     elements = []
     # Start with Portrait by default
     elements.append(NextPageTemplate('Portrait'))
@@ -1687,30 +1688,12 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         dt_table_data = [header_row]
         
         USABLE_WIDTH = 1150
-        max_lens = []
-        for c in cols:
-            k = c["col_key"].lower()
-            lbl_len = len(str(c.get("label", "")))
-            data_max = max([len(str(r.get(c["col_key"], ""))) for r in records] + [lbl_len])
-            
-            if c["col_key"] == "id" or "no." in c.get("label", "").lower() or c["label"] == "No.":
-                w = min(max(data_max, 5), 10)
-            elif "doc" in k and "no" in k:
-                w = min(max(data_max, 15), 35)
-            elif "title" in k or "desc" in k:
-                w = min(max(data_max, 30), 100)
-            elif "status" in k:
-                w = max(data_max, 15)
-            elif "date" in k:
-                w = max(data_max, 10)
-            else:
-                w = min(max(data_max, 8), 50)
-                
-            max_lens.append(w)
-            
-        total_len = sum(max_lens)
-        if total_len > 0:
-            dt_col_widths = [0.03 * USABLE_WIDTH] + [(w / total_len) * (0.97 * USABLE_WIDTH) for w in max_lens]
+        web_widths = dt_data.get("web_widths", {})
+        col_excel_widths = _excel_sheet_column_widths(cols, dt_name=dt_data['name'], web_widths=web_widths)
+        
+        total_xl = sum(col_excel_widths)
+        if total_xl > 0:
+            dt_col_widths = [(w / total_xl) * USABLE_WIDTH for w in col_excel_widths]
         else:
             dt_col_widths = [12*mm] + [10*mm] * len(cols)
 
