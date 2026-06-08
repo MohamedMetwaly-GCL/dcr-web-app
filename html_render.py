@@ -1276,7 +1276,12 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
     <!-- TAB: DAILY DIGEST -->
     <div id="tab-daily-digest" class="tab-pane">
-      <div class="stitle">🌟 Daily Digest</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div class="stitle" style="margin-bottom:0;">🌟 Daily Digest</div>
+        <div>
+          <input type="date" id="digest-date" style="padding:4px 8px; border:1px solid var(--bd); border-radius:4px; font-size:12px; background:var(--bg); color:var(--tx);" onchange="loadDailyDigest()">
+        </div>
+      </div>
       <div id="daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
         <div style="color:var(--mu);font-size:14px;">Loading Daily Digest...</div>
       </div>
@@ -2105,13 +2110,21 @@ function filterOverdue(){{
 }}
 
 // ── Executive Summary ─────────────────────────────────────
-async function loadDailyDigest() {{
+async function loadDailyDigest() {
   const container = document.getElementById('daily-digest-content');
   if(!container) return;
+  const dateInput = document.getElementById('digest-date');
+  if (dateInput && !dateInput.value) {
+    const today = new Date();
+    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+    dateInput.value = today.toISOString().split('T')[0];
+  }
+  const selectedDate = dateInput ? dateInput.value : '';
   container.innerHTML = '<div style="color:var(--mu);font-size:14px;">Loading...</div>';
-  try {{
-    const targetPid = window.PID || window._currentPid || 'all';
-    const r = await apiFetch('/api/daily_digest/' + targetPid);
+  try {
+    let targetPid = typeof window.PID !== 'undefined' ? window.PID : (window._currentPid || 'all');
+    const qs = selectedDate ? '?date=' + selectedDate : '';
+    const r = await apiFetch('/api/daily_digest/' + targetPid + qs);
     if(!r) {{ container.innerHTML = '<div style="color:red">Failed to load digest (Null response).</div>'; return; }}
     if(r.error) {{
       console.error("Daily Digest Error:", r.error, r.trace);
@@ -2123,18 +2136,22 @@ async function loadDailyDigest() {{
     let html = '';
     
     // Received Card
-    html += '<div class="panel" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:#1e40af;font-size:16px;">📥 Received Today (' + (r.received||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents received today.</div>';
+    html += '<div class="panel" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:#1e40af;font-size:16px;">📥 Received (' + (r.received||[]).length + ')</div><div style="margin-top:12px;">';
+    if((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents received.</div>';
     (r.received||[]).forEach(doc => {{
-      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div><div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div></div>';
+      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div>';
+      if(targetPid==='all') html += '<div style="font-size:10px;background:#f1f5f9;color:#475569;display:inline-block;padding:2px 6px;border-radius:4px;margin-top:4px;border:1px solid #cbd5e1;">'+(doc.project_code||doc.project_id)+'</div>';
+      html += '<div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div></div>';
     }});
     html += '</div></div>';
 
     // Issued Card
-    html += '<div class="panel" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:#c2410c;font-size:16px;">📤 Issued Today (' + (r.issued||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.issued||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents issued today.</div>';
+    html += '<div class="panel" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:#c2410c;font-size:16px;">📤 Issued (' + (r.issued||[]).length + ')</div><div style="margin-top:12px;">';
+    if((r.issued||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents issued.</div>';
     (r.issued||[]).forEach(doc => {{
-      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div><div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div></div>';
+      html += '<div style="padding:10px;border-bottom:1px solid var(--bd);"><div style="font-weight:700;color:var(--tx);font-size:13px;">'+doc.docNo+'</div>';
+      if(targetPid==='all') html += '<div style="font-size:10px;background:#fef3c7;color:#b45309;display:inline-block;padding:2px 6px;border-radius:4px;margin-top:4px;border:1px solid #fde68a;">'+(doc.project_code||doc.project_id)+'</div>';
+      html += '<div style="color:var(--mu);font-size:12px;margin-top:4px;">'+doc.title+'</div></div>';
     }});
     html += '</div></div>';
 

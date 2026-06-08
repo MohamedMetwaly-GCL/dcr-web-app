@@ -448,7 +448,8 @@ def api_daily_digest(pid):
                             if u["username"] in users:
                                 assigned_dt_ids.append(dt_id)
                 if assigned_dt_ids:
-                    d = db.get_daily_digest(p_id, assigned_dt_ids)
+                    target_date = request.args.get("date")
+                    d = db.get_daily_digest(p_id, assigned_dt_ids, target_date)
                     combined_digest["received"].extend(d.get("received", []))
                     combined_digest["issued"].extend(d.get("issued", []))
                     combined_digest["replied"].extend(d.get("replied", []))

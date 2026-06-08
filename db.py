@@ -646,9 +646,9 @@ def get_project_users_full(project_id):
     """, (project_id,))
     return [dict(r) for r in rows]
 
-def get_daily_digest(pid, doc_type_ids):
+def get_daily_digest(pid, doc_type_ids, target_date=None):
     from datetime import date
-    today_str = date.today().isoformat()
+    today_str = target_date if target_date else date.today().isoformat()
     if not doc_type_ids: return {"received": [], "issued": [], "replied": []}
     
     # Query only records that match today's date in the relevant fields using PostgreSQL JSONB operators
@@ -677,10 +677,14 @@ def get_daily_digest(pid, doc_type_ids):
         if d.get("issuedDate") == today_str or d.get("partAIssueDate") == today_str or d.get("partCIssueDate") == today_str: issued.append(r)
         if d.get("actualReplyDate") == today_str or d.get("partBReturnDate") == today_str or d.get("partDReturnDate") == today_str: replied.append(r)
         
+    project_codes = {p["id"]: p["code"] for p in get_projects()}
     def format_rec(rec):
         d = rec.get("data") or {}
+        proj_code = project_codes.get(rec["project_id"], rec["project_id"])
         return {
             "id": str(rec.get("id", "")),
+            "project_id": str(rec.get("project_id", "")),
+            "project_code": str(proj_code),
             "dt_id": str(rec.get("dt_id", "")),
             "docNo": str(d.get("docNo") or d.get("record_id") or "Untitled"),
             "title": str(d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject"),
