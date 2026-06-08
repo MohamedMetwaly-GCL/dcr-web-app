@@ -1648,9 +1648,11 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             for c in cols:
                 key = c["col_key"]
                 val = str(r.get(key, "") or "")
+                import re
+                val = re.sub(r'\n+', '\n', val).strip()
                 
-                if len(val) > 400:
-                    val = val[:397] + "..."
+                if len(val) > 200:
+                    val = val[:197] + "..."
                     
                 safe_text = html.escape(val)
                 safe_text = safe_text.replace('\n', '<br/>')
@@ -1661,7 +1663,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                 row_data.append(Paragraph(safe_text, body_style))
             dt_table_data.append(row_data)
             
-        USABLE_WIDTH = 770 
+        USABLE_WIDTH = 740
         w_list = []
         for c in cols:
             k = c["col_key"].lower()
