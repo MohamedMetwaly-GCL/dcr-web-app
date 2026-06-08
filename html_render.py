@@ -2110,18 +2110,18 @@ function filterOverdue(){{
 }}
 
 // ── Executive Summary ─────────────────────────────────────
-async function loadDailyDigest() {
+async function loadDailyDigest() {{
   const container = document.getElementById('daily-digest-content');
   if(!container) return;
   const dateInput = document.getElementById('digest-date');
-  if (dateInput && !dateInput.value) {
+  if (dateInput && !dateInput.value) {{
     const today = new Date();
     today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
     dateInput.value = today.toISOString().split('T')[0];
-  }
+  }}
   const selectedDate = dateInput ? dateInput.value : '';
   container.innerHTML = '<div style="color:var(--mu);font-size:14px;">Loading...</div>';
-  try {
+  try {{
     let targetPid = typeof window.PID !== 'undefined' ? window.PID : (window._currentPid || 'all');
     const qs = selectedDate ? '?date=' + selectedDate : '';
     const r = await apiFetch('/api/daily_digest/' + targetPid + qs);
