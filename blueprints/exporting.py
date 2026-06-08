@@ -1499,8 +1499,17 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         text_str = str(text)
         try:
             if any("\u0600" <= c <= "\u06FF" for c in text_str):
-                reshaped_text = arabic_reshaper.reshape(text_str)
-                return get_display(reshaped_text)
+                # Configure reshaper to avoid ligature bugs in some PDF viewers
+                reshaper = arabic_reshaper.ArabicReshaper(configuration={
+                    'delete_harakat': True,
+                    'support_ligatures': False,
+                })
+                lines = text_str.split('\n')
+                bidi_lines = []
+                for line in lines:
+                    reshaped = reshaper.reshape(line)
+                    bidi_lines.append(get_display(reshaped))
+                return '\n'.join(bidi_lines)
         except:
             pass
         return text_str
@@ -1508,11 +1517,16 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     font_name = 'Helvetica'
     font_name_bold = 'Helvetica-Bold'
     try:
-        font_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'fonts', 'Cairo-Regular.ttf')
+        font_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'fonts', 'Amiri-Regular.ttf')
+        font_bold_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'fonts', 'Amiri-Bold.ttf')
         if os.path.exists(font_path):
-            pdfmetrics.registerFont(TTFont('Cairo', font_path))
-            font_name = 'Cairo'
-            font_name_bold = 'Cairo'
+            pdfmetrics.registerFont(TTFont('Amiri', font_path))
+            font_name = 'Amiri'
+            if os.path.exists(font_bold_path):
+                pdfmetrics.registerFont(TTFont('Amiri-Bold', font_bold_path))
+                font_name_bold = 'Amiri-Bold'
+            else:
+                font_name_bold = 'Amiri'
     except Exception:
         pass
     
@@ -1715,11 +1729,27 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         else:
             dt_col_widths = [12*mm] + [10*mm] * len(cols)
 
+        def is_arabic_text(text):
+            text_str = str(text or "").strip()
+            if not text_str: return False
+            for c in text_str:
+                if c.isalpha():
+                    return "\u0600" <= c <= "\u06FF"
+            return False
+
         for idx, r in enumerate(records, 1):
             row_data = [Paragraph(str(idx), body_style_center)]
             for col_idx, c in enumerate(cols):
                 key = c["col_key"]
                 val = str(r.get(key, "") or "")
+                
+                # Check for Arabic to adjust alignment
+                is_ar = is_arabic_text(val)
+                if is_ar:
+                    # Dynamically append right alignment to the cell for this specific row and column
+                    # The `idx` starts at 1, which matches the table row index (header is 0)
+                    # col_idx + 1 because column 0 is the "Sr." (No.)
+                    dt_table_style.append(('ALIGN', (col_idx + 1, idx), (col_idx + 1, idx), 'RIGHT'))
                 
                 cell_style = get_align(key)
                 import re
