@@ -1643,26 +1643,6 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         header_row = [Paragraph("No.", header_style)] + [Paragraph(html.escape(c["label"]), header_style) for c in cols]
         dt_table_data = [header_row]
         
-        for idx, r in enumerate(records, 1):
-            row_data = [Paragraph(str(idx), body_style)]
-            for c in cols:
-                key = c["col_key"]
-                val = str(r.get(key, "") or "")
-                import re
-                val = re.sub(r'\n+', '\n', val).strip()
-                
-                if len(val) > 200:
-                    val = val[:197] + "..."
-                    
-                safe_text = html.escape(val)
-                safe_text = safe_text.replace('\n', '<br/>')
-                
-                if key == "status" and ", " in safe_text:
-                    safe_text = safe_text.replace(", ", "<br/>")
-                    
-                row_data.append(Paragraph(safe_text, body_style))
-            dt_table_data.append(row_data)
-            
         USABLE_WIDTH = 740
         w_list = []
         for c in cols:
@@ -1682,6 +1662,31 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             dt_col_widths = [0.04 * USABLE_WIDTH] + [(w / total_weight) * (0.96 * USABLE_WIDTH) for w in w_list]
         else:
             dt_col_widths = [12*mm] + [10*mm] * len(cols)
+
+        for idx, r in enumerate(records, 1):
+            row_data = [Paragraph(str(idx), body_style)]
+            for col_idx, c in enumerate(cols):
+                key = c["col_key"]
+                val = str(r.get(key, "") or "")
+                import re
+                val = re.sub(r'\n+', '\n', val).strip()
+                
+                # Dynamic truncation based on actual column width
+                col_w = dt_col_widths[col_idx + 1]
+                chars_per_line = max(1, int(col_w / 4.5))
+                max_chars = chars_per_line * 15 # Max 15 lines height per cell
+                
+                if len(val) > max_chars:
+                    val = val[:max_chars-3] + "..."
+                    
+                safe_text = html.escape(val)
+                safe_text = safe_text.replace('\n', '<br/>')
+                
+                if key == "status" and ", " in safe_text:
+                    safe_text = safe_text.replace(", ", "<br/>")
+                    
+                row_data.append(Paragraph(safe_text, body_style))
+            dt_table_data.append(row_data)
         
         dt_table = Table(dt_table_data, colWidths=dt_col_widths, repeatRows=1)
         dt_table_style = [
