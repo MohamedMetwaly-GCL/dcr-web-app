@@ -1639,7 +1639,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             fontName='Helvetica-Bold'
         )
         
-        header_row = [Paragraph("No.", header_style)] + [Paragraph(c["label"], header_style) for c in cols]
+        import html
+        header_row = [Paragraph("No.", header_style)] + [Paragraph(html.escape(c["label"]), header_style) for c in cols]
         dt_table_data = [header_row]
         
         for idx, r in enumerate(records, 1):
@@ -1648,10 +1649,16 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                 key = c["col_key"]
                 val = str(r.get(key, "") or "")
                 
-                if key == "status" and ", " in val:
-                    val = val.replace(", ", "<br/>")
+                safe_text = html.escape(val)
+                safe_text = safe_text.replace('\n', '<br/>')
+                
+                if key == "status" and ", " in safe_text:
+                    safe_text = safe_text.replace(", ", "<br/>")
                     
-                row_data.append(Paragraph(val, body_style))
+                if len(safe_text) > 400:
+                    safe_text = safe_text[:397] + "..."
+                    
+                row_data.append(Paragraph(safe_text, body_style))
             dt_table_data.append(row_data)
             
         USABLE_WIDTH = 770 
