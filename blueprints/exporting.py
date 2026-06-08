@@ -1517,7 +1517,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         pass
     
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=portrait(A4), rightMargin=5*mm, leftMargin=5*mm, topMargin=10*mm, bottomMargin=10*mm)
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A3), rightMargin=5*mm, leftMargin=5*mm, topMargin=10*mm, bottomMargin=10*mm)
     
     frame_p = Frame(doc.leftMargin, doc.bottomMargin, portrait(A4)[0]-10*mm, portrait(A4)[1]-20*mm, id='portrait_frame')
     template_p = PageTemplate(id='Portrait', frames=frame_p, pagesize=portrait(A4))
@@ -1525,7 +1525,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     frame_l = Frame(5*mm, 5*mm, landscape(A3)[0]-10*mm, landscape(A3)[1]-10*mm, id='landscape_frame')
     template_l = PageTemplate(id='LandscapeA3', frames=frame_l, pagesize=landscape(A3))
     
-    doc.addPageTemplates([template_p, template_l])
+    doc.addPageTemplates([template_l, template_p])
     elements = []
     # Start with Portrait by default
     elements.append(NextPageTemplate('Portrait'))
