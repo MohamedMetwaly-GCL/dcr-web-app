@@ -1484,9 +1484,36 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch, mm
     from reportlab.lib import colors
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     import io
+    import os
     from PIL import Image as PILImage
     import base64
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+
+    def fix_arabic(text):
+        if not text: return text
+        text_str = str(text)
+        try:
+            if any("\u0600" <= c <= "\u06FF" for c in text_str):
+                reshaped_text = arabic_reshaper.reshape(text_str)
+                return get_display(reshaped_text)
+        except:
+            pass
+        return text_str
+
+    font_name = 'Helvetica'
+    font_name_bold = 'Helvetica-Bold'
+    try:
+        font_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'fonts', 'Cairo-Regular.ttf')
+        if os.path.exists(font_path):
+            pdfmetrics.registerFont(TTFont('Cairo', font_path))
+            font_name = 'Cairo'
+            font_name_bold = 'Cairo'
+    except Exception:
+        pass
     
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A3), rightMargin=5*mm, leftMargin=5*mm, topMargin=10*mm, bottomMargin=10*mm)
@@ -1508,6 +1535,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         'TitleStyle',
         parent=styles['Heading1'],
         fontSize=20,
+        fontName=font_name_bold,
         textColor=colors.HexColor("#0f172a"),
         spaceAfter=5,
         alignment=1 # Center
@@ -1516,19 +1544,20 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         'SubStyle',
         parent=styles['Normal'],
         fontSize=12,
+        fontName=font_name,
         textColor=colors.HexColor("#475569"),
         spaceAfter=20,
         alignment=1
     )
     
     # Title
-    brand_title = f"Document Control Register - {proj.get('name', 'Project')}"
+    brand_title = fix_arabic(f"Document Control Register - {proj.get('name', 'Project')}")
     elements.append(Paragraph(brand_title, title_style))
     sub_title = " | ".join(f"{k}: {v}" for k,v in [
         ("Code", proj.get("code","")),
         ("Client", proj.get("client","")),
         ("Consultant", proj.get("mainConsultant",""))] if v)
-    elements.append(Paragraph(sub_title, sub_style))
+    elements.append(Paragraph(fix_arabic(sub_title), sub_style))
     
     # Meta Box
     meta_data = [
@@ -1640,6 +1669,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             'BodyStyle',
             parent=styles['Normal'],
             fontSize=8,
+            fontName=font_name,
             textColor=colors.HexColor("#1e293b"),
             leading=11
         )
@@ -1647,32 +1677,40 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             'HeaderStyle',
             parent=styles['Normal'],
             fontSize=9,
+            fontName=font_name_bold,
             textColor=colors.whitesmoke,
-            alignment=1,
-            fontName='Helvetica-Bold'
+            alignment=1
         )
         
         import html
-        header_row = [Paragraph("No.", header_style)] + [Paragraph(html.escape(c["label"]), header_style) for c in cols]
+        header_row = [Paragraph(fix_arabic("No."), header_style)] + [Paragraph(html.escape(fix_arabic(c["label"])), header_style) for c in cols]
         dt_table_data = [header_row]
         
         USABLE_WIDTH = 1150
-        w_list = []
+        max_lens = []
         for c in cols:
             k = c["col_key"].lower()
-            if "id" in k or "no" in k: w_list.append(0.12)
-            elif "title" in k or "desc" in k or "sub" in k: w_list.append(0.30)
-            elif "type" in k: w_list.append(0.06)
-            elif "disc" in k or "trade" in k: w_list.append(0.10)
-            elif "stat" in k: w_list.append(0.10)
-            elif "rev" in k: w_list.append(0.05)
-            elif "date" in k: w_list.append(0.09)
-            elif "delay" in k or "dur" in k: w_list.append(0.05)
-            else: w_list.append(0.08)
+            lbl_len = len(str(c.get("label", "")))
+            data_max = max([len(str(r.get(c["col_key"], ""))) for r in records] + [lbl_len])
             
-        total_weight = sum(w_list)
-        if total_weight > 0:
-            dt_col_widths = [0.04 * USABLE_WIDTH] + [(w / total_weight) * (0.96 * USABLE_WIDTH) for w in w_list]
+            if c["col_key"] == "id" or "no." in c.get("label", "").lower() or c["label"] == "No.":
+                w = min(max(data_max, 5), 10)
+            elif "doc" in k and "no" in k:
+                w = min(max(data_max, 15), 35)
+            elif "title" in k or "desc" in k:
+                w = min(max(data_max, 30), 100)
+            elif "status" in k:
+                w = max(data_max, 15)
+            elif "date" in k:
+                w = max(data_max, 10)
+            else:
+                w = min(max(data_max, 8), 50)
+                
+            max_lens.append(w)
+            
+        total_len = sum(max_lens)
+        if total_len > 0:
+            dt_col_widths = [0.03 * USABLE_WIDTH] + [(w / total_len) * (0.97 * USABLE_WIDTH) for w in max_lens]
         else:
             dt_col_widths = [12*mm] + [10*mm] * len(cols)
 
@@ -1695,7 +1733,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                 if "http" in val.lower() and "://" in val.lower():
                     safe_text = f'<link href="{html.escape(val)}" color="blue">View File</link>'
                 else:
-                    safe_text = html.escape(val)
+                    safe_text = html.escape(fix_arabic(val))
                     safe_text = safe_text.replace('\n', '<br/>')
                     if key == "status" and ", " in safe_text:
                         safe_text = safe_text.replace(", ", "<br/>")
