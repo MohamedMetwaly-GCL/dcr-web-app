@@ -1276,10 +1276,10 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
     <!-- TAB: DAILY DIGEST -->
     <div id="tab-daily-digest" class="tab-pane">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <div class="stitle" style="margin-bottom:0;">🌟 Daily Digest</div>
+      <div class="stitle" style="display:flex; justify-content:space-between; align-items:center;">
+        <div>🌟 Daily Digest</div>
         <div>
-          <input type="date" id="digest-date" style="padding:4px 8px; border:1px solid var(--bd); border-radius:4px; font-size:12px; background:var(--bg); color:var(--tx);" onchange="loadDailyDigest()">
+          <input type="date" id="digest-date" style="padding:4px 8px; border:1px solid var(--bd); border-radius:4px; font-size:12px; background:var(--bg); color:var(--tx); letter-spacing:normal; text-transform:none; font-weight:normal;" onchange="loadDailyDigest()">
         </div>
       </div>
       <div id="daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">

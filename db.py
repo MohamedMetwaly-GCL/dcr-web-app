@@ -653,7 +653,7 @@ def get_daily_digest(pid, doc_type_ids, target_date=None):
     
     # Query only records that match today's date in the relevant fields using PostgreSQL JSONB operators
     sql = """
-        SELECT id, dt_id, data FROM records 
+        SELECT id, project_id, dt_id, data FROM records 
         WHERE project_id=%s AND dt_id = ANY(%s)
         AND data IS NOT NULL
         AND jsonb_typeof(data) = 'object'
