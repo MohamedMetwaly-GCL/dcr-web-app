@@ -5852,9 +5852,10 @@ async function openAdmin(){{
   body.appendChild(ar);openM('admin-modal');
 }}
 async function addUsr(){{
-  const name=document.getElementById('nu-name').value.trim().toLowerCase();
-  const role=document.getElementById('nu-role').value;
-  const pw=document.getElementById('nu-pw').value;
+  const name=document.getElementById('nu-name')?.value.trim().toLowerCase();
+  const role=document.getElementById('nu-role')?.value;
+  const pw=document.getElementById('nu-pw')?.value;
+  const email=document.getElementById('nu-email')?.value || '';
   if(!name||!pw){{toast('Username and password required','er');return;}}
   const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw,email:email}})}});
   if(r&&r.ok){{toast('✔ User added','ok');closeM('admin-modal');openAdmin();}}else toast((r&&r.error)||'Error','er');
