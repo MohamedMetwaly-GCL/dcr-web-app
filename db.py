@@ -1540,14 +1540,15 @@ def get_dashboard_stats(project_ids=None):
     missing_pids = [pid for pid in pids if pid not in cache_map]
     
     result = []
-    
-    if not missing_pids:
-        # All projects are cached!
-        for pid in pids:
+    for pid in pids:
+        if pid in cache_map:
             result.append(cache_map[pid])
+            
+    if not missing_pids:
         return result
 
     # 2) We have some missing projects, calculate ONLY for those
+    missing_projects = [p for p in projects if p["id"] in missing_pids]
     ltr_stats_map = _get_ltr_dashboard_stats_map(missing_pids)
     ph   = ",".join(["%s"] * len(missing_pids))
 
@@ -1557,7 +1558,7 @@ def get_dashboard_stats(project_ids=None):
         WHERE project_id IN ({ph})
           AND list_name LIKE %s
           AND meta IS NOT NULL
-    """, pids + ["status%"])
+    """, missing_pids + ["status%"])
     # meta_map[pid][status_value] = meta
     meta_map = {}
     for r in meta_rows:
@@ -1569,7 +1570,7 @@ def get_dashboard_stats(project_ids=None):
         SELECT project_id, dt_id, data
         FROM records
         WHERE project_id IN ({ph})
-    """, pids)
+    """, missing_pids)
 
     # All doc_types in one query
     all_dts = q(f"""
@@ -1577,7 +1578,7 @@ def get_dashboard_stats(project_ids=None):
         FROM doc_types
         WHERE project_id IN ({ph})
         ORDER BY project_id, sort_order, id
-    """, pids)
+    """, missing_pids)
 
     dt_map   = {}  # pid -> list of dts
     for dt in all_dts:
@@ -1589,8 +1590,7 @@ def get_dashboard_stats(project_ids=None):
         d   = row["data"] if isinstance(row["data"], dict) else {}
         rec_map.setdefault(key, []).append(d)
 
-    result = []
-    for p in projects:
+    for p in missing_projects:
         pid   = p["id"]
         pdata = p.get("data") or {}
         if isinstance(pdata, str):
