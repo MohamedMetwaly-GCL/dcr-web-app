@@ -143,6 +143,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key        TEXT PRIMARY KEY,
     value      JSONB NOT NULL DEFAULT '{}'
 );
+CREATE TABLE IF NOT EXISTS dashboard_cache (
+    project_id TEXT PRIMARY KEY,
+    cache_data JSONB NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS col_widths (
     project_id TEXT NOT NULL,
     dt_id      TEXT NOT NULL,
@@ -984,12 +989,20 @@ def count_records(pid, dt_id):
     r = q("SELECT COUNT(*) as c FROM records WHERE project_id=%s AND dt_id=%s", (pid, dt_id), one=True)
     return r["c"] if r else 0
 
+def invalidate_dashboard_cache(pid=None):
+    if pid:
+        exe("DELETE FROM dashboard_cache WHERE project_id=%s", (pid,))
+        exe("DELETE FROM dashboard_cache WHERE project_id='_PR_ANALYTICS_'")
+    else:
+        exe("DELETE FROM dashboard_cache")
+
 def save_record(pid, dt_id, rec_id, data: dict):
     clean = {k: v for k, v in data.items() if not k.startswith("_")}
     jdata = json.dumps(clean)
     exe("""INSERT INTO records(id,project_id,dt_id,data,updated_at) VALUES(%s,%s,%s,%s::jsonb,NOW())
            ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data, updated_at=NOW()""",
         (rec_id, pid, dt_id, jdata))
+    invalidate_dashboard_cache(pid)
 
 def get_record_by_doc_no(pid, dt_id, doc_no):
     norm = str(doc_no or "").strip()
@@ -1351,7 +1364,10 @@ def merge_record_data(existing_data: dict, incoming_data: dict):
     return merged
 
 def delete_record(rec_id):
+    r = q("SELECT project_id FROM records WHERE id=%s", (rec_id,), one=True)
     exe("DELETE FROM records WHERE id=%s", (rec_id,))
+    if r:
+        invalidate_dashboard_cache(r["project_id"])
 
 
 def get_records_meta(record_ids):
@@ -1370,8 +1386,13 @@ def delete_records_bulk(record_ids):
     if not record_ids:
         return 0
     with DB() as cur:
+        cur.execute("SELECT DISTINCT project_id FROM records WHERE id = ANY(%s)", (record_ids,))
+        pids = [row["project_id"] for row in cur.fetchall()]
         cur.execute("DELETE FROM records WHERE id = ANY(%s)", (record_ids,))
-        return cur.rowcount or 0
+        rc = cur.rowcount or 0
+    for pid in pids:
+        invalidate_dashboard_cache(pid)
+    return rc
 
 # ── PR Items ─────────────────────────────────────────────────
 def get_pr_items(record_id):
@@ -1511,8 +1532,24 @@ def get_dashboard_stats(project_ids=None):
         return []
 
     pids = [p["id"] for p in projects]
-    ltr_stats_map = _get_ltr_dashboard_stats_map(pids)
-    ph   = ",".join(["%s"] * len(pids))
+    
+    # 1) Try fetching from DB cache
+    cached_rows = q("SELECT project_id, cache_data FROM dashboard_cache WHERE project_id = ANY(%s)", (pids,))
+    cache_map = {r["project_id"]: r["cache_data"] for r in cached_rows}
+    
+    missing_pids = [pid for pid in pids if pid not in cache_map]
+    
+    result = []
+    
+    if not missing_pids:
+        # All projects are cached!
+        for pid in pids:
+            result.append(cache_map[pid])
+        return result
+
+    # 2) We have some missing projects, calculate ONLY for those
+    ltr_stats_map = _get_ltr_dashboard_stats_map(missing_pids)
+    ph   = ",".join(["%s"] * len(missing_pids))
 
     meta_rows = q(f"""
         SELECT project_id, item_value, meta
@@ -1659,13 +1696,15 @@ def get_dashboard_stats(project_ids=None):
             total+=t; approved+=ap; pending+=pe; overdue_cnt+=ov; total_rj+=rj
 
         pct = round(approved / total * 100) if total else 0
-        result.append({
+        res_p = {
             "id": pid, "name": p["name"], "code": p["code"],
             "client": pdata.get("client","") if isinstance(pdata, dict) else "",
             "total": total, "approved": approved, "pending": pending,
             "overdue": overdue_cnt, "rejected": total_rj, "pct": pct, "dt_stats": dt_stats,
             "ltr": ltr_stats_map.get(pid, {"total": 0, "sent": 0, "received": 0, "party_stats": [], "top_parties": []})
-        })
+        }
+        exe("INSERT INTO dashboard_cache (project_id, cache_data) VALUES (%s, %s::jsonb) ON CONFLICT(project_id) DO UPDATE SET cache_data=EXCLUDED.cache_data, updated_at=NOW()", (pid, _json.dumps(res_p)))
+        result.append(res_p)
     return result
 
 
@@ -1855,6 +1894,13 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14, projec
 
 
 def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
+    import json
+    # Use a fixed key for PR analytics cache
+    cache_key = "_PR_ANALYTICS_"
+    cached = q("SELECT cache_data FROM dashboard_cache WHERE project_id=%s", (cache_key,), one=True)
+    if cached:
+        return cached["cache_data"]
+
     projects = get_projects(project_ids)
     project_map = {p["id"]: p for p in projects}
     allowed_ids = _clean_project_ids(project_ids)
@@ -1936,7 +1982,7 @@ def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
     top_project = top_projects[0] if top_projects else {}
     top_trade = top_trades[0] if top_trades else {}
 
-    return {
+    res = {
         "total_pr_records": total_pr_records,
         "top_projects": top_projects,
         "top_trades": top_trades,
@@ -1946,6 +1992,8 @@ def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
         "top_trade_count": top_trade.get("pr_count", 0),
         "trade_count_total": len(trade_counts),
     }
+    exe("INSERT INTO dashboard_cache (project_id, cache_data) VALUES (%s, %s::jsonb) ON CONFLICT(project_id) DO UPDATE SET cache_data=EXCLUDED.cache_data, updated_at=NOW()", (cache_key, json.dumps(res)))
+    return res
 
 
 def get_monthly_trend(pid=None, project_ids=None):
