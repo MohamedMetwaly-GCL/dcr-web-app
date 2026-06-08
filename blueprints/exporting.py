@@ -1479,8 +1479,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     if logo_l and "," in logo_l: logo_l = logo_l.split(",", 1)[1]
     if logo_r and "," in logo_r: logo_r = logo_r.split(",", 1)[1]
 
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageTemplate, Frame, NextPageTemplate, PageBreak
+    from reportlab.lib.pagesizes import A4, A3, landscape, portrait
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch, mm
     from reportlab.lib import colors
@@ -1489,8 +1489,18 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     import base64
     
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    doc = SimpleDocTemplate(buf, rightMargin=5*mm, leftMargin=5*mm, topMargin=10*mm, bottomMargin=10*mm)
+    
+    frame_p = Frame(doc.leftMargin, doc.bottomMargin, portrait(A4)[0]-10*mm, portrait(A4)[1]-20*mm, id='portrait_frame')
+    template_p = PageTemplate(id='Portrait', frames=frame_p, pagesize=portrait(A4))
+    
+    frame_l = Frame(5*mm, 5*mm, landscape(A3)[0]-10*mm, landscape(A3)[1]-10*mm, id='landscape_frame')
+    template_l = PageTemplate(id='LandscapeA3', frames=frame_l, pagesize=landscape(A3))
+    
+    doc.addPageTemplates([template_p, template_l])
     elements = []
+    # Start with Portrait by default
+    elements.append(NextPageTemplate('Portrait'))
     styles = getSampleStyleSheet()
     
     # Custom styles
@@ -1547,7 +1557,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     elements.append(Spacer(1, 20*mm))
     
     # Registers Table
-    elements.append(Paragraph("Document Registers Summary", styles['Heading2']))
+    summary_title_style = ParagraphStyle('SummaryTitle', parent=styles['Heading2'], alignment=1)
+    elements.append(Paragraph("Document Registers Summary", summary_title_style))
     table_data = [["Document Type", "Total Records", "Approved / Closed", "Pending / Overdue", "Status"]]
     
     for dt in registers_data:
@@ -1610,7 +1621,9 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     # ---------------------------------------------------------
     # Generate the missing pages: A separate table for each DT
     # ---------------------------------------------------------
-    from reportlab.platypus import PageBreak
+    
+    # Switch to A3 Landscape for the wide tables
+    elements.append(NextPageTemplate('LandscapeA3'))
     
     for dt_data in registers_data:
         records = dt_data.get("records", [])
@@ -1643,7 +1656,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         header_row = [Paragraph("No.", header_style)] + [Paragraph(html.escape(c["label"]), header_style) for c in cols]
         dt_table_data = [header_row]
         
-        USABLE_WIDTH = 740
+        USABLE_WIDTH = 1150
         w_list = []
         for c in cols:
             k = c["col_key"].lower()
@@ -1679,11 +1692,13 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                 if len(val) > max_chars:
                     val = val[:max_chars-3] + "..."
                     
-                safe_text = html.escape(val)
-                safe_text = safe_text.replace('\n', '<br/>')
-                
-                if key == "status" and ", " in safe_text:
-                    safe_text = safe_text.replace(", ", "<br/>")
+                if "http" in val.lower() and "://" in val.lower():
+                    safe_text = f'<link href="{html.escape(val)}" color="blue">View File</link>'
+                else:
+                    safe_text = html.escape(val)
+                    safe_text = safe_text.replace('\n', '<br/>')
+                    if key == "status" and ", " in safe_text:
+                        safe_text = safe_text.replace(", ", "<br/>")
                     
                 row_data.append(Paragraph(safe_text, body_style))
             dt_table_data.append(row_data)
