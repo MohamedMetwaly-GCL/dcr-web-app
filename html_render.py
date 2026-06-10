@@ -3871,7 +3871,7 @@ function sanitizeRevisionDraftData(oldRecord,newDocNo){{
 }}
 
 function renderRows(){{
-  try {{{
+  try {{
   const body=document.getElementById('tbody');body.innerHTML='';
   const isPrTab=isPRTab();
   const isLtrTab=isLTRTab();
