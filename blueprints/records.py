@@ -74,6 +74,7 @@ def api_records(pid, dt_id):
     search  = request.args.get("search","")
     is_pr   = _is_pr_doc_type(pid, dt_id)
     records = db.get_records(pid, dt_id, search=search, search_pr_items=is_pr)
+    debug_info = f'search_val={repr(search)} dt={dt_id} pid={pid} len_recs={len(records)}'
     cols    = db.get_columns(pid, dt_id)
     pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if _is_pr_doc_type(pid, dt_id) else {}
     date_col_keys = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
@@ -112,7 +113,7 @@ def api_records(pid, dt_id):
         # Standard aliases
         row["_issuedFmt"]  = format_date(row.get("issuedDate",""))
         row["_replyFmt"]   = format_date(row.get("actualReplyDate",""))
-    return jsonify(records=records, columns=cols, count=db.count_records(pid, dt_id), pr_items_map=pr_items_map)
+    return jsonify(records=records, columns=cols, count=db.count_records(pid, dt_id), pr_items_map=pr_items_map, debug=debug_info)
 
 
 @records_bp.route("/api/letters/parent-options/<pid>")
