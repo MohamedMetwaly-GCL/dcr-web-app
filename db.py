@@ -975,24 +975,34 @@ def get_record_by_id(rec_id):
         **data,
     }
 
-def get_records(pid, dt_id, search=""):
+def get_records(pid, dt_id, search="", search_pr_items=False):
     if search:
         sq = f"%{search}%"
-        sql = """
-            SELECT id, data, created_at 
-            FROM records 
-            WHERE project_id=%s AND dt_id=%s 
-            AND (
-                data::text ILIKE %s
-                OR EXISTS (
-                    SELECT 1 FROM pr_items 
-                    WHERE pr_items.record_id = records.id 
-                    AND (item_name ILIKE %s OR remarks ILIKE %s)
+        if search_pr_items:
+            sql = """
+                SELECT id, data, created_at 
+                FROM records 
+                WHERE project_id=%s AND dt_id=%s 
+                AND (
+                    data::text ILIKE %s
+                    OR EXISTS (
+                        SELECT 1 FROM pr_items 
+                        WHERE pr_items.record_id = records.id 
+                        AND (item_name ILIKE %s OR remarks ILIKE %s)
+                    )
                 )
-            )
-            ORDER BY created_at
-        """
-        rows = q(sql, (pid, dt_id, sq, sq, sq))
+                ORDER BY created_at
+            """
+            rows = q(sql, (pid, dt_id, sq, sq, sq))
+        else:
+            sql = """
+                SELECT id, data, created_at 
+                FROM records 
+                WHERE project_id=%s AND dt_id=%s 
+                AND data::text ILIKE %s
+                ORDER BY created_at
+            """
+            rows = q(sql, (pid, dt_id, sq))
     else:
         rows = q("SELECT id, data, created_at FROM records WHERE project_id=%s AND dt_id=%s ORDER BY created_at",
                  (pid, dt_id))

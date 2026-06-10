@@ -72,7 +72,8 @@ def _ltr_field_key(pid, dt_id, role):
 @records_bp.route("/api/records/<pid>/<dt_id>")
 def api_records(pid, dt_id):
     search  = request.args.get("search","")
-    records = db.get_records(pid, dt_id, search=search)
+    is_pr   = _is_pr_doc_type(pid, dt_id)
+    records = db.get_records(pid, dt_id, search=search, search_pr_items=is_pr)
     cols    = db.get_columns(pid, dt_id)
     pr_items_map = db.get_pr_items_for_records([r.get("_id") for r in records]) if _is_pr_doc_type(pid, dt_id) else {}
     date_col_keys = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
