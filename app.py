@@ -54,7 +54,7 @@ def enforce_login_and_project_scope():
         pid = str(request.view_args.get("pid") or "").strip()
     if not pid:
         pid = str(request.args.get("p") or request.args.get("project_id") or request.args.get("pid") or "").strip()
-    if pid and not can_view_project(pid, u):
+    if pid and pid != "all" and not can_view_project(pid, u):
         if request.path.startswith("/api/"):
             return jsonify(error="Forbidden"), 403
         return "Forbidden", 403
