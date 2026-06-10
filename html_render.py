@@ -4265,7 +4265,7 @@ function bindSmartTextarea(ta){{
 function isCompactCoreFormField(col){{
   const key=String(col?.col_key||'').toLowerCase();
   const label=String(col?.label||'').toLowerCase();
-  const text=(key+' '+label).replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+  const text=(key+' '+label).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
   return ['brand','origin','originator','prepared by','preparedby','discipline','sub trade','sub-trade','floor','document no','docno','letter ref','letterref'].some(v=>text.includes(v));
 }}
 
