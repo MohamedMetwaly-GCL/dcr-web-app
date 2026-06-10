@@ -4049,6 +4049,10 @@ function calcWD(s,e){{
     while(c<=b){{if(c.getDay()!==5)n++;c.setDate(c.getDate()+1);}}return String(n);}}
   catch{{return'';}}
 }}
+function getLongTextMeta(col){{
+  if(col.col_type==='long_text')return {{type:'long_text',rows:col.rows||3}};
+  return null;
+}}
 
 function isFloorField(col){{
   const key=String(col?.col_key||'').toLowerCase();
