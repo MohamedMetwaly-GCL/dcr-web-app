@@ -4009,6 +4009,30 @@ function renderRows(){{
   document.getElementById('s-show').textContent='Showing: '+rows.length;
   document.getElementById('s-ov').textContent='Overdue: '+ov;
   renderNocSummary(rows);
+  if(isPrTab && rows.length > 0) {{
+    const searchTxt = document.getElementById('srchbox')?.value.trim().toLowerCase();
+    if(searchTxt) {{
+      setTimeout(() => {{
+        rows.forEach(r => {{
+          const items = state.prItemsCache[r._id] || [];
+          const hasMatch = items.some(it => 
+            String(it.item_name||'').toLowerCase().includes(searchTxt) || 
+            String(it.remarks||'').toLowerCase().includes(searchTxt) ||
+            String(it.item_code||'').toLowerCase().includes(searchTxt)
+          );
+          if(hasMatch) {{
+            const rowTr = document.querySelector(`tr[data-rec-id="${{CSS.escape(r._id)}}"]`);
+            if(rowTr) {{
+              const btn = rowTr.querySelector('.pr-toggle');
+              if(btn && btn.textContent === 'Items') {{
+                btn.click();
+              }}
+            }}
+          }}
+        }});
+      }}, 50);
+    }}
+  }}
 }}
 
 function calcWD(s,e){{
@@ -4241,48 +4265,8 @@ function bindSmartTextarea(ta){{
 function isCompactCoreFormField(col){{
   const key=String(col?.col_key||'').toLowerCase();
   const label=String(col?.label||'').toLowerCase();
-  const text=(key+' '+label).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
+  const text=(key+' '+label).replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
   return ['brand','origin','originator','prepared by','preparedby','discipline','sub trade','sub-trade','floor','document no','docno','letter ref','letterref'].some(v=>text.includes(v));
-}}
-
-function getLongTextMeta(col){{
-  const key=String(col?.col_key||'');
-  const label=String(col?.label||'');
-  const k=key.toLowerCase();
-  const l=label.toLowerCase();
-  const text=(k+' '+l).replace(/[_-]+/g,' ').replace(/\\s+/g,' ').trim();
-  if(isCompactCoreFormField(col))return null;
-  const isContentLike=['content','description'].some(v=>text.includes(v));
-  const isRemarksLike=['remarks','notes'].some(v=>text.includes(v));
-  const isMsLike=text.includes('ms ref')||text.includes('msref')||text.includes('ms reference')||
-    (/\\bms\\b/.test(text)&&(text.includes('ref')||text.includes('reference')||text.includes('no')));
-  const isItemRefLike=isItemRefField(col);
-  if(isContentLike)return {{
-    rows:2,
-    style:'resize:vertical; min-height:58px; overflow:hidden',
-    placeholder:'Use Enter to put each item on a separate line'
-  }};
-  if(isRemarksLike)return {{
-    rows:2,
-    style:'resize:vertical; min-height:52px; overflow:hidden',
-    placeholder:'Use Enter for multiline remarks'
-  }};
-  if(isMsLike)return {{
-    rows:2,
-    style:'resize:vertical; min-height:52px; overflow:hidden',
-    placeholder:'Use Enter to put each MS on a separate line'
-  }};
-  if(isItemRefLike)return {{
-    rows:2,
-    style:'resize:vertical; min-height:52px; overflow:hidden',
-    placeholder:'Use Enter to put each item reference / DWG No. on a separate line'
-  }};
-  return null;
-}}
-
-function sortBy(key){{
-  state.sortDir=state.sortCol===key?(state.sortDir==='asc'?'desc':'asc'):'asc';
-  state.sortCol=key;buildHead();renderRows();
 }}
 
 async function fetchPrItems(recordId){{
@@ -4297,17 +4281,26 @@ async function fetchPrItems(recordId){{
   return state.prItemsCache[recordId];
 }}
 
-function renderPrItemsTable(items, legacyText){{
+function highlightText(text, search) {{
+  if (!search) return escHtml(text || '');
+  const str = String(text || '');
+  const escapedSearch = search.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&');
+  const regex = new RegExp(`(${{escapedSearch}})`, 'gi');
+  const parts = str.split(regex);
+  return parts.map((p, i) => i % 2 === 1 ? `<mark style="background:#fef08a;color:#854d0e;border-radius:2px;padding:0 2px">${escHtml(p)}</mark>` : escHtml(p)).join('');
+}}
+
+function renderPrItemsTable(items, legacyText, search){{
   if(!items||!items.length){{
     const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
     return `<div class="pr-items-title">PR Items Breakdown</div><div class="pr-items-empty">No items added</div>${{legacy}}`;
   }}
   const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
-    ? `<div class="pr-items-section">${{escHtml(it.item_name||'')}}</div>`
-    : `<div class="pr-items-cell item">${{escHtml(it.item_name||'')}}</div>
-       <div class="pr-items-cell unit">${{escHtml(it.unit||'')}}</div>
+    ? `<div class="pr-items-section">${{highlightText(it.item_name||'', search)}}</div>`
+    : `<div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
+       <div class="pr-items-cell unit">${{highlightText(it.unit||'', search)}}</div>
        <div class="pr-items-cell qty">${{escHtml(it.quantity??'')}}</div>
-       <div class="pr-items-cell remarks">${{escHtml(it.remarks||'')}}</div>`).join('');
+       <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`).join('');
   return `<div class="pr-items-title">PR Items Breakdown</div>
     <div class="pr-items-grid-wrap">
       <div class="pr-items-grid">

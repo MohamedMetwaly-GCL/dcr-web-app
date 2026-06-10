@@ -976,17 +976,32 @@ def get_record_by_id(rec_id):
     }
 
 def get_records(pid, dt_id, search=""):
-    rows = q("SELECT id, data, created_at FROM records WHERE project_id=%s AND dt_id=%s ORDER BY created_at",
-             (pid, dt_id))
+    if search:
+        sq = f"%{search}%"
+        sql = """
+            SELECT id, data, created_at 
+            FROM records 
+            WHERE project_id=%s AND dt_id=%s 
+            AND (
+                data::text ILIKE %s
+                OR EXISTS (
+                    SELECT 1 FROM pr_items 
+                    WHERE pr_items.record_id = records.id 
+                    AND (item_name ILIKE %s OR remarks ILIKE %s)
+                )
+            )
+            ORDER BY created_at
+        """
+        rows = q(sql, (pid, dt_id, sq, sq, sq))
+    else:
+        rows = q("SELECT id, data, created_at FROM records WHERE project_id=%s AND dt_id=%s ORDER BY created_at",
+                 (pid, dt_id))
     result = []
     for row in rows:
         d = row["data"] if isinstance(row["data"], dict) else {}
         d["_id"]      = row["id"]
         d["_created"] = str(row.get("created_at",""))
         result.append(d)
-    if search:
-        sq = search.lower()
-        result = [r for r in result if any(sq in str(v).lower() for v in r.values())]
     return result
 
 def count_records(pid, dt_id):
