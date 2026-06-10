@@ -4287,7 +4287,7 @@ function highlightText(text, search) {{
   const escapedSearch = search.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&');
   const regex = new RegExp(`(${{escapedSearch}})`, 'gi');
   const parts = str.split(regex);
-  return parts.map((p, i) => i % 2 === 1 ? `<mark style="background:#fef08a;color:#854d0e;border-radius:2px;padding:0 2px">${escHtml(p)}</mark>` : escHtml(p)).join('');
+  return parts.map((p, i) => i % 2 === 1 ? `<mark style="background:#fef08a;color:#854d0e;border-radius:2px;padding:0 2px">${{escHtml(p)}}</mark>` : escHtml(p)).join('');
 }}
 
 function renderPrItemsTable(items, legacyText, search){{
