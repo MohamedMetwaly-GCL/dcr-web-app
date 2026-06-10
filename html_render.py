@@ -3871,6 +3871,7 @@ function sanitizeRevisionDraftData(oldRecord,newDocNo){{
 }}
 
 function renderRows(){{
+  try {{{
   const body=document.getElementById('tbody');body.innerHTML='';
   const isPrTab=isPRTab();
   const isLtrTab=isLTRTab();
@@ -4032,6 +4033,12 @@ function renderRows(){{
         }});
       }}, 50);
     }}
+  }}
+  }} catch(err) {{
+    const errStr = 'JS ERROR: ' + err.message;
+    document.getElementById('s-total').textContent=errStr;
+    document.getElementById('s-total').style.color='red';
+    document.getElementById('s-total').style.fontWeight='bold';
   }}
 }}
 
