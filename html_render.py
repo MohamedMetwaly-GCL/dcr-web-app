@@ -3937,7 +3937,7 @@ function renderRows(){{
     else if(_srTdW)tsr.style.cssText='width:'+_srTdW+'px;min-width:'+_srTdW+'px;max-width:'+_srTdW+'px;white-space:nowrap;';
     tsr.textContent=row._isRev?'':sr;tr.appendChild(tsr);
     state.cols.forEach(col=>{{
-      const td=document.createElement('td');const key=col.col_key;let val='';
+      const td=document.createElement('td');const key=col.col_key||'';let val='';
       const mcs=mobileColumnStyle(col);
       if(mcs)td.style.cssText=mcs;
       const ltrRole=isLtrTab?getLTRFieldRole(col):'';
@@ -3948,7 +3948,7 @@ function renderRows(){{
       if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}
       else if(key==='duration')val=row._duration||'';
       else if(col.col_type==='duration_calc'){{
-        const[ds,de]=(col.list_name||'issuedDate,actualReplyDate').split(',');
+        const[ds,de]=String(col.list_name||'issuedDate,actualReplyDate').split(',');
         val=calcWD(row[ds.trim()]||'',row[de.trim()]||'');
       }}
       else if(key==='issuedDate')val=row._issuedFmt||'';
@@ -3959,7 +3959,7 @@ function renderRows(){{
       else if(key==='status'||isStatusLikeField(col)){{
         val=row[key]||((isLtrTab&&ltrRole)?getLTRValue(row,state.allTabCols,ltrRole):'');
         if(val){{
-          td.innerHTML=val.split(',').map(s=>{{
+          td.innerHTML=String(val).split(',').map(s=>{{
             s=s.trim();
             let [bg,fg]=SC[s]||['e5e7eb','374151'];
             if(!SC[s]){{
@@ -5060,7 +5060,7 @@ function getCalculatedDisplayValue(col,row){{
   if(key==='expectedReplyDate')return row?._expectedReplyDate||row?.expectedReplyDate||'';
   if(key==='duration'||key==='_duration'||label.includes('duration')||label==='dur.'||key.toLowerCase().includes('duration'))return row?._duration||row?.[key]||row?.duration||'';
   if(type==='duration_calc'){{
-    const[ds,de]=(col.list_name||'issuedDate,actualReplyDate').split(',');
+    const[ds,de]=String(col.list_name||'issuedDate,actualReplyDate').split(',');
     return calcWD(row?.[ds.trim()]||'',row?.[de.trim()]||'');
   }}
   if(key.toLowerCase().includes('overdue'))return row?._overdue?'Yes':(row?.[key]||'');
