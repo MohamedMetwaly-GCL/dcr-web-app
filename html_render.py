@@ -3973,9 +3973,10 @@ function renderRows(){{
       const ltrRole=isLtrTab?getLTRFieldRole(col):'';
       
       if(col.col_type==='url' || key==='fileLocation'){{
-        const url=row[key]||'';
-        if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank" title="View Document" style="text-decoration:none;font-size:15px;color:#0ea5e9;">👁️</a>`;}}
-        else {{td.innerHTML=`<span title="No Document Attached" style="font-size:15px;color:#cbd5e1;cursor:not-allowed">👁️</span>`;}}
+        const url=String(row[key]||'').trim();
+        const hasValidLink = url && url !== '#' && url.toLowerCase() !== 'null' && url.toLowerCase() !== 'none';
+        if(hasValidLink){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank" title="View Document" style="text-decoration:none;font-size:15px;color:#0ea5e9;">👁️</a>`;}}
+        else {{td.innerHTML=`<span title="No Document Attached" style="font-size:15px;color:#cbd5e1;cursor:not-allowed;opacity:0.5;">👁️</span>`;}}
         td.style.textAlign='center';
         tr.appendChild(td);return;
       }}
