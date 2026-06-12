@@ -2271,12 +2271,10 @@ async function delProject(pid,name){{
 async function openAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
   if(!users||!projects)return;
-  const assignments=await Promise.all(users.map(u=>u.role!=='superadmin'?apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]):Promise.resolve([])));
   const body=document.getElementById('admin-body');body.innerHTML='';
   const utitle=document.createElement('div');utitle.className='stitle';utitle.textContent='👥 Users';body.appendChild(utitle);
-  let _i = 0;
   for(const u of users){{
-    const assigned_cached = assignments[_i++];
+    const assigned_cached = u.projects || [];
     const row=document.createElement('div');row.className='urow';
     row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
       <input id="email-${{u.username}}" placeholder="Email (e.g. dc@company.com)" value="${{u.email || ''}}" style="flex:1; margin-right: 8px; padding: 2px 6px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px;" onblur="updUsrEmail('${{u.username}}')">
@@ -5800,12 +5798,11 @@ async function saveAddCol(){{
 async function openAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
   if(!users||!projects) return;
-  const assignments=await Promise.all(users.map(u=>u.role!=='superadmin'?apiFetch('/api/users/'+u.username+'/projects').catch(()=>[]):Promise.resolve([])));
+  
   const body=document.getElementById('admin-body'); body.innerHTML='';
   const utitle=document.createElement('div');utitle.className='stitle';utitle.textContent='👥 Users';body.appendChild(utitle);
-  let _i = 0;
   for(const u of users){{
-    const assigned_cached = assignments[_i++];
+    const assigned_cached = u.projects || [];
     const row=document.createElement('div');row.className='urow';
     row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
       <input id="email-${{u.username}}" placeholder="Email (e.g. dc@company.com)" value="${{u.email || ''}}" style="flex:1; margin-right: 8px; padding: 2px 6px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px;" onblur="updUsrEmail('${{u.username}}')">

@@ -602,6 +602,13 @@ def get_user_projects(username):
     return [{"project_id": r["project_id"], "is_dc": r.get("is_dc", False)} for r in
             q("SELECT project_id, is_dc FROM user_projects WHERE username=%s", (username,))]
 
+def get_all_user_projects():
+    rows = q("SELECT username, project_id, is_dc FROM user_projects")
+    res = {}
+    for r in rows:
+        res.setdefault(r["username"], []).append({"project_id": r["project_id"], "is_dc": r.get("is_dc", False)})
+    return res
+
 def assign_project(username, project_id, is_dc=False):
     exe("INSERT INTO user_projects(username,project_id,is_dc) VALUES(%s,%s,%s) ON CONFLICT (username,project_id) DO UPDATE SET is_dc=EXCLUDED.is_dc",
         (username, project_id, is_dc))

@@ -22,7 +22,11 @@ users_bp = Blueprint("users", __name__)
 @users_bp.route("/api/users")
 @require_superadmin
 def api_users():
-    return jsonify(db.get_all_users())
+    users = db.get_all_users()
+    all_projects = db.get_all_user_projects()
+    for u in users:
+        u["projects"] = all_projects.get(u["username"], [])
+    return jsonify(users)
 
 
 @users_bp.route("/api/users", methods=["POST"])
