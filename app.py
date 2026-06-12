@@ -165,38 +165,45 @@ def api_next_doc_no(pid, dt_id):
         # First Document: Leave blank for the user to define the pattern
         return jsonify(next="")
         
-    last_doc = doc_nos[-1]
     import re as _re
+    parsed_docs = []
     
-    # 1. Smart Pattern Detection: check if the last document uses REV
-    has_rev = bool(_re.search(r'\bREV\d+$', last_doc, flags=_re.IGNORECASE))
-    
-    # 2. Extract the base document by stripping the REV part
-    base_last = _re.sub(r'\s*REV\d+$', '', last_doc, flags=_re.IGNORECASE).strip()
-    
-    # 3. Determine prefix and numeric width
-    m_last = _re.search(r'^(.*?)(\d+)$', base_last)
-    if not m_last:
-        # Doesn't end with digits, start sequence
+    for d in doc_nos:
+        # 1. Check if it ends with REV
+        has_rev = bool(_re.search(r'\bREV\d+$', d, flags=_re.IGNORECASE))
+        # 2. Extract base document
+        base_d = _re.sub(r'\s*REV\d+$', '', d, flags=_re.IGNORECASE).strip()
+        # 3. Determine prefix and numeric sequence
+        m_d = _re.search(r'^(.*?)(\d+)$', base_d)
+        if m_d:
+            parsed_docs.append({
+                "orig": d,
+                "prefix": m_d.group(1),
+                "num": int(m_d.group(2)),
+                "width": len(m_d.group(2)),
+                "has_rev": has_rev
+            })
+            
+    if parsed_docs:
+        # Find the document with the absolute highest sequence number in this section
+        last_doc_meta = max(parsed_docs, key=lambda x: (x["num"], x["width"], x["prefix"]))
+        prefix = last_doc_meta["prefix"]
+        width = last_doc_meta["width"]
+        has_rev = last_doc_meta["has_rev"]
+        
+        # Max sequence for this specific prefix (will be last_doc_meta["num"] unless tied)
+        max_num = max(x["num"] for x in parsed_docs if x["prefix"] == prefix)
+        
+        next_num = max_num + 1
+        next_base = f"{prefix}{str(next_num).zfill(width)}"
+        return jsonify(next=f"{next_base} REV00" if has_rev else next_base)
+    else:
+        # Fallback if no document ends with digits
+        last_doc = doc_nos[-1]
+        has_rev = bool(_re.search(r'\bREV\d+$', last_doc, flags=_re.IGNORECASE))
+        base_last = _re.sub(r'\s*REV\d+$', '', last_doc, flags=_re.IGNORECASE).strip()
         next_base = f"{base_last}-001"
         return jsonify(next=f"{next_base} REV00" if has_rev else next_base)
-        
-    prefix = m_last.group(1)
-    width = len(m_last.group(2))
-    
-    # 4. Find the maximum sequence number for THIS prefix to prevent sequence gaps
-    max_num = 0
-    for d in doc_nos:
-        base_d = _re.sub(r'\s*REV\d+$', '', d, flags=_re.IGNORECASE).strip()
-        m_d = _re.search(r'^(.*?)(\d+)$', base_d)
-        if m_d and m_d.group(1) == prefix:
-            max_num = max(max_num, int(m_d.group(2)))
-            
-    # 5. Generate the next sequence using the detected pattern
-    next_num = max_num + 1
-    next_base = f"{prefix}{str(next_num).zfill(width)}"
-    
-    return jsonify(next=f"{next_base} REV00" if has_rev else next_base)
 
 # ── Audit Log API ─────────────────────────────────────────────
 @app.route("/api/audit")
