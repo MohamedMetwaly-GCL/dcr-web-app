@@ -2983,6 +2983,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   <div id="toolbar">
     <div id="toolbar-actions">
       {edit_btns}
+      <button id="btn-bulk-dl" class="tool-btn" style="display:none;background:#2563eb;border-color:#1d4ed8;color:#fff" onclick="bulkDownload()">⬇️ Download Selected</button>
       <button class="tool-btn teal" onclick="openM('export-modal')">📥 Export ▾</button>
     <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
       {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
@@ -5274,6 +5275,8 @@ function updBulk(){{
   const checked=document.querySelectorAll('.chkcell input[data-id]:checked');
   document.getElementById('bulkcnt').textContent=checked.length+' selected';
   document.getElementById('bulkbar').classList.toggle('show',checked.length>0);
+  const dlBtn = document.getElementById('btn-bulk-dl');
+  if(dlBtn) dlBtn.style.display = checked.length>0 ? 'inline-block' : 'none';
   const all=document.querySelectorAll('.chkcell input[data-id]');
   const ca=document.getElementById('chkall');if(ca)ca.checked=all.length>0&&checked.length===all.length;
   syncCheckboxRowHighlights();
@@ -5288,6 +5291,54 @@ async function bulkDel(){{
     clearSel();await loadRecords();await refreshCounts();toast('✔ Deleted '+(r.deleted||0),'ok');
   }}
 }}
+
+async function bulkDownload(){{
+  const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
+  if(!ids.length)return;
+  
+  const drvCol = state.cols.find(c => c.col_type === 'url' || c.col_key === 'fileLocation');
+  if(!drvCol) return toast('Drive Link column not found', 'er');
+  const key = drvCol.col_key;
+  
+  const links = [];
+  ids.forEach(id => {{
+    const rec = state.recs.find(r => String(r._id) === String(id));
+    if(rec) {{
+      const url = String(rec[key]||'').trim();
+      const hasValidLink = url && url !== '#' && url.toLowerCase() !== 'null' && url.toLowerCase() !== 'none';
+      if(hasValidLink) {{
+        let fileId = null;
+        let m = url.match(/d\\/([a-zA-Z0-9_-]+)/);
+        if(m) fileId = m[1];
+        else {{
+          m = url.match(/id=([a-zA-Z0-9_-]+)/);
+          if(m) fileId = m[1];
+        }}
+        if(fileId) {{
+          links.push(`https://drive.google.com/uc?export=download&id=${{fileId}}`);
+        }} else {{
+           links.push(url);
+        }}
+      }}
+    }}
+  }});
+  
+  if(!links.length) return toast('No valid documents found in selected rows', 'wa');
+  
+  toast(`Starting download of ${{links.length}} file(s)...`, 'ok');
+  
+  links.forEach((link, idx) => {{
+    setTimeout(() => {{
+      const a = document.createElement('a');
+      a.href = link;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }}, idx * 800);
+  }});
+}}
+
 
 // Project Modal
 async function editProject(){{
