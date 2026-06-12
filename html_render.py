@@ -2487,7 +2487,7 @@ def render_register(u, proj):
     editable = can_edit(pid)
     btns, _, rlbl, rbg = _user_info_html(u)
     sc_json  = json.dumps(STATUS_COLORS)
-    custom_sc_json = json.dumps(proj.get("data", {}).get("status_colors", {}))
+    custom_sc_json = json.dumps(proj.get("status_colors", {}))
 
     dts       = db.get_doc_types(pid)
     logo_l    = db.get_logo(pid,"logo_left")
@@ -2515,8 +2515,6 @@ def render_register(u, proj):
         if key not in primary_keys and proj.get(key,"").strip())
     projbar_toggle = ('<button id="projbar-toggle" class="tool-btn" type="button" '
                       'onclick="toggleProjectInfo()">Project Info</button>') if projbar_secondary else ''
-    if role in ('admin', 'superadmin'):
-        projbar_toggle += '<button class="tool-btn purple" style="margin-left:5px" type="button" onclick="openProjectSettings()">⚙ Settings</button>'
 
     tabs_html = "".join(
         f'<button class="tab-btn" data-id="{dt["id"]}" onclick="switchTab(\'{dt["id"]}\')">'
@@ -2527,10 +2525,12 @@ def render_register(u, proj):
     _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _sa_only else ''
     _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _sa_only else ''
     _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _sa_only else ''
+    _color_btn = "<button class='tool-btn purple' onclick='openProjectSettings()'>🎨 Status Colors</button>" if role in ('admin', 'superadmin') else ''
     edit_btns = (f'<button class="tool-btn" onclick="addRecord()">➕ Add</button>'
                  f'{_col_btn}'
                  f'{_hol_btn}'
                  f'{_lst_btn}'
+                 f'{_color_btn}'
                  f'<button class="tool-btn" onclick="editProject()">🏗 Project</button>'
                  if editable else
                  '<span style="font-size:11px;color:rgba(255,255,255,.5);padding:4px 8px">'
@@ -6054,13 +6054,20 @@ async function doImportProject(){{
   finally{{btn.disabled=false;btn.textContent='Import Full Workbook';}}
 }}
 
-function openProjectSettings() {{
+async function openProjectSettings() {{
   if(!CAN_EDIT || !['admin','superadmin'].includes(ROLE)) return toast('Forbidden', 'er');
   const lst = document.getElementById('status-colors-list');
   lst.innerHTML = '';
   
+  await loadLists(false);
   const statuses = new Set();
-  if(state.recs) {{
+  const statusListKey = Object.keys(state.lists || {{}}).find(k => k.toLowerCase().startsWith('status'));
+  
+  if(statusListKey && state.lists[statusListKey] && state.lists[statusListKey].length > 0) {{
+    state.lists[statusListKey].forEach(s => {{
+      if(s.trim()) statuses.add(s.trim());
+    }});
+  }} else if(state.recs) {{
     state.recs.forEach(r => {{
       if(r.status) {{
         String(r.status).split(',').forEach(s => {{
