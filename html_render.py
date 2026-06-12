@@ -3976,7 +3976,18 @@ function renderRows(){{
       if(col.col_type==='url' || key==='fileLocation'){{
         const url=String(row[key]||'').trim();
         const hasValidLink = url && url !== '#' && url.toLowerCase() !== 'null' && url.toLowerCase() !== 'none';
-        if(hasValidLink){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank" title="View Document" style="text-decoration:none;font-size:15px;color:#0ea5e9;">👁️</a>`;}}
+        const isFolder = url.includes('/folders/');
+        if(hasValidLink){{
+          let icons = `<a class="flink" href="${{url}}" target="_blank" title="${{isFolder ? 'Open Folder' : 'View Document'}}" style="text-decoration:none;font-size:15px;color:#0ea5e9;">👁️</a>`;
+          if(!isFolder) {{
+            let dlUrl = url;
+            let m = url.match(/d\\/([a-zA-Z0-9_-]+)/);
+            if(m) dlUrl = `https://drive.google.com/uc?export=download&id=${{m[1]}}`;
+            else {{ m = url.match(/id=([a-zA-Z0-9_-]+)/); if(m) dlUrl = `https://drive.google.com/uc?export=download&id=${{m[1]}}`; }}
+            icons += `<a class="flink" href="${{dlUrl}}" target="_blank" title="Direct Download" style="text-decoration:none;font-size:15px;color:#16a34a;margin-left:8px;">⬇️</a>`;
+          }}
+          td.innerHTML=icons;
+        }}
         else {{td.innerHTML=`<span title="No Document Attached" style="font-size:15px;color:#cbd5e1;cursor:not-allowed;opacity:0.5;">👁️</span>`;}}
         td.style.textAlign='center';
         tr.appendChild(td);return;
@@ -5307,17 +5318,21 @@ async function bulkDownload(){{
       const url = String(rec[key]||'').trim();
       const hasValidLink = url && url !== '#' && url.toLowerCase() !== 'null' && url.toLowerCase() !== 'none';
       if(hasValidLink) {{
-        let fileId = null;
-        let m = url.match(/d\\/([a-zA-Z0-9_-]+)/);
-        if(m) fileId = m[1];
-        else {{
-          m = url.match(/id=([a-zA-Z0-9_-]+)/);
-          if(m) fileId = m[1];
-        }}
-        if(fileId) {{
-          links.push(`https://drive.google.com/uc?export=download&id=${{fileId}}`);
+        if(url.includes('/folders/')) {{
+          links.push({{url, type:'folder'}});
         }} else {{
-           links.push(url);
+          let fileId = null;
+          let m = url.match(/d\\/([a-zA-Z0-9_-]+)/);
+          if(m) fileId = m[1];
+          else {{
+            m = url.match(/id=([a-zA-Z0-9_-]+)/);
+            if(m) fileId = m[1];
+          }}
+          if(fileId) {{
+            links.push({{url:`https://drive.google.com/uc?export=download&id=${{fileId}}`, type:'file'}});
+          }} else {{
+             links.push({{url, type:'file'}});
+          }}
         }}
       }}
     }}
@@ -5325,17 +5340,23 @@ async function bulkDownload(){{
   
   if(!links.length) return toast('No valid documents found in selected rows', 'wa');
   
-  toast(`Starting download of ${{links.length}} file(s)...`, 'ok');
+  const folders = links.filter(l => l.type === 'folder');
+  if(folders.length) toast(`Opening ${{folders.length}} folder(s) in new tabs...`, 'wa');
+  else toast(`Starting download of ${{links.length}} file(s)...`, 'ok');
   
-  links.forEach((link, idx) => {{
+  links.forEach((linkObj, idx) => {{
     setTimeout(() => {{
-      const a = document.createElement('a');
-      a.href = link;
-      a.download = '';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }}, idx * 800);
+      if(linkObj.type === 'folder') {{
+         window.open(linkObj.url, '_blank');
+      }} else {{
+         const a = document.createElement('a');
+         a.href = linkObj.url;
+         a.download = '';
+         document.body.appendChild(a);
+         a.click();
+         document.body.removeChild(a);
+      }}
+    }}, idx * 1500);
   }});
 }}
 
