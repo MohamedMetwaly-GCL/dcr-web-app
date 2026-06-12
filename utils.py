@@ -283,17 +283,23 @@ def get_pmo_dates(row):
     if not isinstance(row, dict): return None
     d1, d2, d3, d4 = None, None, None, None
     has_pmo = False
+    
     for k, v in row.items():
         lk = k.lower()
-        if "rec" in lk and "scas" in lk: has_pmo = True
-        if "rec" in lk and "style" in lk: has_pmo = True
-        
-        if not v or str(v).strip() == "": continue
-        if "rec" in lk and "from" in lk and "scas" in lk: d1 = str(v).strip()
-        elif "rec" in lk and "by" in lk and "style" in lk: d2 = str(v).strip()
-        elif "rec" in lk and "from" in lk and "style" in lk: d3 = str(v).strip()
-        elif "rec" in lk and "by" in lk and "scas" in lk: d4 = str(v).strip()
-        
+        if "remark" in lk or "comment" in lk or "attachment" in lk or "link" in lk: continue
+        if 'rec._from_scas' in lk or 'rec_from_scas' in lk or 'recfromscas' in lk:
+            has_pmo = True
+            if v and str(v).strip() != "": d1 = str(v).strip()
+        elif 'rec._by_style' in lk or 'rec_by_style' in lk or 'recbystyle' in lk:
+            has_pmo = True
+            if v and str(v).strip() != "": d2 = str(v).strip()
+        elif 'rec._from_style' in lk or 'rec_from_style' in lk or 'recfromstyle' in lk:
+            has_pmo = True
+            if v and str(v).strip() != "": d3 = str(v).strip()
+        elif 'rec._by_scas' in lk or 'rec_by_scas' in lk or 'recbyscas' in lk:
+            has_pmo = True
+            if v and str(v).strip() != "": d4 = str(v).strip()
+
     if not has_pmo: return None
     return d1, d2, d3, d4
 
