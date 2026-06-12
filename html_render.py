@@ -3656,6 +3656,13 @@ async function loadRecords(){{
   if(!data)return;
   state.recs=data.records; state.allTabCols=data.columns||[]; state.cols=data.columns.filter(c=>c.visible);
   if(isLTRTab())state.cols=state.cols.filter(c=>!isLTRInternalField(c)&&!isLTRExcludedField(c));
+  const drvIdx = state.cols.findIndex(c => c.col_type === 'url' || c.col_key === 'fileLocation');
+  if(drvIdx > -1) {{
+    const drvCol = state.cols.splice(drvIdx, 1)[0];
+    const targetIdx = state.cols.findIndex(c => c.col_key === 'docNo' || String(c.label).toLowerCase().includes('doc. no'));
+    if(targetIdx > -1) state.cols.splice(targetIdx + 1, 0, drvCol);
+    else state.cols.unshift(drvCol);
+  }}
   if(!state.recs.some(r=>String(r._id)===String(state.selectedRowId)))state.selectedRowId=null;
   state.prItemsCache=data.pr_items_map||{{}};
   state.colWidths=widths||{{}};
@@ -3964,6 +3971,15 @@ function renderRows(){{
       const mcs=mobileColumnStyle(col);
       if(mcs)td.style.cssText=mcs;
       const ltrRole=isLtrTab?getLTRFieldRole(col):'';
+      
+      if(col.col_type==='url' || key==='fileLocation'){{
+        const url=row[key]||'';
+        if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank" title="View Document" style="text-decoration:none;font-size:15px;color:#0ea5e9;">👁️</a>`;}}
+        else {{td.innerHTML=`<span title="No Document Attached" style="font-size:15px;color:#cbd5e1;cursor:not-allowed">👁️</span>`;}}
+        td.style.textAlign='center';
+        tr.appendChild(td);return;
+      }}
+      
       const k=key.toLowerCase();
       const longTextMeta=getLongTextMeta(col);
       if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
