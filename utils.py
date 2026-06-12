@@ -103,8 +103,33 @@ def invalidate_holidays_cache():
     global _holidays_cache
     _holidays_cache = None
 
+def parse_any_date(d_str):
+    if not d_str: return None
+    if isinstance(d_str, datetime.date): return d_str
+    if isinstance(d_str, datetime.datetime): return d_str.date()
+    d_str = str(d_str).strip()[:10]
+    try:
+        return datetime.date.fromisoformat(d_str)
+    except ValueError:
+        pass
+    import re
+    m = re.match(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$', d_str)
+    if m:
+        try:
+            return datetime.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            pass
+    m2 = re.match(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$', d_str)
+    if m2:
+        try:
+            return datetime.date(int(m2.group(1)), int(m2.group(2)), int(m2.group(3)))
+        except ValueError:
+            pass
+    return None
+
 def is_working_day(d, weekend_mode="friday_only", exclude_official_holidays=True):
-    if isinstance(d, str): d = datetime.date.fromisoformat(d)
+    d = parse_any_date(d)
+    if not d: return False
     weekend_days = _WEEKEND_DAYS.get(weekend_mode, _WEEKEND_DAYS["friday_only"])
     if d.weekday() in weekend_days:
         return False
@@ -117,7 +142,8 @@ import functools
 @functools.lru_cache(maxsize=8192)
 def add_working_days(start, days, weekend_mode="friday_only", exclude_official_holidays=True):
     if not start: return None
-    if isinstance(start, str): start = datetime.date.fromisoformat(start)
+    start = parse_any_date(start)
+    if not start: return None
     d, added = start, 0
     while added < days:
         d += datetime.timedelta(days=1)
@@ -127,7 +153,8 @@ def add_working_days(start, days, weekend_mode="friday_only", exclude_official_h
 @functools.lru_cache(maxsize=8192)
 def add_calendar_days(start, days):
     if not start: return None
-    if isinstance(start, str): start = datetime.date.fromisoformat(start)
+    start = parse_any_date(start)
+    if not start: return None
     return (start + datetime.timedelta(days=int(days or 0))).strftime("%Y-%m-%d")
 
 def working_days_between(start, end, weekend_mode="friday_only", exclude_official_holidays=True):
@@ -141,10 +168,9 @@ def working_days_between(start, end, weekend_mode="friday_only", exclude_officia
     """
     if not start or not end:
         return None
-    try:
-        if isinstance(start, str): start = datetime.date.fromisoformat(str(start)[:10])
-        if isinstance(end,   str): end   = datetime.date.fromisoformat(str(end)[:10])
-    except:
+    start = parse_any_date(start)
+    end = parse_any_date(end)
+    if not start or not end:
         return None
     if end <= start:
         return 0
@@ -161,10 +187,9 @@ def days_between_by_rule(start, end, rule=None):
     """
     if not start or not end:
         return None
-    try:
-        if isinstance(start, str): start = datetime.date.fromisoformat(str(start)[:10])
-        if isinstance(end,   str): end   = datetime.date.fromisoformat(str(end)[:10])
-    except Exception:
+    start = parse_any_date(start)
+    end = parse_any_date(end)
+    if not start or not end:
         return None
     if end <= start:
         return 0
@@ -325,18 +350,23 @@ def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, r
         if d4: return False # State 4: Closed
         exp = compute_expected_reply(issued_date, doc_no, rule, status, action, row)
         if not exp: return False
-        return datetime.date.fromisoformat(exp) < datetime.date.today()
+        exp_d = parse_any_date(exp)
+        if not exp_d: return False
+        return exp_d < datetime.date.today()
 
     if actual_reply and str(actual_reply).strip().lower() not in ['none', 'null', '']: return False
     exp = compute_expected_reply(issued_date, doc_no, rule, status, action, row)
     if not exp: return False
-    return datetime.date.fromisoformat(exp) < datetime.date.today()
+    exp_d = parse_any_date(exp)
+    if not exp_d: return False
+    return exp_d < datetime.date.today()
 
 def format_date(d):
     """Format as DD-MM-YYYY (LTR)."""
     if not d: return ''
-    try: return datetime.date.fromisoformat(str(d)[:10]).strftime("%d-%m-%Y")
-    except: return str(d) or ''
+    d_obj = parse_any_date(d)
+    if not d_obj: return str(d) or ''
+    return d_obj.strftime("%d-%m-%Y")
 
 STATUS_COLORS = {
     'A - Approved':              ('bbf7d0','166534'),
