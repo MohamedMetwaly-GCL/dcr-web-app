@@ -3635,7 +3635,7 @@ async function loadRecords(){{
     apiFetch('/api/col_width/'+PID+'/'+state.tab)
   ]);
   if(!data)return;
-  state.recs=data.records; state.allTabCols=data.columns||[]; window.__apiDebug=data.debug; state.cols=data.columns.filter(c=>c.visible);
+  state.recs=data.records; state.allTabCols=data.columns||[]; state.cols=data.columns.filter(c=>c.visible);
   if(isLTRTab())state.cols=state.cols.filter(c=>!isLTRInternalField(c)&&!isLTRExcludedField(c));
   if(!state.recs.some(r=>String(r._id)===String(state.selectedRowId)))state.selectedRowId=null;
   state.prItemsCache=data.pr_items_map||{{}};
@@ -3916,7 +3916,7 @@ function renderRows(){{
   }}
   if(rows.length===0){{
     const ov=state.recs.filter(r=>r._overdue).length;
-    document.getElementById('s-total').textContent='Total: '+state.recs.length + (window.__apiDebug ? ' [DEBUG: '+window.__apiDebug+']' : '');
+    document.getElementById('s-total').textContent='Total: '+state.recs.length;
     document.getElementById('s-show').textContent='Showing: 0';
     document.getElementById('s-ov').textContent='Overdue: '+ov;
     renderNocSummary(rows);
@@ -4006,7 +4006,7 @@ function renderRows(){{
     if(!row._isRev)sr++;
   }});
   const ov=state.recs.filter(r=>r._overdue).length;
-  document.getElementById('s-total').textContent='Total: '+state.recs.length + (window.__apiDebug ? ' [DEBUG: '+window.__apiDebug+']' : '');
+  document.getElementById('s-total').textContent='Total: '+state.recs.length;
   document.getElementById('s-show').textContent='Showing: '+rows.length;
   document.getElementById('s-ov').textContent='Overdue: '+ov;
   renderNocSummary(rows);
