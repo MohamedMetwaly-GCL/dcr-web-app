@@ -159,44 +159,44 @@ def api_dashboard_stats():
 
 @app.route("/api/next_doc_no/<pid>/<dt_id>")
 def api_next_doc_no(pid, dt_id):
-    dts    = db.get_doc_types(pid)
-    dt     = next((d for d in dts if d["id"] == dt_id), None)
     records = db.get_records(pid, dt_id)
-    dt_code = str((dt or {}).get("code", dt_id) or dt_id).strip().upper()
-    dt_name = str((dt or {}).get("name", "") or "").strip().lower()
-    is_ltr = dt_code == "LTR" or "letter" in dt_name or "correspondence" in dt_name
-    if is_ltr:
-        import re as _re
-        doc_nos = [str(r.get("docNo","") or "").strip() for r in records if str(r.get("docNo","") or "").strip()]
-        if doc_nos:
-            def _ltr_num_parts(doc_no):
-                m = _re.match(r"^(.*?)(\d+)$", doc_no)
-                if not m:
-                    return None
-                prefix = m.group(1)
-                num_txt = m.group(2)
-                return prefix, int(num_txt), len(num_txt)
-            parsed = [p for p in (_ltr_num_parts(d) for d in doc_nos) if p]
-            if parsed:
-                prefix, num, width = max(parsed, key=lambda t: (t[1], t[2], t[0]))
-                return jsonify(next=f"{prefix}{str(num + 1).zfill(width)}")
-            last_doc = max(doc_nos)
-            return jsonify(next=last_doc + "-001")
-    # Auto-detect prefix from existing records or build from project+dt codes
-    if records:
-        first_doc = next((r.get("docNo","") for r in records if r.get("docNo","")), "")
-        import re as _re
-        m = _re.match(r"^(.+?)\s*-\s*\d+", first_doc)
-        prefix = m.group(1).strip() if m else (dt["code"] if dt else dt_id)
-    else:
-        # Build default prefix: PROJECT-DTCODE (e.g. PEM064-DS)
-        proj = db.get_project(pid) or {}
-        proj_code = proj.get("code", pid).replace("-","")
-        dt_code = dt["code"] if dt else dt_id
-        prefix = f"{proj_code}-{dt_code}"
-    if not doc_type_uses_revision(dt_code, records):
-        return jsonify(next=get_next_plain_doc_no(prefix, records))
-    return jsonify(next=get_next_doc_no(prefix, records))
+    doc_nos = [str(r.get("docNo", "")).strip() for r in records if str(r.get("docNo", "")).strip()]
+    if not doc_nos:
+        # First Document: Leave blank for the user to define the pattern
+        return jsonify(next="")
+        
+    last_doc = doc_nos[-1]
+    import re as _re
+    
+    # 1. Smart Pattern Detection: check if the last document uses REV
+    has_rev = bool(_re.search(r'\bREV\d+$', last_doc, flags=_re.IGNORECASE))
+    
+    # 2. Extract the base document by stripping the REV part
+    base_last = _re.sub(r'\s*REV\d+$', '', last_doc, flags=_re.IGNORECASE).strip()
+    
+    # 3. Determine prefix and numeric width
+    m_last = _re.search(r'^(.*?)(\d+)$', base_last)
+    if not m_last:
+        # Doesn't end with digits, start sequence
+        next_base = f"{base_last}-001"
+        return jsonify(next=f"{next_base} REV00" if has_rev else next_base)
+        
+    prefix = m_last.group(1)
+    width = len(m_last.group(2))
+    
+    # 4. Find the maximum sequence number for THIS prefix to prevent sequence gaps
+    max_num = 0
+    for d in doc_nos:
+        base_d = _re.sub(r'\s*REV\d+$', '', d, flags=_re.IGNORECASE).strip()
+        m_d = _re.search(r'^(.*?)(\d+)$', base_d)
+        if m_d and m_d.group(1) == prefix:
+            max_num = max(max_num, int(m_d.group(2)))
+            
+    # 5. Generate the next sequence using the detected pattern
+    next_num = max_num + 1
+    next_base = f"{prefix}{str(next_num).zfill(width)}"
+    
+    return jsonify(next=f"{next_base} REV00" if has_rev else next_base)
 
 # ── Audit Log API ─────────────────────────────────────────────
 @app.route("/api/audit")
