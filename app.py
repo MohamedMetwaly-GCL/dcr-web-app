@@ -196,14 +196,18 @@ def api_next_doc_no(pid, dt_id):
         
         next_num = max_num + 1
         next_base = f"{prefix}{str(next_num).zfill(width)}"
-        return jsonify(next=f"{next_base} REV00" if has_rev else next_base)
+        resp = jsonify(next=f"{next_base} REV00" if has_rev else next_base)
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return resp
     else:
         # Fallback if no document ends with digits
         last_doc = doc_nos[-1]
         has_rev = bool(_re.search(r'\bREV\d+$', last_doc, flags=_re.IGNORECASE))
         base_last = _re.sub(r'\s*REV\d+$', '', last_doc, flags=_re.IGNORECASE).strip()
         next_base = f"{base_last}-001"
-        return jsonify(next=f"{next_base} REV00" if has_rev else next_base)
+        resp = jsonify(next=f"{next_base} REV00" if has_rev else next_base)
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return resp
 
 # ── Audit Log API ─────────────────────────────────────────────
 @app.route("/api/audit")

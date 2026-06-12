@@ -563,7 +563,7 @@ function toggleProjectInfo(){
   btn.textContent=open?'Hide Info':'Project Info';
 }
 async function apiFetch(url,opts={}){
-  const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},...opts});
+  const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},cache:'no-store',...opts});
   if(r.status===403){const d=await r.json().catch(()=>({}));
     if(d.error==='LOGIN_REQUIRED'){window.location='/login';return null;}
     throw new Error(d.error||'Forbidden');}
