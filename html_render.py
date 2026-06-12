@@ -949,14 +949,14 @@ body.dark .kpi.tl .kval{{color:#5eead4}}
 body.dark .klbl{{color:#b8c8da}}
 
 /* ── Toolbar ── */
-.psel-bar{{display:flex;align-items:center;gap:8px;background:var(--wh);padding:7px 10px;
-  border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:10px;flex-wrap:wrap}}
+.psel-bar{{display:flex;align-items:center;gap:4px;background:var(--wh);padding:5px 8px;
+  border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:10px;flex-wrap:nowrap;overflow-x:auto}}
 .psel-bar label{{font-size:11px;font-weight:700;color:var(--mu);white-space:nowrap}}
-.psel-bar select,.psel-bar input{{padding:5px 10px;border:1.5px solid var(--bd);
-  border-radius:var(--rd);font-family:inherit;font-size:12px;outline:none}}
-.tbtn{{padding:5px 11px;border:1.5px solid var(--bd);border-radius:var(--rd);
-  background:var(--wh);cursor:pointer;font-size:11px;font-weight:600;font-family:inherit;
-  transition:all .15s;color:var(--tx)}}
+.psel-bar select,.psel-bar input{{padding:4px 8px;border:1.5px solid var(--bd);
+  border-radius:var(--rd);font-family:inherit;font-size:11.5px;outline:none}}
+.tbtn{{padding:4px 8px;border:1.5px solid var(--bd);border-radius:var(--rd);
+  background:var(--wh);cursor:pointer;font-size:10.5px;font-weight:600;font-family:inherit;
+  transition:all .15s;color:var(--tx);white-space:nowrap}}
 .tbtn:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 .tbtn.active{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 
@@ -1273,7 +1273,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <option value="">All Disciplines</option>
     </select>
     <div class="sp" style="flex:1"></div>
-    <div style="display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end">
+    <div style="display:flex; gap:4px; flex-wrap:nowrap; justify-content:flex-end">
       <button class="tbtn" onclick="showTab('overview')">📊 Overview</button>
       <button class="tbtn" onclick="showTab('analytics')">📈 Analytics</button>
       <button class="tbtn" onclick="showTab('overdue')">⚠️ Overdue</button>
