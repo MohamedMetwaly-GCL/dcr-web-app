@@ -677,7 +677,10 @@ def get_daily_digest(pid, doc_type_ids, target_date=None):
         if d.get("issuedDate") == today_str or d.get("partAIssueDate") == today_str or d.get("partCIssueDate") == today_str: issued.append(r)
         if d.get("actualReplyDate") == today_str or d.get("partBReturnDate") == today_str or d.get("partDReturnDate") == today_str: replied.append(r)
         
-    project_names = {p["id"]: p["name"] for p in get_projects()}
+    project_names = {}
+    for p in get_projects():
+        project_names[p["id"]] = p["name"]
+        if p.get("code"): project_names[p["code"]] = p["name"]
     def format_rec(rec):
         d = rec.get("data") or {}
         proj_name = project_names.get(rec["project_id"], rec["project_id"])
