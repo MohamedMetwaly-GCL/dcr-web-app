@@ -342,8 +342,6 @@ def compute_expected_reply(issued_date, doc_no, rule=None, status=None, action=N
 
 def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, rule=None, status=None, action=None, row=None):
     """Returns True only if the doc type has an Expected Reply column and is past due."""
-    if not has_expected_reply_col: return False
-    
     pmo_dates = get_pmo_dates(row) if row else None
     if pmo_dates is not None:
         d1, d2, d3, d4 = pmo_dates
@@ -353,6 +351,8 @@ def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, r
         exp_d = parse_any_date(exp)
         if not exp_d: return False
         return exp_d < datetime.date.today()
+
+    if not has_expected_reply_col: return False
 
     if actual_reply and str(actual_reply).strip().lower() not in ['none', 'null', '']: return False
     exp = compute_expected_reply(issued_date, doc_no, rule, status, action, row)

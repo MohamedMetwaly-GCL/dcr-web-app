@@ -2170,10 +2170,7 @@ def get_overdue_records(pid=None, project_ids=None):
         if r["col_key"] == "expectedReplyDate": dt_has_exp.add(r["dt_id"])
         elif r["col_key"] == "status":          dt_has_status.add(r["dt_id"])
     dt_rules = {r["dt_id"]: get_expected_reply_rule(pid, r["dt_id"]) for r in cols}
-    dt_with_exp = dt_has_exp & dt_has_status
-    dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
-    dt_rows = q(f"SELECT id, code, name FROM doc_types {dt_where}", dt_params)
-    dt_with_exp = {dt_id for dt_id in dt_with_exp
+    dt_with_exp = {dt_id for dt_id in dt_has_exp
                    if not _is_non_workflow_dt(
                        next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),
                        next((d["name"] for d in dt_rows if d["id"] == dt_id), "")
@@ -2187,7 +2184,6 @@ def get_overdue_records(pid=None, project_ids=None):
 
     result = []
     for row in rows:
-        if row["dt_id"] not in dt_with_exp: continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         if d.get("actualReplyDate"): continue
         doc_no = d.get("docNo", "") or ""
@@ -2198,10 +2194,12 @@ def get_overdue_records(pid=None, project_ids=None):
         dt_rule = dt_rules.get(row["dt_id"])
         
         meta = resolve_status_meta(status_val, meta_map.get(row["project_id"], {}))
-        if meta != "pending":
+        if meta != "pending" and meta != "open":
+            # PMO records may not have status, so meta might evaluate to "pending"
             continue
 
-        if is_overdue(issued, doc_no, None, True, rule=dt_rule, status=status_val, action=action_val, row=d):
+        _has_exp = row["dt_id"] in dt_with_exp
+        if is_overdue(issued, doc_no, None, _has_exp, rule=dt_rule, status=status_val, action=action_val, row=d):
             try:
                 from utils import compute_expected_reply, days_between_by_rule, compute_duration
                 exp = compute_expected_reply(issued, doc_no, rule=dt_rule, status=status_val, action=action_val, row=d)
