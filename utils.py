@@ -254,10 +254,47 @@ def doc_type_uses_revision(dt_code, records=None):
         return False
     return True
 
-def compute_expected_reply(issued_date, doc_no, rule=None, status=None, action=None):
+def get_pmo_dates(row):
+    if not isinstance(row, dict): return None
+    d1, d2, d3, d4 = None, None, None, None
+    has_pmo = False
+    for k, v in row.items():
+        lk = k.lower()
+        if "rec" in lk and "scas" in lk: has_pmo = True
+        if "rec" in lk and "style" in lk: has_pmo = True
+        
+        if not v or str(v).strip() == "": continue
+        if "rec" in lk and "from" in lk and "scas" in lk: d1 = str(v).strip()
+        elif "rec" in lk and "by" in lk and "style" in lk: d2 = str(v).strip()
+        elif "rec" in lk and "from" in lk and "style" in lk: d3 = str(v).strip()
+        elif "rec" in lk and "by" in lk and "scas" in lk: d4 = str(v).strip()
+        
+    if not has_pmo: return None
+    return d1, d2, d3, d4
+
+def compute_expected_reply(issued_date, doc_no, rule=None, status=None, action=None, row=None):
     chk = f"{status or ''} {action or ''}".upper()
     if "FOR INFORMATION" in chk or "FI" in re.findall(r'[A-Z]+', chk):
         return None
+
+    pmo_dates = get_pmo_dates(row) if row else None
+    if pmo_dates is not None:
+        d1, d2, d3, d4 = pmo_dates
+        if d4: return None # State 4: Closed
+        cfg = normalize_expected_reply_rule(rule)
+        rev = 0
+        try: rev = extract_rev(doc_no)
+        except Exception: pass
+        
+        if d3 and not d4: # State 3
+            return add_working_days(d3, 1, cfg["weekend_mode"], cfg["exclude_official_holidays"])
+        elif d2 and not d3: # State 2
+            days = cfg["rev0_reply_days"] if rev == 0 else cfg["rev_reply_days"]
+            return add_working_days(d2, days, cfg["weekend_mode"], cfg["exclude_official_holidays"])
+        elif d1 and not d2: # State 1
+            return add_working_days(d1, 2, cfg["weekend_mode"], cfg["exclude_official_holidays"])
+        
+        if not d1: return None # Not even started
 
     if not issued_date: return None
     try:
@@ -278,11 +315,20 @@ def compute_expected_reply(issued_date, doc_no, rule=None, status=None, action=N
     except Exception:
         return None
 
-def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, rule=None, status=None, action=None):
+def is_overdue(issued_date, doc_no, actual_reply, has_expected_reply_col=True, rule=None, status=None, action=None, row=None):
     """Returns True only if the doc type has an Expected Reply column and is past due."""
     if not has_expected_reply_col: return False
+    
+    pmo_dates = get_pmo_dates(row) if row else None
+    if pmo_dates is not None:
+        d1, d2, d3, d4 = pmo_dates
+        if d4: return False # State 4: Closed
+        exp = compute_expected_reply(issued_date, doc_no, rule, status, action, row)
+        if not exp: return False
+        return datetime.date.fromisoformat(exp) < datetime.date.today()
+
     if actual_reply and str(actual_reply).strip().lower() not in ['none', 'null', '']: return False
-    exp = compute_expected_reply(issued_date, doc_no, rule, status, action)
+    exp = compute_expected_reply(issued_date, doc_no, rule, status, action, row)
     if not exp: return False
     return datetime.date.fromisoformat(exp) < datetime.date.today()
 

@@ -733,7 +733,7 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
             is_rev = extract_rev(row.get("docNo","")) > 0
             status_val = row.get("status")
             action_val = row.get("action")
-            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=status_val, action=action_val)
+            ov     = is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=status_val, action=action_val, row=row)
             bg     = OV if ov else (ALT if sr%2==0 else WHITE)
             row_values = []
 
@@ -1324,7 +1324,7 @@ def api_export_all(pid):
                 from utils import is_overdue
                 expected_reply_rule = db.get_expected_reply_rule(pid, dt["id"])
                 has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
-                records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
+                records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"), row=r)]
                 
             records_by_dt[dt["name"] or dt["id"]] = records
             
@@ -1374,7 +1374,7 @@ def api_export(pid, dt_id):
             from utils import is_overdue
             expected_reply_rule = db.get_expected_reply_rule(pid, dt_id)
             has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
-            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
+            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"), row=r)]
         dts     = db.get_doc_types(pid)
         dt      = next((d for d in dts if d["id"] == dt_id), None)
         is_pr = _is_pr_dt(dt)
@@ -1444,7 +1444,7 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             expected_reply_rule = db.get_expected_reply_rule(pid, dt["id"])
             cols = db.get_columns(pid, dt["id"])
             has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
-            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"))]
+            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"), row=r)]
 
         count = len(records)
         if count == 0:

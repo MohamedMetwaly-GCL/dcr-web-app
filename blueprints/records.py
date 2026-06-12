@@ -88,7 +88,7 @@ def api_records(pid, dt_id):
             exp = None
             if issued_date and doc_no:
                 try:
-                    exp = compute_expected_reply(issued_date, doc_no, expected_reply_rule, row.get("status"), row.get("action"))
+                    exp = compute_expected_reply(issued_date, doc_no, expected_reply_rule, row.get("status"), row.get("action"), row=row)
                 except Exception as e:
                     logger.warning("expected_reply_calc_failed pid=%s dt_id=%s record_id=%s error=%s",
                                    pid, dt_id, row.get("_id",""), e)
@@ -103,7 +103,7 @@ def api_records(pid, dt_id):
         row["_duration"] = str(dur) if dur is not None else ""
         
         meta = db.resolve_status_meta(status_val, status_meta) if has_status else "pending"
-        row["_overdue"]    = (meta == "pending") and is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply, expected_reply_rule, status_val, action_val)
+        row["_overdue"]    = (meta == "pending") and is_overdue(row.get("issuedDate"), row.get("docNo"), row.get("actualReplyDate"), has_exp_reply, expected_reply_rule, status_val, action_val, row=row)
         row["_isRev"]      = extract_rev(row.get("docNo","")) > 0
         # Format ALL date columns (any col_type=date)
         for dk in date_col_keys:

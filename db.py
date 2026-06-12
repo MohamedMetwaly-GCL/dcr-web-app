@@ -1705,7 +1705,7 @@ def get_dashboard_stats(project_ids=None):
                     status_val = d.get("status")
                     action_val = d.get("action")
                     dt_rule = dt_rules.get(dt["id"])
-                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val)
+                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val, row=d)
                     if is_ov: ov += 1
                     if dt_has_discipline.get(dt["id"], False):
                         ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
@@ -1723,7 +1723,7 @@ def get_dashboard_stats(project_ids=None):
                 status_val = d.get("status")
                 action_val = d.get("action")
                 dt_rule = dt_rules.get(dt["id"])
-                is_ov = is_pe and is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val)
+                is_ov = is_pe and is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val, row=d)
                 if is_ap: ap += 1
                 if is_pe: pe += 1
                 if is_rj: rj += 1
@@ -2201,10 +2201,16 @@ def get_overdue_records(pid=None, project_ids=None):
         if meta != "pending":
             continue
 
-        if is_overdue(issued, doc_no, None, True, rule=dt_rule, status=status_val, action=action_val):
+        if is_overdue(issued, doc_no, None, True, rule=dt_rule, status=status_val, action=action_val, row=d):
             try:
-                from utils import compute_duration
-                days = compute_duration(issued, None, rule=dt_rule, status=status_val, action=action_val) or 0
+                from utils import compute_expected_reply, days_between_by_rule, compute_duration
+                exp = compute_expected_reply(issued, doc_no, rule=dt_rule, status=status_val, action=action_val, row=d)
+                import datetime
+                yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+                if exp:
+                    days = days_between_by_rule(exp, yesterday) or 0
+                else:
+                    days = compute_duration(issued, None, rule=dt_rule, status=status_val, action=action_val) or 0
             except: days = 0
             result.append({
                 "project_id": row["project_id"],
