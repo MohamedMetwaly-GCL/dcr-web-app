@@ -3707,14 +3707,17 @@ function parseDocNo(docNo){{
   const raw=String(docNo||'').trim();
   const revMatch=raw.match(/\\bREV\\s*([0-9]+)\\b/i);
   const rev=revMatch?parseInt(revMatch[1],10):0;
+  const hasRev=!!revMatch;
   const withoutRev=raw.replace(/\\s*\\bREV\\s*[0-9]+\\b\\s*$/i,'').trim();
   const m=withoutRev.match(/^(.*?)-(\\d+)$/);
-  if(m)return{{prefix:m[1],num:parseInt(m[2],10),width:m[2].length,rev,base:withoutRev,raw}};
-  return{{prefix:raw,num:0,width:3,rev,base:withoutRev||raw,raw}};
+  if(m)return{{prefix:m[1],num:parseInt(m[2],10),width:m[2].length,rev,base:withoutRev,raw,hasRev}};
+  return{{prefix:raw,num:0,width:3,rev,base:withoutRev||raw,raw,hasRev}};
 }}
 
 function buildDocNoFromParts(p,num,rev){{
-  return `${{p.prefix}}-${{String(num).padStart(p.width||3,'0')}} REV${{String(rev).padStart(2,'0')}}`;
+  let res = `${{p.prefix}}-${{String(num).padStart(p.width||3,'0')}}`;
+  if(p.hasRev) res += ` REV${{String(rev).padStart(2,'0')}}`;
+  return res;
 }}
 
 function incrementRevisionNumber(docNo){{
