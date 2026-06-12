@@ -2143,7 +2143,7 @@ async function loadDailyDigest() {{
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
       html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
       if((doc.project_name || doc.project_id)) html += '<div style="font-size:8px;background:#f1f5f9;color:#475569;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #cbd5e1;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
-      html += '</div><div title="' + (doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
     }});
     html += '</div></div>';
 
@@ -2155,7 +2155,7 @@ async function loadDailyDigest() {{
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
       html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
       if((doc.project_name || doc.project_id)) html += '<div style="font-size:8px;background:#fef3c7;color:#b45309;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #fde68a;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
-      html += '</div><div title="' + (doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
     }});
     html += '</div></div>';
 
@@ -2167,7 +2167,7 @@ async function loadDailyDigest() {{
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
       html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
       if((doc.project_name || doc.project_id)) html += '<div style="font-size:8px;background:#dcfce7;color:#15803d;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #bbf7d0;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
-      html += '</div><div title="' + (doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div>';
       if(doc.status) html += '<div style="font-size:9px;font-weight:700;color:var(--tx2);">Status: ' + doc.status + '</div>';
       html += '</div>';
     }});
