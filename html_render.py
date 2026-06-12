@@ -5349,12 +5349,16 @@ async function bulkDownload(){{
       if(linkObj.type === 'folder') {{
          window.open(linkObj.url, '_blank');
       }} else {{
-         const a = document.createElement('a');
-         a.href = linkObj.url;
-         a.download = '';
-         document.body.appendChild(a);
-         a.click();
-         document.body.removeChild(a);
+         const iframe = document.createElement('iframe');
+         iframe.style.display = 'none';
+         iframe.src = linkObj.url;
+         document.body.appendChild(iframe);
+         
+         setTimeout(() => {{
+             if(document.body.contains(iframe)) {{
+                 document.body.removeChild(iframe);
+             }}
+         }}, 10000);
       }}
     }}, idx * 1500);
   }});
