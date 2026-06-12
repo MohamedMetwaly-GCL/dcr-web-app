@@ -5204,15 +5204,18 @@ function renderNocSummary(rows){{
   h.push(mkCard('Visible NOCs', String((rows||[]).length), 'Filtered rows'));
   h.push(mkCard('Submitted Cost', formatCurrencyValue(totals.submittedCost), 'Visible total'));
   
-  h.push(`<div style="flex:2.5;min-width:280px;background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
-    <div style="flex:1">
-      <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Requested (For Approved)</div>
-      <div style="font-size:14px;font-weight:600;color:#64748b;margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
-    </div>
-    <div style="width:1px;background:var(--bd);align-self:stretch;margin:0 12px;"></div>
-    <div style="flex:1;text-align:right">
-      <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Agreed Cost</div>
-      <div style="font-size:18px;font-weight:800;color:var(--ok);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedAgreed)}}</div>
+  h.push(`<div style="flex:2.5;min-width:280px;background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;">
+    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">Final Approved Cost</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div style="flex:1">
+        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Requested (For Approved)</div>
+        <div style="font-size:14px;font-weight:600;color:#64748b;margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
+      </div>
+      <div style="width:1px;background:var(--bd);align-self:stretch;margin:0 12px;"></div>
+      <div style="flex:1;text-align:right">
+        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Agreed Cost</div>
+        <div style="font-size:18px;font-weight:800;color:var(--ok);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedAgreed)}}</div>
+      </div>
     </div>
   </div>`);
   
