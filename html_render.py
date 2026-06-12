@@ -2487,6 +2487,7 @@ def render_register(u, proj):
     editable = can_edit(pid)
     btns, _, rlbl, rbg = _user_info_html(u)
     sc_json  = json.dumps(STATUS_COLORS)
+    custom_sc_json = json.dumps(proj.get("data", {}).get("status_colors", {}))
 
     dts       = db.get_doc_types(pid)
     logo_l    = db.get_logo(pid,"logo_left")
@@ -2514,6 +2515,8 @@ def render_register(u, proj):
         if key not in primary_keys and proj.get(key,"").strip())
     projbar_toggle = ('<button id="projbar-toggle" class="tool-btn" type="button" '
                       'onclick="toggleProjectInfo()">Project Info</button>') if projbar_secondary else ''
+    if role in ('admin', 'superadmin'):
+        projbar_toggle += '<button class="tool-btn purple" style="margin-left:5px" type="button" onclick="openProjectSettings()">⚙ Settings</button>'
 
     tabs_html = "".join(
         f'<button class="tab-btn" data-id="{dt["id"]}" onclick="switchTab(\'{dt["id"]}\')">'
@@ -3230,6 +3233,22 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   </div>
 </div>
 
+<!-- PROJECT SETTINGS MODAL -->
+<div class="overlay hidden" id="project-settings-modal">
+  <div class="modal" style="max-width:600px">
+    <div class="mhdr"><span>⚙ Project Settings</span><button class="xbtn" onclick="closeM('project-settings-modal')">✕</button></div>
+    <div class="mbody">
+      <div class="stitle">🎨 Status Colors</div>
+      <div style="font-size:11px;color:var(--mu);margin-bottom:12px">Configure custom background and text colors for document statuses.</div>
+      <div id="status-colors-list" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-sc" onclick="closeM('project-settings-modal')">Cancel</button>
+      <button class="btn btn-pr" onclick="saveProjectSettings()">Save Settings</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN MODAL (register page) -->
 <div class="overlay hidden" id="admin-modal">
   <div class="modal" style="max-width:780px">
@@ -3242,7 +3261,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 {SHARED_JS}
 <script>
 const PID='{pid}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
-const SC={{...{sc_json},
+const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
   'Accepted & to proceed with Part C':['bbf7d0','166534'],
   'Rejected':['fecaca','7f1d1d'],
@@ -3251,6 +3270,7 @@ const SC={{...{sc_json},
   'Information Required':['e0e7ff','312e81'],
   'Pending':['fde68a','92400e']
 }};
+const SC={{...SC_DEFAULTS, ...{custom_sc_json}}};
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
   ['client','Client'],['landlord','Landlord'],['pmo','PMO'],['mainConsultant','Consultant'],
   ['mepConsultant','MEP'],['contractor','Contractor']];
@@ -6032,6 +6052,113 @@ async function doImportProject(){{
     toast('✔ Imported '+r.imported_total+' records from '+(r.matched_sheets||[]).length+' sheet(s)','ok');
   }}catch(e){{toast('Error: '+e.message,'er');}}
   finally{{btn.disabled=false;btn.textContent='Import Full Workbook';}}
+}}
+
+function openProjectSettings() {{
+  if(!CAN_EDIT || !['admin','superadmin'].includes(ROLE)) return toast('Forbidden', 'er');
+  const lst = document.getElementById('status-colors-list');
+  lst.innerHTML = '';
+  
+  const statuses = new Set();
+  if(state.recs) {{
+    state.recs.forEach(r => {{
+      if(r.status) {{
+        String(r.status).split(',').forEach(s => {{
+          const st = s.trim();
+          if(st) statuses.add(st);
+        }});
+      }}
+    }});
+  }}
+  
+  if(statuses.size === 0) {{
+    lst.innerHTML = '<div style="color:var(--mu);font-size:11px;padding:10px">No statuses found in any records yet.</div>';
+  }} else {{
+    [...statuses].sort().forEach(s => {{
+      let [bg, fg] = SC[s] || ['e5e7eb', '374151'];
+      bg = bg.startsWith('#') ? bg : '#' + bg;
+      fg = fg.startsWith('#') ? fg : '#' + fg;
+      
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 12px;background:var(--bg);border:1px solid var(--bd);border-radius:6px';
+      
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'flex:1;font-weight:600;font-size:12px;color:var(--tx)';
+      lbl.textContent = s;
+      
+      const bgLbl = document.createElement('div');
+      bgLbl.style.cssText = 'font-size:10px;color:var(--mu)';
+      bgLbl.textContent = 'Background:';
+      
+      const bgInp = document.createElement('input');
+      bgInp.type = 'color';
+      bgInp.value = bg;
+      bgInp.dataset.status = s;
+      bgInp.dataset.type = 'bg';
+      bgInp.title = 'Background Color';
+      bgInp.style.cssText = 'width:28px;height:24px;padding:0;border:none;cursor:pointer;background:none';
+      
+      const fgLbl = document.createElement('div');
+      fgLbl.style.cssText = 'font-size:10px;color:var(--mu);margin-left:10px';
+      fgLbl.textContent = 'Text:';
+      
+      const fgInp = document.createElement('input');
+      fgInp.type = 'color';
+      fgInp.value = fg;
+      fgInp.dataset.status = s;
+      fgInp.dataset.type = 'fg';
+      fgInp.title = 'Text Color';
+      fgInp.style.cssText = 'width:28px;height:24px;padding:0;border:none;cursor:pointer;background:none';
+      
+      row.appendChild(lbl);
+      row.appendChild(bgLbl);
+      row.appendChild(bgInp);
+      row.appendChild(fgLbl);
+      row.appendChild(fgInp);
+      lst.appendChild(row);
+    }});
+  }}
+  openM('project-settings-modal');
+}}
+
+async function saveProjectSettings() {{
+  const btn = document.querySelector('#project-settings-modal .btn-pr');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  
+  try {{
+    const lst = document.getElementById('status-colors-list');
+    const status_colors = {{}};
+    const rows = lst.children;
+    for(let i=0; i<rows.length; i++) {{
+      const bgInp = rows[i].querySelector('input[data-type="bg"]');
+      const fgInp = rows[i].querySelector('input[data-type="fg"]');
+      if(bgInp && fgInp) {{
+        const s = bgInp.dataset.status;
+        const bg = bgInp.value.replace('#','').toLowerCase();
+        const fg = fgInp.value.replace('#','').toLowerCase();
+        
+        let [dbg, dfg] = SC_DEFAULTS[s] || ['e5e7eb', '374151'];
+        dbg = dbg.toLowerCase();
+        dfg = dfg.toLowerCase();
+        
+        if(bg !== dbg || fg !== dfg) {{
+          status_colors[s] = [bg, fg];
+        }}
+      }}
+    }}
+    
+    const r = await apiFetch('/api/project/'+PID+'/settings', {{method:'POST', body:JSON.stringify({{status_colors}})}});
+    if(r && r.ok) {{
+      toast('✔ Settings saved successfully','ok');
+      setTimeout(() => location.reload(), 600);
+    }} else {{
+      toast(r?.error || 'Error saving settings','er');
+    }}
+  }} catch(e) {{
+    toast('Error: ' + e.message, 'er');
+  }} finally {{
+    btn.disabled = false; btn.textContent = 'Save Settings';
+  }}
 }}
 </script></body></html>"""
 

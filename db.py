@@ -818,6 +818,18 @@ def get_project(pid):
     data.pop("id", None); data.pop("name", None); data.pop("code", None)
     return {"id": r["id"], "name": r["name"], "code": r["code"], **data}
 
+def update_project_settings(pid, settings_dict):
+    r = q("SELECT data FROM projects WHERE id=%s", (pid,), one=True)
+    if not r: return False
+    data = r.get("data") or {}
+    if isinstance(data, str):
+        try: data = json.loads(data)
+        except: data = {}
+    if not isinstance(data, dict): data = {}
+    data.update(settings_dict)
+    exe("UPDATE projects SET data=%s::jsonb WHERE id=%s", (json.dumps(data), pid))
+    return True
+
 def get_expected_reply_rule(pid, dt_id=None):
     """Read the project rule and optionally apply doc-type day overrides."""
     try:

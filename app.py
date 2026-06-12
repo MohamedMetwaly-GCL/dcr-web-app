@@ -330,6 +330,24 @@ def api_project_users(pid):
     except Exception as e:
         return jsonify(error="Server error"), 500
 
+@app.route("/api/project/<pid>/settings", methods=["POST"])
+def update_project_settings_route(pid):
+    try:
+        u = current_user()
+        if not u: return jsonify(error="LOGIN_REQUIRED"), 403
+        if u["role"] not in ("admin", "superadmin"):
+            return jsonify(error="Forbidden. Only Admins can modify project settings."), 403
+            
+        body = request.get_json()
+        if not body:
+            return jsonify(error="Empty payload"), 400
+            
+        db.update_project_settings(pid, body)
+        return jsonify(ok=True)
+    except Exception as e:
+        print(f"[Project Settings POST Error]: {e}")
+        return jsonify(error="Server error"), 500
+
 import hashlib
 import os
 MAGIC_SECRET = os.environ.get("MAGIC_SECRET", "super_secret_magic_dcr_key")
