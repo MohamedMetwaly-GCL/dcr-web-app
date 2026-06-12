@@ -576,6 +576,14 @@ async function changePw(){
   const r=await apiFetch('/api/change_password',{method:'POST',body:JSON.stringify({password:pw})});
   if(r&&r.ok)toast('✔ Password changed','ok');else toast((r&&r.error)||'Error','er');
 }
+function escHtml(v){
+  return String(v==null?'':v)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'",'&#39;');
+}
 </script>"""
 
 
@@ -3469,15 +3477,6 @@ function getPrSummary(row){{
   const auto=getPrAutoSummary(row);
   if(!auto)return '';
   return auto.length>80?auto.slice(0,77)+'...':auto;
-}}
-
-function escHtml(v){{
-  return String(v==null?'':v)
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;')
-    .replaceAll("'",'&#39;');
 }}
 
 // _WHOAMI: must be declared BEFORE the IIFE that calls loadDTs()
