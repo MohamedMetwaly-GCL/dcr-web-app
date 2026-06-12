@@ -2098,10 +2098,9 @@ def get_aging_report(pid=None, project_ids=None):
         elif r["col_key"] == "status":          dt_has_status_a.add(r["dt_id"])
         
     dt_rules = {r["dt_id"]: get_expected_reply_rule(pid, r["dt_id"]) for r in exp_rows}
-    dt_with_exp = dt_has_exp_a & dt_has_status_a
     dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
     dt_rows = q(f"SELECT id, code, name FROM doc_types {dt_where}", dt_params)
-    dt_with_exp = {dt_id for dt_id in dt_with_exp
+    dt_with_exp = {dt_id for dt_id in dt_has_exp_a
                    if not _is_non_workflow_dt(
                        next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),
                        next((d["name"] for d in dt_rows if d["id"] == dt_id), "")
@@ -2109,7 +2108,6 @@ def get_aging_report(pid=None, project_ids=None):
     rows = q(f"SELECT r.dt_id, r.data FROM records r {where}", params)
     buckets = {"1-7": 0, "8-14": 0, "15-21": 0, ">21": 0}
     for row in rows:
-        if row["dt_id"] not in dt_with_exp: continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         if d.get("actualReplyDate"): continue
         issued = d.get("issuedDate", "")
