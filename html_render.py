@@ -5174,24 +5174,52 @@ function renderNocSummary(rows){{
     voBaseValue:0,
     voValueWithSIAndVAT:0,
   }};
+  let sumApprovedSubmitted = 0;
+  let sumApprovedAgreed = 0;
+
   for(const row of (rows||[])){{
     for(const key of Object.keys(totals)){{
       const n=parseSafeNumber(row?.[key]);
       if(n!==null)totals[key]+=n;
     }}
+    
+    const finalAppr = parseSafeNumber(row?.finalApprovedCost);
+    const subCost = parseSafeNumber(row?.submittedCost);
+    const st = String(row?.status || '').toLowerCase();
+    const isAppr = (finalAppr !== null && finalAppr > 0) || st.includes('approved') || st.includes('agreed');
+    
+    if(isAppr) {{
+       if(subCost !== null) sumApprovedSubmitted += subCost;
+       if(finalAppr !== null) sumApprovedAgreed += finalAppr;
+    }}
   }}
-  const items=[
-    ['Visible NOCs', String((rows||[]).length), 'Filtered rows'],
-    ['Submitted Cost', formatCurrencyValue(totals.submittedCost), 'Visible total'],
-    ['Final Approved Cost', formatCurrencyValue(totals.finalApprovedCost), 'Visible total'],
-    ['VO Base Value', formatCurrencyValue(totals.voBaseValue), 'Visible total'],
-    ['VO Value Incl. SI & VAT', formatCurrencyValue(totals.voValueWithSIAndVAT), 'Visible total'],
-  ];
-  inner.innerHTML=items.map(([label,val,sub])=>`<div style="background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
-    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{label}}</div>
+  
+  const h=[];
+  const mkCard=(lbl,val,sub)=>`<div style="background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
+    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{lbl}}</div>
     <div style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${{val}}</div>
     <div style="font-size:10px;color:var(--mu);margin-top:3px">${{sub}}</div>
-  </div>`).join('');
+  </div>`;
+  
+  h.push(mkCard('Visible NOCs', String((rows||[]).length), 'Filtered rows'));
+  h.push(mkCard('Submitted Cost', formatCurrencyValue(totals.submittedCost), 'Visible total'));
+  
+  h.push(`<div style="background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;grid-column: span auto;">
+    <div style="flex:1">
+      <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Requested (For Approved)</div>
+      <div style="font-size:14px;font-weight:600;color:#64748b;margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
+    </div>
+    <div style="width:1px;background:var(--bd);align-self:stretch;margin:0 12px;"></div>
+    <div style="flex:1;text-align:right">
+      <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Agreed Cost</div>
+      <div style="font-size:18px;font-weight:800;color:var(--ok);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedAgreed)}}</div>
+    </div>
+  </div>`);
+  
+  h.push(mkCard('VO Base Value', formatCurrencyValue(totals.voBaseValue), 'Visible total'));
+  h.push(mkCard('VO Value Incl. SI & VAT', formatCurrencyValue(totals.voValueWithSIAndVAT), 'Visible total'));
+  
+  inner.innerHTML=h.join('');
   wrap.style.display='';
 }}
 
