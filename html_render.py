@@ -3009,7 +3009,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <div class="empty hidden" id="empty" style="display:none"><div style="font-size:48px;margin-bottom:10px">📁</div><p style="color:var(--mu)">No records yet — click ➕ Add to create one</p></div>
   </div>
   <div id="noc-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);background:#f8fafc">
-    <div id="noc-summary-inner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px"></div>
+    <div id="noc-summary-inner" style="display:flex;flex-wrap:wrap;gap:10px"></div>
   </div>
 </div>
 
@@ -5195,7 +5195,7 @@ function renderNocSummary(rows){{
   }}
   
   const h=[];
-  const mkCard=(lbl,val,sub)=>`<div style="background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
+  const mkCard=(lbl,val,sub)=>`<div style="flex:1;min-width:140px;background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
     <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{lbl}}</div>
     <div style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${{val}}</div>
     <div style="font-size:10px;color:var(--mu);margin-top:3px">${{sub}}</div>
@@ -5204,7 +5204,7 @@ function renderNocSummary(rows){{
   h.push(mkCard('Visible NOCs', String((rows||[]).length), 'Filtered rows'));
   h.push(mkCard('Submitted Cost', formatCurrencyValue(totals.submittedCost), 'Visible total'));
   
-  h.push(`<div style="background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;grid-column: span auto;">
+  h.push(`<div style="flex:2.5;min-width:280px;background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
     <div style="flex:1">
       <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Requested (For Approved)</div>
       <div style="font-size:14px;font-weight:600;color:#64748b;margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
