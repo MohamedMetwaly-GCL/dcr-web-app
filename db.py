@@ -1031,6 +1031,7 @@ def count_records(pid, dt_id):
 def invalidate_dashboard_cache(pid=None):
     if pid:
         exe("DELETE FROM dashboard_cache WHERE project_id=%s", (pid,))
+        exe("DELETE FROM dashboard_cache WHERE project_id LIKE %s", (f"\\_PR\\_ANALYTICS\\_%{pid}%",))
         exe("DELETE FROM dashboard_cache WHERE project_id='_PR_ANALYTICS_'")
     else:
         exe("DELETE FROM dashboard_cache")
@@ -1934,8 +1935,12 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14, projec
 
 def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
     import json
-    # Use a fixed key for PR analytics cache
-    cache_key = "_PR_ANALYTICS_"
+    if pid:
+        cache_key = f"_PR_ANALYTICS_{pid}"
+    elif project_ids is not None:
+        cache_key = "_PR_ANALYTICS_" + "_".join(sorted(project_ids))
+    else:
+        cache_key = "_PR_ANALYTICS_"
     cached = q("SELECT cache_data FROM dashboard_cache WHERE project_id=%s", (cache_key,), one=True)
     if cached:
         return cached["cache_data"]

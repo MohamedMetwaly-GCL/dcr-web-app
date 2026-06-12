@@ -1273,12 +1273,14 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <option value="">All Disciplines</option>
     </select>
     <div class="sp" style="flex:1"></div>
-    <button class="tbtn" onclick="showTab('overview')">📊 Overview</button>
-    <button class="tbtn" onclick="showTab('analytics')">📈 Analytics</button>
-    <button class="tbtn" onclick="showTab('overdue')">⚠️ Overdue</button>
-    <button class="tbtn" onclick="showTab('executive')">📋 Executive</button>
-    <button class="tbtn" onclick="showTab('daily-digest')">🌟 Daily Digest</button>
-    {audit_btn}
+    <div style="display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end">
+      <button class="tbtn" onclick="showTab('overview')">📊 Overview</button>
+      <button class="tbtn" onclick="showTab('analytics')">📈 Analytics</button>
+      <button class="tbtn" onclick="showTab('overdue')">⚠️ Overdue</button>
+      <button class="tbtn" onclick="showTab('executive')">📋 Executive</button>
+      <button class="tbtn" onclick="showTab('daily-digest')">🌟 Daily Digest</button>
+      {audit_btn}
+    </div>
   </div>
 
 
