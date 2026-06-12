@@ -4363,7 +4363,8 @@ async function togglePrItems(recordId, btn){{
     const legacyText=legacyKey?String((state.recs.find(r=>r._id===recordId)||{{}})[legacyKey]||'').trim():'';
     const panel=nxt.querySelector('.pr-items-panel');
     if(panel){{
-      panel.innerHTML=renderPrItemsTable(items, legacyText);
+      const searchTxt = document.getElementById('srchbox')?.value.trim() || '';
+      panel.innerHTML=renderPrItemsTable(items, legacyText, searchTxt);
       sizePrItemsPanel(panel);
     }}
     nxt.style.display='table-row';
