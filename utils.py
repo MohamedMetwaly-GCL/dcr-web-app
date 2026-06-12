@@ -287,20 +287,33 @@ def get_pmo_dates(row):
     for k, v in row.items():
         lk = k.lower()
         if "remark" in lk or "comment" in lk or "attachment" in lk or "link" in lk: continue
-        if 'rec._from_scas' in lk or 'rec_from_scas' in lk or 'recfromscas' in lk:
+        if 'rec._from_scas' in lk or 'rec_from_scas' in lk or 'recfromscas' in lk or 'part_a_issue' in lk:
             has_pmo = True
             if v and str(v).strip() != "": d1 = str(v).strip()
-        elif 'rec._by_style' in lk or 'rec_by_style' in lk or 'recbystyle' in lk:
+        elif 'rec._by_style' in lk or 'rec_by_style' in lk or 'recbystyle' in lk or 'part_b_issue' in lk:
             has_pmo = True
             if v and str(v).strip() != "": d2 = str(v).strip()
-        elif 'rec._from_style' in lk or 'rec_from_style' in lk or 'recfromstyle' in lk:
+        elif 'rec._from_style' in lk or 'rec_from_style' in lk or 'recfromstyle' in lk or 'part_b_return' in lk:
             has_pmo = True
             if v and str(v).strip() != "": d3 = str(v).strip()
-        elif 'rec._by_scas' in lk or 'rec_by_scas' in lk or 'recbyscas' in lk:
+        elif 'rec._by_scas' in lk or 'rec_by_scas' in lk or 'recbyscas' in lk or 'part_a_return' in lk:
             has_pmo = True
             if v and str(v).strip() != "": d4 = str(v).strip()
 
+    if "104" in str(row.get("docNo", "")):
+        print(f"DOC 104 NATIVE KEYS: issued={row.get('issuedDate')}, exp={row.get('expectedReplyDate')}, actual={row.get('actualReplyDate')}", flush=True)
+        print(f"DOC 104 RAW KEYS: {list(row.keys())}", flush=True)
+
     if not has_pmo: return None
+
+    # Native Fallbacks (if UI mapped them to standard columns)
+    if not d1 and (row.get("issuedDate") or row.get("issue_date")):
+        d1 = str(row.get("issuedDate") or row.get("issue_date")).strip()
+    if not d2 and (row.get("expectedReplyDate") or row.get("expected_reply_date")):
+        d2 = str(row.get("expectedReplyDate") or row.get("expected_reply_date")).strip()
+    if not d3 and (row.get("actualReplyDate") or row.get("actual_reply_date")):
+        d3 = str(row.get("actualReplyDate") or row.get("actual_reply_date")).strip()
+        
     return d1, d2, d3, d4
 
 def compute_expected_reply(issued_date, doc_no, rule=None, status=None, action=None, row=None):
