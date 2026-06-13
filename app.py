@@ -562,16 +562,20 @@ def magic_master_view(pid):
                     if (arr.length === 0) {
                         el.innerHTML = `<div class="empty">${emptyMsg}</div>`;
                     } else {
-                        el.innerHTML = arr.map(d => `
-                            <div class="item">
-                                <div class="docno">${d.docNo}</div>
-                                <div class="title">${d.title}</div>
-                                <div>
-                                    <span class="disc">${d.discipline || 'No Disc.'}</span>
-                                    ${!hideStatus ? `<span style="font-size:11px;font-weight:bold;color:#475569;margin-left:8px;">${d.status || 'No Status'}</span>` : ''}
+                        el.innerHTML = arr.map(d => {
+                            const disc = (d.discipline || '').trim();
+                            const showDisc = disc && disc.toLowerCase() !== 'none' && disc.toLowerCase() !== 'no disc' && disc.toLowerCase() !== 'no disc.';
+                            return `
+                                <div class="item">
+                                    <div class="docno">${d.docNo}</div>
+                                    <div class="title">${d.title}</div>
+                                    <div>
+                                        ${showDisc ? `<span class="disc">${disc}</span>` : ''}
+                                        ${!hideStatus ? `<span style="font-size:11px;font-weight:bold;color:#475569;margin-left:8px;">${d.status || 'No Status'}</span>` : ''}
+                                    </div>
                                 </div>
-                            </div>
-                        `).join('');
+                            `;
+                        }).join('');
                     }
                 };
                 
