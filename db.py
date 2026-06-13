@@ -2169,6 +2169,10 @@ def get_overdue_records(pid=None, project_ids=None):
         if r["col_key"] == "expectedReplyDate": dt_has_exp.add(r["dt_id"])
         elif r["col_key"] == "status":          dt_has_status.add(r["dt_id"])
     dt_rules = {r["dt_id"]: get_expected_reply_rule(pid, r["dt_id"]) for r in cols}
+    
+    dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
+    dt_rows = q(f"SELECT id, code, name FROM doc_types {dt_where}", dt_params)
+    
     dt_with_exp = {dt_id for dt_id in dt_has_exp
                    if not _is_non_workflow_dt(
                        next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),
