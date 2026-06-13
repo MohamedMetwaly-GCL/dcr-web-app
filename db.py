@@ -665,13 +665,13 @@ def get_daily_digest(pid, doc_type_ids, target_date=None):
         AND data IS NOT NULL
         AND jsonb_typeof(data) = 'object'
         AND (
-            data->>'receivedDate' = %s OR
-            data->>'issuedDate' = %s OR
-            data->>'partAIssueDate' = %s OR
-            data->>'partCIssueDate' = %s OR
-            data->>'actualReplyDate' = %s OR
-            data->>'partBReturnDate' = %s OR
-            data->>'partDReturnDate' = %s
+            SUBSTRING(data->>'receivedDate', 1, 10) = %s OR
+            SUBSTRING(data->>'issuedDate', 1, 10) = %s OR
+            SUBSTRING(data->>'partAIssueDate', 1, 10) = %s OR
+            SUBSTRING(data->>'partCIssueDate', 1, 10) = %s OR
+            SUBSTRING(data->>'actualReplyDate', 1, 10) = %s OR
+            SUBSTRING(data->>'partBReturnDate', 1, 10) = %s OR
+            SUBSTRING(data->>'partDReturnDate', 1, 10) = %s
         )
     """
     params = (pid, list(doc_type_ids), today_str, today_str, today_str, today_str, today_str, today_str, today_str)
@@ -680,9 +680,9 @@ def get_daily_digest(pid, doc_type_ids, target_date=None):
     received, issued, replied = [], [], []
     for r in rows:
         d = r.get("data") or {}
-        if d.get("receivedDate") == today_str: received.append(r)
-        if d.get("issuedDate") == today_str or d.get("partAIssueDate") == today_str or d.get("partCIssueDate") == today_str: issued.append(r)
-        if d.get("actualReplyDate") == today_str or d.get("partBReturnDate") == today_str or d.get("partDReturnDate") == today_str: replied.append(r)
+        if str(d.get("receivedDate"))[:10] == today_str: received.append(r)
+        if str(d.get("issuedDate"))[:10] == today_str or str(d.get("partAIssueDate"))[:10] == today_str or str(d.get("partCIssueDate"))[:10] == today_str: issued.append(r)
+        if str(d.get("actualReplyDate"))[:10] == today_str or str(d.get("partBReturnDate"))[:10] == today_str or str(d.get("partDReturnDate"))[:10] == today_str: replied.append(r)
         
     project_names = {}
     for p in get_projects():
@@ -698,7 +698,8 @@ def get_daily_digest(pid, doc_type_ids, target_date=None):
             "dt_id": str(rec.get("dt_id", "")),
             "docNo": str(d.get("docNo") or d.get("record_id") or "Untitled"),
             "title": str(d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject"),
-            "status": str(d.get("status") or d.get("partDStatus") or d.get("partBStatus") or "")
+            "status": str(d.get("status") or d.get("partDStatus") or d.get("partBStatus") or ""),
+            "discipline": str(d.get("discipline") or d.get("trade") or "")
         }
         
     return {

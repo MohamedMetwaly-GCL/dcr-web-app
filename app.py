@@ -352,98 +352,298 @@ import hashlib
 import os
 MAGIC_SECRET = os.environ.get("MAGIC_SECRET", "super_secret_magic_dcr_key")
 
-def _generate_magic_token(pid, dt_id):
-    return hashlib.sha256(f"{pid}:{dt_id}:{MAGIC_SECRET}".encode()).hexdigest()[:16]
+def _generate_master_magic_token(pid):
+    return hashlib.sha256(f"{pid}:master:{MAGIC_SECRET}".encode()).hexdigest()[:16]
 
-@app.route("/api/magic/generate/<pid>/<dt_id>", methods=["POST"])
-def api_generate_magic_link(pid, dt_id):
+@app.route("/api/magic/generate_master/<pid>", methods=["POST"])
+def api_generate_master_magic_link(pid):
     try:
         u = current_user()
         if not u: return jsonify(error="LOGIN_REQUIRED"), 403
         if not can_view_project(pid): return jsonify(error="Forbidden"), 403
-        token = _generate_magic_token(pid, dt_id)
-        # Generate absolute URL without hardcoding domain (using request.host_url)
-        link = f"{request.host_url.rstrip('/')}/magic/{pid}/{dt_id}?token={token}"
+        token = _generate_master_magic_token(pid)
+        link = f"{request.host_url.rstrip('/')}/magic/{pid}?token={token}"
         return jsonify(ok=True, link=link)
     except Exception as e:
         return jsonify(error="Server error"), 500
 
-@app.route("/magic/<pid>/<dt_id>", methods=["GET"])
-def magic_digest_view(pid, dt_id):
+@app.route("/magic/<pid>", methods=["GET"])
+def magic_master_view(pid):
     token = request.args.get("token", "")
-    expected = _generate_magic_token(pid, dt_id)
+    expected = _generate_master_magic_token(pid)
     if token != expected:
         return "Invalid or unauthorized magic link.", 403
     
-    # We will build a lightweight HTML template inline or via render_template_string
-    # But since DCR uses html_render for SPA, we can return a simple HTML page.
-    digest = db.get_daily_digest(pid, [dt_id])
-    
-    from flask import render_template_string
+    # We serve the empty shell HTML. The frontend will fetch data via AJAX.
+    # We embed the pid and token in the template.
     template = """
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Daily Digest</title>
+        <title>Smart Project Digest</title>
         <style>
             body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #0f172a; padding: 20px; margin: 0; }
+            .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+            .header-bar h1 { font-size: 20px; margin: 0; color: #0f172a; }
+            .controls { display: flex; gap: 10px; align-items: center; }
+            select, input[type="date"] { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 14px; outline: none; }
             .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-bottom: 20px; }
+            .stat-box { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }
+            .stat-box .val { font-size: 24px; font-weight: bold; color: #0f172a; }
+            .stat-box .lbl { font-size: 12px; color: #64748b; margin-top: 4px; text-transform: uppercase; }
+            
             h2 { font-size: 18px; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
-            .h-recv { color: #2563eb; border-color: #bfdbfe; }
-            .h-sent { color: #ea580c; border-color: #fed7aa; }
-            .h-repl { color: #16a34a; border-color: #bbf7d0; }
+            .h-action { color: #dc2626; border-color: #fecaca; }
+            .h-info { color: #2563eb; border-color: #bfdbfe; }
+            
             .item { padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
             .item:last-child { border: none; padding-bottom: 0; }
             .docno { font-weight: bold; color: #334155; }
             .title { color: #64748b; margin-top: 4px; font-size: 13px; }
+            .disc { display: inline-block; padding: 2px 8px; border-radius: 12px; background: #e2e8f0; font-size: 11px; font-weight: 600; color: #475569; margin-top: 4px; }
             .empty { color: #94a3b8; font-size: 14px; font-style: italic; }
+            
+            .top-overdue-card { border: 2px solid #fee2e2; }
+            .top-overdue-card h2 { color: #b91c1c; border-color: #fecaca; }
+            
+            #loading { text-align: center; color: #64748b; padding: 40px; display: none; }
         </style>
     </head>
     <body>
-        <h1 style="font-size:20px;text-align:center;color:#0f172a;margin-bottom:24px;">📋 Daily Digest - Today</h1>
-        
-        <div class="card">
-            <h2 class="h-recv">📥 Received Today ({{ digest.received|length }})</h2>
-            {% for doc in digest.received %}
-            <div class="item">
-                <div class="docno">{{ doc.docNo }}</div>
-                <div class="title">{{ doc.title }}</div>
+        <div class="header-bar">
+            <h1>📋 Smart Project Digest</h1>
+            <div class="controls">
+                <input type="date" id="datePicker" title="History Date">
+                <select id="roleFilter">
+                    <option value="">👤 Select Role...</option>
+                    <option value="__ALL__">Project Management (All)</option>
+                </select>
             </div>
-            {% else %}
-            <div class="empty">No documents received today.</div>
-            {% endfor %}
         </div>
         
-        <div class="card">
-            <h2 class="h-sent">📤 Issued/Sent Today ({{ digest.issued|length }})</h2>
-            {% for doc in digest.issued %}
-            <div class="item">
-                <div class="docno">{{ doc.docNo }}</div>
-                <div class="title">{{ doc.title }}</div>
-            </div>
-            {% else %}
-            <div class="empty">No documents issued today.</div>
-            {% endfor %}
-        </div>
+        <div class="stats-grid" id="statsContainer"></div>
         
-        <div class="card">
-            <h2 class="h-repl">✅ Replied Today ({{ digest.replied|length }})</h2>
-            {% for doc in digest.replied %}
-            <div class="item">
-                <div class="docno">{{ doc.docNo }}</div>
-                <div class="title">{{ doc.title }}</div>
-                {% if doc.status %}<div style="margin-top:4px;font-size:12px;font-weight:bold;color:#475569;">Status: {{ doc.status }}</div>{% endif %}
+        <div id="loading">Loading data...</div>
+        <div id="content" style="display:none;">
+            <div class="card top-overdue-card" id="overdueCard" style="display:none;">
+                <h2>🚨 Top 5 Overdue</h2>
+                <div id="overdueList"></div>
             </div>
-            {% else %}
-            <div class="empty">No documents replied today.</div>
-            {% endfor %}
+            
+            <div class="card">
+                <h2 class="h-action">🔥 Action Items (Pending Reply)</h2>
+                <div id="actionList"></div>
+            </div>
+            
+            <div class="card">
+                <h2 class="h-info">ℹ️ Info Items (Closed / CC)</h2>
+                <div id="infoList"></div>
+            </div>
         </div>
+
+        <script>
+            const PID = "{{ pid }}";
+            const TOKEN = "{{ token }}";
+            const datePicker = document.getElementById('datePicker');
+            const roleFilter = document.getElementById('roleFilter');
+            const loading = document.getElementById('loading');
+            const content = document.getElementById('content');
+            
+            let rawData = null;
+            
+            // Set default date to today
+            const today = new Date().toISOString().split('T')[0];
+            datePicker.value = today;
+            
+            async function fetchData() {
+                loading.style.display = 'block';
+                content.style.display = 'none';
+                
+                try {
+                    const res = await fetch(`/api/magic/data/${PID}?token=${TOKEN}&date=${datePicker.value}`);
+                    if (!res.ok) throw new Error("Failed to fetch");
+                    rawData = await res.json();
+                    
+                    // Populate Roles Dropdown if not already populated
+                    if (roleFilter.options.length <= 2 && rawData.matrix) {
+                        for (const discipline in rawData.matrix) {
+                            if (discipline !== "Project Management") {
+                                const opt = document.createElement('option');
+                                opt.value = discipline;
+                                opt.textContent = discipline;
+                                roleFilter.appendChild(opt);
+                            }
+                        }
+                    }
+                    
+                    renderData();
+                } catch (e) {
+                    alert("Error loading data.");
+                } finally {
+                    loading.style.display = 'none';
+                    if (rawData) content.style.display = 'block';
+                }
+            }
+            
+            function isActionItem(doc) {
+                // Documents that are pending or require reply
+                const status = (doc.status || "").toLowerCase();
+                return status === "pending" || status === "open" || status === "rejected";
+            }
+            
+            function renderData() {
+                if (!rawData) return;
+                
+                const selectedRole = roleFilter.value;
+                const isPM = selectedRole === "__ALL__" || selectedRole === "";
+                
+                // Render Stats
+                document.getElementById('statsContainer').innerHTML = `
+                    <div class="stat-box"><div class="val">${rawData.stats.total || 0}</div><div class="lbl">Total Docs</div></div>
+                    <div class="stat-box"><div class="val">${rawData.stats.approved || 0}</div><div class="lbl">Approved</div></div>
+                    <div class="stat-box"><div class="val" style="color:#eab308">${rawData.stats.pending || 0}</div><div class="lbl">Pending</div></div>
+                    <div class="stat-box"><div class="val" style="color:#ef4444">${rawData.stats.overdue || 0}</div><div class="lbl">Overdue</div></div>
+                `;
+                
+                // Filter Documents
+                let actionItems = [];
+                let infoItems = [];
+                
+                // Digest contains: received, issued, replied
+                const allDigestDocs = [...(rawData.digest.received||[]), ...(rawData.digest.issued||[]), ...(rawData.digest.replied||[])];
+                
+                // Deduplicate by ID
+                const uniqueDocs = [];
+                const seen = new Set();
+                for (const d of allDigestDocs) {
+                    if (!seen.has(d.id)) {
+                        seen.add(d.id);
+                        uniqueDocs.push(d);
+                    }
+                }
+                
+                for (const doc of uniqueDocs) {
+                    const dDisc = (doc.discipline || "").toLowerCase().trim();
+                    const rDisc = selectedRole.toLowerCase().trim();
+                    
+                    // Bypass logic for PM
+                    let show = isPM;
+                    if (!show) {
+                        // If exact discipline match, or if it's part of the discipline string
+                        if (dDisc && rDisc && (dDisc.includes(rDisc) || rDisc.includes(dDisc))) {
+                            show = true;
+                        }
+                    }
+                    
+                    if (show) {
+                        if (isActionItem(doc)) actionItems.push(doc);
+                        else infoItems.push(doc);
+                    }
+                }
+                
+                // Render Overdue (Top 5)
+                const overdueList = document.getElementById('overdueList');
+                if (rawData.top_overdue && rawData.top_overdue.length > 0) {
+                    document.getElementById('overdueCard').style.display = 'block';
+                    overdueList.innerHTML = rawData.top_overdue.map(d => `
+                        <div class="item">
+                            <div class="docno">${d.docNo}</div>
+                            <div class="title">${d.title}</div>
+                            <div class="disc">${d.discipline || 'No Discipline'}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    document.getElementById('overdueCard').style.display = 'none';
+                }
+                
+                // Render Action / Info
+                const renderList = (arr, elId, emptyMsg) => {
+                    const el = document.getElementById(elId);
+                    if (arr.length === 0) {
+                        el.innerHTML = `<div class="empty">${emptyMsg}</div>`;
+                    } else {
+                        el.innerHTML = arr.map(d => `
+                            <div class="item">
+                                <div class="docno">${d.docNo}</div>
+                                <div class="title">${d.title}</div>
+                                <div>
+                                    <span class="disc">${d.discipline || 'No Disc.'}</span>
+                                    <span style="font-size:11px;font-weight:bold;color:#475569;margin-left:8px;">${d.status || 'No Status'}</span>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                };
+                
+                renderList(actionItems, 'actionList', 'No action items today.');
+                renderList(infoItems, 'infoList', 'No info items today.');
+            }
+            
+            datePicker.addEventListener('change', fetchData);
+            roleFilter.addEventListener('change', renderData);
+            
+            // Initial fetch
+            fetchData();
+        </script>
     </body>
     </html>
     """
-    return render_template_string(template, digest=digest)
+    from flask import render_template_string
+    return render_template_string(template, pid=pid, token=token)
+
+@app.route("/api/magic/data/<pid>", methods=["GET"])
+def api_magic_data(pid):
+    token = request.args.get("token", "")
+    expected = _generate_master_magic_token(pid)
+    if token != expected:
+        return jsonify(error="Unauthorized"), 403
+        
+    date_str = request.args.get("date")
+    
+    # Get all doc types for the project
+    dt_ids = [dt["id"] for dt in db.get_doc_types(pid)]
+    
+    # Fetch Data
+    stats = db.get_dashboard_stats(pid)
+    digest = db.get_daily_digest(pid, dt_ids, target_date=date_str)
+    
+    # Overdue Top 5
+    all_overdue = db.get_overdue_records(pid)
+    # Format overdue identically to digest format for frontend
+    top_overdue = []
+    for r in all_overdue[:5]:
+        d = r.get("data") or {}
+        top_overdue.append({
+            "id": str(r.get("id", "")),
+            "docNo": str(d.get("docNo") or d.get("record_id") or "Untitled"),
+            "title": str(d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject"),
+            "status": str(d.get("status") or d.get("partDStatus") or d.get("partBStatus") or ""),
+            "discipline": str(d.get("discipline") or d.get("trade") or "")
+        })
+        
+    # We also need to add 'discipline' to digest docs for frontend filtering
+    for k in ["received", "issued", "replied"]:
+        for doc in digest[k]:
+            # db.get_daily_digest format_rec doesn't include discipline, we need to fetch it from original records,
+            # but db.get_daily_digest already mapped it. Let's patch db.get_daily_digest to return discipline!
+            pass # See next instruction
+            
+    # Matrix config
+    projects = db.get_projects()
+    proj = next((p for p in projects if p["id"] == pid or p.get("code") == pid), None)
+    matrix = {}
+    if proj and proj.get("data"):
+        matrix = proj["data"].get("distribution_matrix", {})
+        
+    return jsonify({
+        "stats": stats,
+        "digest": digest,
+        "top_overdue": top_overdue,
+        "matrix": matrix
+    })
 
 @app.route("/api/daily_digest/<pid>", methods=["GET"])
 def api_daily_digest(pid):
