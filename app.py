@@ -427,7 +427,7 @@ def magic_master_view(pid):
             <div class="controls">
                 <input type="date" id="datePicker" title="History Date">
                 <select id="roleFilter">
-                    <option value="__ALL__" selected>Show All / Project Management</option>
+                    <option value="__ALL__" selected>Show All</option>
                 </select>
             </div>
         </div>
@@ -540,13 +540,29 @@ def magic_master_view(pid):
                 const repliedDocs = filterList(rawData.digest.replied, 'docs');
                 
                 // Letters
-                // Incoming letters are in received. Outgoing letters are in issued.
-                // Sometimes letters might be replied, but usually they are just issued or received.
-                // We'll gather letters from received for Incoming, and from issued/replied for Outgoing.
-                const incomingLetters = filterList(rawData.digest.received, 'letters');
-                const outgoingLetters1 = filterList(rawData.digest.issued, 'letters');
-                const outgoingLetters2 = filterList(rawData.digest.replied, 'letters');
-                const outgoingLetters = [...outgoingLetters1, ...outgoingLetters2];
+                // Deduplicate letters across all lists
+                const allLettersRaw = [
+                    ...(rawData.digest.received || []),
+                    ...(rawData.digest.issued || []),
+                    ...(rawData.digest.replied || [])
+                ].filter(d => d.is_letter);
+                
+                const uniqueLettersMap = new Map();
+                for (const l of allLettersRaw) {
+                    uniqueLettersMap.set(l.id, l);
+                }
+                const uniqueLetters = filterList(Array.from(uniqueLettersMap.values()), 'letters');
+                
+                const incomingLetters = [];
+                const outgoingLetters = [];
+                for (const l of uniqueLetters) {
+                    const dir = (l.direction || '').toLowerCase();
+                    if (dir === 'received' || dir === 'in') {
+                        incomingLetters.push(l);
+                    } else {
+                        outgoingLetters.push(l);
+                    }
+                }
                 
                 // Render Stats
                 document.getElementById('statsContainer').innerHTML = `
