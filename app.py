@@ -34,7 +34,7 @@ app.register_blueprint(exporting_bp)
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, can_edit, can_view_project, get_allowed_project_ids
 
-PUBLIC_ENDPOINTS = {"login", "logout", "static", "magic_digest_view"}
+PUBLIC_ENDPOINTS = {"login", "logout", "static", "magic_master_view", "api_magic_data"}
 
 
 @app.before_request
@@ -596,54 +596,50 @@ def magic_master_view(pid):
 
 @app.route("/api/magic/data/<pid>", methods=["GET"])
 def api_magic_data(pid):
-    token = request.args.get("token", "")
-    expected = _generate_master_magic_token(pid)
-    if token != expected:
-        return jsonify(error="Unauthorized"), 403
-        
-    date_str = request.args.get("date")
-    
-    # Get all doc types for the project
-    dt_ids = [dt["id"] for dt in db.get_doc_types(pid)]
-    
-    # Fetch Data
-    stats = db.get_dashboard_stats(pid)
-    digest = db.get_daily_digest(pid, dt_ids, target_date=date_str)
-    
-    # Overdue Top 5
-    all_overdue = db.get_overdue_records(pid)
-    # Format overdue identically to digest format for frontend
-    top_overdue = []
-    for r in all_overdue[:5]:
-        d = r.get("data") or {}
-        top_overdue.append({
-            "id": str(r.get("id", "")),
-            "docNo": str(d.get("docNo") or d.get("record_id") or "Untitled"),
-            "title": str(d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject"),
-            "status": str(d.get("status") or d.get("partDStatus") or d.get("partBStatus") or ""),
-            "discipline": str(d.get("discipline") or d.get("trade") or "")
-        })
-        
-    # We also need to add 'discipline' to digest docs for frontend filtering
-    for k in ["received", "issued", "replied"]:
-        for doc in digest[k]:
-            # db.get_daily_digest format_rec doesn't include discipline, we need to fetch it from original records,
-            # but db.get_daily_digest already mapped it. Let's patch db.get_daily_digest to return discipline!
-            pass # See next instruction
+    try:
+        token = request.args.get("token", "")
+        expected = _generate_master_magic_token(pid)
+        if token != expected:
+            return jsonify(error="Unauthorized"), 403
             
-    # Matrix config
-    projects = db.get_projects()
-    proj = next((p for p in projects if p["id"] == pid or p.get("code") == pid), None)
-    matrix = {}
-    if proj and proj.get("data"):
-        matrix = proj["data"].get("distribution_matrix", {})
+        date_str = request.args.get("date")
         
-    return jsonify({
-        "stats": stats,
-        "digest": digest,
-        "top_overdue": top_overdue,
-        "matrix": matrix
-    })
+        # Get all doc types for the project
+        dt_ids = [dt["id"] for dt in db.get_doc_types(pid)]
+        
+        # Fetch Data
+        stats = db.get_dashboard_stats(pid)
+        digest = db.get_daily_digest(pid, dt_ids, target_date=date_str)
+        
+        # Overdue Top 5
+        all_overdue = db.get_overdue_records(pid)
+        # Format overdue identically to digest format for frontend
+        top_overdue = []
+        for r in all_overdue[:5]:
+            d = r.get("data") or {}
+            top_overdue.append({
+                "id": str(r.get("id", "")),
+                "docNo": str(d.get("docNo") or d.get("record_id") or "Untitled"),
+                "title": str(d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject"),
+                "status": str(d.get("status") or d.get("partDStatus") or d.get("partBStatus") or ""),
+                "discipline": str(d.get("discipline") or d.get("trade") or "")
+            })
+                
+        # Matrix config
+        projects = db.get_projects()
+        proj = next((p for p in projects if p["id"] == pid or p.get("code") == pid), None)
+        matrix = {}
+        if proj and proj.get("data"):
+            matrix = proj["data"].get("distribution_matrix", {})
+            
+        return jsonify({
+            "stats": stats,
+            "digest": digest,
+            "top_overdue": top_overdue,
+            "matrix": matrix
+        })
+    except Exception as e:
+        return jsonify(error=str(e)), 500
 
 @app.route("/api/daily_digest/<pid>", methods=["GET"])
 def api_daily_digest(pid):
