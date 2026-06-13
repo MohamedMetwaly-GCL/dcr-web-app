@@ -434,13 +434,18 @@ def magic_master_view(pid):
             </div>
             
             <div class="card">
-                <h2 class="h-action">🔥 Action Items (Pending Reply)</h2>
-                <div id="actionList"></div>
+                <h2 style="color: #059669; border-color: #a7f3d0;">📥 Documents Received</h2>
+                <div id="receivedList"></div>
             </div>
             
             <div class="card">
-                <h2 class="h-info">ℹ️ Info Items (Closed / CC)</h2>
-                <div id="infoList"></div>
+                <h2 style="color: #2563eb; border-color: #bfdbfe;">📤 Documents Sent</h2>
+                <div id="sentList"></div>
+            </div>
+            
+            <div class="card">
+                <h2 style="color: #7c3aed; border-color: #ddd6fe;">↩️ Documents Replied</h2>
+                <div id="repliedList"></div>
             </div>
         </div>
 
@@ -488,12 +493,6 @@ def magic_master_view(pid):
                 }
             }
             
-            function isActionItem(doc) {
-                // Documents that are pending or require reply
-                const status = (doc.status || "").toLowerCase();
-                return status === "pending" || status === "open" || status === "rejected";
-            }
-            
             function renderData() {
                 if (!rawData) return;
                 
@@ -508,41 +507,27 @@ def magic_master_view(pid):
                     <div class="stat-box"><div class="val" style="color:#ef4444">${rawData.stats.overdue || 0}</div><div class="lbl">Overdue</div></div>
                 `;
                 
-                // Filter Documents
-                let actionItems = [];
-                let infoItems = [];
-                
-                // Digest contains: received, issued, replied
-                const allDigestDocs = [...(rawData.digest.received||[]), ...(rawData.digest.issued||[]), ...(rawData.digest.replied||[])];
-                
-                // Deduplicate by ID
-                const uniqueDocs = [];
-                const seen = new Set();
-                for (const d of allDigestDocs) {
-                    if (!seen.has(d.id)) {
-                        seen.add(d.id);
-                        uniqueDocs.push(d);
-                    }
-                }
-                
-                for (const doc of uniqueDocs) {
-                    const dDisc = (doc.discipline || "").toLowerCase().trim();
-                    const rDisc = selectedRole.toLowerCase().trim();
-                    
-                    // Bypass logic for PM
-                    let show = isPM;
-                    if (!show) {
-                        // If exact discipline match, or if it's part of the discipline string
-                        if (dDisc && rDisc && (dDisc.includes(rDisc) || rDisc.includes(dDisc))) {
+                // Filter Documents Function
+                function filterList(list) {
+                    if(!list) return [];
+                    const filtered = [];
+                    for (const doc of list) {
+                        const dDisc = (doc.discipline || "").toLowerCase().trim();
+                        const rDisc = selectedRole.toLowerCase().trim();
+                        
+                        let show = isPM;
+                        if (!show && dDisc && rDisc && (dDisc.includes(rDisc) || rDisc.includes(dDisc))) {
                             show = true;
                         }
+                        
+                        if (show) filtered.push(doc);
                     }
-                    
-                    if (show) {
-                        if (isActionItem(doc)) actionItems.push(doc);
-                        else infoItems.push(doc);
-                    }
+                    return filtered;
                 }
+                
+                const receivedItems = filterList(rawData.digest.received);
+                const sentItems = filterList(rawData.digest.issued);
+                const repliedItems = filterList(rawData.digest.replied);
                 
                 // Render Overdue (Top 5)
                 const overdueList = document.getElementById('overdueList');
@@ -559,7 +544,7 @@ def magic_master_view(pid):
                     document.getElementById('overdueCard').style.display = 'none';
                 }
                 
-                // Render Action / Info
+                // Render Lists
                 const renderList = (arr, elId, emptyMsg) => {
                     const el = document.getElementById(elId);
                     if (arr.length === 0) {
@@ -578,8 +563,9 @@ def magic_master_view(pid):
                     }
                 };
                 
-                renderList(actionItems, 'actionList', 'No action items today.');
-                renderList(infoItems, 'infoList', 'No info items today.');
+                renderList(receivedItems, 'receivedList', 'No documents received today.');
+                renderList(sentItems, 'sentList', 'No documents sent today.');
+                renderList(repliedItems, 'repliedList', 'No documents replied today.');
             }
             
             datePicker.addEventListener('change', fetchData);
@@ -608,7 +594,8 @@ def api_magic_data(pid):
         dt_ids = [dt["id"] for dt in db.get_doc_types(pid)]
         
         # Fetch Data
-        stats = db.get_dashboard_stats(pid)
+        stats_list = db.get_dashboard_stats([pid])
+        stats = stats_list[0] if stats_list else {"total": 0, "approved": 0, "pending": 0, "overdue": 0}
         digest = db.get_daily_digest(pid, dt_ids, target_date=date_str)
         
         # Overdue Top 5
@@ -616,13 +603,12 @@ def api_magic_data(pid):
         # Format overdue identically to digest format for frontend
         top_overdue = []
         for r in all_overdue[:5]:
-            d = r.get("data") or {}
             top_overdue.append({
-                "id": str(r.get("id", "")),
-                "docNo": str(d.get("docNo") or d.get("record_id") or "Untitled"),
-                "title": str(d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject"),
-                "status": str(d.get("status") or d.get("partDStatus") or d.get("partBStatus") or ""),
-                "discipline": str(d.get("discipline") or d.get("trade") or "")
+                "id": "",
+                "docNo": str(r.get("docNo") or "Untitled"),
+                "title": str(r.get("title") or "No Subject"),
+                "status": str(r.get("status") or ""),
+                "discipline": str(r.get("discipline") or "")
             })
                 
         # Matrix config
