@@ -374,6 +374,15 @@ def magic_master_view(pid):
     if token != expected:
         return "Invalid or unauthorized magic link.", 403
     
+    # Fetch project details
+    projects = db.get_projects()
+    project = next((p for p in projects if p["id"] == pid or p.get("code") == pid), None)
+    if not project:
+        return "Project not found", 404
+        
+    p_code = project.get("code", "")
+    p_name = project.get("name", "")
+    
     # We serve the empty shell HTML. The frontend will fetch data via AJAX.
     # We embed the pid and token in the template.
     template = """
@@ -414,7 +423,7 @@ def magic_master_view(pid):
     </head>
     <body>
         <div class="header-bar">
-            <h1>📋 Smart Project Digest</h1>
+            <h1>📋 Smart Project Digest <span style="font-size: 16px; color: #64748b; margin-left: 10px;">{{ p_code }} - {{ p_name }}</span></h1>
             <div class="controls">
                 <input type="date" id="datePicker" title="History Date">
                 <select id="roleFilter">
@@ -548,7 +557,7 @@ def magic_master_view(pid):
                 `;
                 
                 // Render Lists
-                const renderList = (arr, elId, emptyMsg) => {
+                const renderList = (arr, elId, emptyMsg, hideStatus=false) => {
                     const el = document.getElementById(elId);
                     if (arr.length === 0) {
                         el.innerHTML = `<div class="empty">${emptyMsg}</div>`;
@@ -559,7 +568,7 @@ def magic_master_view(pid):
                                 <div class="title">${d.title}</div>
                                 <div>
                                     <span class="disc">${d.discipline || 'No Disc.'}</span>
-                                    <span style="font-size:11px;font-weight:bold;color:#475569;margin-left:8px;">${d.status || 'No Status'}</span>
+                                    ${!hideStatus ? `<span style="font-size:11px;font-weight:bold;color:#475569;margin-left:8px;">${d.status || 'No Status'}</span>` : ''}
                                 </div>
                             </div>
                         `).join('');
@@ -569,8 +578,8 @@ def magic_master_view(pid):
                 renderList(receivedDocs, 'receivedList', 'No documents received today.');
                 renderList(sentDocs, 'sentList', 'No documents sent today.');
                 renderList(repliedDocs, 'repliedList', 'No documents replied today.');
-                renderList(incomingLetters, 'incomingLettersList', 'No incoming letters today.');
-                renderList(outgoingLetters, 'outgoingLettersList', 'No outgoing letters today.');
+                renderList(incomingLetters, 'incomingLettersList', 'No incoming letters today.', true);
+                renderList(outgoingLetters, 'outgoingLettersList', 'No outgoing letters today.', true);
             }
             
             datePicker.addEventListener('change', fetchData);
@@ -583,7 +592,7 @@ def magic_master_view(pid):
     </html>
     """
     from flask import render_template_string
-    return render_template_string(template, pid=pid, token=token)
+    return render_template_string(template, pid=pid, token=token, p_code=p_code, p_name=p_name)
 
 @app.route("/api/magic/data/<pid>", methods=["GET"])
 def api_magic_data(pid):
