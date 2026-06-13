@@ -688,9 +688,14 @@ def get_daily_digest(pid, doc_type_ids, target_date=None):
     for p in get_projects():
         project_names[p["id"]] = p["name"]
         if p.get("code"): project_names[p["code"]] = p["name"]
+        
+    dt_rows = q("SELECT id, code, name FROM doc_types WHERE project_id=%s", (pid,))
+    dt_map = {r["id"]: r for r in dt_rows}
+
     def format_rec(rec):
         d = rec.get("data") or {}
         proj_name = project_names.get(rec["project_id"], rec["project_id"])
+        dt = dt_map.get(rec.get("dt_id"), {})
         return {
             "id": str(rec.get("id", "")),
             "project_id": str(rec.get("project_id", "")),
@@ -699,7 +704,9 @@ def get_daily_digest(pid, doc_type_ids, target_date=None):
             "docNo": str(d.get("docNo") or d.get("record_id") or "Untitled"),
             "title": str(d.get("title") or d.get("subject") or d.get("nocDescription") or "No Subject"),
             "status": str(d.get("status") or d.get("partDStatus") or d.get("partBStatus") or ""),
-            "discipline": str(d.get("discipline") or d.get("trade") or "")
+            "discipline": str(d.get("discipline") or d.get("trade") or ""),
+            "is_letter": _is_ltr_dt(dt.get("code", ""), dt.get("name", "")),
+            "direction": str(d.get("direction", "")).strip().lower()
         }
         
     return {

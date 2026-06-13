@@ -418,8 +418,7 @@ def magic_master_view(pid):
             <div class="controls">
                 <input type="date" id="datePicker" title="History Date">
                 <select id="roleFilter">
-                    <option value="">👤 Select Role...</option>
-                    <option value="__ALL__">Project Management (All)</option>
+                    <option value="__ALL__" selected>Show All / Project Management</option>
                 </select>
             </div>
         </div>
@@ -428,10 +427,7 @@ def magic_master_view(pid):
         
         <div id="loading">Loading data...</div>
         <div id="content" style="display:none;">
-            <div class="card top-overdue-card" id="overdueCard" style="display:none;">
-                <h2>🚨 Top 5 Overdue</h2>
-                <div id="overdueList"></div>
-            </div>
+
             
             <div class="card">
                 <h2 style="color: #059669; border-color: #a7f3d0;">📥 Documents Received</h2>
@@ -446,6 +442,16 @@ def magic_master_view(pid):
             <div class="card">
                 <h2 style="color: #7c3aed; border-color: #ddd6fe;">↩️ Documents Replied</h2>
                 <div id="repliedList"></div>
+            </div>
+            
+            <div class="card">
+                <h2 style="color: #ea580c; border-color: #fdba74;">📩 Incoming Letters</h2>
+                <div id="incomingLettersList"></div>
+            </div>
+            
+            <div class="card">
+                <h2 style="color: #db2777; border-color: #fbcfe8;">📤 Outgoing Letters</h2>
+                <div id="outgoingLettersList"></div>
             </div>
         </div>
 
@@ -499,19 +505,14 @@ def magic_master_view(pid):
                 const selectedRole = roleFilter.value;
                 const isPM = selectedRole === "__ALL__" || selectedRole === "";
                 
-                // Render Stats
-                document.getElementById('statsContainer').innerHTML = `
-                    <div class="stat-box"><div class="val">${rawData.stats.total || 0}</div><div class="lbl">Total Docs</div></div>
-                    <div class="stat-box"><div class="val">${rawData.stats.approved || 0}</div><div class="lbl">Approved</div></div>
-                    <div class="stat-box"><div class="val" style="color:#eab308">${rawData.stats.pending || 0}</div><div class="lbl">Pending</div></div>
-                    <div class="stat-box"><div class="val" style="color:#ef4444">${rawData.stats.overdue || 0}</div><div class="lbl">Overdue</div></div>
-                `;
-                
                 // Filter Documents Function
-                function filterList(list) {
+                function filterList(list, type) {
                     if(!list) return [];
                     const filtered = [];
                     for (const doc of list) {
+                        if (type === 'docs' && doc.is_letter) continue;
+                        if (type === 'letters' && !doc.is_letter) continue;
+                        
                         const dDisc = (doc.discipline || "").toLowerCase().trim();
                         const rDisc = selectedRole.toLowerCase().trim();
                         
@@ -525,24 +526,26 @@ def magic_master_view(pid):
                     return filtered;
                 }
                 
-                const receivedItems = filterList(rawData.digest.received);
-                const sentItems = filterList(rawData.digest.issued);
-                const repliedItems = filterList(rawData.digest.replied);
+                const receivedDocs = filterList(rawData.digest.received, 'docs');
+                const sentDocs = filterList(rawData.digest.issued, 'docs');
+                const repliedDocs = filterList(rawData.digest.replied, 'docs');
                 
-                // Render Overdue (Top 5)
-                const overdueList = document.getElementById('overdueList');
-                if (rawData.top_overdue && rawData.top_overdue.length > 0) {
-                    document.getElementById('overdueCard').style.display = 'block';
-                    overdueList.innerHTML = rawData.top_overdue.map(d => `
-                        <div class="item">
-                            <div class="docno">${d.docNo}</div>
-                            <div class="title">${d.title}</div>
-                            <div class="disc">${d.discipline || 'No Discipline'}</div>
-                        </div>
-                    `).join('');
-                } else {
-                    document.getElementById('overdueCard').style.display = 'none';
-                }
+                // Letters
+                // Incoming letters are in received. Outgoing letters are in issued.
+                // Sometimes letters might be replied, but usually they are just issued or received.
+                // We'll gather letters from received for Incoming, and from issued/replied for Outgoing.
+                const incomingLetters = filterList(rawData.digest.received, 'letters');
+                const outgoingLetters1 = filterList(rawData.digest.issued, 'letters');
+                const outgoingLetters2 = filterList(rawData.digest.replied, 'letters');
+                const outgoingLetters = [...outgoingLetters1, ...outgoingLetters2];
+                
+                // Render Stats
+                document.getElementById('statsContainer').innerHTML = `
+                    <div class="stat-box"><div class="val" style="color:#2563eb">${sentDocs.length}</div><div class="lbl">Sent Today</div></div>
+                    <div class="stat-box"><div class="val" style="color:#7c3aed">${repliedDocs.length}</div><div class="lbl">Replied Today</div></div>
+                    <div class="stat-box"><div class="val" style="color:#ea580c">${incomingLetters.length}</div><div class="lbl">Incoming Letters</div></div>
+                    <div class="stat-box"><div class="val" style="color:#db2777">${outgoingLetters.length}</div><div class="lbl">Outgoing Letters</div></div>
+                `;
                 
                 // Render Lists
                 const renderList = (arr, elId, emptyMsg) => {
@@ -563,9 +566,11 @@ def magic_master_view(pid):
                     }
                 };
                 
-                renderList(receivedItems, 'receivedList', 'No documents received today.');
-                renderList(sentItems, 'sentList', 'No documents sent today.');
-                renderList(repliedItems, 'repliedList', 'No documents replied today.');
+                renderList(receivedDocs, 'receivedList', 'No documents received today.');
+                renderList(sentDocs, 'sentList', 'No documents sent today.');
+                renderList(repliedDocs, 'repliedList', 'No documents replied today.');
+                renderList(incomingLetters, 'incomingLettersList', 'No incoming letters today.');
+                renderList(outgoingLetters, 'outgoingLettersList', 'No outgoing letters today.');
             }
             
             datePicker.addEventListener('change', fetchData);
@@ -593,24 +598,8 @@ def api_magic_data(pid):
         # Get all doc types for the project
         dt_ids = [dt["id"] for dt in db.get_doc_types(pid)]
         
-        # Fetch Data
-        stats_list = db.get_dashboard_stats([pid])
-        stats = stats_list[0] if stats_list else {"total": 0, "approved": 0, "pending": 0, "overdue": 0}
         digest = db.get_daily_digest(pid, dt_ids, target_date=date_str)
         
-        # Overdue Top 5
-        all_overdue = db.get_overdue_records(pid)
-        # Format overdue identically to digest format for frontend
-        top_overdue = []
-        for r in all_overdue[:5]:
-            top_overdue.append({
-                "id": "",
-                "docNo": str(r.get("docNo") or "Untitled"),
-                "title": str(r.get("title") or "No Subject"),
-                "status": str(r.get("status") or ""),
-                "discipline": str(r.get("discipline") or "")
-            })
-                
         # Matrix config
         projects = db.get_projects()
         proj = next((p for p in projects if p["id"] == pid or p.get("code") == pid), None)
@@ -619,9 +608,7 @@ def api_magic_data(pid):
             matrix = proj["data"].get("distribution_matrix", {})
             
         return jsonify({
-            "stats": stats,
             "digest": digest,
-            "top_overdue": top_overdue,
             "matrix": matrix
         })
     except Exception as e:
