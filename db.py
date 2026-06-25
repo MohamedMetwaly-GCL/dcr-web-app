@@ -1047,8 +1047,8 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
                         JOIN doc_types dt ON p.dt_id = dt.id 
                         WHERE p.project_id = records.project_id 
                           AND UPPER(dt.code) = 'PCQ' 
-                          AND (p.data->>'attachments' ILIKE '%' || (records.data->>'docNo') || '%'
-                               OR p.data->>'fileLocation' ILIKE '%' || (records.data->>'docNo') || '%')
+                          AND (p.data->>'attachments' ILIKE '%%' || (records.data->>'docNo') || '%%'
+                               OR p.data->>'fileLocation' ILIKE '%%' || (records.data->>'docNo') || '%%')
                         LIMIT 1)
                    ) AS data, 
                    records.created_at
