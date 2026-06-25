@@ -1047,8 +1047,13 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
                         JOIN doc_types dt ON p.dt_id = dt.id 
                         WHERE p.project_id = records.project_id 
                           AND UPPER(dt.code) = 'PCQ' 
-                          AND (p.data->>'attachments' ILIKE '%%' || split_part(records.data->>'docNo', ' REV', 1) || '%%'
-                               OR p.data->>'fileLocation' ILIKE '%%' || split_part(records.data->>'docNo', ' REV', 1) || '%%')
+                          AND COALESCE(TRIM(split_part(records.data->>'docNo', ' REV', 1)), '') <> ''
+                          AND (
+                               p.data->>'attachments' ILIKE '%%' || TRIM(split_part(records.data->>'docNo', ' REV', 1)) || '%%'
+                               OR p.data->>'attachment' ILIKE '%%' || TRIM(split_part(records.data->>'docNo', ' REV', 1)) || '%%'
+                               OR p.data->>'fileLocation' ILIKE '%%' || TRIM(split_part(records.data->>'docNo', ' REV', 1)) || '%%'
+                               OR p.data->>'filelocation' ILIKE '%%' || TRIM(split_part(records.data->>'docNo', ' REV', 1)) || '%%'
+                          )
                         LIMIT 1)
                    ) AS data, 
                    records.created_at
