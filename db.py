@@ -1048,12 +1048,7 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
                         WHERE p.project_id = records.project_id 
                           AND UPPER(dt.code) = 'PCQ' 
                           AND COALESCE(TRIM(split_part(records.data->>'docNo', ' REV', 1)), '') <> ''
-                          AND (
-                               p.data->>'attachments' ILIKE '%%' || TRIM(split_part(records.data->>'docNo', ' REV', 1)) || '%%'
-                               OR p.data->>'attachment' ILIKE '%%' || TRIM(split_part(records.data->>'docNo', ' REV', 1)) || '%%'
-                               OR p.data->>'fileLocation' ILIKE '%%' || TRIM(split_part(records.data->>'docNo', ' REV', 1)) || '%%'
-                               OR p.data->>'filelocation' ILIKE '%%' || TRIM(split_part(records.data->>'docNo', ' REV', 1)) || '%%'
-                          )
+                          AND p.data::text ILIKE CONCAT('%%', TRIM(split_part(records.data->>'docNo', ' REV', 1)), '%%')
                         LIMIT 1)
                    ) AS data, 
                    records.created_at
@@ -1076,6 +1071,7 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
                 )
                 ORDER BY created_at
             """
+            if is_noc: print(f"--- DEBUG NOC QUERY (search_pr_items) ---\n{sql}\n------------------------", flush=True)
             rows = q(sql, (pid, dt_id, sq, sq, sq))
         else:
             sql = f"""
@@ -1085,9 +1081,11 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
                 AND data::text ILIKE %s
                 ORDER BY created_at
             """
+            if is_noc: print(f"--- DEBUG NOC QUERY (search) ---\n{sql}\n------------------------", flush=True)
             rows = q(sql, (pid, dt_id, sq))
     else:
         sql = f"{select_clause} FROM records WHERE project_id=%s AND dt_id=%s ORDER BY created_at"
+        if is_noc: print(f"--- DEBUG NOC QUERY ---\n{sql}\n------------------------", flush=True)
         rows = q(sql, (pid, dt_id))
     result = []
     for row in rows:
