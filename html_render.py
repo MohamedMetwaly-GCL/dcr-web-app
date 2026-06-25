@@ -4640,7 +4640,7 @@ function getOrderedRecordFormCols(allCols,isLtrTab,isNocTab=false){{
 
 async function buildForm(row,opts={{}}){{
   const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols){{releaseRecordSave();return;}}
-  const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today']);
+  const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today','related_pcq']);
   const formRoot=document.getElementById('rec-form');formRoot.innerHTML='';
   const sectionBodies={{}};
   let nextNo='';
@@ -5254,7 +5254,7 @@ async function saveRecord(){{
   state.savingRecord=true;setRecordSaveState(true);
   try{{
   const allCols=await apiFetch('/api/columns/'+PID+'/'+state.tab);if(!allCols){{releaseRecordSave();return;}}
-  const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today']);
+  const AUTO=new Set(['expectedReplyDate','duration','_duration','_duration_today','related_pcq']);
   const data={{}};
   for(const col of allCols){{
     if(AUTO.has(col.col_key))continue;

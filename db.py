@@ -967,7 +967,30 @@ def get_columns(pid, dt_id, visible_only=False):
     sql = "SELECT * FROM columns_config WHERE project_id=%s AND dt_id=%s"
     if visible_only: sql += " AND visible=true"
     sql += " ORDER BY sort_order"
-    return q(sql, (pid, dt_id))
+    cols = q(sql, (pid, dt_id))
+
+    is_noc = False
+    try:
+        dt = q("SELECT code FROM doc_types WHERE id=%s", (dt_id,), one=True)
+        if dt and dt.get("code", "").upper() == "NOC":
+            is_noc = True
+    except:
+        pass
+
+    if is_noc:
+        cols.append({
+            "id": -1,
+            "project_id": pid,
+            "dt_id": dt_id,
+            "col_key": "related_pcq",
+            "label": "Related PCQ",
+            "col_type": "text",
+            "list_name": None,
+            "visible": True,
+            "sort_order": 999
+        })
+
+    return cols
 
 def add_column(pid, dt_id, col_key, label, col_type, list_name=None):
     r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM columns_config WHERE project_id=%s AND dt_id=%s",
@@ -1006,11 +1029,36 @@ def get_record_by_id(rec_id):
     }
 
 def get_records(pid, dt_id, search="", search_pr_items=False):
+    is_noc = False
+    try:
+        dt = q("SELECT code FROM doc_types WHERE id=%s", (dt_id,), one=True)
+        if dt and dt.get("code", "").upper() == "NOC":
+            is_noc = True
+    except:
+        pass
+
+    select_clause = "SELECT records.id, records.data, records.created_at"
+    if is_noc:
+        select_clause = """
+            SELECT records.id, 
+                   records.data || jsonb_build_object('related_pcq', 
+                       (SELECT p.data->>'docNo' 
+                        FROM records p 
+                        JOIN doc_types dt ON p.dt_id = dt.id 
+                        WHERE p.project_id = records.project_id 
+                          AND UPPER(dt.code) = 'PCQ' 
+                          AND (p.data->>'attachments' ILIKE '%' || (records.data->>'docNo') || '%'
+                               OR p.data->>'fileLocation' ILIKE '%' || (records.data->>'docNo') || '%')
+                        LIMIT 1)
+                   ) AS data, 
+                   records.created_at
+        """
+
     if search:
         sq = f"%{search}%"
         if search_pr_items:
-            sql = """
-                SELECT id, data, created_at 
+            sql = f"""
+                {select_clause} 
                 FROM records 
                 WHERE project_id=%s AND dt_id=%s 
                 AND (
@@ -1025,8 +1073,8 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
             """
             rows = q(sql, (pid, dt_id, sq, sq, sq))
         else:
-            sql = """
-                SELECT id, data, created_at 
+            sql = f"""
+                {select_clause} 
                 FROM records 
                 WHERE project_id=%s AND dt_id=%s 
                 AND data::text ILIKE %s
@@ -1034,8 +1082,8 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
             """
             rows = q(sql, (pid, dt_id, sq))
     else:
-        rows = q("SELECT id, data, created_at FROM records WHERE project_id=%s AND dt_id=%s ORDER BY created_at",
-                 (pid, dt_id))
+        sql = f"{select_clause} FROM records WHERE project_id=%s AND dt_id=%s ORDER BY created_at"
+        rows = q(sql, (pid, dt_id))
     result = []
     for row in rows:
         d = row["data"] if isinstance(row["data"], dict) else {}
