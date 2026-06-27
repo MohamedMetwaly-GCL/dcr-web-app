@@ -4960,7 +4960,7 @@ function initSdItemsEditor(key, val) {{
   if (Array.isArray(val)) {{
     items = val;
   }} else if (typeof val === 'string' && val.trim()) {{
-    items = val.split('\n').map(s => s.trim()).filter(Boolean).map(s => ({{item_ref: s, item_status: ''}}));
+    items = val.split('\\n').map(s => s.trim()).filter(Boolean).map(s => ({{item_ref: s, item_status: ''}}));
   }}
   const body = document.getElementById('sd-items-body-' + key);
   if (!body) return;
