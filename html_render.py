@@ -3289,10 +3289,10 @@ function isPRTab(){{
   const code=(dt.code||dt.id||'').toString().toUpperCase();
   const name=(dt.name||'').toString().toLowerCase();
   return code==='PR' || name.includes('requisition') || name.includes('purchase request');
-}
+}}
 
-function isSDTab(){
-  const dt=state.dtList?.find(d=>d.id===state.tab)||{};
+function isSDTab(){{
+  const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
   return String(dt.code||dt.id||'').toUpperCase()==='SD';
 }}
 
@@ -4045,30 +4045,30 @@ function renderRows(){{
       else val=row[key]!==undefined ? row[key] : '';
       if(isLtrTab&&ltrRole&&!String(val||'').trim())val=String(getLTRValue(row,state.allTabCols,ltrRole)||'');
       
-      if(isSDTab() && isItemRefField(col) && Array.isArray(val)) {
-         const lines = val.map(it => {
+      if(isSDTab() && isItemRefField(col) && Array.isArray(val)) {{
+         const lines = val.map(it => {{
             const ref = escHtml(it.item_ref || '');
             let stHtml = '';
-            if (it.item_status) {
+            if (it.item_status) {{
                let [bg,fg]=SC[it.item_status]||['e5e7eb','374151'];
-               if(!SC[it.item_status]){
+               if(!SC[it.item_status]){{
                  const up=it.item_status.toUpperCase();
                  if(up.includes('CANCELLED')) [bg,fg]=['6c757d','ffffff'];
                  else if(/^A(-|\s|$)/.test(up) || up.includes('APPROVED')) [bg,fg]=['bbf7d0','166534'];
                  else if(/^B(-|\s|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
                  else if(/^C(-|\s|$)/.test(up) || up.includes('REVISE')) [bg,fg]=['fed7aa','9a3412'];
                  else if(/^D(-|\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
-               }
-               stHtml = ` <span class="sbadge" style="background:#${bg};color:#${fg};font-size:9.5px;padding:1.5px 5px;margin-left:4px;vertical-align:middle">${escHtml(it.item_status)}</span>`;
-            }
-            return `<div style="margin-bottom:3px">${ref}${stHtml}</div>`;
-         }).join('');
+               }}
+               stHtml = ` <span class="sbadge" style="background:#${{bg}};color:#${{fg}};font-size:9.5px;padding:1.5px 5px;margin-left:4px;vertical-align:middle">${{escHtml(it.item_status)}}</span>`;
+            }}
+            return `<div style="margin-bottom:3px">${{ref}}${{stHtml}}</div>`;
+         }}).join('');
          td.innerHTML = lines;
          if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
          applyDisplayDirection(td, "");
          tr.appendChild(td);
          return;
-      }
+      }}
 
       let displayVal=formatDisplayValue(col,val);
       if(typeof displayVal==='string'&&longTextMeta){{
@@ -4839,8 +4839,8 @@ async function buildForm(row,opts={{}}){{
       grp.appendChild(inp);
       if(key==='voBaseValue')nocBaseInp=inp;
       if(key==='voValueWithSIAndVAT')nocTotalInp=inp;
-    }    }
-    else if(isSDTab() && isItemRefField(col)){
+    }}
+    else if(isSDTab() && isItemRefField(col)){{
       const hid = document.createElement('input');
       hid.type = 'hidden';
       hid.id = 'f-'+key;
@@ -4859,14 +4859,14 @@ async function buildForm(row,opts={{}}){{
               <th style="padding:4px;width:30px"></th>
             </tr>
           </thead>
-          <tbody id="sd-items-body-${key}"></tbody>
+          <tbody id="sd-items-body-${{key}}"></tbody>
         </table>
         <div style="margin-top:6px">
-          <button type="button" class="btn btn-sc btn-sm" onclick="addSdItemRow('${key}')" style="font-size:11px;padding:3px 8px">+ Add Item</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="addSdItemRow('${{key}}')" style="font-size:11px;padding:3px 8px">+ Add Item</button>
         </div>`;
       grp.appendChild(wrap);
       setTimeout(() => initSdItemsEditor(key, val), 0);
-    }
+    }}
     else if(longTextMeta){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
       ta.rows=longTextMeta.rows;
@@ -4955,33 +4955,33 @@ function addPrHeaderRow(item={{}}){{
   body.appendChild(tr);
 }}
 
-function initSdItemsEditor(key, val) {
+function initSdItemsEditor(key, val) {{
   let items = [];
-  if (Array.isArray(val)) {
+  if (Array.isArray(val)) {{
     items = val;
-  } else if (typeof val === 'string' && val.trim()) {
-    items = val.split('\n').map(s => s.trim()).filter(Boolean).map(s => ({item_ref: s, item_status: ''}));
-  }
+  }} else if (typeof val === 'string' && val.trim()) {{
+    items = val.split('\n').map(s => s.trim()).filter(Boolean).map(s => ({{item_ref: s, item_status: ''}}));
+  }}
   const body = document.getElementById('sd-items-body-' + key);
   if (!body) return;
   body.innerHTML = '';
-  if (items.length) {
+  if (items.length) {{
     items.forEach(it => addSdItemRow(key, it));
-  } else {
+  }} else {{
     addSdItemRow(key);
-  }
+  }}
   syncSdItems(key);
-}
+}}
 
-function addSdItemRow(key, item={}) {
+function addSdItemRow(key, item={{}}) {{
   const body = document.getElementById('sd-items-body-' + key);
   if (!body) return;
   const tr = document.createElement('tr');
-  const statusOptions = (state.lists['status'] || []).map(o => `<option value="${escHtml(o)}">${escHtml(o)}</option>`).join('');
+  const statusOptions = (state.lists['status'] || []).map(o => `<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
   tr.innerHTML = `
     <td style="padding:2px"><input class="sd-ref" placeholder="DWG-0001" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"></td>
-    <td style="padding:2px"><select class="sd-status" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"><option value=""></option>${statusOptions}</select></td>
-    <td style="padding:2px"><button type="button" class="btn btn-er btn-sm" onclick="this.closest('tr').remove(); syncSdItems('${key}')" style="padding:2px 6px;font-size:10px">✕</button></td>
+    <td style="padding:2px"><select class="sd-status" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"><option value=""></option>${{statusOptions}}</select></td>
+    <td style="padding:2px"><button type="button" class="btn btn-er btn-sm" onclick="this.closest('tr').remove(); syncSdItems('${{key}}')" style="padding:2px 6px;font-size:10px">✕</button></td>
   `;
   const inp = tr.querySelector('.sd-ref');
   const sel = tr.querySelector('.sd-status');
@@ -4991,23 +4991,23 @@ function addSdItemRow(key, item={}) {
   sel.addEventListener('change', () => syncSdItems(key));
   bindDirectionalInput(inp);
   body.appendChild(tr);
-}
+}}
 
-function syncSdItems(key) {
+function syncSdItems(key) {{
   const body = document.getElementById('sd-items-body-' + key);
   if (!body) return;
   const rows = [...body.querySelectorAll('tr')];
-  const data = rows.map(r => {
-    return {
+  const data = rows.map(r => {{
+    return {{
       item_ref: r.querySelector('.sd-ref').value.trim(),
       item_status: r.querySelector('.sd-status').value
-    };
-  }).filter(it => it.item_ref);
+    }};
+  }}).filter(it => it.item_ref);
   const hid = document.getElementById('f-' + key);
-  if (hid) {
+  if (hid) {{
     hid.value = data.length ? JSON.stringify(data) : '';
-  }
-}
+  }}
+}}
 
 function initPrItemsEditor(items, legacyText){{
   const body=document.getElementById('pr-items-body');if(!body)return;
@@ -5372,11 +5372,11 @@ async function saveRecord(){{
     if(AUTO.has(col.col_key))continue;
     const el=document.getElementById('f-'+col.col_key);if(!el)continue;
       if(el.classList.contains('ms-con'))data[col.col_key]=el.dataset.value||'';
-      else if(el.classList.contains('json-data-field')) {
+      else if(el.classList.contains('json-data-field')) {{
         const v = el.value.trim();
-        if(v.startsWith('[')) { try { data[col.col_key] = JSON.parse(v); } catch(e) { data[col.col_key] = v; } }
+        if(v.startsWith('[')) {{ try {{ data[col.col_key] = JSON.parse(v); }} catch(e) {{ data[col.col_key] = v; }} }}
         else data[col.col_key] = v;
-      }
+      }}
       else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\\r\\n/g,String.fromCharCode(10)).replace(/\\r/g,String.fromCharCode(10));
       else data[col.col_key]=el.value.trim();
   }}
