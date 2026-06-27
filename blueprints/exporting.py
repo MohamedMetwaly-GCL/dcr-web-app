@@ -175,6 +175,27 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
         
         row_data = {header[i]: v for i, v in enumerate(vals)
                     if i < len(header) and header[i] and header[i] not in ("Sr.","sr","")}
+        
+        for c_key in list(row_data.keys()):
+            if _is_item_ref_field(c_key):
+                v_str = str(row_data[c_key] or "").strip()
+                if v_str:
+                    lines = v_str.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+                    parsed_list = []
+                    for line in lines:
+                        line = line.strip()
+                        if not line: continue
+                        import re
+                        m = re.match(r'^(.*?)(?:\s*\(([^)]+)\))?$', line)
+                        if m:
+                            parsed_list.append({
+                                "item_ref": m.group(1).strip(),
+                                "item_status": (m.group(2) or "").strip()
+                            })
+                        else:
+                            parsed_list.append({"item_ref": line, "item_status": ""})
+                    row_data[c_key] = parsed_list
+
         if not _has_meaningful_values(row_data):
             skipped_blank += 1
             continue
@@ -292,6 +313,14 @@ def _format_multiline_display_value(col_key, label, value):
     if _is_floor_field(col_key, label):
         return "\n".join([p.strip() for p in text.split(",") if p.strip()])
     if _is_item_ref_field(col_key, label):
+        if isinstance(value, list):
+            lines = []
+            for it in value:
+                if not isinstance(it, dict): continue
+                ref = str(it.get('item_ref', '')).strip()
+                st = str(it.get('item_status', '')).strip()
+                lines.append(f"{ref} ({st})" if st else ref)
+            return "\n".join(lines)
         return text.replace("\r\n", "\n").replace("\r", "\n")
     return text
 
