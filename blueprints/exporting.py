@@ -307,12 +307,20 @@ def _is_item_ref_field(col_key, label=""):
 
 
 def _format_multiline_display_value(col_key, label, value):
+    import ast
     text = str(value or "")
     if not text:
         return ""
     if _is_floor_field(col_key, label):
         return "\n".join([p.strip() for p in text.split(",") if p.strip()])
     if _is_item_ref_field(col_key, label):
+        if isinstance(value, str) and value.strip().startswith("["):
+            try:
+                parsed_val = ast.literal_eval(value)
+                if isinstance(parsed_val, list):
+                    value = parsed_val
+            except Exception:
+                pass
         if isinstance(value, list):
             lines = []
             for it in value:
