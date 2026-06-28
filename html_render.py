@@ -4046,10 +4046,27 @@ function renderRows(){{
       if(isLtrTab&&ltrRole&&!String(val||'').trim())val=String(getLTRValue(row,state.allTabCols,ltrRole)||'');
       
       if(isSDTab() && isItemRefField(col) && Array.isArray(val)) {{
+         const statusAbbreviations = {{
+            "A - Approved": "A",
+            "B - Approved as Noted": "B",
+            "C - Revise & Resubmit": "C",
+            "D - Review not Required": "D",
+            "E - Rejected": "E",
+            "Cancelled": "Ca",
+            "Under Review": "UR",
+            "1- AF - Approved without comments": "1-AF",
+            "1- RF - Reviewed without comments": "1-RF",
+            "2- AC - Approved with comments": "2-AC",
+            "2- RC - Reviewed with comments": "2-RC",
+            "3- NA - Not Approved": "3-NA",
+            "4- NR - Not Reviewed": "4-NR"
+         }};
          const lines = val.map(it => {{
             const ref = escHtml(it.item_ref || '');
             let stHtml = '';
             if (it.item_status) {{
+               const rawStatus = (it.item_status || '').trim();
+               let shortStatus = statusAbbreviations[rawStatus] || rawStatus;
                let [bg,fg]=SC[it.item_status]||['e5e7eb','374151'];
                if(!SC[it.item_status]){{
                  const up=it.item_status.toUpperCase();
@@ -4059,7 +4076,7 @@ function renderRows(){{
                  else if(/^C(-|\s|$)/.test(up) || up.includes('REVISE')) [bg,fg]=['fed7aa','9a3412'];
                  else if(/^D(-|\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
                }}
-               stHtml = ` <span class="sbadge" style="background:#${{bg}};color:#${{fg}};font-size:9.5px;padding:1.5px 5px;margin-left:4px;vertical-align:middle">${{escHtml(it.item_status)}}</span>`;
+               stHtml = ` <span class="sbadge" style="background:#${{bg}};color:#${{fg}};font-size:9.5px;padding:1.5px 5px;margin-left:4px;vertical-align:middle" title="${{escHtml(it.item_status)}}">${{escHtml(shortStatus)}}</span>`;
             }}
             return `<div style="margin-bottom:3px">${{ref}}${{stHtml}}</div>`;
          }}).join('');
