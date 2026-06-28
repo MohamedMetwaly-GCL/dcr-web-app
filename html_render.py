@@ -1123,7 +1123,7 @@ body.dark .disc-mobile-val{{color:#e2e8f0}}
 .pr-items-grid-wrap{{display:block;width:100%;max-width:100%;overflow-x:auto;padding-bottom:2px}}
 .pr-items-title{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}}
 .pr-items-title:before{{content:"";width:4px;height:16px;border-radius:999px;background:var(--ac);display:inline-block}}
-.pr-items-grid{{display:grid;grid-template-columns:minmax(520px,1fr) 120px 100px minmax(240px,.6fr);min-width:1100px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden;background:#fff;font-size:11px}}
+.pr-items-grid{{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden;background:#fff;font-size:11px}}
 .pr-items-grid-head{{background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
 .pr-items-grid-head:last-child{{border-right:none}}
 .pr-items-cell{{padding:10px 12px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff;color:#10233a;white-space:normal;word-break:normal;line-height:1.35}}
@@ -2672,7 +2672,7 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 .pr-items-grid-wrap{{display:block;width:100%;max-width:100%;overflow-x:auto;padding-bottom:2px}}
 .pr-items-title{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}}
 .pr-items-title:before{{content:"";width:4px;height:16px;border-radius:999px;background:var(--ac);display:inline-block}}
-.pr-items-grid{{display:grid;grid-template-columns:minmax(520px,1fr) 120px 100px minmax(240px,.6fr);min-width:1100px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden;background:#fff;font-size:11px}}
+.pr-items-grid{{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden;background:#fff;font-size:11px}}
 .pr-items-grid-head{{background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
 .pr-items-grid-head:last-child{{border-right:none}}
 .pr-items-cell{{padding:10px 12px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff;color:#10233a;white-space:normal;word-break:normal;line-height:1.35}}
@@ -4952,7 +4952,7 @@ async function buildForm(row,opts={{}}){{
     const wrap=document.createElement('div');wrap.id='pr-items-editor';
     wrap.innerHTML=`
       <table>
-        <thead><tr><th>Item Name</th><th>Unit</th><th>Qty</th><th>Remarks</th><th></th></tr></thead>
+        <thead><tr><th>Item Name</th><th>Unit</th><th>PR Qty</th><th>PO Ref</th><th>PO Qty</th><th>Del. Qty</th><th>Remarks</th><th></th></tr></thead>
         <tbody id="pr-items-body"></tbody>
       </table>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
