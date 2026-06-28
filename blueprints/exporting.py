@@ -877,22 +877,43 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
 
 
 
+def _categorize_status(st):
+    if not st:
+        return "Pending"
+    st = str(st).upper()
+    
+    if any(x in st for x in ["A -", "B -", "1- AF", "1- RF", "2- AC", "2- RC", "APPROVED", "NOTED", "CLOSED"]):
+        return "Approved"
+    
+    if any(x in st for x in ["C -", "E -", "3- NA", "REJECTED", "REVISE"]):
+        return "Rejected"
+        
+    if any(x in st for x in ["UNDER REVIEW", "UR", "D -"]) or st == "D":
+        return "Under Review"
+        
+    return "Pending"
+
 def _write_summary_dashboard(ws, proj, records_by_dt):
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
     import datetime
 
-    PRIMARY = "1F4E78"; WHITE = "FFFFFF"; LIGHT = "F8FAFC"
+    PRIMARY = "1E293B" # Navy Blue
+    TEAL = "0D9488"    # Teal/Cyan
+    WHITE = "FFFFFF"
+    LIGHT = "F8FAFC"
+    GRAY = "F1F5F9"
+    
     def fill(c): return PatternFill("solid", fgColor=c)
     def thin(): s=Side(style="thin",color="B2B2B2"); return Border(left=s,right=s,top=s,bottom=s)
     
     ws.sheet_view.showGridLines = False
-    for col, width in {"A":4, "B":30, "C":15, "D":15, "E":15}.items():
+    for col, width in {"A":4, "B":25, "C":15, "D":15, "E":15, "F":15, "G":15}.items():
         ws.column_dimensions[col].width = width
 
-    def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11, halign="center"):
+    def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11, halign="center", col_span="G"):
         c = ws.cell(row=row, column=2, value=val)
-        ws.merge_cells(f"B{row}:E{row}")
+        ws.merge_cells(f"B{row}:{col_span}{row}")
         c.font = Font(bold=bold, color=fg, size=sz, name="Arial")
         c.fill = fill(bg)
         c.alignment = Alignment(horizontal=halign, vertical="center")
@@ -902,70 +923,99 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
     mcell(2, f"EXECUTIVE SUMMARY DASHBOARD - {proj.get('name', 'PROJECT')}", PRIMARY, bold=True, sz=14)
     ws.row_dimensions[2].height = 30
     
-    mcell(3, f"Project Code: {proj.get('code','')} | Date: {datetime.datetime.now().strftime('%d-%m-%Y')}", "2563A8", sz=10)
+    mcell(3, f"Project Code: {proj.get('code','')} | Date: {datetime.datetime.now().strftime('%d-%m-%Y')}", "0F172A", sz=10)
     ws.row_dimensions[3].height = 20
 
     row_idx = 5
-    headers = ["Document Type", "Total Records", "Approved / Closed", "Pending / Overdue"]
-    for i, h in enumerate(headers, start=2):
-        c = ws.cell(row=row_idx, column=i, value=h)
-        c.font = Font(bold=True, color=WHITE)
-        c.fill = fill(PRIMARY)
-        c.alignment = Alignment(horizontal="center", vertical="center")
-        c.border = thin()
-    ws.row_dimensions[row_idx].height = 25
-    row_idx += 1
-
-    total_all = 0
-    total_approved = 0
-    total_pending = 0
     
     for dt_name, records in records_by_dt.items():
-        count = len(records)
-        if count == 0: continue
-        total_all += count
+        if not records: continue
         
-        approved = sum(1 for r in records if str(r.get("status", "")).strip().lower() in ("a - approved", "b - approved as noted", "closed", "replied"))
-        total_approved += approved
+        # Table Title
+        mcell(row_idx, dt_name.upper(), PRIMARY, bold=True, sz=12, halign="left")
+        ws.row_dimensions[row_idx].height = 25
+        row_idx += 1
         
-        is_ltr = "LTR" in dt_name.upper() or "LETTER" in dt_name.upper()
-        if is_ltr:
-            pending_display = "N/A"
-        else:
-            pending = count - approved
-            total_pending += pending
-            pending_display = pending
-            
-        row_data = [dt_name, count, approved, pending_display]
-        bg = LIGHT if row_idx % 2 == 0 else WHITE
-        for i, val in enumerate(row_data, start=2):
-            c = ws.cell(row=row_idx, column=i, value=val)
-            c.font = Font(color="1E2A3A")
-            c.fill = fill(bg)
+        headers = ["Discipline", "Issued", "Approved", "Rejected", "Under Review", "Pending"]
+        for i, h in enumerate(headers, start=2):
+            c = ws.cell(row=row_idx, column=i, value=h)
+            c.font = Font(bold=True, color=WHITE)
+            c.fill = fill(PRIMARY)
             c.alignment = Alignment(horizontal="center", vertical="center")
             c.border = thin()
-        ws.row_dimensions[row_idx].height = 20
+        ws.row_dimensions[row_idx].height = 22
         row_idx += 1
-
-    # Dashboard Auto-Fit
-    for col_idx in range(2, 6): # B to E
+        
+        disc_groups = {}
+        for r in records:
+            disc = str(r.get("discipline", "")).strip() or "Unspecified"
+            disc_groups.setdefault(disc, {"Issued": 0, "Approved": 0, "Rejected": 0, "Under Review": 0, "Pending": 0})
+            disc_groups[disc]["Issued"] += 1
+            cat = _categorize_status(r.get("status", ""))
+            disc_groups[disc][cat] += 1
+            
+        tot_issued = 0; tot_app = 0; tot_rej = 0; tot_ur = 0; tot_pen = 0
+        
+        for disc in sorted(disc_groups.keys()):
+            counts = disc_groups[disc]
+            tot_issued += counts["Issued"]
+            tot_app += counts["Approved"]
+            tot_rej += counts["Rejected"]
+            tot_ur += counts["Under Review"]
+            tot_pen += counts["Pending"]
+            
+            row_data = [disc, counts["Issued"], counts["Approved"], counts["Rejected"], counts["Under Review"], counts["Pending"]]
+            bg = LIGHT if row_idx % 2 == 0 else WHITE
+            for i, val in enumerate(row_data, start=2):
+                c = ws.cell(row=row_idx, column=i, value=val)
+                c.font = Font(color="333333")
+                c.fill = fill(bg)
+                c.border = thin()
+                c.alignment = Alignment(horizontal="center" if i > 2 else "left", vertical="center")
+            ws.row_dimensions[row_idx].height = 20
+            row_idx += 1
+            
+        # Total Row
+        row_data = ["TOTAL", tot_issued, tot_app, tot_rej, tot_ur, tot_pen]
+        for i, val in enumerate(row_data, start=2):
+            c = ws.cell(row=row_idx, column=i, value=val)
+            c.font = Font(bold=True, color="333333")
+            c.fill = fill(GRAY)
+            c.border = thin()
+            c.alignment = Alignment(horizontal="center" if i > 2 else "left", vertical="center")
+        ws.row_dimensions[row_idx].height = 22
+        row_idx += 1
+        
+        # Percentage Row
+        row_data = ["PERCENTAGE", 
+            1.0 if tot_issued > 0 else 0,
+            tot_app / tot_issued if tot_issued > 0 else 0,
+            tot_rej / tot_issued if tot_issued > 0 else 0,
+            tot_ur / tot_issued if tot_issued > 0 else 0,
+            tot_pen / tot_issued if tot_issued > 0 else 0
+        ]
+        for i, val in enumerate(row_data, start=2):
+            c = ws.cell(row=row_idx, column=i, value=val)
+            c.font = Font(bold=True, color=WHITE)
+            c.fill = fill(TEAL)
+            c.border = thin()
+            c.alignment = Alignment(horizontal="center" if i > 2 else "left", vertical="center")
+            if i > 2:
+                c.number_format = '0.00%'
+        ws.row_dimensions[row_idx].height = 22
+        
+        # 3 Blank rows between tables
+        row_idx += 4
+        
+    # Auto-fit columns B to G
+    for col_idx in range(2, 8):
         col_letter = get_column_letter(col_idx)
-        max_length = len(str(ws.cell(row=5, column=col_idx).value or ""))
-        for r_idx in range(6, row_idx):
-            val = str(ws.cell(row=r_idx, column=col_idx).value or "")
-            max_length = max(max_length, len(val))
-        ws.column_dimensions[col_letter].width = max_length + 8
-
-    row_idx += 1
-    c = ws.cell(row=row_idx, column=2, value="TOTALS")
-    c.font = Font(bold=True, color=PRIMARY)
-    c.border = thin()
-    for i, val in enumerate([total_all, total_approved, total_pending], start=3):
-        c = ws.cell(row=row_idx, column=i, value=val)
-        c.font = Font(bold=True, color=PRIMARY)
-        c.border = thin()
-        c.alignment = Alignment(horizontal="center")
-        c.fill = fill("E0E7FF")
+        max_len = 10
+        for r in range(5, row_idx):
+            v = ws.cell(row=r, column=col_idx).value
+            if v and isinstance(v, str):
+                max_len = max(max_len, len(v))
+        ws.column_dimensions[col_letter].width = max_len + 4
 
 def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     import openpyxl
