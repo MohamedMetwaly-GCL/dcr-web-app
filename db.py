@@ -1564,12 +1564,14 @@ def set_list_item_meta(pid, list_name, item_value, meta):
     exe("UPDATE dropdown_lists SET meta=%s"
         " WHERE project_id=%s AND list_name=%s AND item_value=%s",
         (meta, pid, list_name, item_value))
+    invalidate_dashboard_cache(pid)
 
 def add_list_item(pid, list_name, item):
     r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
           (pid, list_name), one=True)
     exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
         (pid, list_name, item, r["n"] if r else 0))
+    invalidate_dashboard_cache(pid)
 
 def rename_list_item(pid, list_name, old_item, new_item):
     old_item = str(old_item or "").strip()
@@ -1620,6 +1622,7 @@ def rename_list_item(pid, list_name, old_item, new_item):
                     SET data=%s::jsonb, updated_at=NOW()
                     WHERE id=%s
                 """, (json.dumps(data), row["id"]))
+        invalidate_dashboard_cache(pid)
         return renamed
 
 def reorder_list_items(pid, list_name, ordered_items):
@@ -1629,10 +1632,12 @@ def reorder_list_items(pid, list_name, ordered_items):
             SET sort_order=%s
             WHERE project_id=%s AND list_name=%s AND item_value=%s
         """, (i, pid, list_name, item))
+    invalidate_dashboard_cache(pid)
 
 def remove_list_item(pid, list_name, item):
     exe("DELETE FROM dropdown_lists WHERE project_id=%s AND list_name=%s AND item_value=%s",
         (pid, list_name, item))
+    invalidate_dashboard_cache(pid)
 
 # ── Fast Dashboard Stats (single query) ──────────────────────
 def get_dashboard_stats(project_ids=None):
