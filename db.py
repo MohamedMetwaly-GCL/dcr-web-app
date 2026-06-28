@@ -291,12 +291,12 @@ def _normalize_status_text(value):
 
 def _normalize_meta_value(value):
     text = _normalize_status_text(value)
-    if text in ("approved", "rejected", "pending", "cancelled"):
+    if text in ("approved", "rejected", "pending", "cancelled", "info_closed"):
         return text
     if text in ("open", "under review", "not closed"):
         return "pending"
-    if text in ("closed", "replied"):
-        return "approved"
+    if text in ("closed", "replied", "info", "for information", "info closed"):
+        return "info_closed"
     return None
 
 def _status_alias_meta_map(pid_meta=None):
@@ -338,7 +338,7 @@ def _status_meta_from_tokens(status_value, pid_meta=None):
     if not metas:
         return None
     metas = set(metas)
-    for meta in ("cancelled", "rejected", "approved", "pending"):
+    for meta in ("cancelled", "rejected", "approved", "info_closed", "pending"):
         if meta in metas:
             return meta
     return None
