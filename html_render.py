@@ -4418,28 +4418,49 @@ function highlightText(text, search) {{
   return parts.map((p, i) => i % 2 === 1 ? `<mark style="background:#fef08a;color:#854d0e;border-radius:2px;padding:0 2px">${{escHtml(p)}}</mark>` : escHtml(p)).join('');
 }}
 
-function renderPrItemsTable(items, legacyText, search){{
-  if(!items||!items.length){{
-    const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
-    return `<div class="pr-items-title">PR Items Breakdown</div><div class="pr-items-empty">No items added</div>${{legacy}}`;
+  function getPrVarianceBadge(prQty, poQty, delQty) {{
+    const pr = parseFloat(prQty) || 0;
+    const po = parseFloat(poQty) || 0;
+    const del = parseFloat(delQty) || 0;
+    if (po === 0) return `<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">🔴 Pending PO</span>`;
+    if (po > 0 && po < pr) return `<span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #facc15;">🟡 Short by ${{pr - po}}</span>`;
+    if (po >= pr && del < po) return `<span class="badge" style="background:#ffedd5;color:#9a3412;border:1px solid #fb923c;">🟠 Awaiting ${{po - del}}</span>`;
+    if (del > po) return `<span class="badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #c084fc;">🟣 Over-delivered: +${{del - po}}</span>`;
+    if (po > pr && del >= po) return `<span class="badge" style="background:#e0f2fe;color:#075985;border:1px solid #38bdf8;">🔵 Over-ordered: +${{po - pr}}</span>`;
+    if (del === po && po === pr) return `<span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #4ade80;">🟢 Completed</span>`;
+    return `<span class="badge" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;">Unknown</span>`;
   }}
-  const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
-    ? `<div class="pr-items-section">${{highlightText(it.item_name||'', search)}}</div>`
-    : `<div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
-       <div class="pr-items-cell unit">${{highlightText(it.unit||'', search)}}</div>
-       <div class="pr-items-cell qty">${{escHtml(it.quantity??'')}}</div>
-       <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`).join('');
-  return `<div class="pr-items-title">PR Items Breakdown</div>
-    <div class="pr-items-grid-wrap">
-      <div class="pr-items-grid">
-        <div class="pr-items-grid-head">Item</div>
-        <div class="pr-items-grid-head">Unit</div>
-        <div class="pr-items-grid-head">Qty</div>
-        <div class="pr-items-grid-head">Remarks</div>
-        ${{rows}}
-      </div>
-    </div>`;
-}}
+
+function renderPrItemsTable(items, legacyText, search){{
+    if(!items||!items.length){{
+      const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
+      return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div><div class="pr-items-empty">No items added</div>${{legacy}}`;
+    }}
+    const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
+      ? `<div class="pr-items-section" style="grid-column: 1 / -1">${{highlightText(it.item_name||'', search)}}</div>`
+      : `<div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
+         <div class="pr-items-cell unit">${{highlightText(it.unit||'', search)}}</div>
+         <div class="pr-items-cell qty">${{escHtml(it.quantity??'')}}</div>
+         <div class="pr-items-cell po-ref">${{highlightText(it.po_ref||'', search)}}</div>
+         <div class="pr-items-cell po-qty">${{escHtml(it.po_qty??'')}}</div>
+         <div class="pr-items-cell del-qty">${{escHtml(it.delivered_qty??'')}}</div>
+         <div class="pr-items-cell status">${{getPrVarianceBadge(it.quantity, it.po_qty, it.delivered_qty)}}</div>
+         <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`).join('');
+    return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div>
+      <div class="pr-items-grid-wrap">
+        <div class="pr-items-grid">
+          <div class="pr-items-grid-head">Item</div>
+          <div class="pr-items-grid-head">Unit</div>
+          <div class="pr-items-grid-head">PR Qty</div>
+          <div class="pr-items-grid-head">PO Ref</div>
+          <div class="pr-items-grid-head">PO Qty</div>
+          <div class="pr-items-grid-head">Delivered</div>
+          <div class="pr-items-grid-head">Status</div>
+          <div class="pr-items-grid-head">Remarks</div>
+          ${{rows}}
+        </div>
+      </div>`;
+  }}
 
 function getRenderedRegisterColumnCount(tr){{
   const headRow=document.querySelector('#regtbl thead tr:first-child');
@@ -4948,34 +4969,40 @@ async function buildForm(row,opts={{}}){{
 }}
 
 function addPrItemRow(item={{}}){{
-  const body=document.getElementById('pr-items-body');if(!body)return;
-  const tr=document.createElement('tr');
-  tr.dataset.rowType='item';
-  tr.innerHTML=`
-    <td><input class="pri-item"></td>
-    <td><input class="pri-unit"></td>
-    <td><input class="pri-qty"></td>
-    <td><input class="pri-remarks"></td>
-    <td><button type="button" class="btn btn-er btn-sm">✕</button></td>`;
-  tr.querySelector('.pri-item').value=item.item_name||'';
-  tr.querySelector('.pri-unit').value=item.unit||'';
-  tr.querySelector('.pri-qty').value=item.quantity??'';
-  tr.querySelector('.pri-remarks').value=item.remarks||'';
-  bindDirectionalInput(tr.querySelector('.pri-item'));
-  bindDirectionalInput(tr.querySelector('.pri-unit'));
-  bindDirectionalInput(tr.querySelector('.pri-remarks'));
-  tr.querySelector('button').onclick=()=>tr.remove();
-  body.appendChild(tr);
-}}
+    const body=document.getElementById('pr-items-body');if(!body)return;
+    const tr=document.createElement('tr');
+    tr.dataset.rowType='item';
+    tr.innerHTML=`
+      <td><input class="pri-item" placeholder="Item Name"></td>
+      <td><input class="pri-unit" placeholder="Unit"></td>
+      <td><input class="pri-qty" type="number" min="0" step="any" placeholder="PR Qty"></td>
+      <td><input class="pri-po-ref" placeholder="PO Ref"></td>
+      <td><input class="pri-po-qty" type="number" min="0" step="any" placeholder="PO Qty"></td>
+      <td><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
+      <td><input class="pri-remarks" placeholder="Remarks"></td>
+      <td><button type="button" class="btn btn-er btn-sm">&times;</button></td>`;
+    tr.querySelector('.pri-item').value=item.item_name||'';
+    tr.querySelector('.pri-unit').value=item.unit||'';
+    tr.querySelector('.pri-qty').value=item.quantity??'';
+    tr.querySelector('.pri-po-ref').value=item.po_ref||'';
+    tr.querySelector('.pri-po-qty').value=item.po_qty??'';
+    tr.querySelector('.pri-del-qty').value=item.delivered_qty??'';
+    tr.querySelector('.pri-remarks').value=item.remarks||'';
+    bindDirectionalInput(tr.querySelector('.pri-item'));
+    bindDirectionalInput(tr.querySelector('.pri-unit'));
+    bindDirectionalInput(tr.querySelector('.pri-remarks'));
+    tr.querySelector('button').onclick=()=>tr.remove();
+    body.appendChild(tr);
+  }}
 
 function addPrHeaderRow(item={{}}){{
-  const body=document.getElementById('pr-items-body');if(!body)return;
-  const tr=document.createElement('tr');
-  tr.className='pr-head-edit';
-  tr.dataset.rowType='header';
-  tr.innerHTML=`
-    <td colspan="4">
-      <div class="pr-head-label">Section Header</div>
+    const body=document.getElementById('pr-items-body');if(!body)return;
+    const tr=document.createElement('tr');
+    tr.className='pr-head-edit';
+    tr.dataset.rowType='header';
+    tr.innerHTML=`
+      <td colspan="8">
+        <div class="pr-head-label">Section Header</div>
       <input class="pri-header" placeholder="Section title / description">
     </td>
     <td><button type="button" class="btn btn-er btn-sm">✕</button></td>`;
@@ -5057,21 +5084,24 @@ async function loadPrItemsForEdit(recordId, legacyText){{
 }}
 
 function getPrItemsFromEditor(){{
-  const body=document.getElementById('pr-items-body');if(!body)return [];
-  const rows=[...body.querySelectorAll('tr')];
-  return rows.map(r=>{{
-    const row_type=(r.dataset.rowType||'item').toLowerCase();
-    if(row_type==='header'){{
-      const item_name=r.querySelector('.pri-header')?.value.trim()||'';
-      return {{row_type:'header', item_name}};
-    }}
-    const item_name=r.querySelector('.pri-item')?.value.trim()||'';
-    const unit=r.querySelector('.pri-unit')?.value.trim()||'';
-    const quantity=r.querySelector('.pri-qty')?.value.trim()||'';
-    const remarks=r.querySelector('.pri-remarks')?.value.trim()||'';
-    return {{row_type:'item', item_name, unit, quantity, remarks}};
-  }}).filter(it=>it.row_type==='header'?it.item_name:(it.item_name||it.unit||it.quantity||it.remarks));
-}}
+    const body=document.getElementById('pr-items-body');if(!body)return [];
+    const rows=[...body.querySelectorAll('tr')];
+    return rows.map(r=>{{
+      const row_type=(r.dataset.rowType||'item').toLowerCase();
+      if(row_type==='header'){{
+        const item_name=r.querySelector('.pri-header')?.value.trim()||'';
+        return {{row_type:'header', item_name}};
+      }}
+      const item_name=r.querySelector('.pri-item')?.value.trim()||'';
+      const unit=r.querySelector('.pri-unit')?.value.trim()||'';
+      const quantity=r.querySelector('.pri-qty')?.value.trim()||'';
+      const po_ref=r.querySelector('.pri-po-ref')?.value.trim()||'';
+      const po_qty=r.querySelector('.pri-po-qty')?.value.trim()||'';
+      const delivered_qty=r.querySelector('.pri-del-qty')?.value.trim()||'';
+      const remarks=r.querySelector('.pri-remarks')?.value.trim()||'';
+      return {{row_type:'item', item_name, unit, quantity, po_ref, po_qty, delivered_qty, remarks}};
+    }}).filter(it=>it.row_type==='header'?it.item_name:(it.item_name||it.unit||it.quantity||it.remarks));
+  }}
 
 function buildMS(key,options,init){{
   const sel=init?init.split(',').map(s=>s.trim()).filter(Boolean):[];

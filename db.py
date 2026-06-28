@@ -136,6 +136,9 @@ CREATE TABLE IF NOT EXISTS pr_items (
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS row_type TEXT NOT NULL DEFAULT 'item';
+ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS po_ref TEXT;
+ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS po_qty NUMERIC DEFAULT 0;
+ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS delivered_qty NUMERIC DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE user_projects ADD COLUMN IF NOT EXISTS is_dc BOOLEAN DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_pr_items_record ON pr_items(record_id);
@@ -1507,7 +1510,7 @@ def delete_records_bulk(record_ids):
 
 # ── PR Items ─────────────────────────────────────────────────
 def get_pr_items(record_id):
-    return q("""SELECT id, record_id, row_type, item_name, unit, quantity, remarks, sort_order
+    return q("""SELECT id, record_id, row_type, item_name, unit, quantity, remarks, sort_order, po_ref, po_qty, delivered_qty
                 FROM pr_items
                 WHERE record_id=%s
                 ORDER BY sort_order, created_at, id""", (record_id,))
@@ -1516,7 +1519,7 @@ def get_pr_items_for_records(record_ids):
     if not record_ids: return {}
     record_ids = [r for r in record_ids if r]
     if not record_ids: return {}
-    rows = q("""SELECT id, record_id, row_type, item_name, unit, quantity, remarks, sort_order
+    rows = q("""SELECT id, record_id, row_type, item_name, unit, quantity, remarks, sort_order, po_ref, po_qty, delivered_qty
                 FROM pr_items
                 WHERE record_id = ANY(%s)
                 ORDER BY record_id, sort_order, created_at, id""", (record_ids,))
