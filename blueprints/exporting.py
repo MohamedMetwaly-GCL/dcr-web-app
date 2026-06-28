@@ -882,7 +882,10 @@ def _categorize_status(st):
         return "Pending"
     st = str(st).upper()
     
-    if any(x in st for x in ["A -", "B -", "1- AF", "1- RF", "2- AC", "2- RC", "APPROVED", "NOTED", "CLOSED"]):
+    if any(x in st for x in ["FOR INFORMATION", "INFO", "CLOSED", "REPLIED", "CANCELLED"]):
+        return "Info / Closed"
+        
+    if any(x in st for x in ["A -", "B -", "1- AF", "1- RF", "2- AC", "2- RC", "APPROVED", "NOTED"]):
         return "Approved"
     
     if any(x in st for x in ["C -", "E -", "3- NA", "REJECTED", "REVISE"]):
@@ -908,7 +911,7 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
     def thin(): s=Side(style="thin",color="B2B2B2"); return Border(left=s,right=s,top=s,bottom=s)
     
     ws.sheet_view.showGridLines = False
-    for col, width in {"A":4, "B":25, "C":15, "D":15, "E":15, "F":15, "G":15}.items():
+    for col, width in {"A":4, "B":25, "C":15, "D":15, "E":15, "F":15, "G":15, "H":15}.items():
         ws.column_dimensions[col].width = width
 
     def mcell(row, val, bg, fg="FFFFFF", bold=False, sz=11, halign="center", col_span="G"):
@@ -920,23 +923,38 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
         c.border = thin()
         return c
 
-    mcell(2, f"EXECUTIVE SUMMARY DASHBOARD - {proj.get('name', 'PROJECT')}", PRIMARY, bold=True, sz=14)
+    mcell(2, f"EXECUTIVE SUMMARY DASHBOARD - {proj.get('name', 'PROJECT')}", PRIMARY, bold=True, sz=14, col_span="H")
     ws.row_dimensions[2].height = 30
     
-    mcell(3, f"Project Code: {proj.get('code','')} | Date: {datetime.datetime.now().strftime('%d-%m-%Y')}", "0F172A", sz=10)
+    mcell(3, f"Project Code: {proj.get('code','')} | Date: {datetime.datetime.now().strftime('%d-%m-%Y')}", "0F172A", sz=10, col_span="H")
     ws.row_dimensions[3].height = 20
 
     row_idx = 5
     
+    TRACKING_TABS = ["LTR", "NOC", "EI", "PR", "WN", "MOM", "QS", "ABD", "SI", "NCR", "LETTER", "NOTICE", "INSTRUCTION"]
+    
     for dt_name, records in records_by_dt.items():
         if not records: continue
         
+        is_tracking = False
+        dt_upper = dt_name.upper()
+        for t in TRACKING_TABS:
+            if t in dt_upper.split() or t in dt_upper:
+                is_tracking = True
+                break
+                
+        col_span = "E" if is_tracking else "H"
+        
         # Table Title
-        mcell(row_idx, dt_name.upper(), PRIMARY, bold=True, sz=12, halign="left")
+        mcell(row_idx, dt_name.upper(), PRIMARY, bold=True, sz=12, halign="left", col_span=col_span)
         ws.row_dimensions[row_idx].height = 25
         row_idx += 1
         
-        headers = ["Discipline", "Issued", "Approved", "Rejected", "Under Review", "Pending"]
+        if is_tracking:
+            headers = ["Discipline", "Issued", "Open / Pending", "Closed / Info"]
+        else:
+            headers = ["Discipline", "Issued", "Approved", "Rejected", "Under Review", "Info / Closed", "Pending"]
+            
         for i, h in enumerate(headers, start=2):
             c = ws.cell(row=row_idx, column=i, value=h)
             c.font = Font(bold=True, color=WHITE)
@@ -949,22 +967,36 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
         disc_groups = {}
         for r in records:
             disc = str(r.get("discipline", "")).strip() or "Unspecified"
-            disc_groups.setdefault(disc, {"Issued": 0, "Approved": 0, "Rejected": 0, "Under Review": 0, "Pending": 0})
+            disc_groups.setdefault(disc, {"Issued": 0, "Approved": 0, "Rejected": 0, "Under Review": 0, "Info / Closed": 0, "Pending": 0})
             disc_groups[disc]["Issued"] += 1
             cat = _categorize_status(r.get("status", ""))
             disc_groups[disc][cat] += 1
             
-        tot_issued = 0; tot_app = 0; tot_rej = 0; tot_ur = 0; tot_pen = 0
+        tot_issued = 0; tot_app = 0; tot_rej = 0; tot_ur = 0; tot_info = 0; tot_pen = 0
+        tot_open = 0; tot_closed = 0
         
         for disc in sorted(disc_groups.keys()):
             counts = disc_groups[disc]
-            tot_issued += counts["Issued"]
-            tot_app += counts["Approved"]
-            tot_rej += counts["Rejected"]
-            tot_ur += counts["Under Review"]
-            tot_pen += counts["Pending"]
+            issued = counts["Issued"]
+            app = counts["Approved"]
+            rej = counts["Rejected"]
+            ur = counts["Under Review"]
+            info = counts["Info / Closed"]
+            pen = counts["Pending"]
             
-            row_data = [disc, counts["Issued"], counts["Approved"], counts["Rejected"], counts["Under Review"], counts["Pending"]]
+            open_count = pen + ur
+            closed_count = info + app + rej
+            
+            tot_issued += issued
+            
+            if is_tracking:
+                tot_open += open_count
+                tot_closed += closed_count
+                row_data = [disc, issued, open_count, closed_count]
+            else:
+                tot_app += app; tot_rej += rej; tot_ur += ur; tot_info += info; tot_pen += pen
+                row_data = [disc, issued, app, rej, ur, info, pen]
+                
             bg = LIGHT if row_idx % 2 == 0 else WHITE
             for i, val in enumerate(row_data, start=2):
                 c = ws.cell(row=row_idx, column=i, value=val)
@@ -976,7 +1008,11 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
             row_idx += 1
             
         # Total Row
-        row_data = ["TOTAL", tot_issued, tot_app, tot_rej, tot_ur, tot_pen]
+        if is_tracking:
+            row_data = ["TOTAL", tot_issued, tot_open, tot_closed]
+        else:
+            row_data = ["TOTAL", tot_issued, tot_app, tot_rej, tot_ur, tot_info, tot_pen]
+            
         for i, val in enumerate(row_data, start=2):
             c = ws.cell(row=row_idx, column=i, value=val)
             c.font = Font(bold=True, color="333333")
@@ -987,13 +1023,22 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
         row_idx += 1
         
         # Percentage Row
-        row_data = ["PERCENTAGE", 
-            1.0 if tot_issued > 0 else 0,
-            tot_app / tot_issued if tot_issued > 0 else 0,
-            tot_rej / tot_issued if tot_issued > 0 else 0,
-            tot_ur / tot_issued if tot_issued > 0 else 0,
-            tot_pen / tot_issued if tot_issued > 0 else 0
-        ]
+        if is_tracking:
+            row_data = ["PERCENTAGE", 
+                1.0 if tot_issued > 0 else 0,
+                tot_open / tot_issued if tot_issued > 0 else 0,
+                tot_closed / tot_issued if tot_issued > 0 else 0
+            ]
+        else:
+            row_data = ["PERCENTAGE", 
+                1.0 if tot_issued > 0 else 0,
+                tot_app / tot_issued if tot_issued > 0 else 0,
+                tot_rej / tot_issued if tot_issued > 0 else 0,
+                tot_ur / tot_issued if tot_issued > 0 else 0,
+                tot_info / tot_issued if tot_issued > 0 else 0,
+                tot_pen / tot_issued if tot_issued > 0 else 0
+            ]
+            
         for i, val in enumerate(row_data, start=2):
             c = ws.cell(row=row_idx, column=i, value=val)
             c.font = Font(bold=True, color=WHITE)
@@ -1007,8 +1052,8 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
         # 3 Blank rows between tables
         row_idx += 4
         
-    # Auto-fit columns B to G
-    for col_idx in range(2, 8):
+    # Auto-fit columns B to H
+    for col_idx in range(2, 9):
         col_letter = get_column_letter(col_idx)
         max_len = 10
         for r in range(5, row_idx):

@@ -5940,7 +5940,7 @@ async function openLists(){{
   await loadLists(true);
   ensureLTRProjectLists();
   const metaData=await apiFetch('/api/lists_meta/'+PID)||{{}};
-  const META_LABELS={{approved:{{lbl:'Approved',bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:'Rejected',bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:'Pending',bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:'Cancelled',bg:'#f1f5f9',fg:'#94a3b8'}}}};
+  const META_LABELS={{approved:{{lbl:'Approved',bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:'Rejected',bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:'Pending',bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:'Cancelled',bg:'#f1f5f9',fg:'#94a3b8'}},info_closed:{{lbl:'Info / Closed',bg:'#e0e7ff',fg:'#3730a3'}}}};
   const body=document.getElementById('lists-body');body.innerHTML='';
   for(const[ln,items]of Object.entries(state.lists).filter(([ln])=>!isHiddenSystemListName(ln))){{
     const isStatus=ln.toLowerCase().startsWith('status');
@@ -5963,7 +5963,7 @@ async function openLists(){{
         badge.textContent=ml.lbl;
         const sel=document.createElement('select');
         sel.style.cssText='font-size:10px;padding:2px 5px;border:1.5px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer';
-        ['approved','rejected','pending','cancelled'].forEach(m=>{{
+        ['approved','rejected','pending','cancelled','info_closed'].forEach(m=>{{
           const o=document.createElement('option');o.value=m;
           o.textContent=META_LABELS[m].lbl;
           if(m===curMeta)o.selected=true;
