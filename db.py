@@ -1772,7 +1772,7 @@ def get_dashboard_stats(project_ids=None):
                     is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val, row=d)
                     if is_ov: ov += 1
                     if dt_has_discipline.get(dt["id"], False):
-                        ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
+                        ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0,"info_closed":0})
                         ds["total"] += 1
                         if is_ov: ds["overdue"] += 1
                     continue
