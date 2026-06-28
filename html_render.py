@@ -1341,6 +1341,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
                 <th style="text-align:center">Approved</th>
                 <th style="text-align:center">Pending</th>
                 <th style="text-align:center">Rejected</th>
+                <th style="text-align:center">Info / Closed</th>
                 <th style="text-align:center">Overdue</th>
               </tr></thead>
               <tbody id="dt-tbody"></tbody>
@@ -1360,6 +1361,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
                 <col style="width:88px">
                 <col style="width:88px">
                 <col style="width:88px">
+                <col style="width:88px">
                 <col style="width:52px">
               </colgroup>
               <thead><tr>
@@ -1368,6 +1370,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
                 <th style="text-align:center">Approved</th>
                 <th style="text-align:center">Pending</th>
                 <th style="text-align:center">Rejected</th>
+                <th style="text-align:center">Info / Closed</th>
                 <th style="text-align:center">Overdue</th>
                 <th style="text-align:center;width:42px">View</th>
               </tr></thead>
@@ -1682,7 +1685,7 @@ function updateKPIs(d){{
     ap=d.reduce((s,p)=>s+p.approved,0),
     pe=d.reduce((s,p)=>s+p.pending,0),
     ov=d.reduce((s,p)=>s+p.overdue,0),
-    rj=d.reduce((s,p)=>s+(p.rejected||0),0);
+    rj=d.reduce((s,p)=>s+(p.rejected||0),0),ic=d.reduce((s,p)=>s+(p.info_closed||0),0);
   document.getElementById('kpi-total').textContent=t;
   document.getElementById('kpi-approved').textContent=ap;
   document.getElementById('kpi-pending').textContent=pe;
@@ -1758,12 +1761,12 @@ function renderCharts(d){{
         x:{{grid:{{display:false}},ticks:{{color:tickColor}}}}}}}}}});
   const t=d.reduce((s,p)=>s+p.total,0),ap=d.reduce((s,p)=>s+p.approved,0),
     pe=d.reduce((s,p)=>s+p.pending,0),ov=d.reduce((s,p)=>s+p.overdue,0),
-    rj=d.reduce((s,p)=>s+(p.rejected||0),0);
+    rj=d.reduce((s,p)=>s+(p.rejected||0),0),ic=d.reduce((s,p)=>s+(p.info_closed||0),0);
   if(sChart)sChart.destroy();
   sChart=new Chart(document.getElementById('cStatus'),{{type:'doughnut',
-    data:{{labels:['Approved','Pending','Rejected','Overdue'],
-      datasets:[{{data:[ap,pe,rj,ov],
-        backgroundColor:['#16a34a','#f59e0b','#7c3aed','#ef4444'],
+    data:{{labels:['Approved','Pending','Rejected','Info / Closed','Overdue'],
+      datasets:[{{data:[ap,pe,rj,ic,ov],
+        backgroundColor:['#16a34a','#f59e0b','#7c3aed','#60A5FA','#ef4444'],
         borderWidth:3,borderColor:dark?'#162132':'#fff',hoverOffset:6}}]}},
     options:{{responsive:true,cutout:'65%',
       plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}},
@@ -1902,7 +1905,8 @@ function renderDTTable(d){{
       <td style="text-align:center;color:#16a34a;font-weight:700">${{r.approved}}</td>
       <td style="text-align:center;color:#f59e0b;font-weight:700">${{r.pending}}</td>
       <td style="text-align:center;color:#7c3aed;font-weight:700">${{r.rejected||0}}</td>
-      <td style="text-align:center;color:#ef4444;font-weight:700">${{r.overdue}}</td>`;
+        <td style="text-align:center;color:#60A5FA;font-weight:700">${{r.info_closed||0}}</td>
+        <td style="text-align:center;color:#ef4444;font-weight:700">${{r.overdue}}</td>`;
     tbody.appendChild(tr);
   }});
 }}
@@ -1940,6 +1944,7 @@ function renderDiscTable(data){{
         ${{metric('Approved',dt.approved,'#16a34a')}}
         ${{metric('Pending',dt.pending,'#f59e0b')}}
         ${{metric('Rejected',dt.rejected||0,'#7c3aed')}}
+        ${{metric('Info / Closed',dt.info_closed||0,'#60A5FA')}}
         ${{metric('Overdue',dt.overdue,'#ef4444')}}
       </div>
       <div class="disc-mobile-children">
@@ -1950,7 +1955,8 @@ function renderDiscTable(data){{
             ${{metric('Approved',ds.approved,'#16a34a')}}
             ${{metric('Pending',ds.pending,'#f59e0b')}}
             ${{metric('Rejected',ds.rejected||0,'#7c3aed')}}
-            ${{metric('Overdue',ds.overdue,'#ef4444')}}
+              ${{metric('Info / Closed',ds.info_closed||0,'#60A5FA')}}
+              ${{metric('Overdue',ds.overdue,'#ef4444')}}
           </div>
         </div>`).join('')}}
       </div>`;
@@ -1965,6 +1971,7 @@ function renderDiscTable(data){{
       ${{mk('Approved',dt.approved,'#16a34a')}}
       ${{mk('Pending',dt.pending,'#f59e0b')}}
       ${{mk('Rejected',dt.rejected||0,'#7c3aed')}}
+      ${{mk('Info / Closed',dt.info_closed||0,'#60A5FA')}}
       ${{mk('Overdue',dt.overdue,'#ef4444')}}
       <td style="text-align:center"><button type="button" class="disc-expander" data-group="${{groupId}}" aria-expanded="false" onclick="toggleDiscGroup('${{groupId}}', this)">▼</button></td>`;
     tbody.appendChild(tr);
@@ -1979,7 +1986,8 @@ function renderDiscTable(data){{
         ${{mk('Approved',ds.approved,'#16a34a')}}
         ${{mk('Pending',ds.pending,'#f59e0b')}}
         ${{mk('Rejected',ds.rejected||0,'#7c3aed')}}
-        ${{mk('Overdue',ds.overdue,'#ef4444')}}
+          ${{mk('Info / Closed',ds.info_closed||0,'#60A5FA')}}
+          ${{mk('Overdue',ds.overdue,'#ef4444')}}
         <td></td>`;
       tbody.appendChild(child);
     }});

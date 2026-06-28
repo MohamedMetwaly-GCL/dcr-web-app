@@ -1710,7 +1710,7 @@ def get_dashboard_stats(project_ids=None):
 
         dts      = dt_map.get(pid, [])
         dt_stats = []
-        total = approved = pending = overdue_cnt = total_rj = 0
+        total = approved = pending = overdue_cnt = total_rj = info_closed = 0
 
         # Which doc types have expectedReplyDate, status, and discipline columns
         exp_col_rows = q(
@@ -1731,7 +1731,7 @@ def get_dashboard_stats(project_ids=None):
 
         for dt in dts:
             rows  = rec_map.get((pid, dt["id"]), [])
-            t=ap=pe=ov=rj = 0
+            t=ap=pe=ov=rj=ic = 0
             disc_map = {}
             dt_is_non_workflow = _is_non_workflow_dt(dt.get("code",""), dt.get("name",""))
             dt_is_pr = _is_pr_dt(dt.get("code",""), dt.get("name",""))
@@ -1778,6 +1778,7 @@ def get_dashboard_stats(project_ids=None):
                 is_ap = (meta == "approved")
                 is_rj = (meta == "rejected")
                 is_pe = (meta == "pending")
+                is_ic = (meta == "info_closed")
                 _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
                 status_val = d.get("status")
                 action_val = d.get("action")
@@ -1786,31 +1787,33 @@ def get_dashboard_stats(project_ids=None):
                 if is_ap: ap += 1
                 if is_pe: pe += 1
                 if is_rj: rj += 1
+                if is_ic: ic += 1
                 if is_ov: ov += 1
                 # Discipline breakdown
                 # Only add to discipline breakdown if this dt has a discipline column
                 if dt_has_discipline.get(dt["id"], False):
-                    ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0})
+                    ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0,"info_closed":0})
                     ds["total"] += 1
                     if is_ap: ds["approved"] += 1
                     if is_pe: ds["pending"]  += 1
                     if is_rj: ds["rejected"] += 1
+                    if is_ic: ds["info_closed"] += 1
                     if is_ov: ds["overdue"]  += 1
 
             disc_list = [{"disc":k,"total":v["total"],"approved":v["approved"],
-                          "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"]}
+                          "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"],"info_closed":v["info_closed"]}
                          for k,v in sorted(disc_map.items())]
             if not dt_is_pr and not dt_is_ltr:
                 dt_stats.append({"id":dt["id"],"code":dt["code"],"name":dt["name"],
-                                 "total":t,"approved":ap,"pending":pe,"overdue":ov,"rejected":rj,
+                                 "total":t,"approved":ap,"pending":pe,"info_closed":ic,"overdue":ov,"rejected":rj,
                                  "disc_breakdown":disc_list})
-            total+=t; approved+=ap; pending+=pe; overdue_cnt+=ov; total_rj+=rj
+            total+=t; approved+=ap; pending+=pe; info_closed+=ic; overdue_cnt+=ov; total_rj+=rj
 
         pct = round(approved / total * 100) if total else 0
         res_p = {
             "id": pid, "name": p["name"], "code": p["code"],
             "client": pdata.get("client","") if isinstance(pdata, dict) else "",
-            "total": total, "approved": approved, "pending": pending,
+            "total": total, "approved": approved, "pending": pending, "info_closed": info_closed,
             "overdue": overdue_cnt, "rejected": total_rj, "pct": pct, "dt_stats": dt_stats,
             "ltr": ltr_stats_map.get(pid, {"total": 0, "sent": 0, "received": 0, "party_stats": [], "top_parties": []})
         }
