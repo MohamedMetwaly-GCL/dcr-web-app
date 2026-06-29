@@ -1327,8 +1327,23 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     c.alignment = Alignment(horizontal="right")
     c.border = Border(top=thin_side)
 
-    raw_headers = ["sort_order", "row_type", "description", "unit", "qty", "remarks"]
-    raw_ws.merge_cells("A1:F1")
+    def get_pr_variance_text(pr_qty, po_qty, del_qty):
+        try: pr = float(pr_qty or 0)
+        except: pr = 0.0
+        try: po = float(po_qty or 0)
+        except: po = 0.0
+        try: delq = float(del_qty or 0)
+        except: delq = 0.0
+        if po == 0: return "Pending PO"
+        if po > 0 and po < pr: return f"Short by {pr - po}"
+        if po >= pr and delq < po: return f"Awaiting {po - delq}"
+        if delq > po: return f"Over-delivered: +{delq - po}"
+        if po > pr and delq >= po: return f"Over-ordered: +{po - pr}"
+        if delq == po and po == pr: return "Completed"
+        return "Unknown"
+
+    raw_headers = ["sort_order", "row_type", "description", "unit", "PR Qty", "PO Ref", "PO Qty", "Delivered Qty", "Status", "remarks"]
+    raw_ws.merge_cells("A1:J1")
     c = raw_ws["A1"]
     c.value = "PR ITEMS RAW"
     style_cell(
@@ -1345,26 +1360,26 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
         c.fill = fill(LABEL)
         c.border = thin
         c.alignment = Alignment(horizontal="center")
-    for col, width in {1: 12, 2: 12, 3: 52, 4: 12, 5: 10, 6: 24}.items():
+    for col, width in {1: 12, 2: 12, 3: 52, 4: 12, 5: 10, 6: 15, 7: 10, 8: 12, 9: 18, 10: 24}.items():
         raw_ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
     raw_ws.freeze_panes = "A3"
     raw_row = 3
     for row in records:
         pr_number = _pick_first(row, ("docNo", "prNo", "prNumber")) or f"PR-{str(row.get('_id',''))[:8]}"
         items = pr_items_map.get(row.get("_id"), [])
-        raw_ws.merge_cells(start_row=raw_row, start_column=1, end_row=raw_row, end_column=6)
+        raw_ws.merge_cells(start_row=raw_row, start_column=1, end_row=raw_row, end_column=10)
         c = raw_ws.cell(row=raw_row, column=1, value=pr_number)
         c.border = thin
         c.alignment = Alignment(horizontal="left", vertical="center")
         c.font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
         c.fill = fill(LABEL)
-        for col in range(2, 7):
+        for col in range(2, 11):
             raw_ws.cell(row=raw_row, column=col).border = thin
             raw_ws.cell(row=raw_row, column=col).fill = fill(LABEL)
         raw_ws.row_dimensions[raw_row].height = 20
         raw_row += 1
         if not items:
-            values = ["", "item", "No PR items", "", "", ""]
+            values = ["", "item", "No PR items", "", "", "", "", "", "", ""]
             for col, val in enumerate(values, start=1):
                 c = raw_ws.cell(row=raw_row, column=col, value=val)
                 c.border = thin
@@ -1381,6 +1396,10 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
                     str(it.get("item_name", "") or "").strip(),
                     "" if is_header else str(it.get("unit", "") or "").strip(),
                     "" if is_header else it.get("quantity", ""),
+                    "" if is_header else str(it.get("po_ref", "") or "").strip(),
+                    "" if is_header else it.get("po_qty", ""),
+                    "" if is_header else it.get("delivered_qty", ""),
+                    "" if is_header else get_pr_variance_text(it.get("quantity"), it.get("po_qty"), it.get("delivered_qty")),
                     "" if is_header else str(it.get("remarks", "") or "").strip(),
                 ]
                 for col, val in enumerate(values, start=1):
@@ -1397,7 +1416,7 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
                 raw_row += 1
 
     if raw_row > 3:
-        raw_ws.auto_filter.ref = f"A2:F{raw_row-1}"
+        raw_ws.auto_filter.ref = f"A2:J{raw_row-1}"
 
     buf = io.BytesIO()
     wb.save(buf)
