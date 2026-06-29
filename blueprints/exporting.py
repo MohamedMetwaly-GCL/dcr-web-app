@@ -1327,6 +1327,22 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     c.alignment = Alignment(horizontal="right")
     c.border = Border(top=thin_side)
 
+    def get_pr_status_style(status_text):
+        text = str(status_text or "").lower()
+        if "pending po" in text:
+            return PatternFill("solid", fgColor="FFC7CE"), Font(name="Arial", size=10, color="9C0006", bold=True)
+        if "short by" in text:
+            return PatternFill("solid", fgColor="FFEB9C"), Font(name="Arial", size=10, color="9C5700", bold=True)
+        if "awaiting" in text:
+            return PatternFill("solid", fgColor="FCE4D6"), Font(name="Arial", size=10, color="C65911", bold=True)
+        if "over-delivered" in text:
+            return PatternFill("solid", fgColor="E4DFEC"), Font(name="Arial", size=10, color="5F497A", bold=True)
+        if "over-ordered" in text:
+            return PatternFill("solid", fgColor="DDEBF7"), Font(name="Arial", size=10, color="1F4E78", bold=True)
+        if "completed" in text:
+            return PatternFill("solid", fgColor="C6EFCE"), Font(name="Arial", size=10, color="006100", bold=True)
+        return PatternFill("solid", fgColor="F3F4F6"), Font(name="Arial", size=10, color="374151")
+
     def get_pr_variance_text(pr_qty, po_qty, del_qty):
         try: pr = float(pr_qty or 0)
         except: pr = 0.0
@@ -1409,6 +1425,11 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
                     if is_header:
                         c.font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
                         c.fill = fill(SECTION)
+                    elif col == 9 and val:
+                        fill_obj, font_obj = get_pr_status_style(val)
+                        c.fill = fill_obj
+                        c.font = font_obj
+                        c.alignment = Alignment(vertical="center", horizontal="center", wrap_text=True)
                 if is_header:
                     raw_ws.row_dimensions[raw_row].height = 22
                 else:
