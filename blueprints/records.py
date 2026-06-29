@@ -322,7 +322,21 @@ def api_save_pr_items(record_id):
                 qty = Decimal(str(qty_raw).strip())
             except (InvalidOperation, ValueError):
                 qty = None
-        if not item_name and not unit and not remarks and qty is None:
+        po_ref = str(it.get("po_ref", "")).strip()
+        
+        po_qty_raw = it.get("po_qty", "")
+        po_qty = None
+        if po_qty_raw not in (None, ""):
+            try: po_qty = Decimal(str(po_qty_raw).strip())
+            except (InvalidOperation, ValueError): po_qty = None
+            
+        del_qty_raw = it.get("delivered_qty", "")
+        del_qty = None
+        if del_qty_raw not in (None, ""):
+            try: del_qty = Decimal(str(del_qty_raw).strip())
+            except (InvalidOperation, ValueError): del_qty = None
+
+        if not item_name and not unit and not remarks and qty is None and not po_ref and po_qty is None and del_qty is None:
             continue
         if not item_name:
             continue
@@ -331,6 +345,9 @@ def api_save_pr_items(record_id):
             "item_name": item_name,
             "unit": unit or None,
             "quantity": qty,
+            "po_ref": po_ref or None,
+            "po_qty": po_qty,
+            "delivered_qty": del_qty,
             "remarks": remarks or None,
         })
     saved = db.save_pr_items(record_id, clean)
