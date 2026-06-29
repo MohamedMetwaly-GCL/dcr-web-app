@@ -1532,10 +1532,24 @@ def save_pr_items(record_id, items):
     exe("DELETE FROM pr_items WHERE record_id=%s", (record_id,))
     if not items: return 0
     for i, it in enumerate(items):
-        exe("""INSERT INTO pr_items(id,record_id,row_type,item_name,unit,quantity,remarks,sort_order,updated_at)
-               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,NOW())""",
+        try:
+            p_qty = float(it.get("po_qty") or 0)
+        except:
+            p_qty = 0
+        try:
+            d_qty = float(it.get("delivered_qty") or 0)
+        except:
+            d_qty = 0
+        try:
+            pr_qty = float(it.get("quantity") or 0)
+        except:
+            pr_qty = 0
+
+        exe("""INSERT INTO pr_items(id,record_id,row_type,item_name,unit,quantity,remarks,sort_order,po_ref,po_qty,delivered_qty,updated_at)
+               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())""",
             (str(uuid.uuid4()), record_id, it.get("row_type","item"),
-             it.get("item_name",""), it.get("unit"), it.get("quantity"), it.get("remarks"), i))
+             it.get("item_name",""), it.get("unit"), pr_qty, it.get("remarks"), i,
+             it.get("po_ref") or '', p_qty, d_qty))
     return len(items)
 
 # ── Dropdown Lists ────────────────────────────────────────────

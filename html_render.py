@@ -5096,8 +5096,8 @@ function getPrItemsFromEditor(){{
       const unit=r.querySelector('.pri-unit')?.value.trim()||'';
       const quantity=r.querySelector('.pri-qty')?.value.trim()||'';
       const po_ref=r.querySelector('.pri-po-ref')?.value.trim()||'';
-      const po_qty=r.querySelector('.pri-po-qty')?.value.trim()||'';
-      const delivered_qty=r.querySelector('.pri-del-qty')?.value.trim()||'';
+      const po_qty=parseFloat(r.querySelector('.pri-po-qty')?.value)||0;
+        const delivered_qty=parseFloat(r.querySelector('.pri-del-qty')?.value)||0;
       const remarks=r.querySelector('.pri-remarks')?.value.trim()||'';
       return {{row_type:'item', item_name, unit, quantity, po_ref, po_qty, delivered_qty, remarks}};
     }}).filter(it=>it.row_type==='header'?it.item_name:(it.item_name||it.unit||it.quantity||it.remarks));
