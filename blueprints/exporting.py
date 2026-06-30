@@ -51,7 +51,9 @@ def _sheet_aliases(dt):
     if code == "ltr" or "letter" in name:
         vals.update({"letter", "letters"})
     if code == "pr" or "requisition" in name:
-        vals.update({"purchase requisition", "purchase requisitions"})
+        vals.update({"purchase requisition", "purchase requisitions", "pr summary", "purchase requisition summary"})
+    if code:
+        vals.add(f"{code} summary")
     return {v for v in vals if v}
 
 
@@ -2291,6 +2293,13 @@ def api_import(pid, dt_id):
                     if _is_pr_dt(d):
                         dt_id = d["id"]
                         break
+                
+                # Pre-process any other sheet (like PR Summary) to import parent metadata
+                for sheet in wb.worksheets:
+                    if sheet != ws:
+                        # Try to import parent records. If it doesn't match headers, it safely does nothing.
+                        _import_excel_worksheet(pid, dt_id, sheet, cols)
+                        
                 imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_pr_items_worksheet(pid, dt_id, ws)
             else:
                 imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_excel_worksheet(pid, dt_id, ws, cols)
