@@ -249,28 +249,52 @@ def _pr_details_key(cols):
 
 def _pr_items_text(items):
     if not items: return ""
+    
+    def get_pr_variance_text(pr_qty, po_qty, del_qty):
+        try: pr = float(pr_qty or 0)
+        except: pr = 0.0
+        try: po = float(po_qty or 0)
+        except: po = 0.0
+        try: delq = float(del_qty or 0)
+        except: delq = 0.0
+
+        if po == 0: return "Pending PO"
+        if po > 0 and po < pr: return f"Short by {pr - po}"
+        if po >= pr and delq < po: return f"Awaiting {po - delq}"
+        if delq > po: return f"Over-delivered: +{delq - po}"
+        if po > pr and delq >= po: return f"Over-ordered: +{po - pr}"
+        if delq == po and po == pr: return "Completed"
+        return "Unknown"
+
     lines = []
     for it in items:
-        row_type = str(it.get("row_type","item") or "item").strip().lower()
-        name = str(it.get("item_name","") or "").strip()
+        row_type = str(it.get("row_type", "item") or "item").strip().lower()
+        name = str(it.get("item_name", "") or "").strip()
         if row_type == "header":
             if name:
                 lines.append(name)
             continue
-        unit = str(it.get("unit","") or "").strip()
-        qty  = it.get("quantity")
-        remarks = str(it.get("remarks","") or "").strip()
-        if qty is not None and qty != "":
-            qv = str(qty)
-        else:
-            qv = ""
-        parts = [p for p in [name, unit, qv] if p]
-        line = " | ".join(parts) if parts else ""
+            
+        unit = str(it.get("unit", "") or "").strip()
+        qty = it.get("quantity")
+        po_qty = it.get("po_qty")
+        del_qty = it.get("delivered_qty")
+        
+        qty_str = str(qty) if qty not in (None, "") else "0"
+        po_str = str(po_qty) if po_qty not in (None, "") else "0"
+        del_str = str(del_qty) if del_qty not in (None, "") else "0"
+        
+        status = get_pr_variance_text(qty, po_qty, del_qty)
+        
+        line = f"• {name} | PR Qty: {qty_str} {unit} | PO Qty: {po_str} | Del: {del_str} | Status: {status}"
+        
+        remarks = str(it.get("remarks", "") or "").strip()
         if remarks:
-            line = (line + " — " if line else "") + remarks
-        if line:
-            lines.append(line)
-    return "\n".join(lines)
+            line += f" | Remarks: {remarks}"
+            
+        lines.append(line)
+        
+    return "\\n".join(lines)
 
 
 def _resolve_pr_details_value(row, pr_items_map, pr_details_key):
