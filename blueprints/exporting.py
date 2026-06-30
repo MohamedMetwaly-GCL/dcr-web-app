@@ -214,6 +214,13 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
         col_map[str(c.get("label", "")).strip()] = c["col_key"]
         col_map[_norm(c.get("label", ""))] = c["col_key"]
         col_map[_norm(c.get("col_key", ""))] = c["col_key"]
+        
+    # Hardcoded aliases for the PR Summary sheet headers
+    col_map["prnumber"] = col_map.get("docno", "docNo")
+    col_map["prdate"] = col_map.get("issueddate", col_map.get("date", "issuedDate"))
+    col_map["disciplinetrade"] = col_map.get("discipline", "discipline")
+    col_map["prtitle"] = col_map.get("title", "title")
+    col_map["preparedby"] = col_map.get("preparedby", "preparedBy")
 
     header = None
     imported = 0
