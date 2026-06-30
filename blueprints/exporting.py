@@ -118,6 +118,88 @@ def _save_import_row(pid, dt_id, row_data):
     return "created"
 
 
+
+def _import_pr_items_worksheet(pid, dt_id, ws):
+    import datetime as _dt
+    import re
+    import uuid
+    import db
+
+    def _norm(s):
+        return re.sub(r'[^a-z0-9]', '', str(s).lower()) if s else ""
+
+    header = None
+    imported = 0
+    created = 0
+    updated = 0
+    skipped_blank = 0
+    skipped_invalid = 0
+    warnings = []
+    
+    active_parent_id = None
+    current_items = []
+    
+    def save_current_items():
+        if active_parent_id is not None:
+            # Even if current_items is empty, we call save to clear existing items
+            db.save_pr_items(active_parent_id, current_items)
+            current_items.clear()
+            
+    for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        vals = []
+        for v in row:
+            if v is None: vals.append("")
+            elif isinstance(v, (_dt.datetime, _dt.date)):
+                vals.append((v.date() if isinstance(v, _dt.datetime) else v).strftime("%Y-%m-%d"))
+            else: vals.append(str(v).strip())
+            
+        if not any(vals):
+            skipped_blank += 1
+            continue
+            
+        if header is None:
+            normalized = [_norm(v) for v in vals]
+            if "rowtype" in normalized and "description" in normalized:
+                header = normalized
+            else:
+                skipped_invalid += 1
+            continue
+
+        row_data = {header[i]: vals[i] for i in range(len(header)) if i < len(vals) and header[i]}
+        
+        row_type = str(row_data.get("rowtype", "")).strip().lower()
+        if not row_type and vals[0] and str(vals[0]).strip().lower() != "pr items raw":
+            save_current_items()
+            
+            doc_no = str(vals[0]).strip()
+            existing = db.get_record_by_doc_no(pid, dt_id, doc_no) if _norm(doc_no) else None
+            if existing:
+                active_parent_id = existing["_id"]
+                updated += 1
+            else:
+                new_id = str(uuid.uuid4())
+                db.save_record(pid, dt_id, new_id, {"docNo": doc_no})
+                active_parent_id = new_id
+                created += 1
+            imported += 1
+            continue
+            
+        if active_parent_id and (row_type == "item" or row_type == "header"):
+            current_items.append({
+                "row_type": row_type,
+                "item_name": row_data.get("description", ""),
+                "unit": row_data.get("unit", ""),
+                "quantity": row_data.get("prqty", ""),
+                "po_ref": row_data.get("poref", ""),
+                "po_qty": row_data.get("poqty", ""),
+                "delivered_qty": row_data.get("deliveredqty", ""),
+                "remarks": row_data.get("remarks", ""),
+            })
+            
+    save_current_items()
+    
+    return imported, created, updated, header is not None, skipped_blank, skipped_invalid, warnings
+
 def _import_excel_worksheet(pid, dt_id, ws, cols):
     import datetime as _dt
     import re
@@ -2184,9 +2266,28 @@ def api_import(pid, dt_id):
     try:
         if ext in ("xlsx","xls"):
             import openpyxl
+            import re
             wb  = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
             ws  = wb.active
-            imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_excel_worksheet(pid, dt_id, ws, cols)
+            
+            def _norm_detect(s): return re.sub(r'[^a-z0-9]', '', str(s).lower()) if s else ""
+            is_pr_items_raw = False
+            
+            # Check all sheets for PR Items Raw template
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows(min_row=1, max_row=5, values_only=True):
+                    norm_row = [_norm_detect(v) for v in row if v]
+                    if "rowtype" in norm_row and "description" in norm_row:
+                        is_pr_items_raw = True
+                        ws = sheet
+                        break
+                if is_pr_items_raw:
+                    break
+                    
+            if is_pr_items_raw:
+                imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_pr_items_worksheet(pid, dt_id, ws)
+            else:
+                imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_excel_worksheet(pid, dt_id, ws, cols)
         else:
             import csv, datetime as _dt
             text   = base64.b64decode(b64).decode("utf-8","ignore")
