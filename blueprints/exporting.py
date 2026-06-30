@@ -2285,6 +2285,12 @@ def api_import(pid, dt_id):
                     break
                     
             if is_pr_items_raw:
+                # Force the destination to the PR document type, regardless of what tab the user clicked Import on
+                dts = db.get_doc_types(pid)
+                for d in dts:
+                    if _is_pr_dt(d):
+                        dt_id = d["id"]
+                        break
                 imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_pr_items_worksheet(pid, dt_id, ws)
             else:
                 imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_excel_worksheet(pid, dt_id, ws, cols)
@@ -2367,20 +2373,36 @@ def api_import_project(pid):
         warnings = []
 
         for ws in wb.worksheets:
-            dt = _match_sheet_to_dt(ws.title, dts)
-            if not dt:
-                logger.warning("import_project_sheet_skipped pid=%s sheet=%s reason=no_matching_document_type",
-                               pid, ws.title)
-                skipped_sheets.append({"sheet": ws.title, "reason": "No matching document type"})
-                continue
             try:
-                cols = db.get_columns(pid, dt["id"])
-                imported, created, updated, has_header, skipped_blank, skipped_invalid, sheet_warnings = _import_excel_worksheet(pid, dt["id"], ws, cols)
-                if not has_header:
-                    logger.warning("import_project_sheet_skipped pid=%s dt_id=%s sheet=%s reason=no_valid_header",
-                                   pid, dt["id"], ws.title)
-                    skipped_sheets.append({"sheet": ws.title, "reason": "No valid header row"})
-                    continue
+                def _norm_detect(s): return re.sub(r'[^a-z0-9]', '', str(s).lower()) if s else ""
+                is_pr_items_raw = False
+                for row in ws.iter_rows(min_row=1, max_row=5, values_only=True):
+                    norm_row = [_norm_detect(v) for v in row if v]
+                    if "rowtype" in norm_row and "description" in norm_row:
+                        is_pr_items_raw = True
+                        break
+                        
+                if is_pr_items_raw:
+                    dt = next((d for d in dts if _is_pr_dt(d)), None)
+                    if not dt:
+                        skipped_sheets.append({"sheet": ws.title, "reason": "No PR document type configured"})
+                        continue
+                    imported, created, updated, _, skipped_blank, skipped_invalid, sheet_warnings = _import_pr_items_worksheet(pid, dt["id"], ws)
+                    has_header = True
+                else:
+                    dt = _match_sheet_to_dt(ws.title, dts)
+                    if not dt:
+                        logger.warning("import_project_sheet_skipped pid=%s sheet=%s reason=no_matching_document_type",
+                                       pid, ws.title)
+                        skipped_sheets.append({"sheet": ws.title, "reason": "No matching document type"})
+                        continue
+                    cols = db.get_columns(pid, dt["id"])
+                    imported, created, updated, has_header, skipped_blank, skipped_invalid, sheet_warnings = _import_excel_worksheet(pid, dt["id"], ws, cols)
+                    if not has_header:
+                        logger.warning("import_project_sheet_skipped pid=%s dt_id=%s sheet=%s reason=no_valid_header",
+                                       pid, dt["id"], ws.title)
+                        skipped_sheets.append({"sheet": ws.title, "reason": "No valid header row"})
+                        continue
                 imported_total += imported
                 created_total += created
                 updated_total += updated
