@@ -294,7 +294,7 @@ def _pr_items_text(items):
             
         lines.append(line)
         
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def _resolve_pr_details_value(row, pr_items_map, pr_details_key):
@@ -1086,6 +1086,139 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
                 max_len = max(max_len, len(v))
         ws.column_dimensions[col_letter].width = max_len + 4
 
+
+def _add_pr_items_raw_sheet(raw_ws, records, pr_items_map):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    PRIMARY = "1F4E78"
+    LIGHT = "F0F4F8"
+    SECTION = "E8EEF6"
+    LABEL = "E2E8F0"
+
+    thin_side = Side(style="thin", color="B2B2B2")
+    thin = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+
+    def fill(color): return PatternFill("solid", fgColor=color)
+    def style_cell(cell, *, font=None, fill_color=None, border=None, align=None):
+        if font: cell.font = font
+        if fill_color: cell.fill = fill(fill_color)
+        if border: cell.border = border
+        if align: cell.alignment = align
+
+    def get_pr_status_style(status_text):
+        text = str(status_text or "").lower()
+        if "pending po" in text: return PatternFill("solid", fgColor="FFC7CE"), Font(name="Arial", size=10, color="9C0006", bold=True)
+        if "short by" in text: return PatternFill("solid", fgColor="FFEB9C"), Font(name="Arial", size=10, color="9C5700", bold=True)
+        if "awaiting" in text: return PatternFill("solid", fgColor="FCE4D6"), Font(name="Arial", size=10, color="C65911", bold=True)
+        if "over-delivered" in text: return PatternFill("solid", fgColor="E4DFEC"), Font(name="Arial", size=10, color="5F497A", bold=True)
+        if "over-ordered" in text: return PatternFill("solid", fgColor="DDEBF7"), Font(name="Arial", size=10, color="1F4E78", bold=True)
+        if "completed" in text: return PatternFill("solid", fgColor="C6EFCE"), Font(name="Arial", size=10, color="006100", bold=True)
+        return PatternFill("solid", fgColor="F3F4F6"), Font(name="Arial", size=10, color="374151")
+
+    def get_pr_variance_text(pr_qty, po_qty, del_qty):
+        try: pr = float(pr_qty or 0)
+        except: pr = 0.0
+        try: po = float(po_qty or 0)
+        except: po = 0.0
+        try: delq = float(del_qty or 0)
+        except: delq = 0.0
+        if po == 0: return "Pending PO"
+        if po > 0 and po < pr: return f"Short by {pr - po}"
+        if po >= pr and delq < po: return f"Awaiting {po - delq}"
+        if delq > po: return f"Over-delivered: +{delq - po}"
+        if po > pr and delq >= po: return f"Over-ordered: +{po - pr}"
+        if delq == po and po == pr: return "Completed"
+        return "Unknown"
+
+    def _pick_first(doc, keys):
+        for k in keys:
+            if doc.get(k): return doc.get(k)
+        return None
+
+    raw_ws.sheet_view.showGridLines = False
+
+    raw_headers = ["sort_order", "row_type", "description", "unit", "PR Qty", "PO Ref", "PO Qty", "Delivered Qty", "Status", "remarks"]
+    raw_ws.merge_cells("A1:J1")
+    c = raw_ws["A1"]
+    c.value = "PR ITEMS RAW"
+    style_cell(
+        c,
+        font=Font(name="Arial", size=12, bold=True, color=PRIMARY),
+        fill_color=LIGHT,
+        border=thin,
+        align=Alignment(horizontal="center", vertical="center"),
+    )
+    raw_ws.row_dimensions[1].height = 22
+    for idx, label in enumerate(raw_headers, start=1):
+        c = raw_ws.cell(row=2, column=idx, value=label)
+        c.font = Font(name="Arial", size=10, bold=True)
+        c.fill = fill(LABEL)
+        c.border = thin
+        c.alignment = Alignment(horizontal="center")
+    for col, width in {1: 12, 2: 12, 3: 52, 4: 12, 5: 10, 6: 15, 7: 10, 8: 12, 9: 18, 10: 24}.items():
+        raw_ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
+    raw_ws.freeze_panes = "A3"
+    raw_row = 3
+    for row in records:
+        pr_number = _pick_first(row, ("docNo", "prNo", "prNumber")) or f"PR-{str(row.get('_id',''))[:8]}"
+        items = pr_items_map.get(row.get("_id"), [])
+        raw_ws.merge_cells(start_row=raw_row, start_column=1, end_row=raw_row, end_column=10)
+        c = raw_ws.cell(row=raw_row, column=1, value=pr_number)
+        c.border = thin
+        c.alignment = Alignment(horizontal="left", vertical="center")
+        c.font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
+        c.fill = fill(LABEL)
+        for col in range(2, 11):
+            raw_ws.cell(row=raw_row, column=col).border = thin
+            raw_ws.cell(row=raw_row, column=col).fill = fill(LABEL)
+        raw_ws.row_dimensions[raw_row].height = 20
+        raw_row += 1
+        if not items:
+            values = ["", "item", "No PR items", "", "", "", "", "", "", ""]
+            for col, val in enumerate(values, start=1):
+                c = raw_ws.cell(row=raw_row, column=col, value=val)
+                c.border = thin
+                c.alignment = Alignment(vertical="top", wrap_text=True)
+            raw_row += 1
+        else:
+            item_sort = 1
+            for it in items:
+                row_type = str(it.get("row_type", "item") or "item").strip().lower()
+                is_header = row_type == "header"
+                values = [
+                    "" if is_header else item_sort,
+                    row_type,
+                    str(it.get("item_name", "") or "").strip(),
+                    "" if is_header else str(it.get("unit", "") or "").strip(),
+                    "" if is_header else it.get("quantity", ""),
+                    "" if is_header else str(it.get("po_ref", "") or "").strip(),
+                    "" if is_header else it.get("po_qty", ""),
+                    "" if is_header else it.get("delivered_qty", ""),
+                    "" if is_header else get_pr_variance_text(it.get("quantity"), it.get("po_qty"), it.get("delivered_qty")),
+                    "" if is_header else str(it.get("remarks", "") or "").strip(),
+                ]
+                for col, val in enumerate(values, start=1):
+                    c = raw_ws.cell(row=raw_row, column=col, value=val)
+                    c.border = thin
+                    c.alignment = Alignment(vertical="top", wrap_text=True)
+                    if is_header:
+                        c.font = Font(name="Arial", size=10, bold=True, color=PRIMARY)
+                        c.fill = fill(SECTION)
+                    elif col == 9 and val:
+                        fill_obj, font_obj = get_pr_status_style(val)
+                        c.fill = fill_obj
+                        c.font = font_obj
+                        c.alignment = Alignment(vertical="center", horizontal="center", wrap_text=True)
+                if is_header:
+                    raw_ws.row_dimensions[raw_row].height = 22
+                else:
+                    item_sort += 1
+                raw_row += 1
+
+    if raw_row > 3:
+        raw_ws.auto_filter.ref = f"A2:J{raw_row-1}"
+
 def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -1530,6 +1663,9 @@ def api_export_all(pid):
             web_widths = db.get_col_widths(pid, dt["id"])
             ws = wb.create_sheet(title=dt["id"][:31])
             _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map, pr_details_key, web_widths)
+            if is_pr:
+                raw_ws = wb.create_sheet(title=f"{dt['id'][:20]} Items Raw")
+                _add_pr_items_raw_sheet(raw_ws, records, pr_items_map)
 
         if not wb.sheetnames:
             ws = wb.create_sheet("Empty"); ws.cell(1,1,"No data")
