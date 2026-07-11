@@ -1413,6 +1413,9 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
     <div class="panel">
       <div class="panel-title">⚠️ Overdue Documents — Awaiting Reply</div>
       <div id="ov-filter" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mu);cursor:pointer;">
+          <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> Latest Revisions Only
+        </label>
         <input id="ov-search" placeholder="🔍 Search..." oninput="filterOverdue()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;flex:1;min-width:160px">
         <select id="ov-sort" onchange="filterOverdue()"
@@ -2996,6 +2999,9 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
       {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
     </div>
+    <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text);cursor:pointer;margin-right:12px;font-weight:500;">
+      <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> Latest Revisions Only
+    </label>
     <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
   </div>
   <div id="ltr-quickbar" style="display:none;padding:8px 10px;border-bottom:1px solid var(--bd);background:#f8fafc;gap:6px;align-items:center;flex-wrap:wrap">
@@ -3290,7 +3296,7 @@ const DEFAULT_EXPECTED_REPLY_RULE={{
   weekend_mode:'friday_only',
   exclude_official_holidays:true
 }};
-const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},editId:null,revisionDraftActive:false,savingRecord:false,lists:{{}},prItemsCache:{{}}}};
+const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},latestRevisionsOnly:false,editId:null,revisionDraftActive:false,savingRecord:false,lists:{{}},prItemsCache:{{}}}};
 
 function isPRTab(){{
   const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
@@ -3920,6 +3926,7 @@ function renderRows(){{
   const isLtrTab=isLTRTab();
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   let rows=state.recs.filter(r=>{{
+    if(state.latestRevisionsOnly && r._has_newer_revision) return false;
     for(const[k,v]of Object.entries(state.filters)){{
       if(k.startsWith('_'))continue;
       if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;
@@ -4108,7 +4115,11 @@ function renderRows(){{
           .replaceAll(' /',NL)
           .replaceAll('/ ',NL);
       }}
-      td.textContent=displayVal;
+      if ((key === 'docNo' || col.col_type === 'docno') && row._has_newer_revision) {{
+          td.innerHTML = String(displayVal).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') + ' <span style="font-size:9.5px;background:#fef3c7;color:#92400e;padding:1.5px 4px;border-radius:4px;border:1px solid #fbbf24;margin-left:6px;vertical-align:middle;white-space:nowrap;" title="A newer revision exists">⚠️ Superseded</span>';
+      }} else {{
+          td.textContent=displayVal;
+      }}
       applyDisplayDirection(td,displayVal);
       tr.appendChild(td);
     }});

@@ -1040,9 +1040,24 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
     except:
         pass
 
-    select_clause = "SELECT records.id, records.data, records.created_at"
+    select_clause = r"""
+        SELECT records.id, 
+               records.data || jsonb_build_object(
+                   '_has_newer_revision', 
+                   EXISTS (
+                       SELECT 1 FROM records r2 
+                       WHERE r2.project_id = records.project_id 
+                         AND r2.dt_id = records.dt_id 
+                         AND r2.id != records.id
+                         AND COALESCE(r2.data->>'docNo', '') != ''
+                         AND REGEXP_REPLACE(COALESCE(r2.data->>'docNo', ''), '\s*REV.*$', '', 'i') = REGEXP_REPLACE(COALESCE(records.data->>'docNo', ''), '\s*REV.*$', '', 'i')
+                         AND COALESCE(r2.data->>'docNo', '') > COALESCE(records.data->>'docNo', '')
+                   )
+               ) AS data, 
+               records.created_at
+    """
     if is_noc:
-        select_clause = """
+        select_clause = r"""
             SELECT records.id, 
                    records.data || jsonb_build_object('related_pcq', 
                        (SELECT p.data->>'docNo' 
@@ -1050,9 +1065,20 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
                         JOIN doc_types dt ON p.dt_id = dt.id 
                         WHERE p.project_id = records.project_id 
                           AND UPPER(dt.code) = 'PCQ' 
-                          AND COALESCE(TRIM(split_part(records.data->>'docNo', ' REV', 1)), '') <> ''
-                          AND p.data::text ILIKE CONCAT('%%', TRIM(split_part(records.data->>'docNo', ' REV', 1)), '%%')
+                          AND COALESCE(REGEXP_REPLACE(records.data->>'docNo', '\s*REV.*$', '', 'i'), '') <> ''
+                          AND p.data::text ILIKE CONCAT('%%', REGEXP_REPLACE(records.data->>'docNo', '\s*REV.*$', '', 'i'), '%%')
                         LIMIT 1)
+                   ) || jsonb_build_object(
+                       '_has_newer_revision', 
+                       EXISTS (
+                           SELECT 1 FROM records r2 
+                           WHERE r2.project_id = records.project_id 
+                             AND r2.dt_id = records.dt_id 
+                             AND r2.id != records.id
+                             AND COALESCE(r2.data->>'docNo', '') != ''
+                             AND REGEXP_REPLACE(COALESCE(r2.data->>'docNo', ''), '\s*REV.*$', '', 'i') = REGEXP_REPLACE(COALESCE(records.data->>'docNo', ''), '\s*REV.*$', '', 'i')
+                             AND COALESCE(r2.data->>'docNo', '') > COALESCE(records.data->>'docNo', '')
+                       )
                    ) AS data, 
                    records.created_at
         """

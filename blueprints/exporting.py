@@ -802,7 +802,9 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
 
     pr_items_map = pr_items_map or {}
     PRIMARY = "1F4E78"; PL = "2563A8"; WHITE = "FFFFFF"
-    ALT = "F8FAFC"; OV = "FFF5F5"; MUTED = "9CA3AF"
+    BRAND_NAVY = "0F172A"; BRAND_TEAL = "0D9488"; BRAND_BLUE = "3B82F6"
+    TH_BG = "1E293B"; TH_FG = "FFFFFF"; TD_FG = "1E293B"
+    ALT = "F8FAFC"; OV = "FFF5F5"; MUTED = "374151"
 
     STATUS_XL = {
         "A - Approved":              ("C6EFCE","064E3B"),
@@ -1705,7 +1707,7 @@ def api_export_all(pid):
         wb      = openpyxl.Workbook()
         wb.remove(wb.active)  # remove default sheet
 
-        PRIMARY="1F4E78"; PL="2563A8"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="9CA3AF"
+        PRIMARY="1F4E78"; PL="2563A8"; WHITE="FFFFFF"; ALT="F8FAFC"; OV="FFF5F5"; MUTED="374151"
         STATUS_XL = {
             "A - Approved":              ("C6EFCE","064E3B"),
             "B - Approved As Noted":     ("C6EFCE","064E3B"),
