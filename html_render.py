@@ -4117,7 +4117,7 @@ function renderRows(){{
       }}
       if ((key === 'docNo' || col.col_type === 'docno') && row._has_newer_revision) {{
           const escapedVal = String(displayVal).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-          td.innerHTML = '<span style="text-decoration:line-through;color:#9ca3af;" title="A newer revision exists">' + escapedVal + '</span> <span style="color:#ef4444;font-size:10.5px;margin-left:6px;white-space:nowrap;vertical-align:baseline;">(Superseded)</span>';
+          td.innerHTML = escapedVal + ' <i class="fas fa-history" style="color:#9ca3af;margin-left:4px;font-size:11px;" title="Superseded"></i>';
       }} else {{
           td.textContent=displayVal;
       }}
