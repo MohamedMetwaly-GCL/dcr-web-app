@@ -3310,6 +3310,15 @@ function isSDTab(){{
   return String(dt.code||dt.id||'').toUpperCase()==='SD';
 }}
 
+function isABDTab(){{
+  const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
+  return String(dt.code||dt.id||'').toUpperCase()==='ABD';
+}}
+
+function isSDOrABDTab(){{
+  return isSDTab() || isABDTab();
+}}
+
 function isNOCTab(){{
   const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
   const code=(dt.code||dt.id||'').toString().toUpperCase();
@@ -4060,7 +4069,7 @@ function renderRows(){{
       else val=row[key]!==undefined ? row[key] : '';
       if(isLtrTab&&ltrRole&&!String(val||'').trim())val=String(getLTRValue(row,state.allTabCols,ltrRole)||'');
       
-      if(isSDTab() && isItemRefField(col) && Array.isArray(val)) {{
+      if(isSDOrABDTab() && isItemRefField(col) && Array.isArray(val)) {{
          const statusAbbreviations = {{
             "A - APPROVED": "A",
             "B - APPROVED AS NOTED": "B",
@@ -4906,7 +4915,7 @@ async function buildForm(row,opts={{}}){{
       if(key==='voBaseValue')nocBaseInp=inp;
       if(key==='voValueWithSIAndVAT')nocTotalInp=inp;
     }}
-    else if(isSDTab() && isItemRefField(col)){{
+    else if(isSDOrABDTab() && isItemRefField(col)){{
       const hid = document.createElement('input');
       hid.type = 'hidden';
       hid.id = 'f-'+key;
