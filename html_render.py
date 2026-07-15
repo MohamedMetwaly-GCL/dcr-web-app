@@ -4192,6 +4192,7 @@ function getLongTextMeta(col){{
   const key=String(col?.col_key||'').toLowerCase().replace(/[_./-]+/g,'');
   const label=String(col?.label||'').toLowerCase().replace(/[_./-]+/g,' ');
   if(key==='msref' || label.includes('ms ref') || label.includes('material submittal')) return {{type:'long_text',rows:3, style:'resize:vertical;min-height:75px;overflow:hidden', placeholder:'Multiple references supported (Use Enter for new line)'}};
+  if(key==='query' || label.includes('query')) return {{type:'long_text',rows:5, style:'resize:vertical;min-height:100px;overflow:hidden', placeholder:'Enter your detailed query here...'}};
   return null;
 }}
 
