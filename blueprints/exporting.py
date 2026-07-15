@@ -267,7 +267,17 @@ def _import_excel_worksheet(pid, dt_id, ws, cols):
         row_data = {header[i]: v for i, v in enumerate(vals)
                     if i < len(header) and header[i] and header[i] not in ("Sr.","sr","")}
         
+        date_cols = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
         for c_key in list(row_data.keys()):
+            if c_key in date_cols and row_data[c_key]:
+                v_str = str(row_data[c_key]).replace('-', '/').strip()
+                for fmt in ("%d/%b/%Y", "%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y", "%d/%m/%y"):
+                    try: 
+                        v_str = _dt.datetime.strptime(v_str, fmt).strftime("%Y-%m-%d")
+                        break
+                    except ValueError: pass
+                row_data[c_key] = v_str
+
             if _is_item_ref_field(c_key):
                 v_str = str(row_data[c_key] or "").strip()
                 if v_str:
@@ -2330,7 +2340,8 @@ def api_import(pid, dt_id):
                     if i<len(header) and header[i] and header[i] not in ("sr","Sr.","Sr",""):
                         v = val.strip()
                         if header[i] in date_cols and v:
-                            for fmt in ("%d/%b/%Y","%d-%b-%Y","%Y-%m-%d","%d/%m/%Y"):
+                            v = str(v).replace('-', '/').strip()
+                            for fmt in ("%d/%b/%Y", "%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y", "%d/%m/%y"):
                                 try: v = _dt.datetime.strptime(v,fmt).strftime("%Y-%m-%d"); break
                                 except: pass
                         row_data[header[i]] = v
