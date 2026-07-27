@@ -3831,7 +3831,7 @@ function validateDocNo(docNo,existingRecs,editId){{
   if(!p.num&&!docNo.includes('-'))return'Invalid format. Use: CODE-001 REV00';
   // Duplicate check
   const dup=existingRecs.find(r=>r._id!==editId&&(r.docNo||'').toLowerCase()===docNo.toLowerCase());
-  if(dup)return'Document No. already exists: '+docNo;
+  if(dup)return'Document No. already exists in this register (may be hidden by active filters): '+docNo;
   // REV check: base must exist
   if(p.rev>0){{
     const hasBase=existingRecs.some(r=>{{
@@ -4193,6 +4193,7 @@ function getLongTextMeta(col){{
   const label=String(col?.label||'').toLowerCase().replace(/[_./-]+/g,' ');
   if(key==='msref' || label.includes('ms ref') || label.includes('material submittal')) return {{type:'long_text',rows:3, style:'resize:vertical;min-height:75px;overflow:hidden', placeholder:'Multiple references supported (Use Enter for new line)'}};
   if(key==='query' || label.includes('query')) return {{type:'long_text',rows:5, style:'resize:vertical;min-height:100px;overflow:hidden', placeholder:'Enter your detailed query here...'}};
+  if(key==='nocdescription' || label.includes('noc description') || label.includes('description')) return {{type:'long_text',rows:5, style:'resize:vertical;min-height:100px;overflow:hidden', placeholder:'Enter detailed description here...'}};
   return null;
 }}
 
