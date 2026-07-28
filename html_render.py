@@ -42,18 +42,18 @@ ABOUT_MODAL_HTML = """
         <div style="font-size: 12px; color: var(--mu); font-family: 'IBM Plex Mono', monospace;">v1.0.0 — Stable Release</div>
       </div>
       
-      <div class="stitle" style="margin-top:0;">🎯 Purpose</div>
-      <p style="margin-bottom: 16px;">Built to eliminate manual tracking, centralize document control, and drastically speed up the review & approval cycles for Project Management and Operations teams.</p>
+      <div class="stitle" style="margin-top:0;">🎯 PURPOSE & BUSINESS IMPACT</div>
+      <p style="margin-bottom: 16px;">An enterprise-grade Document Management System developed in-house to digitize engineering workflows, ensure zero data loss, and accelerate the decision-making process. Built to eliminate manual tracking and centralize document control for Project Management and Operations teams.</p>
       
-      <div class="stitle">⚙️ Core Technologies</div>
+      <div class="stitle">⚙️ CORE TECHNOLOGIES</div>
       <ul style="margin-bottom: 16px; padding-left: 20px; color: var(--mu);">
-        <li><strong>Database:</strong> PostgreSQL with dynamic JSONB architecture</li>
-        <li><strong>Backend Engine:</strong> Python / Flask</li>
-        <li><strong>Frontend:</strong> Vanilla JavaScript & CSS (No Heavy Frameworks)</li>
+        <li><strong>Database:</strong> PostgreSQL with dynamic JSONB architecture for high scalability.</li>
+        <li><strong>Backend Engine:</strong> Python / Flask.</li>
+        <li><strong>Frontend:</strong> Vanilla JavaScript & CSS (Optimized for speed and zero latency).</li>
       </ul>
       
-      <div class="stitle">👨‍💻 Credits</div>
-      <p style="margin-bottom: 0;"><strong>Architect & Developer:</strong> Mohamed Metwaly<br><span style="color:var(--mu); font-size: 11px;">Document Control Department</span></p>
+      <div class="stitle">👨‍💻 CREDITS</div>
+      <p style="margin-bottom: 0;"><strong>Architect & Full-Stack Developer:</strong> Mohamed Metwaly<br><span style="color:var(--mu); font-size: 11px;">Document Control Department</span></p>
     </div>
     <div class="mfoot"><button class="btn btn-sc" onclick="closeM('about-modal')">Close</button></div>
   </div>
@@ -1280,6 +1280,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   <span style="font-weight:700;font-size:14px">Document Control Register</span>
   <div class="sp"></div>
   {btns}
+  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️ About</button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
@@ -1546,11 +1547,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 <!-- ADMIN MODAL (dashboard) -->
 <div class="overlay hidden" id="admin-modal">
   <div class="modal" style="max-width:780px">
-    <div class="mhdr" style="display:flex;align-items:center;">
-      <span style="flex:1;">⚙ Admin Panel</span>
-      <button class="btn btn-sc btn-sm" style="margin-right:12px; font-weight:600; padding:4px 10px;" onclick="openM('about-modal')">ℹ️ About System</button>
-      <button class="xbtn" onclick="closeM('admin-modal')">✕</button>
-    </div>
+    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
     <div class="mbody" id="admin-body"></div>
     <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
   </div>
@@ -3013,6 +3010,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   <div style="flex:1"></div>
 
   <a href="/" class="tb-btn">📊 Dashboard</a>
+  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️ About</button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
@@ -3311,11 +3309,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 <!-- ADMIN MODAL (register page) -->
 <div class="overlay hidden" id="admin-modal">
   <div class="modal" style="max-width:780px">
-    <div class="mhdr" style="display:flex;align-items:center;">
-      <span style="flex:1;">⚙ Admin Panel</span>
-      <button class="btn btn-sc btn-sm" style="margin-right:12px; font-weight:600; padding:4px 10px;" onclick="openM('about-modal')">ℹ️ About System</button>
-      <button class="xbtn" onclick="closeM('admin-modal')">✕</button>
-    </div>
+    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
     <div class="mbody" id="admin-body"></div>
     <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
   </div>
