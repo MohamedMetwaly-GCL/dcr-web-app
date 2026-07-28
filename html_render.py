@@ -855,6 +855,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
         Gas Chill Document Control System &nbsp;&mdash;&nbsp; Secure Access
       </div>
     </div>
+    <div style="position:absolute; bottom:24px; right:32px; font-size:10px; color:#94a3b8; letter-spacing:0.3px; font-weight:500;">Designed &amp; Developed in-house by Mohamed Metwaly</div>
   </div>
 
 </div>
