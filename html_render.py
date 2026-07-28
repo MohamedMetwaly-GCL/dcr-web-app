@@ -28,6 +28,42 @@ from flask import url_for
 from auth import can_edit
 from utils import STATUS_COLORS
 
+ABOUT_MODAL_HTML = """
+<!-- ABOUT SYSTEM MODAL -->
+<div class="overlay hidden" id="about-modal" style="z-index: 10000;">
+  <div class="modal" style="max-width:550px">
+    <div class="mhdr" style="display:flex;align-items:center;">
+      <span style="flex:1;">ℹ️ About System</span>
+      <button class="xbtn" onclick="closeM('about-modal')">✕</button>
+    </div>
+    <div class="mbody" style="padding: 24px; font-size: 13px; color: var(--tx); line-height: 1.6;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <div style="font-size: 20px; font-weight: 800; color: var(--brand-teal); margin-bottom: 4px;">Document Control Register</div>
+        <div style="font-size: 12px; color: var(--mu); font-family: 'IBM Plex Mono', monospace;">v1.0.0 — Stable Release</div>
+      </div>
+      
+      <div class="stitle" style="margin-top:0;">🎯 Purpose</div>
+      <p style="margin-bottom: 16px;">Built to eliminate manual tracking, centralize document control, and drastically speed up the review & approval cycles for Project Management and Operations teams.</p>
+      
+      <div class="stitle">⚙️ Core Technologies</div>
+      <ul style="margin-bottom: 16px; padding-left: 20px; color: var(--mu);">
+        <li><strong>Database:</strong> PostgreSQL with dynamic JSONB architecture</li>
+        <li><strong>Backend Engine:</strong> Python / Flask</li>
+        <li><strong>Frontend:</strong> Vanilla JavaScript & CSS (No Heavy Frameworks)</li>
+      </ul>
+      
+      <div class="stitle">👨‍💻 Credits</div>
+      <p style="margin-bottom: 0;"><strong>Architect & Developer:</strong> Mohamed Metwaly<br><span style="color:var(--mu); font-size: 11px;">Document Control Department</span></p>
+    </div>
+    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('about-modal')">Close</button></div>
+  </div>
+</div>
+"""
+
+GLOBAL_FOOTER_HTML = """
+<div class="global-footer">Designed & Developed by <strong>Mohamed Metwaly</strong> - Document Control Department</div>
+"""
+
 def _user_info_html(u):
     if not u:
         return ('<a href="/login"><button class="tb-btn glow">🔐 Login</button></a>', "guest", "GUEST", "#fff3")
@@ -532,6 +568,8 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
 #topbar-proj-info .pf-lbl { font-size: 9px; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
 #topbar-proj-info .pf-val { font-size: 15px; color: #ffffff; font-weight: 800; white-space: nowrap; max-width: none !important; }
 #topbar-proj-info .pf.primary .pf-val { font-size: 14px; color: var(--brand-teal); }
+.global-footer { text-align: center; padding: 12px 20px; font-size: 11px; color: var(--mu); margin-top: auto; border-top: 1px solid var(--bd); letter-spacing: 0.3px; }
+.global-footer strong { font-weight: 600; color: var(--tx); }
 </style>"""
 
 SHARED_JS = """
@@ -1508,7 +1546,11 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 <!-- ADMIN MODAL (dashboard) -->
 <div class="overlay hidden" id="admin-modal">
   <div class="modal" style="max-width:780px">
-    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
+    <div class="mhdr" style="display:flex;align-items:center;">
+      <span style="flex:1;">⚙ Admin Panel</span>
+      <button class="btn btn-sc btn-sm" style="margin-right:12px; font-weight:600; padding:4px 10px;" onclick="openM('about-modal')">ℹ️ About System</button>
+      <button class="xbtn" onclick="closeM('admin-modal')">✕</button>
+    </div>
     <div class="mbody" id="admin-body"></div>
     <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
   </div>
@@ -2487,6 +2529,8 @@ function auditPage(dir){{
 
 init();
 </script>
+{ABOUT_MODAL_HTML}
+{GLOBAL_FOOTER_HTML}
 </body></html>"""
 
 
@@ -3267,7 +3311,11 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 <!-- ADMIN MODAL (register page) -->
 <div class="overlay hidden" id="admin-modal">
   <div class="modal" style="max-width:780px">
-    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
+    <div class="mhdr" style="display:flex;align-items:center;">
+      <span style="flex:1;">⚙ Admin Panel</span>
+      <button class="btn btn-sc btn-sm" style="margin-right:12px; font-weight:600; padding:4px 10px;" onclick="openM('about-modal')">ℹ️ About System</button>
+      <button class="xbtn" onclick="closeM('admin-modal')">✕</button>
+    </div>
     <div class="mbody" id="admin-body"></div>
     <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
   </div>
@@ -6553,6 +6601,9 @@ async function saveProjectSettings() {{
     btn.disabled = false; btn.textContent = 'Save Settings';
   }}
 }}
-</script></body></html>"""
+</script>
+{ABOUT_MODAL_HTML}
+{GLOBAL_FOOTER_HTML}
+</body></html>"""
 
 
