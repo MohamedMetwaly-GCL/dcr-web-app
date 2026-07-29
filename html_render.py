@@ -5020,8 +5020,9 @@ async function buildForm(row,opts={{}}){{
     const lbl=document.createElement('label');lbl.textContent='PR Items';grp.appendChild(lbl);
     const wrap=document.createElement('div');wrap.id='pr-items-editor';
     wrap.innerHTML=`
-      <table>
-        <thead><tr><th>Item Name</th><th>Unit</th><th>PR Qty</th><th>PO Ref</th><th>PO Qty</th><th>Del. Qty</th><th>Remarks</th><th></th></tr></thead>
+      <style>#pr-items-editor table input { width: 100%; box-sizing: border-box; }</style>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead><tr><th style="width: 30%;">Item Name</th><th style="width: 8%;">Unit</th><th style="width: 9%;">PR Qty</th><th style="width: 12%;">PO Ref</th><th style="width: 9%;">PO Qty</th><th style="width: 9%;">Del. Qty</th><th style="width: 15%;">Remarks</th><th style="width: 90px; text-align: center;"></th></tr></thead>
         <tbody id="pr-items-body"></tbody>
       </table>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
@@ -5086,11 +5087,11 @@ function addPrHeaderRow(item={{}}){{
     tr.className='pr-head-edit';
     tr.dataset.rowType='header';
     tr.innerHTML=`
-      <td colspan="8">
+      <td colspan="7">
         <div class="pr-head-label">Section Header</div>
-      <input class="pri-header" placeholder="Section title / description">
+      <input class="pri-header" placeholder="Section title / description" style="width:100%; box-sizing:border-box;">
     </td>
-    <td style="white-space:nowrap; text-align:right;">
+    <td style="white-space:nowrap; text-align:right; width:90px;">
       <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">▲</button>
       <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">▼</button>
       <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">✕</button>
