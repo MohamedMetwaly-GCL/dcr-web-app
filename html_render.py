@@ -5037,6 +5037,19 @@ async function buildForm(row,opts={{}}){{
   if(!isNocTab)compactSingleFieldFormSections(formRoot);
 }}
 
+function moveRowUp(btn) {{
+  const row = btn.closest('tr');
+  if (row.previousElementSibling) {{
+    row.parentNode.insertBefore(row, row.previousElementSibling);
+  }}
+}}
+function moveRowDown(btn) {{
+  const row = btn.closest('tr');
+  if (row.nextElementSibling) {{
+    row.parentNode.insertBefore(row.nextElementSibling, row);
+  }}
+}}
+
 function addPrItemRow(item={{}}){{
     const body=document.getElementById('pr-items-body');if(!body)return;
     const tr=document.createElement('tr');
@@ -5049,7 +5062,11 @@ function addPrItemRow(item={{}}){{
       <td><input class="pri-po-qty" type="number" min="0" step="any" placeholder="PO Qty"></td>
       <td><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
       <td><input class="pri-remarks" placeholder="Remarks"></td>
-      <td><button type="button" class="btn btn-er btn-sm">&times;</button></td>`;
+      <td style="white-space:nowrap; text-align:right;">
+        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">▲</button>
+        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">▼</button>
+        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">&times;</button>
+      </td>`;
     tr.querySelector('.pri-item').value=item.item_name||'';
     tr.querySelector('.pri-unit').value=item.unit||'';
     tr.querySelector('.pri-qty').value=item.quantity??'';
@@ -5060,7 +5077,6 @@ function addPrItemRow(item={{}}){{
     bindDirectionalInput(tr.querySelector('.pri-item'));
     bindDirectionalInput(tr.querySelector('.pri-unit'));
     bindDirectionalInput(tr.querySelector('.pri-remarks'));
-    tr.querySelector('button').onclick=()=>tr.remove();
     body.appendChild(tr);
   }}
 
@@ -5074,10 +5090,13 @@ function addPrHeaderRow(item={{}}){{
         <div class="pr-head-label">Section Header</div>
       <input class="pri-header" placeholder="Section title / description">
     </td>
-    <td><button type="button" class="btn btn-er btn-sm">✕</button></td>`;
+    <td style="white-space:nowrap; text-align:right;">
+      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">▲</button>
+      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">▼</button>
+      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">✕</button>
+    </td>`;
   tr.querySelector('.pri-header').value=item.item_name||'';
   bindDirectionalInput(tr.querySelector('.pri-header'));
-  tr.querySelector('button').onclick=()=>tr.remove();
   body.appendChild(tr);
 }}
 
