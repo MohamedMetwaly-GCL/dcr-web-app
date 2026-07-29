@@ -5020,7 +5020,7 @@ async function buildForm(row,opts={{}}){{
     const lbl=document.createElement('label');lbl.textContent='PR Items';grp.appendChild(lbl);
     const wrap=document.createElement('div');wrap.id='pr-items-editor';
     wrap.innerHTML=`
-      <style>#pr-items-editor table input { width: 100%; box-sizing: border-box; }</style>
+      <style>#pr-items-editor table input {{ width: 100%; box-sizing: border-box; }}</style>
       <table style="width: 100%; border-collapse: collapse;">
         <thead><tr><th style="width: 30%;">Item Name</th><th style="width: 8%;">Unit</th><th style="width: 9%;">PR Qty</th><th style="width: 12%;">PO Ref</th><th style="width: 9%;">PO Qty</th><th style="width: 9%;">Del. Qty</th><th style="width: 15%;">Remarks</th><th style="width: 90px; text-align: center;"></th></tr></thead>
         <tbody id="pr-items-body"></tbody>
