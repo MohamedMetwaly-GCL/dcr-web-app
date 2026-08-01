@@ -492,6 +492,15 @@ def _cleanup_custom_columns():
 
 def _global_rename_filelocation():
     exe("UPDATE columns_config SET label='Drive Link', col_type='url' WHERE col_key='fileLocation'")
+    exe("DELETE FROM columns_config WHERE col_key LIKE 'custom_%' AND label ILIKE '%drive link%'")
+    exe("""INSERT INTO columns_config(project_id, dt_id, col_key, label, col_type, visible, sort_order)
+           SELECT project_id, id, 'fileLocation', 'Drive Link', 'url', TRUE, 100
+           FROM doc_types dt
+           WHERE NOT EXISTS (
+               SELECT 1 FROM columns_config c 
+               WHERE c.project_id = dt.project_id AND c.dt_id = dt.id AND c.col_key = 'fileLocation'
+           )
+           ON CONFLICT DO NOTHING""")
 
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
