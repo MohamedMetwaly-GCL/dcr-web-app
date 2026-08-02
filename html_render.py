@@ -4237,7 +4237,7 @@ function getLongTextMeta(col){{
   if(key==='msref' || label.includes('ms ref') || label.includes('material submittal')) return {{type:'long_text',rows:3, style:'resize:vertical;min-height:75px;overflow:hidden', placeholder:'Multiple references supported (Use Enter for new line)'}};
   if(key==='query' || key==='quary' || label.includes('query') || label.includes('quary')) return {{type:'long_text',rows:5, style:'resize:vertical;min-height:100px;overflow:hidden', placeholder:'Enter your detailed query here...'}};
   if(key==='nocdescription' || label.includes('noc description') || label.includes('description')) return {{type:'long_text',rows:5, style:'resize:vertical;min-height:100px;overflow:hidden', placeholder:'Enter detailed description here...'}};
-  if(key==='instructiondetails' || label.includes('instruction details')) return {type:'long_text',rows:5, style:'resize:vertical;min-height:100px;overflow:hidden', placeholder:'Enter instruction details here...'};
+  if(key==='instructiondetails' || label.includes('instruction details')) return {{type:'long_text',rows:5, style:'resize:vertical;min-height:100px;overflow:hidden', placeholder:'Enter instruction details here...'}};
   return null;
 }}
 
