@@ -33,7 +33,7 @@ ABOUT_MODAL_HTML = """
 <div class="overlay hidden" id="about-modal" style="z-index: 10000;">
   <div class="modal" style="max-width:550px">
     <div class="mhdr" style="display:flex;align-items:center;">
-      <span style="flex:1;">ℹ️ About System</span>
+      <span style="flex:1;">ℹ️<span class="tb-btn-text"> About</span> System</span>
       <button class="xbtn" onclick="closeM('about-modal')">✕</button>
     </div>
     <div class="mbody" style="padding: 24px; font-size: 13px; color: var(--tx); line-height: 1.6;">
@@ -75,7 +75,7 @@ def _user_info_html(u):
     rlbl = labels.get(role, role.upper())
     btns = ""
     if role == "superadmin":
-        btns += '<button class="tb-btn" onclick="openAdmin()">⚙ Admin</button>'
+        btns += '<button class="tb-btn" onclick="openAdmin()">⚙<span class="tb-btn-text"> Admin</span></button>'
     btns += '<button class="tb-btn" onclick="changePw()">🔑</button>'
     btns += '<form action="/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 6px;" title="Logout"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button></form>'
     name = u["username"]
@@ -837,6 +837,52 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     }
 }
 
+
+/* SURGICAL FIX: Portrait Mode Header Compression */
+@media (max-width: 768px) {
+    /* Hide spacers in topbar */
+    #topbar > div[style*="flex:1"] {
+        display: none !important;
+    }
+    
+    /* Compress topbar into 2 clean rows */
+    #topbar {
+        padding: 4px !important;
+        gap: 6px !important;
+        justify-content: space-between !important;
+    }
+    
+    /* Row 2: Project info takes full width at the bottom */
+    #topbar-proj-info {
+        order: 10 !important;
+        width: 100% !important;
+        justify-content: space-around !important;
+        padding: 2px !important;
+        background: rgba(0,0,0,0.15) !important;
+    }
+    
+    /* Hide button text to save space */
+    .tb-btn-text {
+        display: none !important;
+    }
+    
+    /* Make buttons icon-only and compact */
+    #topbar .tb-btn {
+        padding: 4px !important;
+        font-size: 14px !important;
+        min-height: 0 !important;
+    }
+    
+    /* Hide the full title on mobile to save space, only show short DCR */
+    .topbar-title-full {
+        display: none !important;
+    }
+    .topbar-title-short {
+        display: block !important;
+        margin-right: auto !important; /* pushes icons to the right */
+    }
+}
+
 </style>"""
 
 SHARED_JS = """
@@ -1548,7 +1594,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   <span style="font-weight:700;font-size:14px">Document Control Register</span>
   <div class="sp"></div>
   {btns}
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️ About</button>
+  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
@@ -1815,7 +1861,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 <!-- ADMIN MODAL (dashboard) -->
 <div class="overlay hidden" id="admin-modal">
   <div class="modal" style="max-width:780px">
-    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
+    <div class="mhdr"><span>⚙<span class="tb-btn-text"> Admin</span> Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
     <div class="mbody" id="admin-body"></div>
     <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
   </div>
@@ -3277,8 +3323,8 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 
   <div style="flex:1"></div>
 
-  <a href="/" class="tb-btn">📊 Dashboard</a>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️ About</button>
+  <a href="/" class="tb-btn">📊<span class="tb-btn-text"> Dashboard</span></a>
+  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
@@ -3577,7 +3623,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 <!-- ADMIN MODAL (register page) -->
 <div class="overlay hidden" id="admin-modal">
   <div class="modal" style="max-width:780px">
-    <div class="mhdr"><span>⚙ Admin Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
+    <div class="mhdr"><span>⚙<span class="tb-btn-text"> Admin</span> Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
     <div class="mbody" id="admin-body"></div>
     <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
   </div>
