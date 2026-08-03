@@ -637,48 +637,84 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
         position: static !important;
     }
     
-    /* 4. Document Types Summary -> Cards */
-    #overview-pane-docTypes .dt-tbl,
-    #overview-pane-docTypes .dt-tbl tbody,
-    #overview-pane-docTypes .dt-tbl tr,
-    #overview-pane-docTypes .dt-tbl td {
+    
+    /* 4. Document Types Summary -> Small Squares Cards (Matching Discipline Breakdown) */
+    #overview-pane-docTypes .dt-tbl {
         display: block !important;
         width: 100% !important;
     }
     #overview-pane-docTypes .dt-tbl thead {
         display: none !important;
     }
+    #overview-pane-docTypes .dt-tbl tbody {
+        display: block !important;
+        width: 100% !important;
+    }
     #overview-pane-docTypes .dt-tbl tr {
-        margin-bottom: 16px;
-        border: 1px solid var(--bd);
-        border-radius: 8px;
-        padding: 12px;
-        background: #fff;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 5px !important;
+        padding: 8px !important;
+        margin-bottom: 8px !important;
+        border: 1px solid var(--bd) !important;
+        border-radius: 8px !important;
+        background: var(--wh, #fff) !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
     }
     body.dark #overview-pane-docTypes .dt-tbl tr {
-        background: #111b2a;
+        background: #162132 !important;
+        border-color: #304257 !important;
     }
     #overview-pane-docTypes .dt-tbl td {
-        border: none !important;
-        padding: 4px 0 !important;
-        text-align: left !important;
         display: flex !important;
-        justify-content: space-between !important;
-        align-items: center !important;
+        flex-direction: column !important;
+        gap: 2px !important;
+        background: rgba(241,245,249,.62) !important;
+        border-radius: 6px !important;
+        padding: 5px 6px !important;
+        border: none !important;
+        text-align: left !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+        font-size: 11px !important;
+        line-height: 1.05 !important;
+        font-weight: 800 !important;
+        font-variant-numeric: tabular-nums !important;
+        color: var(--tx) !important;
+        white-space: normal !important;
+        word-break: break-word !important;
     }
-    #overview-pane-docTypes .dt-tbl td:nth-child(1)::before { content: "Project:"; font-weight: bold; color: var(--mu); }
-    #overview-pane-docTypes .dt-tbl td:nth-child(2)::before { content: "Code:"; font-weight: bold; color: var(--mu); }
-    #overview-pane-docTypes .dt-tbl td:nth-child(3)::before { content: "Type:"; font-weight: bold; color: var(--mu); }
-    #overview-pane-docTypes .dt-tbl td:nth-child(4)::before { content: "Total:"; font-weight: bold; color: var(--mu); }
-    #overview-pane-docTypes .dt-tbl td:nth-child(5)::before { content: "Approved:"; font-weight: bold; color: var(--mu); }
-    #overview-pane-docTypes .dt-tbl td:nth-child(6)::before { content: "Pending:"; font-weight: bold; color: var(--mu); }
-    #overview-pane-docTypes .dt-tbl td:nth-child(7)::before { content: "Rejected:"; font-weight: bold; color: var(--mu); }
-    #overview-pane-docTypes .dt-tbl td:nth-child(8)::before { content: "Info/Closed:"; font-weight: bold; color: var(--mu); }
-    #overview-pane-docTypes .dt-tbl td:nth-child(9)::before { content: "Overdue:"; font-weight: bold; color: var(--mu); }
-}
+    body.dark #overview-pane-docTypes .dt-tbl td {
+        background: #101a29 !important;
+        color: #e2e8f0 !important;
+    }
+    
+    #overview-pane-docTypes .dt-tbl td:nth-child(3) { 
+        grid-column: span 2 !important; 
+    }
+    
+    #overview-pane-docTypes .dt-tbl td::before {
+        font-size: 7.5px !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: .24px !important;
+        display: block !important;
+        width: 100% !important;
+    }
+    
+    #overview-pane-docTypes .dt-tbl td:nth-child(1)::before { content: "Project"; color: var(--mu) !important; }
+    #overview-pane-docTypes .dt-tbl td:nth-child(2)::before { content: "Code"; color: var(--mu) !important; }
+    #overview-pane-docTypes .dt-tbl td:nth-child(3)::before { content: "Type"; color: var(--mu) !important; }
+    #overview-pane-docTypes .dt-tbl td:nth-child(4)::before { content: "Total"; color: var(--mu) !important; }
+    #overview-pane-docTypes .dt-tbl td:nth-child(5)::before { content: "Approved"; color: #16a34a !important; }
+    #overview-pane-docTypes .dt-tbl td:nth-child(6)::before { content: "Pending"; color: #f59e0b !important;}
+    #overview-pane-docTypes .dt-tbl td:nth-child(7)::before { content: "Rejected"; color: #7c3aed !important;}
+    #overview-pane-docTypes .dt-tbl td:nth-child(8)::before { content: "Info/Closed"; color: #60A5FA !important;}
+    #overview-pane-docTypes .dt-tbl td:nth-child(9)::before { content: "Overdue"; color: #ef4444 !important;}
 
-/* 5. Header & Navbar Adjustments */
+    /* 5. Header & Navbar Adjustments */
 #topbar-proj-info .pf-val, .projbar h1, .projbar h2 {
     white-space: normal !important;
     word-break: break-word !important;
