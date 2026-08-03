@@ -644,6 +644,7 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     #overview-pane-docTypes .dt-tbl {
         display: block !important;
         width: 100% !important;
+        min-width: 0 !important;
     }
     #overview-pane-docTypes .dt-tbl thead {
         display: none !important;
