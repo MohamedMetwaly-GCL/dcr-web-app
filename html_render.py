@@ -570,6 +570,63 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
 #topbar-proj-info .pf.primary .pf-val { font-size: 14px; color: var(--brand-teal); }
 .global-footer { text-align: center; padding: 12px 20px; font-size: 11px; color: var(--mu); margin-top: auto; border-top: 1px solid var(--bd); letter-spacing: 0.3px; }
 .global-footer strong { font-weight: 600; color: var(--tx); }
+
+/* =========================================================
+   MOBILE RESPONSIVENESS FIXES (SURGICAL OVERRIDES)
+   ========================================================= */
+
+/* 1. Ensure Table is scrollable horizontally with native momentum on touch devices */
+#tblwrap, .table-container, .tbl-wrap, .grid-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    max-width: 100vw !important;
+}
+
+/* 2. Landscape Mode Fixes (Max height 600px - Mobile Landscape) */
+@media screen and (orientation: landscape) and (max-height: 600px) {
+    
+    /* Drastically reduce padding, margin, and height of top navigation and project bars */
+    .topbar, #projbar, #toolbar, #tabsbar, .dt-bar, .actions-bar, .psel-bar {
+        padding: 2px 4px !important;
+        margin-bottom: 2px !important;
+        min-height: unset !important;
+        height: auto !important;
+    }
+    
+    /* Shrink the main layout gaps */
+    .wrap {
+        padding: 2px !important;
+    }
+
+    /* Shrink typography and logos in the header to save vertical space */
+    .topbar-title-full, .topbar-title-short, .projbar h1, .projbar h2, .pf-lbl, .pf-val, .topbar-user-name {
+        font-size: 11px !important;
+        line-height: 1.1 !important;
+        margin: 0 !important;
+    }
+
+    /* Shrink Module/Document Type Buttons & Badges */
+    .btn, .tab-btn, .dt-btn, button {
+        padding: 2px 6px !important;
+        font-size: 10px !important;
+        margin: 1px !important;
+        height: auto !important;
+        min-height: unset !important;
+    }
+
+    /* Shrink search box and form inputs in the toolbar */
+    #toolbar input, #toolbar select, .search-box {
+        padding: 2px 4px !important;
+        font-size: 11px !important;
+        height: 24px !important;
+        margin: 1px 0 !important;
+    }
+    
+    /* Prevent the table from taking margins so it fills the remaining screen */
+    #regtbl, .dt-tbl {
+        margin-top: 2px !important;
+    }
+}
 </style>"""
 
 SHARED_JS = """
