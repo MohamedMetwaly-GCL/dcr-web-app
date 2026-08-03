@@ -717,6 +717,84 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     }
 }
 
+
+/* SURGICAL FIX: Landscape mode & General Mobile layout */
+@media (max-width: 900px) {
+    /* Fix topbar height and overflow in landscape */
+    #topbar {
+        height: auto !important;
+        min-height: 32px;
+        flex-wrap: wrap !important;
+        padding: 4px 6px !important;
+        overflow: visible !important;
+    }
+    /* Fix Project Name overlapping */
+    #topbar-proj-info {
+        height: auto !important;
+        padding: 4px !important;
+        align-items: flex-start !important;
+    }
+    #topbar-proj-info .pf {
+        gap: 0 !important;
+    }
+    #topbar-proj-info .pf-val {
+        line-height: 1.2 !important;
+    }
+    
+    /* Fix Toolbar (Import button and Search box layout) */
+    #toolbar {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: 6px !important;
+        height: auto !important;
+    }
+    #toolbar-actions {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        flex: 1 1 auto !important;
+        width: auto !important;
+    }
+    #toolbar-actions .btn {
+        flex: 1 1 auto !important;
+        white-space: nowrap !important;
+        margin-bottom: 2px !important;
+    }
+    #toolbar > label {
+        white-space: nowrap !important;
+        font-size: 11px !important;
+        flex: 0 0 auto !important;
+    }
+    #srchbox {
+        flex: 1 1 150px !important;
+        width: auto !important;
+    }
+}
+
+/* Ensure table headers don't consume the entire vertical space in landscape */
+@media screen and (orientation: landscape) and (max-height: 600px) {
+    #projbar {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        padding: 2px !important;
+        gap: 4px !important;
+    }
+    #projbar .pf {
+        flex: 1 1 auto !important;
+        min-width: 80px !important;
+    }
+    #projbar .pf-lbl {
+        font-size: 8px !important;
+    }
+    #projbar .pf-val {
+        font-size: 10px !important;
+    }
+    .dt-bar .dt-btn {
+        padding: 2px 4px !important;
+        font-size: 9px !important;
+    }
+}
+
 </style>"""
 
 SHARED_JS = """
