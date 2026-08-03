@@ -2520,7 +2520,7 @@ async function loadExecutive(){{
             <div style="font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase">${{l}}</div>
           </div>`).join('')}}
       </div>
-      <table class="dt-tbl" style="margin-bottom:16px">
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:16px"><table class="dt-tbl" style="margin-bottom:0;min-width:500px">
         <thead><tr><th>Project</th><th>Code</th>
           <th style="text-align:center">Total</th>
           <th style="text-align:center">Approved</th>
@@ -2539,8 +2539,8 @@ async function loadExecutive(){{
             </tr>`;
           }}).join('')}}
         </tbody>
-      </table>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      </table></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
         <div>
           <div class="panel-title" style="margin-top:0">⏳ Aging Summary</div>
           ${{EXEC_DATA.aging.map(a=>`
