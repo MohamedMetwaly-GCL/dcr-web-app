@@ -77,7 +77,7 @@ def _user_info_html(u):
     if role == "superadmin":
         btns += '<button class="tb-btn" onclick="openAdmin()">⚙ Admin</button>'
     btns += '<button class="tb-btn" onclick="changePw()">🔑</button>'
-    btns += '<form action="/logout" method="post" style="display:inline"><button type="submit" class="tb-btn">⏻</button></form>'
+    btns += '<form action="/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 8px;font-weight:600;font-size:11px;">Logout</button></form>'
     name = u["username"]
     return btns, name, rlbl, rbg
 
@@ -627,6 +627,72 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
         margin-top: 2px !important;
     }
 }
+
+/* SURGICAL UI/UX FIXES - MOBILE & LOGIC BUGS */
+@media (max-width: 768px) {
+    /* 2. Mobile Table Scroll (Sticky Columns Bug) */
+    #regtbl th:nth-child(2), #regtbl td:nth-child(2),
+    #regtbl th:nth-child(3), #regtbl td:nth-child(3),
+    #regtbl th.docno-cell, #regtbl td.docno-cell {
+        position: static !important;
+    }
+    
+    /* 4. Document Types Summary -> Cards */
+    #overview-pane-docTypes .dt-tbl,
+    #overview-pane-docTypes .dt-tbl tbody,
+    #overview-pane-docTypes .dt-tbl tr,
+    #overview-pane-docTypes .dt-tbl td {
+        display: block !important;
+        width: 100% !important;
+    }
+    #overview-pane-docTypes .dt-tbl thead {
+        display: none !important;
+    }
+    #overview-pane-docTypes .dt-tbl tr {
+        margin-bottom: 16px;
+        border: 1px solid var(--bd);
+        border-radius: 8px;
+        padding: 12px;
+        background: #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    body.dark #overview-pane-docTypes .dt-tbl tr {
+        background: #111b2a;
+    }
+    #overview-pane-docTypes .dt-tbl td {
+        border: none !important;
+        padding: 4px 0 !important;
+        text-align: left !important;
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+    }
+    #overview-pane-docTypes .dt-tbl td:nth-child(1)::before { content: "Project:"; font-weight: bold; color: var(--mu); }
+    #overview-pane-docTypes .dt-tbl td:nth-child(2)::before { content: "Code:"; font-weight: bold; color: var(--mu); }
+    #overview-pane-docTypes .dt-tbl td:nth-child(3)::before { content: "Type:"; font-weight: bold; color: var(--mu); }
+    #overview-pane-docTypes .dt-tbl td:nth-child(4)::before { content: "Total:"; font-weight: bold; color: var(--mu); }
+    #overview-pane-docTypes .dt-tbl td:nth-child(5)::before { content: "Approved:"; font-weight: bold; color: var(--mu); }
+    #overview-pane-docTypes .dt-tbl td:nth-child(6)::before { content: "Pending:"; font-weight: bold; color: var(--mu); }
+    #overview-pane-docTypes .dt-tbl td:nth-child(7)::before { content: "Rejected:"; font-weight: bold; color: var(--mu); }
+    #overview-pane-docTypes .dt-tbl td:nth-child(8)::before { content: "Info/Closed:"; font-weight: bold; color: var(--mu); }
+    #overview-pane-docTypes .dt-tbl td:nth-child(9)::before { content: "Overdue:"; font-weight: bold; color: var(--mu); }
+}
+
+/* 5. Header & Navbar Adjustments */
+#topbar-proj-info .pf-val, .projbar h1, .projbar h2 {
+    white-space: normal !important;
+    word-break: break-word !important;
+}
+.dash-tabs, .tabs, .overview-table-tabs {
+    display: flex;
+    flex-wrap: wrap !important;
+}
+.tb-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 </style>"""
 
 SHARED_JS = """
@@ -2034,7 +2100,7 @@ function renderDiscTable(data){{
           <div class="disc-mobile-title">${{safe(p.code)}} | ${{safe(dt.code)}}</div>
           <div class="disc-mobile-sub">${{disc.length}} ${{disc.length===1?'discipline':'disciplines'}}</div>
         </div>
-        <button type="button" class="disc-expander" aria-expanded="false" onclick="toggleDiscMobileGroup('${{groupId}}', this)">â–¼</button>
+        <button type="button" class="disc-expander" aria-expanded="false" onclick="toggleDiscMobileGroup('${{groupId}}', this)">&#9660;</button>
       </div>
       <div class="disc-mobile-grid">
         ${{metric('Project',safe(p.code),'var(--pr)')}}
@@ -2073,7 +2139,7 @@ function renderDiscTable(data){{
       ${{mk('Rejected',dt.rejected||0,'#7c3aed')}}
       ${{mk('Info / Closed',dt.info_closed||0,'#60A5FA')}}
       ${{mk('Overdue',dt.overdue,'#ef4444')}}
-      <td style="text-align:center"><button type="button" class="disc-expander" data-group="${{groupId}}" aria-expanded="false" onclick="toggleDiscGroup('${{groupId}}', this)">▼</button></td>`;
+      <td style="text-align:center"><button type="button" class="disc-expander" data-group="${{groupId}}" aria-expanded="false" onclick="toggleDiscGroup('${{groupId}}', this)">&#9660;</button></td>`;
     tbody.appendChild(tr);
     disc.forEach(ds=>{{
       const child=document.createElement('tr');
@@ -2115,7 +2181,7 @@ function toggleDiscGroup(groupId, btn){{
   rows.forEach(row=>row.classList.toggle('open', shouldOpen));
   btn.classList.toggle('open', shouldOpen);
   btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-  btn.textContent=shouldOpen ? '▲' : '▼';
+  btn.textContent=shouldOpen ? '&#9650;' : '&#9660;';
 }}
 
 // ── Analytics Tab ─────────────────────────────────────────
@@ -2126,7 +2192,7 @@ function toggleDiscMobileGroup(groupId, btn){{
   card.classList.toggle('open', shouldOpen);
   btn.classList.toggle('open', shouldOpen);
   btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-  btn.textContent=shouldOpen ? 'â–²' : 'â–¼';
+  btn.textContent=shouldOpen ? '&#9650;' : '&#9660;';
 }}
 
 let analyticsLoaded=false;
@@ -2943,7 +3009,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   .sr{{font-size:9px;min-width:34px;white-space:nowrap}}
   .sbadge{{padding:2px 7px;font-size:9px;line-height:1.15}}
   #sbar{{padding:2px 8px;font-size:9px;gap:9px;line-height:1.2;justify-content:space-between}}
-  #ltr-quickbar{{padding:4px 8px!important;gap:4px!important;display:flex!important;flex-direction:row!important}}
+  #ltr-quickbar{{padding:4px 8px!important;gap:4px!important;flex-direction:row!important}}
   #ltr-quickbar .tool-btn{{min-height:22px!important;font-size:8.5px!important;padding:2px 6px!important;flex:1 1 0!important}}
 }}
 @media(max-width:640px){{
@@ -2983,7 +3049,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #regtbl th{{white-space:nowrap!important;word-break:normal!important}}
   #tblwrap{{min-height:56vh}}
   #sbar{{padding:2px 8px;font-size:9px;gap:8px}}
-  #ltr-quickbar{{display:flex!important;flex-direction:row!important;padding:3px 6px!important;gap:3px!important}}
+  #ltr-quickbar{{flex-direction:row!important;padding:3px 6px!important;gap:3px!important}}
   #ltr-quickbar .tool-btn{{flex:1 1 0!important;min-height:21px!important;font-size:8px!important;padding:2px 5px!important}}
   .overview-pr-panel{{overflow:hidden}}
   .pr-analytics-grid{{grid-template-columns:minmax(0,1fr)!important;width:100%}}
@@ -3047,7 +3113,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #toolbar-actions{{grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;width:auto}}
   .tool-btn{{min-height:20px;padding:1px 3px;font-size:7.5px;gap:1px}}
   #srchbox{{min-height:22px;padding-top:1px;padding-bottom:1px;font-size:9px;flex:0 0 auto;width:100%;max-width:none}}
-  #ltr-quickbar{{display:flex!important;flex-direction:row!important;padding:2px 6px!important;gap:3px!important}}
+  #ltr-quickbar{{flex-direction:row!important;padding:2px 6px!important;gap:3px!important}}
   #ltr-quickbar .tool-btn{{min-height:19px!important;font-size:7.5px!important;padding:1px 4px!important;flex:1 1 0!important}}
   #tblwrap{{min-height:50vh;height:calc(100vh - 188px)}}
   #sbar{{padding:1px 8px;font-size:8px;line-height:1.1}}
@@ -5122,8 +5188,8 @@ function addPrItemRow(item={{}}){{
       <td><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
       <td><input class="pri-remarks" placeholder="Remarks"></td>
       <td style="white-space:nowrap; text-align:right;">
-        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">▲</button>
-        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">▼</button>
+        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
+        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
         <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">&times;</button>
       </td>`;
     tr.querySelector('.pri-item').value=item.item_name||'';
@@ -5150,8 +5216,8 @@ function addPrHeaderRow(item={{}}){{
       <input class="pri-header" placeholder="Section title / description" style="width:100%; box-sizing:border-box;">
     </td>
     <td style="white-space:nowrap; text-align:right; width:90px;">
-      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">▲</button>
-      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">▼</button>
+      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
+      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
       <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">✕</button>
     </td>`;
   tr.querySelector('.pri-header').value=item.item_name||'';
