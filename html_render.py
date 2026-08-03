@@ -77,7 +77,7 @@ def _user_info_html(u):
     if role == "superadmin":
         btns += '<button class="tb-btn" onclick="openAdmin()">⚙ Admin</button>'
     btns += '<button class="tb-btn" onclick="changePw()">🔑</button>'
-    btns += '<form action="/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 8px;font-weight:600;font-size:11px;">Logout</button></form>'
+    btns += '<form action="/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 6px;" title="Logout"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button></form>'
     name = u["username"]
     return btns, name, rlbl, rbg
 
@@ -691,6 +691,30 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     display: inline-flex;
     align-items: center;
     justify-content: center;
+}
+
+
+/* Topbar Mobile Fixes */
+@media (max-width: 768px) {
+    #topbar {
+        height: auto !important;
+        min-height: 34px;
+        flex-wrap: wrap !important;
+        padding: 4px 6px !important;
+        overflow: visible !important;
+    }
+    #topbar .tb-btn {
+        padding: 4px 6px !important;
+        font-size: 10px !important;
+    }
+}
+
+
+@media (max-width: 768px) {
+    .kpi-grid {
+        grid-template-columns: repeat(2, minmax(130px, 1fr)) !important;
+        gap: 6px !important;
+    }
 }
 
 </style>"""
