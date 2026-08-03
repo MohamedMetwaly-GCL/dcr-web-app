@@ -640,6 +640,7 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     
     
     /* 4. Document Types Summary -> Compact Flex Squares Cards */
+    #overview-pane-docTypes .tbl-wrap { overflow: visible !important; }
     #overview-pane-docTypes .dt-tbl {
         display: block !important;
         width: 100% !important;
