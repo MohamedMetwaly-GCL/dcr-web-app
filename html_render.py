@@ -856,9 +856,24 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     #topbar-proj-info {
         order: 10 !important;
         width: 100% !important;
-        justify-content: space-around !important;
-        padding: 2px !important;
+        justify-content: flex-start !important;
+        gap: 16px !important;
+        padding: 4px 8px !important;
         background: rgba(0,0,0,0.15) !important;
+    }
+    
+    /* Hide the username on mobile, keep only the SUPER ADMIN role chip to save space */
+    .topbar-user-name {
+        display: none !important;
+    }
+    
+    /* Remove vertical line spacer */
+    #topbar > span[style*="color:rgba(255,255,255,.45)"] {
+        display: none !important;
+    }
+    
+    #topbar-proj-info .pf:last-child {
+        flex: 1 1 auto !important; /* Allow project name to take the remaining space */
     }
     
     /* Hide button text to save space */
