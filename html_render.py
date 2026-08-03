@@ -638,7 +638,8 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     }
     
     
-    /* 4. Document Types Summary -> Small Squares Cards (Matching Discipline Breakdown) */
+    
+    /* 4. Document Types Summary -> Compact Flex Squares Cards */
     #overview-pane-docTypes .dt-tbl {
         display: block !important;
         width: 100% !important;
@@ -651,10 +652,10 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
         width: 100% !important;
     }
     #overview-pane-docTypes .dt-tbl tr {
-        display: grid !important;
-        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        display: flex !important;
+        flex-wrap: wrap !important;
         gap: 5px !important;
-        padding: 8px !important;
+        padding: 6px !important;
         margin-bottom: 8px !important;
         border: 1px solid var(--bd) !important;
         border-radius: 8px !important;
@@ -668,16 +669,18 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     #overview-pane-docTypes .dt-tbl td {
         display: flex !important;
         flex-direction: column !important;
+        flex: 0 0 auto !important; /* Sized exactly to content */
+        min-width: 65px !important; /* Keep a minimum width so they look like squares */
         gap: 2px !important;
         background: rgba(241,245,249,.62) !important;
         border-radius: 6px !important;
-        padding: 5px 6px !important;
+        padding: 5px 8px !important;
         border: none !important;
         text-align: left !important;
         justify-content: center !important;
         align-items: flex-start !important;
         font-size: 11px !important;
-        line-height: 1.05 !important;
+        line-height: 1.1 !important;
         font-weight: 800 !important;
         font-variant-numeric: tabular-nums !important;
         color: var(--tx) !important;
@@ -690,7 +693,8 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     }
     
     #overview-pane-docTypes .dt-tbl td:nth-child(3) { 
-        grid-column: span 2 !important; 
+        /* The 'Type' column can grow if it needs to, because names can be long */
+        flex: 1 1 auto !important; 
     }
     
     #overview-pane-docTypes .dt-tbl td::before {
