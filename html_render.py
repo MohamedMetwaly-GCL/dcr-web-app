@@ -852,9 +852,20 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
         justify-content: flex-start !important;
     }
     
-    /* Hide the " Register" word to save 60px of width on small screens */
+    /* Show 'Register' with a smaller font size */
     #topbar .topbar-title-short::after {
-        content: "" !important;
+        content: " Register" !important;
+        font-size: 10px !important;
+        font-weight: 600 !important;
+        opacity: 0.7 !important;
+        letter-spacing: 0px !important;
+    }
+    
+    /* Shrink the SUPER ADMIN chip to save space */
+    #topbar .topbar-user span:last-child {
+        padding: 1px 4px !important;
+        font-size: 8px !important;
+        letter-spacing: -0.2px !important;
     }
     
     /* Push icons to the right but use less margin if needed, or flex-grow */
