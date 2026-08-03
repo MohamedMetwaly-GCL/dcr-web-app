@@ -848,8 +848,18 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     /* Compress topbar into 2 clean rows */
     #topbar {
         padding: 4px !important;
-        gap: 6px !important;
-        justify-content: space-between !important;
+        gap: 2px !important;
+        justify-content: flex-start !important;
+    }
+    
+    /* Hide the " Register" word to save 60px of width on small screens */
+    #topbar .topbar-title-short::after {
+        content: "" !important;
+    }
+    
+    /* Push icons to the right but use less margin if needed, or flex-grow */
+    .topbar-title-short {
+        margin-right: auto !important; 
     }
     
     /* Row 2: Project info takes full width at the bottom */
