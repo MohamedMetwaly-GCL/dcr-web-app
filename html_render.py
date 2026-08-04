@@ -3352,8 +3352,8 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #topbar .topbar-title-short {{ display: inline !important; font-size: 11px !important; margin-right: 0 !important; }}
   #topbar .topbar-title-short::after {{ content: " Register" !important; font-size: 9px !important; font-weight: 600 !important; opacity: 0.7 !important; }}
   
-  /* Inline project info in topbar to save height */
-  #topbar-proj-info {{ margin-left: 4px !important; justify-content: flex-start !important; gap: 6px !important; }}
+  /* Inline project info in topbar and make it flex-grow to push icons to the right */
+  #topbar-proj-info {{ margin-left: 4px !important; justify-content: flex-start !important; gap: 6px !important; flex: 1 1 auto !important; padding: 0 !important; }}
   #topbar-proj-info div {{ display: flex !important; align-items: baseline !important; gap: 4px !important; text-align: left !important; }}
   #topbar-proj-info div span:first-child {{ display: inline !important; }}
   
@@ -3387,10 +3387,9 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   .tool-btn {{ min-height: 18px !important; padding: 2px 4px !important; font-size: 8px !important; gap: 2px !important; }}
   
   /* Shrink search bar and hide icon */
-  #srchbox {{ min-height: 18px !important; padding-top: 1px !important; padding-bottom: 1px !important; font-size: 9px !important; flex: 0 0 auto !important; width: 120px !important; max-width: none !important; }}
+  #srchbox {{ min-height: 18px !important; padding-top: 1px !important; padding-bottom: 1px !important; font-size: 9px !important; flex: 0 0 auto !important; width: 120px !important; max-width: none !important; background-image: none !important; padding-left: 6px !important; }}
   #toolbar > div[style*="position:relative"] {{ flex: 0 0 auto !important; width: 120px !important; margin-left: auto !important; }}
   #toolbar > div[style*="position:relative"] > span {{ display: none !important; }}
-  #srch {{ padding-left: 6px !important; }}
   
   /* MISC */
   #ltr-quickbar {{ flex-direction: row !important; padding: 2px 6px !important; gap: 3px !important; }}
