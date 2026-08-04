@@ -3353,9 +3353,11 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #topbar .topbar-title-short::after {{ content: " Register" !important; font-size: 9px !important; font-weight: 600 !important; opacity: 0.7 !important; }}
   
   /* Inline project info in topbar and make it flex-grow to push icons to the right */
-  #topbar-proj-info {{ margin-left: 4px !important; justify-content: flex-start !important; gap: 6px !important; flex: 1 1 auto !important; padding: 0 !important; }}
-  #topbar-proj-info div {{ display: flex !important; align-items: baseline !important; gap: 4px !important; text-align: left !important; }}
-  #topbar-proj-info div span:first-child {{ display: inline !important; }}
+  #topbar-proj-info {{ margin-left: 4px !important; justify-content: flex-start !important; gap: 8px !important; flex: 1 1 auto !important; padding: 0 !important; }}
+  #topbar-proj-info .pf {{ display: flex !important; flex-direction: row !important; align-items: baseline !important; gap: 3px !important; text-align: left !important; }}
+  #topbar-proj-info .pf-lbl::after {{ content: ":" !important; }}
+  #topbar-proj-info .pf-lbl {{ display: inline !important; font-size: 8px !important; letter-spacing: 0 !important; }}
+  #topbar-proj-info .pf-val {{ display: inline !important; font-size: 10px !important; font-weight: 800 !important; }}
   
   /* Hide text in topbar buttons to save space */
   #topbar .tb-btn span:last-child {{ display: none !important; }}
@@ -3372,7 +3374,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #projbar img {{ max-height: 20px !important; max-width: 60px !important; flex-shrink: 0 !important; }}
   #projbar-main {{ gap: 8px !important; display: flex !important; flex: 1 1 auto !important; flex-wrap: nowrap !important; }}
   #projbar-primary, #projbar-extra {{ display: flex !important; flex-wrap: nowrap !important; gap: 8px !important; }}
-  #projbar-primary .pf, #projbar-extra .pf {{ flex: 0 0 auto !important; white-space: nowrap !important; display: flex !important; align-items: baseline !important; gap: 4px !important; border: none !important; margin: 0 !important; padding: 0 !important; }}
+  #projbar-primary .pf, #projbar-extra .pf {{ flex: 0 0 auto !important; white-space: nowrap !important; display: flex !important; align-items: baseline !important; gap: 4px !important; border: none !important; margin: 0 !important; padding: 0 !important; flex-direction: row !important; }}
   #projbar-primary .pf-lbl, #projbar-extra .pf-lbl {{ font-size: 6px !important; line-height: 1 !important; margin: 0 !important; display: inline !important; }}
   #projbar-primary .pf-val, #projbar-extra .pf-val {{ font-size: 8px !important; line-height: 1 !important; display: inline !important; }}
   
