@@ -3353,19 +3353,20 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #topbar .topbar-title-short::after {{ content: " Register" !important; font-size: 9px !important; font-weight: 600 !important; opacity: 0.7 !important; }}
   
   /* Inline project info in topbar and make it flex-grow to push icons to the right */
-  #topbar-proj-info {{ margin-left: 4px !important; justify-content: flex-start !important; gap: 8px !important; flex: 1 1 auto !important; padding: 0 !important; }}
-  #topbar-proj-info .pf {{ display: flex !important; flex-direction: row !important; align-items: baseline !important; gap: 3px !important; text-align: left !important; }}
+  #topbar-proj-info {{ margin-left: 4px !important; justify-content: flex-start !important; gap: 4px !important; flex: 1 1 auto !important; padding: 0 !important; overflow: hidden !important; }}
+  #topbar-proj-info .pf {{ display: flex !important; flex-direction: row !important; align-items: baseline !important; gap: 2px !important; text-align: left !important; padding: 0 !important; border: none !important; flex: 0 0 auto !important; }}
+  #topbar-proj-info .pf:last-child {{ flex: 1 1 auto !important; overflow: hidden !important; white-space: nowrap !important; text-overflow: ellipsis !important; }}
   #topbar-proj-info .pf-lbl::after {{ content: ":" !important; }}
-  #topbar-proj-info .pf-lbl {{ display: inline !important; font-size: 8px !important; letter-spacing: 0 !important; }}
-  #topbar-proj-info .pf-val {{ display: inline !important; font-size: 10px !important; font-weight: 800 !important; }}
+  #topbar-proj-info .pf-lbl {{ display: inline !important; font-size: 8px !important; letter-spacing: 0 !important; margin: 0 !important; flex-shrink: 0 !important; }}
+  #topbar-proj-info .pf-val {{ display: inline !important; font-size: 10px !important; font-weight: 800 !important; overflow: hidden !important; text-overflow: ellipsis !important; margin: 0 !important; }}
   
   /* Hide text in topbar buttons to save space */
   #topbar .tb-btn span:last-child {{ display: none !important; }}
-  #topbar .tb-btn {{ min-height: 20px !important; padding: 2px 4px !important; font-size: 11px !important; gap: 0 !important; margin-left: 2px !important; }}
+  #topbar .tb-btn {{ min-height: 20px !important; padding: 2px 4px !important; font-size: 11px !important; gap: 0 !important; margin-left: 2px !important; flex-shrink: 0 !important; }}
   
   /* Compress user chip */
   #topbar .topbar-user-name {{ display: none !important; }}
-  #topbar .topbar-user span:last-child {{ font-size: 7px !important; padding: 1px 4px !important; letter-spacing: -0.2px !important; margin-left: auto !important; }}
+  #topbar .topbar-user span:last-child {{ font-size: 7px !important; padding: 1px 4px !important; letter-spacing: -0.2px !important; margin-left: auto !important; flex-shrink: 0 !important; }}
   #topbar > div[style*="flex:1"] {{ display: none !important; }}
 
   /* PROJBAR OPTIMIZATIONS (Single Horizontal Scrollable Row) */
