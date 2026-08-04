@@ -1135,40 +1135,40 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   html, body {{ overflow: hidden !important; height: 100vh !important; width: 100vw !important; }}
   .login-wrap {{ flex-direction: column; height: 100% !important; overflow: hidden !important; }}
   
-  /* Top Panel Extreme Compression */
-  .login-left {{ width: 100%; flex: 0 0 auto; min-height: 0; padding: 12px 16px; justify-content: flex-start; }}
-  .ll-logo {{ margin-bottom: 4px; }}
-  .ll-logo img {{ width: 55px; height: auto; }}
-  .ll-brand {{ font-size: 16px; margin-bottom: 0; }}
-  .ll-tagline {{ font-size: 8px; margin-bottom: 6px; }}
-  .valmore-logo {{ margin-bottom: 8px; transform: scale(0.75); transform-origin: top center; height: 20px; }}
-  .ll-desc {{ font-size: 10px; line-height: 1.4; margin-bottom: 12px; padding: 0 10px; }}
-  .ll-stats {{ gap: 12px; margin-top: 0; }}
-  .ll-stat-num {{ font-size: 14px; }}
-  .ll-stat-lbl {{ font-size: 7.5px; margin-top: 1px; }}
+  /* Top Panel */
+  .login-left {{ width: 100%; flex: 0 0 auto; min-height: 0; padding: 24px 20px 16px 20px; justify-content: flex-start; }}
+  .ll-logo {{ margin-bottom: 12px; }}
+  .ll-logo img {{ width: 100px; height: auto; }}
+  .ll-brand {{ font-size: 20px; margin-bottom: 2px; }}
+  .ll-tagline {{ font-size: 10px; margin-bottom: 16px; }}
+  .valmore-logo {{ margin-bottom: 16px; transform: scale(0.9); transform-origin: top center; height: 24px; }}
+  .ll-desc {{ font-size: 11px; line-height: 1.4; margin-bottom: 16px; padding: 0 10px; }}
+  .ll-stats {{ gap: 16px; margin-top: 0; }}
+  .ll-stat-num {{ font-size: 16px; }}
+  .ll-stat-lbl {{ font-size: 8px; margin-top: 2px; }}
   
   /* Make the top footer relative so it doesn't overlap stats */
-  .ll-footer {{ position: relative !important; bottom: auto !important; margin-top: 10px; font-size: 8px; }}
+  .ll-footer {{ position: relative !important; bottom: auto !important; margin-top: 12px; font-size: 9px; }}
   
-  /* Bottom Panel Compression */
-  .login-right {{ flex: 1 1 auto; padding: 12px 16px; justify-content: flex-start; align-items: center; position: relative; }}
-  .login-form-wrap {{ padding: 20px 16px; margin-top: 0; width: 100%; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-radius: 12px; }}
-  .lf-title {{ font-size: 16px; margin-bottom: 2px; }}
-  .lf-sub {{ font-size: 10px; margin-bottom: 12px; }}
-  .fld {{ margin-bottom: 10px; }}
-  .fld label {{ font-size: 9px; margin-bottom: 2px; }}
-  .fld input {{ padding: 10px 12px; font-size: 12px; }}
-  .btn-login {{ padding: 10px; font-size: 13px; margin-top: 2px; }}
-  .lf-footer {{ margin-top: 10px; font-size: 9px; }}
+  /* Bottom Panel (Fixed Flex Direction to push card up) */
+  .login-right {{ flex-direction: column !important; flex: 1 1 auto; padding: 16px 20px; justify-content: flex-start !important; align-items: center !important; position: relative; }}
+  .login-form-wrap {{ padding: 24px 20px; margin-top: 0; width: 100%; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-radius: 12px; }}
+  .lf-title {{ font-size: 18px; margin-bottom: 4px; }}
+  .lf-sub {{ font-size: 11px; margin-bottom: 16px; }}
+  .fld {{ margin-bottom: 14px; }}
+  .fld label {{ font-size: 10px; margin-bottom: 4px; }}
+  .fld input {{ padding: 12px 14px; font-size: 13px; }}
+  .btn-login {{ padding: 12px; font-size: 14px; margin-top: 4px; }}
+  .lf-footer {{ margin-top: 12px; font-size: 10px; }}
   
   /* Copyright Text Centered at Bottom */
   .login-right > div[style*="position:absolute"] {{
       position: absolute !important;
-      bottom: 8px !important;
+      bottom: 12px !important;
       right: 0 !important;
       width: 100% !important;
       text-align: center !important;
-      font-size: 8px !important;
+      font-size: 9px !important;
   }}
 }}
 </style></head><body>
