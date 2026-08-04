@@ -2436,7 +2436,7 @@ function toggleDiscGroup(groupId, btn){{
   rows.forEach(row=>row.classList.toggle('open', shouldOpen));
   btn.classList.toggle('open', shouldOpen);
   btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-  btn.textContent=shouldOpen ? '&#9650;' : '&#9660;';
+  btn.innerHTML=shouldOpen ? '&#9650;' : '&#9660;';
 }}
 
 // ── Analytics Tab ─────────────────────────────────────────
@@ -2447,7 +2447,7 @@ function toggleDiscMobileGroup(groupId, btn){{
   card.classList.toggle('open', shouldOpen);
   btn.classList.toggle('open', shouldOpen);
   btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-  btn.textContent=shouldOpen ? '&#9650;' : '&#9660;';
+  btn.innerHTML=shouldOpen ? '&#9650;' : '&#9660;';
 }}
 
 let analyticsLoaded=false;
