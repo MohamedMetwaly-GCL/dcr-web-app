@@ -1132,18 +1132,41 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 
 /* ── Mobile: Stack vertically ── */
 @media(max-width:700px){{
-  html, body {{ overflow-y: auto !important; height: auto !important; }}
-  .login-wrap {{ flex-direction: column; height: auto !important; min-height: 100vh; overflow-y: auto; overflow-x: hidden; }}
-  .login-left {{ width: 100%; min-height: 240px; padding: 32px 20px 50px 20px; }}
-  .ll-logo {{ margin-bottom: 20px; }}
-  .ll-logo img {{ width: 100px; height: auto; }}
-  .ll-brand {{ font-size: 20px; }}
-  .valmore-logo {{ margin-bottom: 24px; }}
-  .ll-stats {{ gap: 20px; margin-top: 0; }}
-  .ll-stat-num {{ font-size: 18px; }}
-  .login-right {{ padding: 28px 20px; }}
-  .ll-desc {{ display: none; }}
-  .ll-footer {{ bottom: 12px; }}
+  html, body {{ overflow: hidden !important; height: 100vh !important; width: 100vw !important; }}
+  .login-wrap {{ flex-direction: column; height: 100% !important; overflow: hidden !important; }}
+  
+  /* Top Panel Compression */
+  .login-left {{ width: 100%; flex: 0 0 auto; min-height: 0; padding: 24px 20px 16px 20px; justify-content: flex-start; }}
+  .ll-logo {{ margin-bottom: 8px; }}
+  .ll-logo img {{ width: 80px; height: auto; }}
+  .ll-brand {{ font-size: 18px; margin-bottom: 2px; }}
+  .ll-tagline {{ font-size: 9px; margin-bottom: 12px; }}
+  .valmore-logo {{ margin-bottom: 16px; transform: scale(0.9); transform-origin: top center; }}
+  .ll-stats {{ gap: 16px; margin-top: 0; }}
+  .ll-stat-num {{ font-size: 16px; }}
+  .ll-stat-lbl {{ font-size: 8px; }}
+  
+  /* Make the top footer relative so it doesn't overlap stats */
+  .ll-footer {{ position: relative !important; bottom: auto !important; margin-top: 16px; font-size: 9px; }}
+  
+  /* Bottom Panel Compression */
+  .login-right {{ flex: 1 1 auto; padding: 20px; justify-content: flex-start; align-items: center; position: relative; }}
+  .login-form-wrap {{ padding: 24px 20px; margin-top: 0; width: 100%; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-radius: 12px; }}
+  .lf-title {{ font-size: 18px; margin-bottom: 4px; }}
+  .lf-sub {{ font-size: 11px; margin-bottom: 16px; }}
+  .fld {{ margin-bottom: 12px; }}
+  .fld label {{ font-size: 10px; margin-bottom: 4px; }}
+  .fld input {{ padding: 12px 14px; font-size: 13px; }}
+  .btn-login {{ padding: 12px; font-size: 13px; margin-top: 4px; }}
+  
+  /* Copyright Text Centered at Bottom */
+  .login-right > div[style*="position:absolute"] {{
+      bottom: 12px !important;
+      right: 0 !important;
+      width: 100% !important;
+      text-align: center !important;
+      font-size: 9px !important;
+  }}
 }}
 </style></head><body>
 <div class="login-wrap">
