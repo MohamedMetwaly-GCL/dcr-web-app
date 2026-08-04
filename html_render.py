@@ -3346,32 +3346,57 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #projbar-extra{{grid-template-columns:1fr 1fr}}
 }}
 @media(max-width:900px) and (orientation:landscape){{
-  #topbar{{height:28px;padding:0 6px;gap:4px}}
-  #topbar .topbar-title-full{{display:none}}
-  #topbar .topbar-title-short{{display:inline!important;font-size:12px!important}}
-  #topbar .topbar-title-short::after{{content:" Register"}}
-  #topbar .tb-btn{{min-height:21px;padding:2px 5px;font-size:8px}}
-  #topbar .topbar-user span:last-child{{font-size:7px!important;padding:1px 5px!important;max-width:58px}}
-  #projbar{{padding:2px 8px;gap:5px;min-height:0;align-items:center}}
-  #projbar img{{max-height:30px;max-width:72px}}
-  #projbar-main{{gap:1px;display:grid;grid-template-columns:minmax(0,1fr);flex:1 1 auto}}
-  #projbar-primary,#projbar-extra{{grid-template-columns:repeat(3,minmax(0,1fr));gap:1px 8px}}
-  #projbar-primary .pf-lbl,#projbar-extra .pf-lbl{{font-size:5.8px;line-height:.9;margin:0}}
-  #projbar-primary .pf-val,#projbar-extra .pf-val{{font-size:8px;line-height:.95;-webkit-line-clamp:1}}
-  #projbar-primary .pf.primary:last-child{{grid-column:auto;border-bottom:none;padding-bottom:0;margin-bottom:0}}
-  #projbar-primary .pf.primary:last-child .pf-val{{font-size:8.5px}}
-  #tabsbar{{padding:1px 7px;gap:3px}}
-  .tab-btn{{min-height:20px;padding:2px 7px;font-size:8px}}
-  .tcnt{{font-size:7px;padding:0 4px}}
-  .tab-add{{min-height:20px;padding:1px 7px;font-size:9px}}
-  #toolbar{{padding:2px 6px;gap:3px;display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,220px);align-items:center}}
-  #toolbar-actions{{grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;width:auto}}
-  .tool-btn{{min-height:20px;padding:1px 3px;font-size:7.5px;gap:1px}}
-  #srchbox{{min-height:22px;padding-top:1px;padding-bottom:1px;font-size:9px;flex:0 0 auto;width:100%;max-width:none}}
-  #ltr-quickbar{{flex-direction:row!important;padding:2px 6px!important;gap:3px!important}}
-  #ltr-quickbar .tool-btn{{min-height:19px!important;font-size:7.5px!important;padding:1px 4px!important;flex:1 1 0!important}}
-  #tblwrap{{min-height:50vh;height:calc(100vh - 188px)}}
-  #sbar{{padding:1px 8px;font-size:8px;line-height:1.1}}
+  /* TOPBAR OPTIMIZATIONS */
+  #topbar {{ height: 26px !important; padding: 0 4px !important; gap: 4px !important; justify-content: flex-start !important; }}
+  #topbar .topbar-title-full {{ display: none !important; }}
+  #topbar .topbar-title-short {{ display: inline !important; font-size: 11px !important; margin-right: 0 !important; }}
+  #topbar .topbar-title-short::after {{ content: " Register" !important; font-size: 9px !important; font-weight: 600 !important; opacity: 0.7 !important; }}
+  
+  /* Inline project info in topbar to save height */
+  #topbar-proj-info {{ margin-left: 4px !important; justify-content: flex-start !important; gap: 6px !important; }}
+  #topbar-proj-info div {{ display: flex !important; align-items: baseline !important; gap: 4px !important; text-align: left !important; }}
+  #topbar-proj-info div span:first-child {{ display: inline !important; }}
+  
+  /* Hide text in topbar buttons to save space */
+  #topbar .tb-btn span:last-child {{ display: none !important; }}
+  #topbar .tb-btn {{ min-height: 20px !important; padding: 2px 4px !important; font-size: 11px !important; gap: 0 !important; margin-left: 2px !important; }}
+  
+  /* Compress user chip */
+  #topbar .topbar-user-name {{ display: none !important; }}
+  #topbar .topbar-user span:last-child {{ font-size: 7px !important; padding: 1px 4px !important; letter-spacing: -0.2px !important; margin-left: auto !important; }}
+  #topbar > div[style*="flex:1"] {{ display: none !important; }}
+
+  /* PROJBAR OPTIMIZATIONS (Single Horizontal Scrollable Row) */
+  #projbar {{ padding: 2px 4px !important; gap: 8px !important; min-height: 0 !important; align-items: center !important; display: flex !important; flex-wrap: nowrap !important; overflow-x: auto !important; overflow-y: hidden !important; scrollbar-width: none; }}
+  #projbar::-webkit-scrollbar {{ display: none; }}
+  #projbar img {{ max-height: 20px !important; max-width: 60px !important; flex-shrink: 0 !important; }}
+  #projbar-main {{ gap: 8px !important; display: flex !important; flex: 1 1 auto !important; flex-wrap: nowrap !important; }}
+  #projbar-primary, #projbar-extra {{ display: flex !important; flex-wrap: nowrap !important; gap: 8px !important; }}
+  #projbar-primary .pf, #projbar-extra .pf {{ flex: 0 0 auto !important; white-space: nowrap !important; display: flex !important; align-items: baseline !important; gap: 4px !important; border: none !important; margin: 0 !important; padding: 0 !important; }}
+  #projbar-primary .pf-lbl, #projbar-extra .pf-lbl {{ font-size: 6px !important; line-height: 1 !important; margin: 0 !important; display: inline !important; }}
+  #projbar-primary .pf-val, #projbar-extra .pf-val {{ font-size: 8px !important; line-height: 1 !important; display: inline !important; }}
+  
+  /* TOOLBAR OPTIMIZATIONS */
+  #tabsbar {{ padding: 1px 4px !important; gap: 2px !important; }}
+  .tab-btn {{ min-height: 18px !important; padding: 2px 6px !important; font-size: 8px !important; }}
+  .tcnt {{ font-size: 7px !important; padding: 0 4px !important; }}
+  .tab-add {{ min-height: 18px !important; padding: 1px 4px !important; font-size: 9px !important; }}
+  
+  #toolbar {{ padding: 2px 4px !important; gap: 4px !important; display: flex !important; flex-wrap: wrap !important; align-items: center !important; }}
+  #toolbar-actions {{ display: flex !important; flex-wrap: wrap !important; gap: 2px !important; flex: 1 1 auto !important; width: auto !important; }}
+  .tool-btn {{ min-height: 18px !important; padding: 2px 4px !important; font-size: 8px !important; gap: 2px !important; }}
+  
+  /* Shrink search bar and hide icon */
+  #srchbox {{ min-height: 18px !important; padding-top: 1px !important; padding-bottom: 1px !important; font-size: 9px !important; flex: 0 0 auto !important; width: 120px !important; max-width: none !important; }}
+  #toolbar > div[style*="position:relative"] {{ flex: 0 0 auto !important; width: 120px !important; margin-left: auto !important; }}
+  #toolbar > div[style*="position:relative"] > span {{ display: none !important; }}
+  #srch {{ padding-left: 6px !important; }}
+  
+  /* MISC */
+  #ltr-quickbar {{ flex-direction: row !important; padding: 2px 6px !important; gap: 3px !important; }}
+  #ltr-quickbar .tool-btn {{ min-height: 19px !important; font-size: 7.5px !important; padding: 1px 4px !important; flex: 1 1 0 !important; }}
+  #tblwrap {{ min-height: 50vh; height: calc(100vh - 120px) !important; }}
+  #sbar {{ padding: 1px 8px !important; font-size: 8px !important; line-height: 1.1 !important; }}
 }}
 </style></head><body>
 
