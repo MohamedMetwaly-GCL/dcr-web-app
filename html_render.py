@@ -1132,15 +1132,18 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 
 /* ── Mobile: Stack vertically ── */
 @media(max-width:700px){{
-  .login-wrap{{flex-direction:column}}
-  .login-left{{width:100%;min-height:220px;padding:32px 20px;}}
-  .ll-logo{{margin-bottom:20px;}}
-  .ll-logo img{{width:100px;height:auto;}}
-  .ll-brand{{font-size:20px}}
-  .ll-stats{{gap:20px;margin-top:0}}
-  .ll-stat-num{{font-size:18px}}
-  .login-right{{padding:28px 20px}}
-  .ll-desc{{display:none}}
+  html, body {{ overflow-y: auto !important; height: auto !important; }}
+  .login-wrap {{ flex-direction: column; height: auto !important; min-height: 100vh; overflow-y: auto; overflow-x: hidden; }}
+  .login-left {{ width: 100%; min-height: 240px; padding: 32px 20px 50px 20px; }}
+  .ll-logo {{ margin-bottom: 20px; }}
+  .ll-logo img {{ width: 100px; height: auto; }}
+  .ll-brand {{ font-size: 20px; }}
+  .valmore-logo {{ margin-bottom: 24px; }}
+  .ll-stats {{ gap: 20px; margin-top: 0; }}
+  .ll-stat-num {{ font-size: 18px; }}
+  .login-right {{ padding: 28px 20px; }}
+  .ll-desc {{ display: none; }}
+  .ll-footer {{ bottom: 12px; }}
 }}
 </style></head><body>
 <div class="login-wrap">
