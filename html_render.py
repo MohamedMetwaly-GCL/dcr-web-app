@@ -2711,7 +2711,7 @@ async function openAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
   if(!users||!projects)return;
   const body=document.getElementById('admin-body');body.innerHTML='';
-  const utitle=document.createElement('div');utitle.className='stitle';utitle.innerHTML='👥 Users <input type="text" placeholder="Search users by name or email..." style="margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll(\'.urow-wrapper\')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?\'block\':\'none\';}})">';body.appendChild(utitle);
+  const utitle=document.createElement('div');utitle.className='stitle';utitle.innerHTML='👥 Users <input type="text" placeholder="Search users by name or email..." style="margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll(\\'.urow-wrapper\\')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?\\'block\\':\\'none\\';}})">';body.appendChild(utitle);
   for(const u of users){{
     const assigned_cached = u.projects || [];
     const uwrap=document.createElement('div');uwrap.className='urow-wrapper';
@@ -6683,7 +6683,7 @@ async function openAdmin(){{
   if(!users||!projects) return;
   
   const body=document.getElementById('admin-body'); body.innerHTML='';
-  const utitle=document.createElement('div');utitle.className='stitle';utitle.innerHTML='👥 Users <input type="text" placeholder="Search users by name or email..." style="margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll(\'.urow-wrapper\')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?\'block\':\'none\';}})">';body.appendChild(utitle);
+  const utitle=document.createElement('div');utitle.className='stitle';utitle.innerHTML='👥 Users <input type="text" placeholder="Search users by name or email..." style="margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll(\\'.urow-wrapper\\')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?\\'block\\':\\'none\\';}})">';body.appendChild(utitle);
   for(const u of users){{
     const assigned_cached = u.projects || [];
     const uwrap=document.createElement('div');uwrap.className='urow-wrapper';
@@ -6712,7 +6712,7 @@ async function openAdmin(){{
     }}
     if(u.role!=='superadmin'){{
       const ad=document.createElement('div');ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
-      ad.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:10px;color:var(--mu)">Project access:</div><div><a href="#" style="font-size:9px;margin-right:8px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on!==\'1\') b.click(); }})">Select All</a><a href="#" style="font-size:9px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on===\'1\') b.click(); }})">Clear All</a></div></div>';
+      ad.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:10px;color:var(--mu)">Project access:</div><div><a href="#" style="font-size:9px;margin-right:8px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on!==\\'1\\') b.click(); }})">Select All</a><a href="#" style="font-size:9px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on===\\'1\\') b.click(); }})">Clear All</a></div></div>';
       const assigned=assigned_cached;
       const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:5px';
       projects.forEach(p=>{{
