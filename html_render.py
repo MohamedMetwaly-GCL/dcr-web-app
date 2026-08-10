@@ -2711,10 +2711,11 @@ async function openAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
   if(!users||!projects)return;
   const body=document.getElementById('admin-body');body.innerHTML='';
-  const utitle=document.createElement('div');utitle.className='stitle';utitle.textContent='👥 Users';body.appendChild(utitle);
+  const utitle=document.createElement('div');utitle.className='stitle';utitle.innerHTML='👥 Users <input type="text" placeholder="Search users by name or email..." style="margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll(\'.urow-wrapper\')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?\'block\':\'none\';}})">';body.appendChild(utitle);
   for(const u of users){{
     const assigned_cached = u.projects || [];
-    const row=document.createElement('div');row.className='urow';
+    const uwrap=document.createElement('div');uwrap.className='urow-wrapper';
+    const row=document.createElement('div');row.className='urow';row.style.display='flex';row.style.gap='8px';row.style.alignItems='center';
     row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
       <input id="email-${{u.username}}" placeholder="Email (e.g. dc@company.com)" value="${{u.email || ''}}" style="flex:1; margin-right: 8px; padding: 2px 6px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px;" onblur="updUsrEmail('${{u.username}}')">
       <span class="badge" style="background:#fef3c7;color:#92400e">${{u.role.toUpperCase()}}</span>
@@ -2726,15 +2727,17 @@ async function openAdmin(){{
       roleSel.id='role-'+u.username;
       roleSel.className='btn btn-sc btn-sm';
       roleSel.style.cssText='height:auto;padding:4px 8px;outline:none;';
+      roleSel.setAttribute('onchange', "this.nextSibling.style.opacity='1'; this.nextSibling.style.pointerEvents='auto'; this.nextSibling.style.filter='none';");
       roleSel.innerHTML=['viewer','editor','admin','superadmin'].map(r=>`<option value="${{r}}" ${{u.role===r?'selected':''}}>${{r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}}</option>`).join('');
       const roleBtn=document.createElement('button');
-      roleBtn.className='btn btn-pr btn-sm';
+      roleBtn.className='btn btn-pr btn-sm role-save-btn';
+      roleBtn.style.cssText='opacity:0.4; pointer-events:none; filter:grayscale(100%); transition:all 0.2s';
       roleBtn.textContent='Save Role';
       roleBtn.onclick=()=>updUsrRole(u.username);
       row.insertBefore(roleSel,row.children[1]||null);
       row.insertBefore(roleBtn,row.children[2]||null);
     }}
-    body.appendChild(row);
+    uwrap.appendChild(row);body.appendChild(uwrap);
     if(u.role!=='superadmin'){{
       const ad=document.createElement('div');
       ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
@@ -2774,7 +2777,7 @@ async function openAdmin(){{
         
         pl.appendChild(btn);
       }});
-      ad.appendChild(pl);body.appendChild(ad);
+      ad.appendChild(pl);uwrap.appendChild(ad);
     }}
   }}
   const at=document.createElement('div');at.className='stitle';at.textContent='➕ Add User';body.appendChild(at);
@@ -6680,25 +6683,28 @@ async function openAdmin(){{
   if(!users||!projects) return;
   
   const body=document.getElementById('admin-body'); body.innerHTML='';
-  const utitle=document.createElement('div');utitle.className='stitle';utitle.textContent='👥 Users';body.appendChild(utitle);
+  const utitle=document.createElement('div');utitle.className='stitle';utitle.innerHTML='👥 Users <input type="text" placeholder="Search users by name or email..." style="margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll(\'.urow-wrapper\')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?\'block\':\'none\';}})">';body.appendChild(utitle);
   for(const u of users){{
     const assigned_cached = u.projects || [];
-    const row=document.createElement('div');row.className='urow';
+    const uwrap=document.createElement('div');uwrap.className='urow-wrapper';
+    const row=document.createElement('div');row.className='urow';row.style.display='flex';row.style.gap='8px';row.style.alignItems='center';
     row.innerHTML=`<span style="flex:1;font-weight:600">👤 ${{u.username}}</span>
       <input id="email-${{u.username}}" placeholder="Email (e.g. dc@company.com)" value="${{u.email || ''}}" style="flex:1; margin-right: 8px; padding: 2px 6px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px;" onblur="updUsrEmail('${{u.username}}')">
       <span class="badge" style="background:#fef3c7;color:#92400e">${{u.role.toUpperCase()}}</span>
       ${{u.username!=='admin'?`<button class="btn btn-sc btn-sm" onclick="chgPw('${{u.username}}')">🔑 PW</button>
         <button class="btn btn-er btn-sm" onclick="delUsr('${{u.username}}')">✕</button>`:
         '<span style="font-size:10px;color:var(--mu)">(protected)</span>'}}`;
-    body.appendChild(row);
+    uwrap.appendChild(row);body.appendChild(uwrap);
     if(u.username!=='admin'){{
       const roleSel=document.createElement('select');
       roleSel.id='role-'+u.username;
       roleSel.className='btn btn-sc btn-sm';
       roleSel.style.cssText='height:auto;padding:4px 8px;outline:none;';
+      roleSel.setAttribute('onchange', "this.nextSibling.style.opacity='1'; this.nextSibling.style.pointerEvents='auto'; this.nextSibling.style.filter='none';");
       roleSel.innerHTML=['viewer','editor','admin','superadmin'].map(r=>`<option value="${{r}}" ${{u.role===r?'selected':''}}>${{r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}}</option>`).join('');
       const roleBtn=document.createElement('button');
-      roleBtn.className='btn btn-pr btn-sm';
+      roleBtn.className='btn btn-pr btn-sm role-save-btn';
+      roleBtn.style.cssText='opacity:0.4; pointer-events:none; filter:grayscale(100%); transition:all 0.2s';
       roleBtn.textContent='Save Role';
       roleBtn.onclick=()=>updUsrRole(u.username);
       row.insertBefore(roleSel,row.children[1]||null);
@@ -6706,7 +6712,7 @@ async function openAdmin(){{
     }}
     if(u.role!=='superadmin'){{
       const ad=document.createElement('div');ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
-      ad.innerHTML='<div style="font-size:10px;color:var(--mu);margin-bottom:4px">Project access:</div>';
+      ad.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:10px;color:var(--mu)">Project access:</div><div><a href="#" style="font-size:9px;margin-right:8px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on!==\'1\') b.click(); }})">Select All</a><a href="#" style="font-size:9px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on===\'1\') b.click(); }})">Clear All</a></div></div>';
       const assigned=assigned_cached;
       const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:5px';
       projects.forEach(p=>{{
@@ -6742,7 +6748,7 @@ async function openAdmin(){{
         
         pl.appendChild(btn);
       }});
-      ad.appendChild(pl);body.appendChild(ad);
+      ad.appendChild(pl);uwrap.appendChild(ad);
     }}
   }}
   const at=document.createElement('div');at.className='stitle';at.textContent='➕ Add User';body.appendChild(at);
