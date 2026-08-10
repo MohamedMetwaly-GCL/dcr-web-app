@@ -2711,11 +2711,19 @@ async function openAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
   if(!users||!projects)return;
   const body=document.getElementById('admin-body');body.innerHTML='';
-  body.style.paddingTop = '0';
-  const utitle=document.createElement('div');utitle.className='stitle';
-  utitle.style.cssText = 'position:sticky; top:0; z-index:100; background:var(--wh, #fff); padding-top:16px; padding-bottom:10px; border-bottom:1px solid var(--bd); margin-bottom:10px; margin-left:-18px; margin-right:-18px; padding-left:18px; padding-right:18px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);';
-  utitle.innerHTML=`👥 Users <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span> <input type="text" placeholder="Search users by name or email..." style="margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})">`;
-  body.appendChild(utitle);
+  // Remove top padding reset if any
+  body.style.paddingTop = '';
+  
+  // Create static header outside of scrolling body
+  let existingUtitle = document.getElementById('admin-utitle');
+  if (existingUtitle) existingUtitle.remove();
+  
+  const utitle=document.createElement('div');
+  utitle.id='admin-utitle';
+  utitle.style.cssText = 'padding:12px 18px; border-bottom:1px solid var(--bd); background:var(--wh, #fff); display:flex; justify-content:space-between; align-items:center;';
+  utitle.innerHTML=`<div><strong style="font-size:13px;color:var(--tx)">👥 Users</strong> <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span></div> <input type="text" placeholder="Search users by name or email..." style="padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})">`;
+  
+  body.parentNode.insertBefore(utitle, body);
   for(const u of users){{
     const assigned_cached = u.projects || [];
     const uwrap=document.createElement('div');uwrap.className='urow-wrapper';
@@ -6686,11 +6694,19 @@ async function openAdmin(){{
   if(!users||!projects) return;
   
   const body=document.getElementById('admin-body'); body.innerHTML='';
-  body.style.paddingTop = '0';
-  const utitle=document.createElement('div');utitle.className='stitle';
-  utitle.style.cssText = 'position:sticky; top:0; z-index:100; background:var(--wh, #fff); padding-top:16px; padding-bottom:10px; border-bottom:1px solid var(--bd); margin-bottom:10px; margin-left:-18px; margin-right:-18px; padding-left:18px; padding-right:18px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);';
-  utitle.innerHTML=`👥 Users <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span> <input type="text" placeholder="Search users by name or email..." style="margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})">`;
-  body.appendChild(utitle);
+  // Remove top padding reset if any
+  body.style.paddingTop = '';
+  
+  // Create static header outside of scrolling body
+  let existingUtitle = document.getElementById('admin-utitle');
+  if (existingUtitle) existingUtitle.remove();
+  
+  const utitle=document.createElement('div');
+  utitle.id='admin-utitle';
+  utitle.style.cssText = 'padding:12px 18px; border-bottom:1px solid var(--bd); background:var(--wh, #fff); display:flex; justify-content:space-between; align-items:center;';
+  utitle.innerHTML=`<div><strong style="font-size:13px;color:var(--tx)">👥 Users</strong> <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span></div> <input type="text" placeholder="Search users by name or email..." style="padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})">`;
+  
+  body.parentNode.insertBefore(utitle, body);
   for(const u of users){{
     const assigned_cached = u.projects || [];
     const uwrap=document.createElement('div');uwrap.className='urow-wrapper';
