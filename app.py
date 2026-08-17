@@ -231,6 +231,44 @@ def api_audit():
         projects=[{"id":p["id"],"name":p["name"],"code":p["code"]} for p in projects]
     )
 
+# ── API: Global Sequence Audit ────────────────────────────────
+@app.route("/api/audit-sequence", methods=["GET"])
+def api_audit_sequence():
+    u = current_user()
+    if not u or str(u.get("role", "")).lower() not in ("superadmin", "admin"):
+        return jsonify(error="Superadmin/Admin only"), 403
+    
+    pid = request.args.get("project_id")
+    dt_id = request.args.get("dt_id")
+    if not pid or not dt_id:
+        return jsonify(error="Project ID and Document Type ID are required"), 400
+    
+    records = db.q("SELECT COALESCE(data->>'docNo', '') AS docno FROM records WHERE project_id=%s AND dt_id=%s", (pid, dt_id))
+    
+    import re
+    nums = []
+    for r in records:
+        docno = r["docno"]
+        if not docno:
+            continue
+        # Strip revision parts like "rev 1", "REV-A", etc.
+        clean_docno = re.sub(r'rev.*$', '', docno, flags=re.IGNORECASE).strip()
+        # Find all contiguous integer groups
+        matches = re.findall(r'\d+', clean_docno)
+        if matches:
+            # We assume the last integer group before revision is the sequence number
+            nums.append(int(matches[-1]))
+    
+    if not nums:
+        return jsonify(missing=[], min=0, max=0)
+    
+    nums = set(nums)
+    min_n = min(nums)
+    max_n = max(nums)
+    missing = [n for n in range(min_n, max_n + 1) if n not in nums]
+    
+    return jsonify(missing=missing, min=min_n, max=max_n)
+
 # ── API: Google Drive Webhooks ────────────────────────────────
 @app.route("/api/webhooks/drive", methods=["POST"])
 def api_webhook_drive():

@@ -2801,6 +2801,72 @@ async function openAdmin(){{
       <option value="admin">Admin</option></select></div>
     <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
     <button class="btn btn-pr btn-sm" onclick="addUsr()">Add</button></div>`;
+  
+  
+  // --- Global Sequence Audit ---
+  const auditCard = document.createElement('div');
+  auditCard.style.cssText = 'margin-top:20px; padding: 15px; border:1px solid var(--bd); border-radius: 8px; background: var(--card, #fff); margin-bottom: 20px;';
+  
+  let projOptions = projects.map(p => `<option value="${{p.id}}">${{p.code}} - ${{p.name}}</option>`).join('');
+  
+  auditCard.innerHTML = `
+    <h3 style="margin-top:0;font-size:14px;color:var(--tx);margin-bottom:4px;">Global Sequence Audit</h3>
+    <p style="font-size:11px;color:var(--mu);margin-bottom:12px;">Detect missing sequence numbers (gaps) in document logs.</p>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+       <select id="audit-proj" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
+          <option value="">Select Project</option>
+          ${{projOptions}}
+       </select>
+       <select id="audit-dt" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
+          <option value="">Select Doc Type</option>
+       </select>
+       <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
+    </div>
+    <div id="audit-result" style="font-size:12px;margin-top:10px;"></div>
+  `;
+  body.appendChild(auditCard);
+  
+  document.getElementById('audit-proj').addEventListener('change', async (e) => {{
+      const pid = e.target.value;
+      const dtSel = document.getElementById('audit-dt');
+      dtSel.innerHTML = '<option value="">Select Doc Type</option>';
+      if(!pid) return;
+      const dts = await apiFetch('/api/doc_types/' + pid);
+      if(dts) {{
+          dtSel.innerHTML += dts.map(d => `<option value="${{d.id}}">${{d.code}} - ${{d.name}}</option>`).join('');
+      }}
+  }});
+  
+  window.runSequenceAudit = async () => {{
+      const pid = document.getElementById('audit-proj').value;
+      const dtId = document.getElementById('audit-dt').value;
+      const resEl = document.getElementById('audit-result');
+      if(!pid || !dtId) {{
+          resEl.innerHTML = '<div style="padding:10px;background:#fef08a;color:#854d0e;border-radius:4px;">Please select both Project and Document Type.</div>';
+          return;
+      }}
+      resEl.innerHTML = '<div style="color:var(--mu)">Auditing...</div>';
+      const r = await apiFetch('/api/audit-sequence?project_id='+pid+'&dt_id='+dtId);
+      if(r && !r.error) {{
+          if(r.missing && r.missing.length > 0) {{
+              resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">
+                 <strong>⚠️ Missing Sequences Found!</strong><br>
+                 Expected range: ${{r.min}} to ${{r.max}}<br>
+                 Missing: ${{r.missing.join(', ')}}
+              </div>`;
+          }} else if(r.min === 0 && r.max === 0) {{
+              resEl.innerHTML = `<div style="padding:10px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;">No numbered documents found to audit.</div>`;
+          }} else {{
+              resEl.innerHTML = `<div style="padding:10px;background:#dcfce3;color:#166534;border:1px solid #86efac;border-radius:4px;">
+                 <strong>✅ 100% Intact.</strong><br>
+                 No missing sequences detected. Range: ${{r.min}} to ${{r.max}}.
+              </div>`;
+          }}
+      }} else {{
+          resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">Error running audit: ${{r?r.error:'Unknown'}}</div>`;
+      }}
+  }};
+
   body.appendChild(ar);openM('admin-modal');
 }}
 async function addUsr(){{
@@ -6783,6 +6849,72 @@ async function openAdmin(){{
       <option value="superadmin">Super Admin</option></select></div>
     <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
     <button class="btn btn-pr btn-sm" style="margin-bottom:1px" onclick="addUsr()">Add</button></div>`;
+  
+  
+  // --- Global Sequence Audit ---
+  const auditCard = document.createElement('div');
+  auditCard.style.cssText = 'margin-top:20px; padding: 15px; border:1px solid var(--bd); border-radius: 8px; background: var(--card, #fff); margin-bottom: 20px;';
+  
+  let projOptions = projects.map(p => `<option value="${{p.id}}">${{p.code}} - ${{p.name}}</option>`).join('');
+  
+  auditCard.innerHTML = `
+    <h3 style="margin-top:0;font-size:14px;color:var(--tx);margin-bottom:4px;">Global Sequence Audit</h3>
+    <p style="font-size:11px;color:var(--mu);margin-bottom:12px;">Detect missing sequence numbers (gaps) in document logs.</p>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+       <select id="audit-proj" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
+          <option value="">Select Project</option>
+          ${{projOptions}}
+       </select>
+       <select id="audit-dt" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
+          <option value="">Select Doc Type</option>
+       </select>
+       <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
+    </div>
+    <div id="audit-result" style="font-size:12px;margin-top:10px;"></div>
+  `;
+  body.appendChild(auditCard);
+  
+  document.getElementById('audit-proj').addEventListener('change', async (e) => {{
+      const pid = e.target.value;
+      const dtSel = document.getElementById('audit-dt');
+      dtSel.innerHTML = '<option value="">Select Doc Type</option>';
+      if(!pid) return;
+      const dts = await apiFetch('/api/doc_types/' + pid);
+      if(dts) {{
+          dtSel.innerHTML += dts.map(d => `<option value="${{d.id}}">${{d.code}} - ${{d.name}}</option>`).join('');
+      }}
+  }});
+  
+  window.runSequenceAudit = async () => {{
+      const pid = document.getElementById('audit-proj').value;
+      const dtId = document.getElementById('audit-dt').value;
+      const resEl = document.getElementById('audit-result');
+      if(!pid || !dtId) {{
+          resEl.innerHTML = '<div style="padding:10px;background:#fef08a;color:#854d0e;border-radius:4px;">Please select both Project and Document Type.</div>';
+          return;
+      }}
+      resEl.innerHTML = '<div style="color:var(--mu)">Auditing...</div>';
+      const r = await apiFetch('/api/audit-sequence?project_id='+pid+'&dt_id='+dtId);
+      if(r && !r.error) {{
+          if(r.missing && r.missing.length > 0) {{
+              resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">
+                 <strong>⚠️ Missing Sequences Found!</strong><br>
+                 Expected range: ${{r.min}} to ${{r.max}}<br>
+                 Missing: ${{r.missing.join(', ')}}
+              </div>`;
+          }} else if(r.min === 0 && r.max === 0) {{
+              resEl.innerHTML = `<div style="padding:10px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;">No numbered documents found to audit.</div>`;
+          }} else {{
+              resEl.innerHTML = `<div style="padding:10px;background:#dcfce3;color:#166534;border:1px solid #86efac;border-radius:4px;">
+                 <strong>✅ 100% Intact.</strong><br>
+                 No missing sequences detected. Range: ${{r.min}} to ${{r.max}}.
+              </div>`;
+          }}
+      }} else {{
+          resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">Error running audit: ${{r?r.error:'Unknown'}}</div>`;
+      }}
+  }};
+
   body.appendChild(ar);openM('admin-modal');
 }}
 async function addUsr(){{

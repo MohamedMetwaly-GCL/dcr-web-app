@@ -1,9 +1,2 @@
-import psycopg2
-
-try:
-    print("Executing check script to see if psycopg2 IN %s syntax generates valid SQL...")
-    import psycopg2.extensions as ext
-    cur = ext.adapt((("LTR", "DS"),)) # Adapt a tuple of strings
-    print(cur.getquoted())
-except Exception as e:
-    print("Error:", e)
+c = '''utitle.innerHTML='👥 Users <input type=\"text\" placeholder=\"Search users by name or email...\" style=\"margin-left: 15px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal; float: right;\" oninput=\"const q=this.value.toLowerCase(); Array.from(document.querySelectorAll(\\\\'.urow-wrapper\\\\')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?\\\\'block\\\\':\\\\'none\\\\';}})\">';body.appendChild(utitle);'''
+print(c)
