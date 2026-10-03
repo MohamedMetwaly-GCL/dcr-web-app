@@ -1878,12 +1878,13 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       </div>
       <!-- Table -->
       <style>
-        #aud-tbl th{{position:relative;overflow:visible}}
-        #aud-tbl th .aud-rz{{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:10;user-select:none}}
+        #aud-tbl th{{position:sticky;top:0;z-index:15;background:var(--brand-navy,#1a2f4e);color:#fff;overflow:visible;box-shadow:0 1px 0 rgba(0,0,0,.15);padding:8px 10px}}
+        body.dark #aud-tbl th{{background:#1e3a5f;color:#e2e8f0;box-shadow:0 1px 0 rgba(255,255,255,.08)}}
+        #aud-tbl th .aud-rz{{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:20;user-select:none}}
         #aud-tbl th .aud-rz:hover,#aud-tbl th .aud-rz.rzg{{background:var(--brand-teal,#00b4a6);opacity:.85}}
-        #aud-tbl td{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+        #aud-tbl td{{padding:6px 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
       </style>
-      <div style="overflow-x:auto">
+      <div style="overflow:auto;max-height:calc(100vh - 270px);border:1px solid var(--bd);border-radius:var(--rd)">
         <table class="dt-tbl" id="aud-tbl" style="min-width:800px;table-layout:fixed">
           <thead><tr>
             <th style="width:140px">Time</th>
@@ -3052,6 +3053,13 @@ async function loadAudit(reset=false){{
   if(!rows.length){{
     tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
   }}else{{
+    const _dash='<span style="color:var(--mu);opacity:0.4">—</span>';
+    const _val=(v)=>{{
+      if(v===null||v===undefined)return _dash;
+      const s=String(v).trim();
+      return s?s:_dash;
+    }};
+
     rows.forEach((r,i)=>{{
       const tr=document.createElement('tr');
       tr.className=i%2===0?'':'alt';
@@ -3059,17 +3067,22 @@ async function loadAudit(reset=false){{
       const tsStr=ts.toLocaleDateString('en-GB')+' '+ts.toLocaleTimeString('en-GB',{{hour:'2-digit',minute:'2-digit'}});
       const actionColor=ACTION_COLORS[r.action]||'#374151';
       const actionBg=r.action==='ADD'?'#bbf7d0':r.action==='EDIT'?'#dbeafe':r.action==='DELETE'?'#fee2e2':r.action==='LOGIN'?'#f3f4f6':r.action==='PROJECT VIEW'?'#e0f2fe':'#fef3c7';
-      const projName=_auditProjMap[r.project_id]||r.project_id||'';
+      const projRaw=_auditProjMap[r.project_id]||r.project_id||'';
+      const projDisplay=_val(projRaw);
+      const docDisplay=r.doc_no?`<span style="color:var(--pr);font-weight:600">${{r.doc_no}}</span>`:_dash;
+      const oldDisplay=r.old_value?`<span style="color:#dc2626">${{r.old_value}}</span>`:_dash;
+      const newDisplay=r.new_value?`<span style="color:#166534">${{r.new_value}}</span>`:_dash;
+
       tr.innerHTML=`
         <td style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
         <td style="font-weight:600;font-size:11px">${{r.username||''}}</td>
         <td><span style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
-        <td style="font-size:10px;color:var(--mu)" title="${{r.project_id||''}}">${{projName}}</td>
-        <td style="font-size:11px;font-weight:600;color:var(--pr)" title="${{r.doc_no||''}}">${{r.doc_no||''}}</td>
-        <td style="font-size:10px;color:var(--mu)" title="${{r.field_name||''}}">${{r.field_name||''}}</td>
-        <td style="font-size:10px;color:#dc2626" title="${{r.old_value||''}}">${{r.old_value||''}}</td>
-        <td style="font-size:10px;color:#166534" title="${{r.new_value||''}}">${{r.new_value||''}}</td>
-        <td style="font-size:10px;color:var(--mu)" title="${{r.detail||''}}">${{r.detail||''}}</td>`;
+        <td style="font-size:10px;color:var(--mu)" title="${{r.project_id||''}}">${{projDisplay}}</td>
+        <td style="font-size:11px" title="${{r.doc_no||''}}">${{docDisplay}}</td>
+        <td style="font-size:10px;color:var(--mu)" title="${{r.field_name||''}}">${{_val(r.field_name)}}</td>
+        <td style="font-size:10px" title="${{r.old_value||''}}">${{oldDisplay}}</td>
+        <td style="font-size:10px" title="${{r.new_value||''}}">${{newDisplay}}</td>
+        <td style="font-size:10px;color:var(--mu)" title="${{r.detail||''}}">${{_val(r.detail)}}</td>`;
       tbody.appendChild(tr);
     }});
   }}
