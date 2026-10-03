@@ -1023,6 +1023,61 @@ def _categorize_status(st):
         
     return "Pending"
 
+def _filter_records(records, pid, dt_id, cols, days=None, status_filter=None):
+    if not records:
+        return []
+
+    # 1. Date filter
+    if days and str(days).strip().lower() != 'all':
+        from datetime import datetime, timedelta
+        try:
+            cutoff = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d")
+            records = [r for r in records if (r.get('issuedDate') or '') >= cutoff or (r.get('receivedDate') or '') >= cutoff]
+        except Exception:
+            pass
+
+    # 2. Status filter
+    if not status_filter or str(status_filter).strip().lower() in ('all', ''):
+        return records
+
+    sf = str(status_filter).strip().lower()
+
+    if sf == 'overdue':
+        from utils import is_overdue
+        expected_reply_rule = db.get_expected_reply_rule(pid, dt_id)
+        has_exp_col = any(c.get("col_key") == "expectedReplyDate" for c in cols)
+        return [
+            r for r in records
+            if is_overdue(
+                r.get("issuedDate"),
+                r.get("docNo"),
+                r.get("actualReplyDate"),
+                has_exp_col,
+                expected_reply_rule,
+                status=r.get("status"),
+                action=r.get("action"),
+                row=r
+            )
+        ]
+    elif sf in ('approved', 'accepted', 'approved_only'):
+        out = []
+        for r in records:
+            cat = _categorize_status(r.get("status", ""))
+            st_raw = str(r.get("status", "") or "").upper()
+            if cat in ("Approved", "Info / Closed") or any(k in st_raw for k in ["APPROV", "ACCEPT", "CODE A", "CODE B", "CLOSED", "REPLIED"]):
+                out.append(r)
+        return out
+    elif sf in ('rejected', 'revise', 'rejected_only'):
+        out = []
+        for r in records:
+            cat = _categorize_status(r.get("status", ""))
+            st_raw = str(r.get("status", "") or "").upper()
+            if cat == "Rejected" or any(k in st_raw for k in ["REJECT", "REVISE", "CODE C", "RESUBMIT"]):
+                out.append(r)
+        return out
+    else:
+        return [r for r in records if str(r.get("status", "")).strip().lower() == sf]
+
 def _write_summary_dashboard(ws, proj, records_by_dt):
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -1750,13 +1805,7 @@ def api_export_all(pid):
             records = sorted(db.get_records(pid, dt["id"]), key=_doc_revision_sort_key)
             
             # Apply Filters
-            if cutoff:
-                records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
-            if status_filter == 'overdue':
-                from utils import is_overdue
-                expected_reply_rule = db.get_expected_reply_rule(pid, dt["id"])
-                has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
-                records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"), row=r)]
+            records = _filter_records(records, pid, dt["id"], cols, days, status_filter)
                 
             records_by_dt[dt["name"] or dt["id"]] = records
             
@@ -1799,17 +1848,7 @@ def api_export(pid, dt_id):
         # Apply Filters
         days = request.args.get('days')
         status_filter = request.args.get('status')
-        if days and days != 'all':
-            from datetime import datetime, timedelta
-            try:
-                cutoff = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d")
-                records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
-            except: pass
-        if status_filter == 'overdue':
-            from utils import is_overdue
-            expected_reply_rule = db.get_expected_reply_rule(pid, dt_id)
-            has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
-            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"), row=r)]
+        records = _filter_records(records, pid, dt_id, cols, days, status_filter)
         dts     = db.get_doc_types(pid)
         dt      = next((d for d in dts if d["id"] == dt_id), None)
         is_pr = _is_pr_dt(dt)
@@ -1872,14 +1911,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         records = db.get_records(pid, dt["id"])
         
         # Apply Filters
-        if cutoff:
-            records = [r for r in records if r.get('issuedDate', '') >= cutoff or r.get('receivedDate', '') >= cutoff]
-        if status_filter == 'overdue':
-            from utils import is_overdue
-            expected_reply_rule = db.get_expected_reply_rule(pid, dt["id"])
-            cols = db.get_columns(pid, dt["id"])
-            has_exp_col = any(c["col_key"]=="expectedReplyDate" for c in cols)
-            records = [r for r in records if is_overdue(r.get("issuedDate"), r.get("docNo"), r.get("actualReplyDate"), has_exp_col, expected_reply_rule, status=r.get("status"), action=r.get("action"), row=r)]
+        cols = db.get_columns(pid, dt["id"])
+        records = _filter_records(records, pid, dt["id"], cols, days, status_filter)
 
         count = len(records)
         if count == 0:
@@ -2473,5 +2506,33 @@ def api_import_project(pid):
     except Exception as e:
         logger.error("import_project_failed pid=%s ext=%s error=%s", pid, ext, e)
         return jsonify(ok=False, error=str(e)), 500
+
+
+@exporting_bp.route("/api/export_count/<pid>")
+def api_export_count(pid):
+    try:
+        from flask import request
+        scope = request.args.get("scope", "all")
+        days = request.args.get("days", "all")
+        status_filter = request.args.get("status", "all")
+
+        dts = db.get_doc_types(pid)
+        if scope and scope not in ("all", "current"):
+            dts = [d for d in dts if d["id"] == scope]
+        elif scope == "current":
+            cur_tab = request.args.get("tab")
+            if cur_tab:
+                dts = [d for d in dts if d["id"] == cur_tab]
+
+        total = 0
+        for dt in dts:
+            cols = [c for c in db.get_columns(pid, dt["id"]) if c.get("visible", True)]
+            records = db.get_records(pid, dt["id"])
+            filtered = _filter_records(records, pid, dt["id"], cols, days, status_filter)
+            total += len(filtered)
+        return jsonify(ok=True, count=total)
+    except Exception as e:
+        return jsonify(ok=False, count=0, error=str(e)), 500
+
 
 

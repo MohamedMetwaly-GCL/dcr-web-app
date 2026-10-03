@@ -3640,7 +3640,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <div id="toolbar-actions">
       {edit_btns}
       <button id="btn-bulk-dl" class="tool-btn" style="display:none;background:#2563eb;border-color:#1d4ed8;color:#fff" onclick="bulkDownload()">⬇️ Download Selected</button>
-      <button class="tool-btn teal" onclick="openM('export-modal')">📥 Export ▾</button>
+      <button class="tool-btn teal" onclick="openExportCenter()">📥 Export ▾</button>
     <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
       {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
     </div>
@@ -3749,21 +3749,21 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <div class="mbody" style="padding:20px;">
       <div style="margin-bottom:15px;">
         <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Format</label>
-        <select id="export-format" class="inp" style="width:100%;" onchange="document.getElementById('export-scope-wrap').style.display = this.value === 'excel' ? 'block' : 'none';">
-          <option value="excel">📊 Excel (.xlsx)</option>
-          <option value="pdf">📄 PDF Executive Summary</option>
+        <select id="export-format" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
+          <option value="excel">Excel (.xlsx)</option>
+          <option value="pdf">PDF Document (.pdf)</option>
         </select>
       </div>
       <div id="export-scope-wrap" style="margin-bottom:15px;">
         <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Scope</label>
-        <select id="export-scope" class="inp" style="width:100%;">
-          <option value="all">All Documents</option>
-          <option value="current">Current Tab Only</option>
+        <select id="export-scope" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
+          <option value="all">All Documents (All Tabs)</option>
+          <option value="current">Current Tab</option>
         </select>
       </div>
       <div style="margin-bottom:15px;">
         <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Time Range</label>
-        <select id="export-time" class="inp" style="width:100%;">
+        <select id="export-time" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
           <option value="all">All Time</option>
           <option value="30">Last 30 Days</option>
           <option value="7">Last 7 Days</option>
@@ -3771,15 +3771,21 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       </div>
       <div style="margin-bottom:15px;">
         <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Status</label>
-        <select id="export-status" class="inp" style="width:100%;">
+        <select id="export-status" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
           <option value="all">All Statuses</option>
+          <option value="approved">Approved / Accepted Only</option>
+          <option value="rejected">Rejected / Revise Only</option>
           <option value="overdue">Overdue Only</option>
         </select>
+      </div>
+      <div id="export-preview-count" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg);border-radius:var(--rd);border:1px solid var(--bd);margin-top:5px;">
+        <span style="font-size:12px;color:var(--mu);font-weight:500;">Ready to export:</span>
+        <span style="font-size:13px;font-weight:700;color:var(--brand-teal);"><span id="exp-cnt">...</span> records</span>
       </div>
     </div>
     <div class="mfoot" style="justify-content:space-between;">
       <button class="btn btn-sc" onclick="closeM('export-modal')">Cancel</button>
-      <button class="btn btn-pr" style="background:#2563eb;" onclick="executeAdvancedExport()">Export Now 🚀</button>
+      <button class="btn btn-pr" id="export-submit-btn" style="background:#2563eb;" onclick="executeAdvancedExport()">📥 Generate Export</button>
     </div>
   </div>
 </div>
@@ -7065,30 +7071,101 @@ async function updUsrRole(u){{
   else toast((r&&r.error)||'Role update failed','er');
 }}
 
-function executeAdvancedExport(){{
-  const format = document.getElementById('export-format').value;
-  const scope = document.getElementById('export-scope').value;
-  const time = document.getElementById('export-time').value;
-  const status = document.getElementById('export-status').value;
-  
-  let targetTab = (scope === 'current' && state.tab) ? state.tab : 'all';
-  
-  let baseUrl = '';
-  if(format === 'excel') {{
-    baseUrl = (targetTab === 'all') ? `/api/export_all/${{PID}}` : `/api/export/${{PID}}/${{targetTab}}`;
-  }} else if (format === 'pdf') {{
-    baseUrl = (targetTab === 'all') ? `/api/export_pdf_all/${{PID}}` : `/api/export_pdf/${{PID}}/${{targetTab}}`;
+function populateExportScope(){{
+  const sel=document.getElementById('export-scope');
+  if(!sel)return;
+  const curVal=sel.value||'all';
+  let html='<option value="all">All Documents (All Tabs)</option>';
+  html+=`<option value="current">Current Tab (${{state.tab||'None'}})</option>`;
+  if(state.dtList&&state.dtList.length){{
+    html+='<optgroup label="Specific Document Type">';
+    state.dtList.forEach(d=>{{
+      html+=`<option value="${{d.id}}">${{d.name||d.id}} (${{d.code||d.id}})</option>`;
+    }});
+    html+='</optgroup>';
   }}
+  sel.innerHTML=html;
+  if(curVal!=='all'&&curVal!=='current'&&!(state.dtList||[]).some(d=>d.id===curVal)){{
+    sel.value='all';
+  }}else{{
+    sel.value=curVal;
+  }}
+}}
 
-  const params = new URLSearchParams();
-  if(time !== 'all') params.set('days', time);
-  if(status !== 'all') params.set('status', status);
-  
-  const query = params.toString();
-  const finalUrl = query ? `${{baseUrl}}?${{query}}` : baseUrl;
-  
-  window.location = finalUrl;
-  closeM('export-modal');
+let _expCntTimer=null;
+async function updateExportPreviewCount(){{
+  clearTimeout(_expCntTimer);
+  const cntEl=document.getElementById('exp-cnt');
+  if(cntEl)cntEl.textContent='...';
+  _expCntTimer=setTimeout(async ()=>{{
+    try{{
+      const scope=document.getElementById('export-scope')?.value||'all';
+      const time=document.getElementById('export-time')?.value||'all';
+      const status=document.getElementById('export-status')?.value||'all';
+      const q=new URLSearchParams({{scope,days:time,status,tab:state.tab||''}}).toString();
+      const r=await apiFetch('/api/export_count/'+PID+'?'+q);
+      if(cntEl)cntEl.textContent=(r&&typeof r.count==='number')?r.count:'0';
+    }}catch(e){{
+      if(cntEl)cntEl.textContent='0';
+    }}
+  }},150);
+}}
+
+function openExportCenter(){{
+  populateExportScope();
+  updateExportPreviewCount();
+  openM('export-modal');
+}}
+
+async function executeAdvancedExport(){{
+  const btn=document.getElementById('export-submit-btn');
+  const origText=btn?btn.innerHTML:'📥 Generate Export';
+  if(btn){{
+    btn.disabled=true;
+    btn.innerHTML='<span style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px">⏳</span> Generating...';
+  }}
+  try{{
+    const format=document.getElementById('export-format')?.value||'excel';
+    const scope=document.getElementById('export-scope')?.value||'all';
+    const time=document.getElementById('export-time')?.value||'all';
+    const status=document.getElementById('export-status')?.value||'all';
+    
+    let targetTab='all';
+    if(scope==='current'){{
+      targetTab=(state.tab)?state.tab:'all';
+    }}else if(scope!=='all'){{
+      targetTab=scope;
+    }}
+    
+    let baseUrl='';
+    if(format==='excel'){{
+      baseUrl=(targetTab==='all')?`/api/export_all/${{PID}}`:`/api/export/${{PID}}/${{targetTab}}`;
+    }}else if(format==='pdf'){{
+      baseUrl=(targetTab==='all')?`/api/export_pdf_all/${{PID}}`:`/api/export_pdf/${{PID}}/${{targetTab}}`;
+    }}
+    
+    const params=new URLSearchParams();
+    if(time!=='all')params.set('days',time);
+    if(status!=='all')params.set('status',status);
+    
+    const query=params.toString();
+    const finalUrl=query?`${{baseUrl}}?${{query}}`:baseUrl;
+    
+    const a=document.createElement('a');
+    a.href=finalUrl;
+    a.download='';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    setTimeout(()=>{{
+      closeM('export-modal');
+      if(btn){{btn.disabled=false;btn.innerHTML=origText;}}
+    }},1200);
+  }}catch(e){{
+    if(btn){{btn.disabled=false;btn.innerHTML=origText;}}
+    toast('Export failed: '+e.message,'er');
+  }}
 }}
 function doPrint(){{
   const orig=document.title;
