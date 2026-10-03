@@ -1873,21 +1873,28 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
           <option value="">All Actions</option>
         </select>
-        <button class="tbtn" onclick="loadAudit(true)" style="margin-left:auto">🔄 Refresh</button>
+        <button class="tbtn" onclick="resetAuditColWidths()" title="Reset column widths to default" style="font-size:11px;margin-left:auto">↺ Reset Column Widths</button>
+        <button class="tbtn" onclick="loadAudit(true)">🔄 Refresh</button>
       </div>
       <!-- Table -->
+      <style>
+        #aud-tbl th{{position:relative;overflow:visible}}
+        #aud-tbl th .aud-rz{{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:10;user-select:none}}
+        #aud-tbl th .aud-rz:hover,#aud-tbl th .aud-rz.rzg{{background:var(--brand-teal,#00b4a6);opacity:.85}}
+        #aud-tbl td{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+      </style>
       <div style="overflow-x:auto">
-        <table class="dt-tbl" id="aud-tbl" style="min-width:800px">
+        <table class="dt-tbl" id="aud-tbl" style="min-width:800px;table-layout:fixed">
           <thead><tr>
             <th style="width:140px">Time</th>
             <th style="width:100px">User</th>
-            <th style="width:80px">Action</th>
-            <th style="width:100px">Project</th>
+            <th style="width:95px">Action</th>
+            <th style="width:120px">Project</th>
             <th style="width:120px">Document</th>
             <th style="width:100px">Field</th>
-            <th>Old Value</th>
-            <th>New Value</th>
-            <th>Detail</th>
+            <th style="width:140px">Old Value</th>
+            <th style="width:140px">New Value</th>
+            <th style="width:180px">Detail</th>
           </tr></thead>
           <tbody id="aud-tbody"></tbody>
         </table>
@@ -2907,8 +2914,97 @@ async function updUsrRole(u){{
 let _auditOffset=0,_auditHasMore=true;
 const ACTION_COLORS={{
   'ADD':'#166534','EDIT':'#1d4ed8','DELETE':'#991b1b',
-  'LOGIN':'#6b7280','LOGIN_FAIL':'#dc2626','EXPORT_EXCEL':'#7c3aed'
+  'LOGIN':'#6b7280','LOGIN_FAIL':'#dc2626','EXPORT_EXCEL':'#7c3aed',
+  'PROJECT VIEW':'#0284c7'
 }};
+
+const AUD_COL_KEY='dcr_audit_col_widths';
+const AUD_DEFAULT_WIDTHS=[140,100,95,120,120,100,140,140,180];
+const AUD_MIN_WIDTHS=[80,60,70,70,80,60,70,70,90];
+let _auditProjMap={{}};
+
+function getSavedAuditColWidths(){{
+  try{{
+    const raw=localStorage.getItem(AUD_COL_KEY);
+    if(raw){{
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed)&&parsed.length===AUD_DEFAULT_WIDTHS.length){{
+        return parsed.map((w,idx)=>Math.max(AUD_MIN_WIDTHS[idx],parseInt(w,10)||AUD_DEFAULT_WIDTHS[idx]));
+      }}
+    }}
+  }}catch(e){{}}
+  return [...AUD_DEFAULT_WIDTHS];
+}}
+
+function applyAuditColWidths(widths){{
+  const ths=document.querySelectorAll('#aud-tbl thead th');
+  if(!ths.length)return;
+  let totalW=0;
+  ths.forEach((th,idx)=>{{
+    const w=widths[idx]||AUD_DEFAULT_WIDTHS[idx]||100;
+    th.style.width=w+'px';
+    th.style.minWidth=(AUD_MIN_WIDTHS[idx]||50)+'px';
+    totalW+=w;
+  }});
+  const tbl=document.getElementById('aud-tbl');
+  if(tbl)tbl.style.width=Math.max(800,totalW)+'px';
+}}
+
+function resetAuditColWidths(){{
+  try{{localStorage.removeItem(AUD_COL_KEY);}}catch(e){{}}
+  applyAuditColWidths(AUD_DEFAULT_WIDTHS);
+  if(typeof toast==='function')toast('Audit column widths reset','ok');
+}}
+
+let _audRzInit=false;
+let _audRzDrag=null;
+
+function initAuditColResize(){{
+  const ths=document.querySelectorAll('#aud-tbl thead th');
+  if(!ths.length)return;
+  applyAuditColWidths(getSavedAuditColWidths());
+  if(_audRzInit)return;
+  _audRzInit=true;
+
+  ths.forEach((th,idx)=>{{
+    if(th.querySelector('.aud-rz'))return;
+    const rz=document.createElement('div');
+    rz.className='aud-rz';
+    th.appendChild(rz);
+
+    rz.addEventListener('mousedown',e=>{{
+      e.stopPropagation();e.preventDefault();
+      _audRzDrag={{th,idx,startX:e.clientX,startW:th.offsetWidth,rz}};
+      rz.classList.add('rzg');
+      document.body.style.cursor='col-resize';
+      document.body.style.userSelect='none';
+    }});
+  }});
+
+  document.addEventListener('mousemove',e=>{{
+    if(!_audRzDrag)return;
+    const minW=AUD_MIN_WIDTHS[_audRzDrag.idx]||60;
+    const newW=Math.max(minW,_audRzDrag.startW+(e.clientX-_audRzDrag.startX));
+    _audRzDrag.th.style.width=newW+'px';
+    const curThs=document.querySelectorAll('#aud-tbl thead th');
+    let totalW=0;
+    curThs.forEach(t=>{{totalW+=t.offsetWidth;}});
+    const tbl=document.getElementById('aud-tbl');
+    if(tbl)tbl.style.width=Math.max(800,totalW)+'px';
+  }});
+
+  document.addEventListener('mouseup',()=>{{
+    if(!_audRzDrag)return;
+    _audRzDrag.rz.classList.remove('rzg');
+    document.body.style.cursor='';
+    document.body.style.userSelect='';
+    const curThs=document.querySelectorAll('#aud-tbl thead th');
+    const widths=[];
+    curThs.forEach((t,i)=>{{widths.push(t.offsetWidth||AUD_DEFAULT_WIDTHS[i]);}});
+    try{{localStorage.setItem(AUD_COL_KEY,JSON.stringify(widths));}}catch(e){{}}
+    _audRzDrag = null;
+  }});
+}}
 
 async function loadAudit(reset=false){{
   if(reset)_auditOffset=0;
@@ -2923,8 +3019,13 @@ async function loadAudit(reset=false){{
   const data=await apiFetch('/api/audit?'+params);
   if(!data)return;
 
+  initAuditColResize();
+
   // Populate filters on first load
   if(reset||_auditOffset===0){{
+    _auditProjMap={{}};
+    (data.projects||[]).forEach(p=>{{ _auditProjMap[p.id]=p.name||p.code||p.id; }});
+
     const pSel=document.getElementById('aud-pid');
     const curPid=pSel.value;
     pSel.innerHTML='<option value="">All Projects</option>'+
@@ -2939,6 +3040,8 @@ async function loadAudit(reset=false){{
     const curA=aSel.value;
     aSel.innerHTML='<option value="">All Actions</option>'+
       (data.actions||[]).map(a=>`<option value="${{a}}"${{a===curA?' selected':''}}>${{a}}</option>`).join('');
+  }}else if(data.projects){{
+    (data.projects||[]).forEach(p=>{{ _auditProjMap[p.id]=p.name||p.code||p.id; }});
   }}
 
   const tbody=document.getElementById('aud-tbody');
@@ -2955,17 +3058,18 @@ async function loadAudit(reset=false){{
       const ts=new Date(r.ts);
       const tsStr=ts.toLocaleDateString('en-GB')+' '+ts.toLocaleTimeString('en-GB',{{hour:'2-digit',minute:'2-digit'}});
       const actionColor=ACTION_COLORS[r.action]||'#374151';
-      const actionBg=r.action==='ADD'?'#bbf7d0':r.action==='EDIT'?'#dbeafe':r.action==='DELETE'?'#fee2e2':r.action==='LOGIN'?'#f3f4f6':'#fef3c7';
+      const actionBg=r.action==='ADD'?'#bbf7d0':r.action==='EDIT'?'#dbeafe':r.action==='DELETE'?'#fee2e2':r.action==='LOGIN'?'#f3f4f6':r.action==='PROJECT VIEW'?'#e0f2fe':'#fef3c7';
+      const projName=_auditProjMap[r.project_id]||r.project_id||'';
       tr.innerHTML=`
         <td style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
         <td style="font-weight:600;font-size:11px">${{r.username||''}}</td>
         <td><span style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
-        <td style="font-size:10px;color:var(--mu)">${{r.project_id||''}}</td>
-        <td style="font-size:11px;font-weight:600;color:var(--pr)">${{r.doc_no||''}}</td>
-        <td style="font-size:10px;color:var(--mu)">${{r.field_name||''}}</td>
-        <td style="font-size:10px;color:#dc2626;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{r.old_value||''}}">${{r.old_value||''}}</td>
-        <td style="font-size:10px;color:#166534;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{r.new_value||''}}">${{r.new_value||''}}</td>
-        <td style="font-size:10px;color:var(--mu)">${{r.detail||''}}</td>`;
+        <td style="font-size:10px;color:var(--mu)" title="${{r.project_id||''}}">${{projName}}</td>
+        <td style="font-size:11px;font-weight:600;color:var(--pr)" title="${{r.doc_no||''}}">${{r.doc_no||''}}</td>
+        <td style="font-size:10px;color:var(--mu)" title="${{r.field_name||''}}">${{r.field_name||''}}</td>
+        <td style="font-size:10px;color:#dc2626" title="${{r.old_value||''}}">${{r.old_value||''}}</td>
+        <td style="font-size:10px;color:#166534" title="${{r.new_value||''}}">${{r.new_value||''}}</td>
+        <td style="font-size:10px;color:var(--mu)" title="${{r.detail||''}}">${{r.detail||''}}</td>`;
       tbody.appendChild(tr);
     }});
   }}

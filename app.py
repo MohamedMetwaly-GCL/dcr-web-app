@@ -109,6 +109,8 @@ def logout():
 def home():
     return render_dashboard(current_user())
 
+_recent_project_views = {}
+
 @app.route("/app")
 def register():
     pid = request.args.get("p","")
@@ -116,6 +118,19 @@ def register():
     u = current_user()
     proj = db.get_project(pid)
     if not proj: return "Project not found", 404
+    try:
+        now_ts = datetime.datetime.now().timestamp()
+        last_view_ts = _recent_project_views.get((u.get("username"), pid), 0)
+        if now_ts - last_view_ts > 60:
+            _recent_project_views[(u.get("username"), pid)] = now_ts
+            db.log_action(
+                username=u.get("username"),
+                action="PROJECT VIEW",
+                project_id=pid,
+                detail=f"Opened project: {proj.get('name', pid)}"
+            )
+    except Exception as e:
+        pass
     return render_register(u, proj)
 
 @app.route("/api/settings/holidays", methods=["GET"])
@@ -224,6 +239,8 @@ def api_audit():
                                 action=action, limit=100, offset=offset)
     users    = [r["username"] for r in db.get_all_users()]
     actions  = db.get_audit_actions()
+    if "PROJECT VIEW" not in actions:
+        actions = sorted(actions + ["PROJECT VIEW"])
     projects = db.get_projects()
     return jsonify(
         rows=[{**dict(r), "ts": str(r["ts"])} for r in rows],
