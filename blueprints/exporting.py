@@ -755,10 +755,99 @@ def _parse_excel_date_value(value):
     return None
 
 
+def _is_status_col(col_key, label=""):
+    key = str(col_key or "").lower()
+    lbl = str(label or "").lower()
+    hay = f"{key} {lbl}"
+    if "status" not in hay:
+        return False
+    if "date" in hay or "time" in hay or "dt" in key:
+        return False
+    return True
+
+
+def _is_financial_col(col_key, label=""):
+    hay = f"{str(col_key or '')} {str(label or '')}".lower()
+    return any(w in hay for w in ["cost", "value", "amount"])
+
+
+def _parse_financial_value(val):
+    if val is None or str(val).strip() == "":
+        return None
+    if isinstance(val, (int, float)):
+        return round(float(val), 2)
+    s = str(val).strip().replace(",", "")
+    try:
+        return round(float(s), 2)
+    except (ValueError, TypeError):
+        return val
+
+
+def _resolve_record_status(r):
+    if not r:
+        return ""
+    st = r.get("status")
+    if st and str(st).strip():
+        return str(st).strip()
+    return str(r.get("partDStatus") or r.get("partBStatus") or r.get("action") or "").strip()
+
+
+def _get_status_xl_colors(st_val):
+    if not st_val:
+        return ("F3F4F6", "374151")
+    first = str(st_val).split(",")[0].strip() if "," in str(st_val) else str(st_val).strip()
+    
+    STATUS_XL = {
+        "A - Approved":              ("C6EFCE","064E3B"),
+        "B - Approved As Noted":     ("C6EFCE","064E3B"),
+        "B,C - Approved & Resubmit": ("FFEB9C","713F12"),
+        "C - Revise & Resubmit":     ("FFC7CE","991B1B"),
+        "D - Review not Required":   ("FFC7CE","991B1B"),
+        "Under Review":              ("FFEB9C","713F12"),
+        "Cancelled":                 ("FFC7CE","991B1B"),
+        "Open":                      ("FFEB9C","713F12"),
+        "Closed":                    ("C6EFCE","064E3B"),
+        "Replied":                   ("C6EFCE","064E3B"),
+        "Pending":                   ("FFEB9C","713F12"),
+    }
+    if first in STATUS_XL:
+        return STATUS_XL[first]
+    
+    st = first.upper()
+    if any(x in st for x in ["APPROV", "ACCEPT", "CLOSED", "REPLIED", "CODE A", "CODE B", "1- AF", "2- AC"]):
+        return ("C6EFCE", "064E3B") # Green
+    elif any(x in st for x in ["REJECT", "CANCEL", "REVISE", "CODE C", "ACTION REQUIRED", "RESUBMIT"]):
+        return ("FFC7CE", "991B1B") # Red
+    elif any(x in st for x in ["REVIEW", "PENDING", "OPEN", "NOTED", "WAITING"]):
+        return ("FFEB9C", "713F12") # Amber
+    elif any(x in st for x in ["INFO"]):
+        return ("DDEBF7", "1E40AF") # Light Blue
+    return ("F3F4F6", "374151")
+
+
+def _is_record_approved(r):
+    st = _resolve_record_status(r).strip()
+    if not st:
+        return False
+    st_lower = st.lower()
+    if st_lower in ("a - approved", "b - approved as noted", "closed", "replied", "approved", "accepted"):
+        return True
+    cat = _categorize_status(st)
+    if cat == "Approved":
+        return True
+    if cat == "Info / Closed" and "cancel" not in st_lower:
+        return True
+    return False
+
+
 def _excel_cell_value(col_key, label, value):
     if _is_excel_date_col(col_key, label) or _looks_like_excel_date_value(value):
         parsed = _parse_excel_date_value(value)
         if parsed:
+            return parsed
+    if _is_financial_col(col_key, label):
+        parsed = _parse_financial_value(value)
+        if isinstance(parsed, (int, float)):
             return parsed
     return value
 
@@ -771,8 +860,7 @@ def _excel_center_col(col_key, label):
         or _is_excel_duration_col(col_key, label)
         or "date" in key.lower()
         or "date" in label_l
-        or key == "status"
-        or "status" in label_l
+        or _is_status_col(col_key, label)
         or "docno" in key.lower()
         or "document" in label_l
         or "rev" in key.lower()
@@ -915,6 +1003,8 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                 else:                           val = str(row.get(key,"") or "")
                 val = _format_multiline_display_value(key, col["label"], val)
                 row_values.append(val)
+                is_status = _is_status_col(key, col.get("label", ""))
+                is_fin = _is_financial_col(key, col.get("label", ""))
                 cell_value = _excel_cell_value(key, col["label"], val)
 
                 if key == "fileLocation" and val and val.startswith("http"):
@@ -926,14 +1016,16 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                     c = ws.cell(row=rn, column=ci, value=cell_value)
                     if isinstance(cell_value, datetime.date):
                         c.number_format = "DD-MM-YYYY"
+                    elif is_fin and isinstance(cell_value, (int, float)):
+                        c.number_format = '#,##0.00'
                     if _is_excel_duration_col(key, col["label"]) and val == "0":
                         c.value = 0
-                    if key=="status" and val:
+                    if is_status and val:
                         first_status = val.split(",")[0].strip() if "," in val else val
                         if ", " in val:
                             val = val.replace(", ", "\n")
                             c.value = val # Update cell with newlines
-                        bg2, fg2 = STATUS_XL.get(first_status, ("F3F4F6","374151"))
+                        bg2, fg2 = _get_status_xl_colors(first_status)
                         c.fill = fill(bg2); c.font = Font(bold=True,size=9,name="Arial",color=fg2)
                     elif key=="docNo":
                         c.fill = fill(bg)
@@ -945,9 +1037,11 @@ def _write_register_excel_sheet(ws, proj, dt, cols, records, pr_items_map=None, 
                                       color=MUTED if is_rev else ("991B1B" if ov else "1E2A3A"))
                 c.border    = thin()
                 
-                # Apply requested status alignment
-                if key == "status":
+                # Apply requested status and financial alignment
+                if is_status:
                     c.alignment = Alignment(vertical="center", horizontal="center", wrap_text=True)
+                elif is_fin:
+                    c.alignment = Alignment(vertical="center", horizontal="right")
                 else:
                     c.alignment = Alignment(
                         vertical="center",
@@ -1062,21 +1156,23 @@ def _filter_records(records, pid, dt_id, cols, days=None, status_filter=None):
     elif sf in ('approved', 'accepted', 'approved_only'):
         out = []
         for r in records:
-            cat = _categorize_status(r.get("status", ""))
-            st_raw = str(r.get("status", "") or "").upper()
+            res_st = _resolve_record_status(r)
+            cat = _categorize_status(res_st)
+            st_raw = res_st.upper()
             if cat in ("Approved", "Info / Closed") or any(k in st_raw for k in ["APPROV", "ACCEPT", "CODE A", "CODE B", "CLOSED", "REPLIED"]):
                 out.append(r)
         return out
     elif sf in ('rejected', 'revise', 'rejected_only'):
         out = []
         for r in records:
-            cat = _categorize_status(r.get("status", ""))
-            st_raw = str(r.get("status", "") or "").upper()
+            res_st = _resolve_record_status(r)
+            cat = _categorize_status(res_st)
+            st_raw = res_st.upper()
             if cat == "Rejected" or any(k in st_raw for k in ["REJECT", "REVISE", "CODE C", "RESUBMIT"]):
                 out.append(r)
         return out
     else:
-        return [r for r in records if str(r.get("status", "")).strip().lower() == sf]
+        return [r for r in records if _resolve_record_status(r).strip().lower() == sf or str(r.get("status", "")).strip().lower() == sf]
 
 def _write_summary_dashboard(ws, proj, records_by_dt):
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -1151,7 +1247,7 @@ def _write_summary_dashboard(ws, proj, records_by_dt):
             disc = str(r.get("discipline", "")).strip() or "Unspecified"
             disc_groups.setdefault(disc, {"Issued": 0, "Approved": 0, "Rejected": 0, "Under Review": 0, "Info / Closed": 0, "Pending": 0})
             disc_groups[disc]["Issued"] += 1
-            cat = _categorize_status(r.get("status", ""))
+            cat = _categorize_status(_resolve_record_status(r))
             disc_groups[disc][cat] += 1
             
         tot_issued = 0; tot_app = 0; tot_rej = 0; tot_ur = 0; tot_info = 0; tot_pen = 0
@@ -1919,13 +2015,13 @@ def _build_executive_summary_pdf(pid, dt_id=None):
             registers_data.append({"name": dt.get("name") or dt.get("id"), "total": 0, "approved": 0, "pending": 0})
             continue
             
-        approved = sum(1 for r in records if str(r.get("status", "")).strip().lower() in ("a - approved", "b - approved as noted", "closed", "replied"))
+        approved = sum(1 for r in records if _is_record_approved(r))
         is_ltr = "LTR" in (dt.get("name") or "").upper() or "LETTER" in (dt.get("name") or "").upper()
         if is_ltr:
             pending = 0
             pending_display = "N/A"
         else:
-            pending = count - approved
+            pending = max(0, count - approved)
             total_pending += pending
             pending_display = pending
         
@@ -2172,30 +2268,58 @@ def _build_executive_summary_pdf(pid, dt_id=None):
         USABLE_WIDTH = 1150
         web_widths = dt_data.get("web_widths", {})
         
-        px_widths = []
+        # Calculate robust column widths with sensible min-widths (min 45-60pt) and capped wide columns
+        sr_w = 28.0
+        avail = USABLE_WIDTH - sr_w
+        min_widths = []
+        weights = []
+        max_caps = []
+        
         for c in cols:
-            k = c["col_key"].lower()
-            if web_widths and c["col_key"] in web_widths:
-                px = float(web_widths[c["col_key"]])
-            else:
-                if "id" in k or "no." in k or k == "no": px = 50
-                elif "title" in k or "desc" in k or "subject" in k: px = 300
-                elif "item" in k or "ref" in k or "dwg" in k: px = 200
-                elif "remark" in k: px = 250
-                elif "floor" in k: px = 150
-                elif "status" in k: px = 120
-                elif "date" in k: px = 100
-                elif "dur" in k: px = 80
-                elif "file" in k or "link" in k: px = 100
-                else: px = 120
-            px_widths.append(px)
+            k = str(c.get("col_key", "")).lower()
+            lbl = str(c.get("label", "")).lower()
+            hay = f"{k} {lbl}"
             
-        total_px = sum(px_widths)
-        if total_px > 0:
-            sr_prop = 40.0 / (total_px + 40.0)
-            dt_col_widths = [sr_prop * USABLE_WIDTH] + [(px / (total_px + 40.0)) * USABLE_WIDTH for px in px_widths]
+            if _is_status_col(k, lbl):
+                mw = 55.0; base_w = 90.0; cap = 130.0
+            elif "date" in hay or "time" in hay:
+                mw = 55.0; base_w = 80.0; cap = 110.0
+            elif any(w in hay for w in ["rev", "dur", "_sr", "code", "id", "no.", "no "]) or k == "no":
+                mw = 45.0; base_w = 60.0; cap = 95.0
+            elif any(w in hay for w in ["desc", "title", "subject", "remark", "detail"]):
+                mw = 80.0; base_w = 260.0; cap = 260.0
+            else:
+                mw = 50.0; base_w = 110.0; cap = 160.0
+
+            if web_widths and c.get("col_key") in web_widths:
+                try:
+                    user_w = float(web_widths[c["col_key"]])
+                    if user_w > 0:
+                        base_w = min(max(user_w, mw), cap)
+                except (ValueError, TypeError):
+                    pass
+                    
+            min_widths.append(mw)
+            weights.append(base_w)
+            max_caps.append(cap)
+
+        sum_min = sum(min_widths)
+        if sum_min >= avail:
+            scale = avail / sum_min
+            dt_col_widths = [sr_w] + [round(mw * scale, 1) for mw in min_widths]
         else:
-            dt_col_widths = [12*mm] + [10*mm] * len(cols)
+            extra = avail - sum_min
+            extra_weights = [max(0.0, w - mw) for w, mw in zip(weights, min_widths)]
+            sum_ew = sum(extra_weights) or 1.0
+            res = []
+            for mw, ew, cap in zip(min_widths, extra_weights, max_caps):
+                w = mw + (ew / sum_ew) * extra
+                w = min(w, cap)
+                res.append(w)
+            tot_res = sum(res)
+            if tot_res > 0:
+                res = [round((w / tot_res) * avail, 1) for w in res]
+            dt_col_widths = [sr_w] + res
 
         def is_arabic_text(text):
             text_str = str(text or "").strip()
@@ -2204,6 +2328,15 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                 if c.isalpha():
                     return "\u0600" <= c <= "\u06FF"
             return False
+
+        dt_table_style = [
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e40af")),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#d1d5db")),
+            ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#d1d5db")),
+        ]
 
         for idx, r in enumerate(records, 1):
             row_data = [Paragraph(str(idx), body_style_center)]
@@ -2236,37 +2369,45 @@ def _build_executive_summary_pdf(pid, dt_id=None):
                 else:
                     safe_text = html.escape(fix_arabic(val))
                     safe_text = safe_text.replace('\n', '<br/>')
-                    if key == "status" and ", " in safe_text:
+                    if _is_status_col(key, c.get("label", "")) and ", " in safe_text:
                         safe_text = safe_text.replace(", ", "<br/>")
                     
                 row_data.append(Paragraph(safe_text, cell_style))
             dt_table_data.append(row_data)
         
         dt_table = Table(dt_table_data, colWidths=dt_col_widths, repeatRows=1)
-        dt_table_style = [
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e40af")),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-            ('TOPPADDING', (0,0), (-1,-1), 5),
-            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#d1d5db")),
-            ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#d1d5db")),
-        ]
         
-        status_col_idx = next((i for i, c in enumerate(cols) if c["col_key"] == "status"), -1)
-        status_col_table_idx = status_col_idx + 1 if status_col_idx >= 0 else -1
-        
+        # Collect all status columns for styling (including Part B Status, Part D Status, etc.)
+        status_table_indices = []
+        for col_i, c in enumerate(cols):
+            if _is_status_col(c.get("col_key"), c.get("label")):
+                status_table_indices.append((col_i + 1, c["col_key"]))
+
         for i in range(1, len(dt_table_data)):
             if i % 2 == 0:
                 dt_table_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#f8fafc")))
             
-            if status_col_table_idx > 0:
-                raw_stat = str(records[i-1].get("status", "")).lower()
-                if "approved" in raw_stat and "noted" not in raw_stat:
-                    dt_table_style.append(('BACKGROUND', (status_col_table_idx, i), (status_col_table_idx, i), colors.HexColor("#dcfce7")))
-                elif "noted" in raw_stat or "review" in raw_stat or "open" in raw_stat or "pending" in raw_stat:
-                    dt_table_style.append(('BACKGROUND', (status_col_table_idx, i), (status_col_table_idx, i), colors.HexColor("#fef9c3")))
-                elif "revise" in raw_stat or "rejected" in raw_stat or "cancelled" in raw_stat:
-                    dt_table_style.append(('BACKGROUND', (status_col_table_idx, i), (status_col_table_idx, i), colors.HexColor("#fee2e2")))
+            rec = records[i-1]
+            for tbl_col_idx, col_k in status_table_indices:
+                raw_stat = str(rec.get(col_k, "") or "").lower().strip()
+                if not raw_stat:
+                    continue
+                if any(x in raw_stat for x in ["approved", "accepted", "closed", "replied", "code a", "1- af"]):
+                    if "noted" not in raw_stat and "resubmit" not in raw_stat:
+                        dt_table_style.append(('BACKGROUND', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#dcfce7")))
+                        dt_table_style.append(('TEXTCOLOR', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#166534")))
+                    else:
+                        dt_table_style.append(('BACKGROUND', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#fef9c3")))
+                        dt_table_style.append(('TEXTCOLOR', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#854d0e")))
+                elif any(x in raw_stat for x in ["revise", "rejected", "cancelled", "cancel", "code c", "action required"]):
+                    dt_table_style.append(('BACKGROUND', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#fee2e2")))
+                    dt_table_style.append(('TEXTCOLOR', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#991b1b")))
+                elif any(x in raw_stat for x in ["info"]):
+                    dt_table_style.append(('BACKGROUND', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#e0f2fe")))
+                    dt_table_style.append(('TEXTCOLOR', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#0369a1")))
+                elif any(x in raw_stat for x in ["noted", "review", "open", "pending", "waiting"]):
+                    dt_table_style.append(('BACKGROUND', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#fef9c3")))
+                    dt_table_style.append(('TEXTCOLOR', (tbl_col_idx, i), (tbl_col_idx, i), colors.HexColor("#854d0e")))
                 
         dt_table.setStyle(TableStyle(dt_table_style))
         elements.append(dt_table)
