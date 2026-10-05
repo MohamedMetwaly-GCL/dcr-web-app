@@ -65,7 +65,7 @@ GLOBAL_FOOTER_HTML = """
 """
 
 GLOBAL_SEARCH_TRIGGER_HTML = """
-<div class="global-search-trigger" onclick="openGlobalSearch()" title="Global Search (Ctrl+K)">
+<div class="global-search-trigger" onclick="openGlobalSearch()" title="Global Search (Ctrl+K)" style="cursor: pointer; user-select: none;">
   <span class="gst-icon">🔍</span>
   <span class="gst-text">Search all projects...</span>
   <kbd>Ctrl+K</kbd>
@@ -139,11 +139,11 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   border-radius: 20px;
   font-size: 12px;
   font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  user-select: none;
+  cursor: pointer !important;
+  user-select: none !important;
   margin: 0 10px;
   flex-shrink: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .global-search-trigger:hover {
   background: rgba(255, 255, 255, 0.15);
@@ -171,7 +171,22 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   .global-search-trigger { padding: 3px 6px; font-size: 11px; margin: 0 2px; }
 }
 
-/* Spotlight Palette Modal Overlay & Card */
+/* Spotlight Modal Overlay Styling */
+#spotlight-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10050 !important;
+  background: rgba(0, 0, 0, 0.72) !important;
+  backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+#spotlight-modal.hidden {
+  display: none !important;
+}
+
+/* Spotlight Palette Card */
 .spotlight-palette {
   background: #0f172a;
   border: 1px solid #334155;
@@ -573,12 +588,22 @@ function renderSpotlightChips() {
   });
 
   const sortedDts = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
-  let html = '<div class="spotlight-chip ' + (_spotlightState.activeChip === 'all' ? 'active' : '') + '" onclick="filterSpotlightByChip(\\'all\\')">All (' + recs.length + ')</div>';
+  container.innerHTML = '';
+
+  const allChip = document.createElement('div');
+  allChip.className = 'spotlight-chip ' + (_spotlightState.activeChip === 'all' ? 'active' : '');
+  allChip.textContent = 'All (' + recs.length + ')';
+  allChip.onclick = () => filterSpotlightByChip('all');
+  container.appendChild(allChip);
+
   sortedDts.forEach(dt => {
-    html += '<div class="spotlight-chip ' + (_spotlightState.activeChip === dt ? 'active' : '') + '" onclick="filterSpotlightByChip(\\'' + dt + '\\')">' + dt + ' (' + counts[dt] + ')</div>';
+    const chip = document.createElement('div');
+    chip.className = 'spotlight-chip ' + (_spotlightState.activeChip === dt ? 'active' : '');
+    chip.textContent = dt + ' (' + counts[dt] + ')';
+    chip.onclick = () => filterSpotlightByChip(dt);
+    container.appendChild(chip);
   });
 
-  container.innerHTML = html;
   container.classList.remove('hidden');
 }
 
@@ -620,13 +645,7 @@ function renderSpotlightInitial() {
 function renderSpotlightError(msg) {
   const container = document.getElementById('spotlight-results');
   if (!container) return;
-  container.innerHTML = `
-    <div class="spotlight-empty-state">
-      <div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div>
-      <div style="font-weight: 600; font-size: 13px; color: #ef4444;">Search Error</div>
-      <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">` + _slEsc(msg) + `</div>
-    </div>
-  `;
+  container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div><div style="font-weight: 600; font-size: 13px; color: #ef4444;">Search Error</div><div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">' + _slEsc(msg) + '</div></div>';
 }
 
 function renderSpotlightResults() {
@@ -635,17 +654,11 @@ function renderSpotlightResults() {
   const rows = _spotlightState.filteredResults;
   if (!rows.length) {
     const q = document.getElementById('spotlight-input')?.value || '';
-    container.innerHTML = `
-      <div class="spotlight-empty-state">
-        <div style="font-size: 26px; margin-bottom: 8px;">🔍</div>
-        <div style="font-weight: 600; font-size: 14px; color: #f1f5f9;">No Matching Records Found</div>
-        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">No records matched "` + _slEsc(q) + `" in your accessible projects.</div>
-      </div>
-    `;
+    container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 26px; margin-bottom: 8px;">🔍</div><div style="font-weight: 600; font-size: 14px; color: #f1f5f9;">No Matching Records Found</div><div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">No records matched "' + _slEsc(q) + '" in your accessible projects.</div></div>';
     return;
   }
 
-  let html = '';
+  container.innerHTML = '';
   rows.forEach((r, idx) => {
     const isHl = idx === _spotlightState.highlightIndex;
     const docNo = r.doc_no || '—';
@@ -655,31 +668,33 @@ function renderSpotlightResults() {
     const projName = r.project_name || '';
     const status = r.status || '';
     const stBadge = getSpotlightStatusBadge(status);
-    const driveLink = r.drive_link ? `<a class="spotlight-drive-link" href="${_slEsc(r.drive_link)}" target="_blank" onclick="event.stopPropagation()" title="Open attached Drive link">🔗</a>` : '';
+    const driveLink = r.drive_link ? ('<a class="spotlight-drive-link" href="' + _slEsc(r.drive_link) + '" target="_blank" onclick="event.stopPropagation()" title="Open attached Drive link">🔗</a>') : '';
 
-    html += `
-      <div class="spotlight-item ${isHl ? 'highlighted' : ''}" data-idx="${idx}" onclick="navigateToSpotlightRecord(_spotlightState.filteredResults[${idx}])">
-        <div class="spotlight-item-main">
-          <div class="spotlight-item-header">
-            <span class="spotlight-item-docno">${_slEsc(docNo)}</span>
-            <span class="spotlight-item-dt">${_slEsc(dt)}</span>
-            ${stBadge}
-          </div>
-          <div class="spotlight-item-title">${_slEsc(title)}</div>
-          <div class="spotlight-item-proj">
-            <span class="spotlight-item-proj-code">${_slEsc(projCode)}</span>
-            <span>•</span>
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_slEsc(projName)}</span>
-          </div>
-        </div>
-        <div class="spotlight-item-meta">
-          ${driveLink}
-        </div>
-      </div>
-    `;
+    const item = document.createElement('div');
+    item.className = 'spotlight-item ' + (isHl ? 'highlighted' : '');
+    item.setAttribute('data-idx', String(idx));
+    item.onclick = () => navigateToSpotlightRecord(_spotlightState.filteredResults[idx]);
+
+    item.innerHTML = '<div class="spotlight-item-main">' +
+      '<div class="spotlight-item-header">' +
+        '<span class="spotlight-item-docno">' + _slEsc(docNo) + '</span>' +
+        '<span class="spotlight-item-dt">' + _slEsc(dt) + '</span>' +
+        stBadge +
+      '</div>' +
+      '<div class="spotlight-item-title">' + _slEsc(title) + '</div>' +
+      '<div class="spotlight-item-proj">' +
+        '<span class="spotlight-item-proj-code">' + _slEsc(projCode) + '</span>' +
+        '<span>•</span>' +
+        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _slEsc(projName) + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="spotlight-item-meta">' +
+      driveLink +
+    '</div>';
+
+    container.appendChild(item);
   });
 
-  container.innerHTML = html;
   scrollHighlightedIntoView();
 }
 
@@ -738,7 +753,7 @@ function navigateToSpotlightRecord(rec) {
 }
 
 // Global Keyboard Handler for Spotlight
-document.addEventListener('keydown', function(e) {
+window.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
     e.preventDefault();
     const modal = document.getElementById('spotlight-modal');
@@ -792,6 +807,13 @@ function _initSpotlightListeners() {
     inp.addEventListener('input', e => handleSpotlightInput(e.target.value));
   }
 }
+
+// Expose globally on window
+window.openGlobalSearch = openGlobalSearch;
+window.closeGlobalSearch = closeGlobalSearch;
+window.navigateToSpotlightRecord = navigateToSpotlightRecord;
+window.filterSpotlightByChip = filterSpotlightByChip;
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _initSpotlightListeners);
 } else {
