@@ -13,7 +13,7 @@ import uuid
 from flask import Blueprint, jsonify, request
 
 import db
-from auth import current_user, can_edit, can_view_project
+from auth import current_user, can_edit, can_view_project, get_allowed_project_ids
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 
 records_bp = Blueprint("records", __name__)
@@ -67,6 +67,121 @@ def _ltr_field_key(pid, dt_id, role):
         if key in wanted or label in wanted:
             return c.get("col_key")
     return role
+
+
+@records_bp.route("/api/records/search/global")
+def api_search_global():
+    u = current_user()
+    if not u:
+        return jsonify(error="LOGIN_REQUIRED"), 403
+
+    q_str = str(request.args.get("q", "")).strip()
+    dt_filter = str(request.args.get("dt_id", "")).strip()
+    try:
+        limit = int(request.args.get("limit", 50))
+        limit = max(1, min(limit, 200))
+    except (ValueError, TypeError):
+        limit = 50
+
+    role = str(u.get("role", "")).strip().lower()
+    is_admin = role in ("admin", "superadmin", "super_admin")
+
+    if is_admin:
+        all_projects = db.get_projects()
+        allowed_scope = set()
+        for p in all_projects:
+            if p.get("id"):
+                allowed_scope.add(p["id"])
+            if p.get("code"):
+                allowed_scope.add(p["code"])
+        allowed_list = list(allowed_scope)
+        user_scope = "all"
+    else:
+        user_projects = db.get_user_projects(u.get("username", ""))
+        assigned_ids = [p["project_id"] for p in user_projects if p.get("project_id")]
+        if not assigned_ids:
+            return jsonify(query=q_str, total_found=0, user_scope="filtered", results=[])
+
+        user_projects_info = db.get_projects(assigned_ids)
+        allowed_scope = set(assigned_ids)
+        for p in user_projects_info:
+            if p.get("id"):
+                allowed_scope.add(p["id"])
+            if p.get("code"):
+                allowed_scope.add(p["code"])
+        allowed_list = list(allowed_scope)
+        user_scope = "filtered"
+
+    if not allowed_list or len(q_str) < 2:
+        return jsonify(query=q_str, total_found=0, user_scope=user_scope, results=[])
+
+    like_param = f"%{q_str}%"
+    where_clauses = [
+        "(p.id = ANY(%s) OR p.code = ANY(%s))",
+        """(
+            r.data->>'docNo' ILIKE %s
+            OR r.data->>'title' ILIKE %s
+            OR r.data->>'nocSubject' ILIKE %s
+            OR r.data->>'nocDescription' ILIKE %s
+            OR r.data::text ILIKE %s
+        )"""
+    ]
+    params = [allowed_list, allowed_list, like_param, like_param, like_param, like_param, like_param]
+
+    if dt_filter and dt_filter.lower() != "all":
+        where_clauses.append("UPPER(r.dt_id) = %s")
+        params.append(dt_filter.upper())
+
+    where_sql = " AND ".join(where_clauses)
+    sql = f"""
+        SELECT 
+            r.id,
+            r.project_id,
+            COALESCE(p.code, '') AS project_code,
+            COALESCE(p.name, '') AS project_name,
+            r.dt_id,
+            COALESCE(r.data->>'docNo', r.data->>'nocNo', '') AS doc_no,
+            COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
+            COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
+            COALESCE(r.data->>'driveLink', r.data->>'fileLocation', '') AS drive_link,
+            r.created_at,
+            COUNT(*) OVER() AS total_count
+        FROM records r
+        JOIN projects p ON r.project_id = p.id OR r.project_id = p.code
+        WHERE {where_sql}
+        ORDER BY r.created_at DESC NULLS LAST
+        LIMIT %s;
+    """
+    params.append(limit)
+
+    rows = db.q(sql, params)
+    total_found = int(rows[0]["total_count"]) if rows and rows[0].get("total_count") is not None else len(rows)
+
+    seen_ids = set()
+    results = []
+    for row in rows:
+        rec_id = row.get("id")
+        if rec_id in seen_ids:
+            continue
+        seen_ids.add(rec_id)
+        results.append({
+            "id": rec_id,
+            "project_id": row.get("project_id") or "",
+            "project_code": row.get("project_code") or "",
+            "project_name": row.get("project_name") or "",
+            "dt_id": row.get("dt_id") or "",
+            "doc_no": row.get("doc_no") or "",
+            "title": row.get("title") or "",
+            "status": row.get("status") or "",
+            "drive_link": row.get("drive_link") or ""
+        })
+
+    return jsonify(
+        query=q_str,
+        total_found=total_found,
+        user_scope=user_scope,
+        results=results
+    )
 
 
 @records_bp.route("/api/records/<pid>/<dt_id>")

@@ -64,6 +64,742 @@ GLOBAL_FOOTER_HTML = """
 <div class="global-footer">Designed & Developed by <strong>Mohamed Metwaly</strong> - Document Control Department</div>
 """
 
+GLOBAL_SEARCH_TRIGGER_HTML = """
+<div class="global-search-trigger" onclick="openGlobalSearch()" title="Global Search (Ctrl+K)">
+  <span class="gst-icon">🔍</span>
+  <span class="gst-text">Search all projects...</span>
+  <kbd>Ctrl+K</kbd>
+</div>
+"""
+
+SPOTLIGHT_MODAL_COMPONENT = r"""
+<!-- SPOTLIGHT / GLOBAL SEARCH COMPONENT -->
+<div class="overlay hidden" id="spotlight-modal" style="z-index: 10050;" onclick="if(event.target===this) closeGlobalSearch()">
+  <div class="spotlight-palette" onclick="event.stopPropagation()">
+    <!-- Header with Search Input -->
+    <div class="spotlight-header">
+      <span class="spotlight-search-icon">🔍</span>
+      <input type="text" id="spotlight-input" class="spotlight-input" placeholder="Search across all accessible projects (min. 2 chars)..." autocomplete="off" spellcheck="false">
+      <div id="spotlight-spinner" class="spotlight-spinner hidden"></div>
+      <button class="spotlight-close-btn" onclick="closeGlobalSearch()" title="Close (Esc)">✕</button>
+    </div>
+
+    <!-- Meta Subtitle Bar (Context indicator + results count) -->
+    <div class="spotlight-meta-bar">
+      <div id="spotlight-context" class="spotlight-context">
+        <span class="spotlight-scope-badge" id="spotlight-scope-badge">🔒 RBAC Scope</span>
+        <span id="spotlight-scope-text">Checking permissions...</span>
+      </div>
+      <div id="spotlight-count" class="spotlight-count hidden">0 found</div>
+    </div>
+
+    <!-- Filter Chips Container -->
+    <div id="spotlight-chips" class="spotlight-chips hidden"></div>
+
+    <!-- Results List Body -->
+    <div class="spotlight-body" id="spotlight-body">
+      <div id="spotlight-results" class="spotlight-results">
+        <div class="spotlight-empty-state">
+          <div style="font-size: 28px; margin-bottom: 8px;">⚡</div>
+          <div style="font-weight: 600; font-size: 14px; color: #f1f5f9;">Instant Global Search</div>
+          <div style="font-size: 12px; color: #94a3b8; margin-top: 4px; max-width: 440px; margin-left: auto; margin-right: auto;">
+            Search across document numbers, titles, subjects, descriptions, and statuses across your authorized projects.
+          </div>
+          <div style="margin-top: 14px; display: inline-flex; gap: 8px; font-size: 11px; color: #94a3b8;">
+            <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
+            <span><kbd>↵</kbd> Open record</span>
+            <span><kbd>ESC</kbd> Close</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="spotlight-footer">
+      <div class="spotlight-footer-shortcuts">
+        <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+        <span><kbd>↵</kbd> Open</span>
+        <span><kbd>ESC</kbd> Close</span>
+      </div>
+      <div style="font-size: 11px; color: #64748b; font-weight: 500;">🔒 RBAC-Filtered Results</div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* Topbar Global Search Trigger Button */
+.global-search-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.8);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  margin: 0 10px;
+  flex-shrink: 0;
+}
+.global-search-trigger:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #06b6d4;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.35);
+  transform: translateY(-0.5px);
+}
+.global-search-trigger kbd {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .global-search-trigger .gst-text { display: none; }
+  .global-search-trigger { padding: 4px 8px; margin: 0 4px; }
+}
+@media (max-width: 600px) {
+  .global-search-trigger kbd { display: none; }
+  .global-search-trigger { padding: 3px 6px; font-size: 11px; margin: 0 2px; }
+}
+
+/* Spotlight Palette Modal Overlay & Card */
+.spotlight-palette {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  width: 95%;
+  max-width: 680px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  animation: spotlightPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes spotlightPopIn {
+  from { opacity: 0; transform: scale(0.96) translateY(-8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.spotlight-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid #1e293b;
+  gap: 12px;
+  background: #0f172a;
+}
+.spotlight-search-icon {
+  font-size: 18px;
+  opacity: 0.8;
+}
+.spotlight-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  color: #f8fafc;
+  font-family: inherit;
+  padding: 4px 0;
+}
+.spotlight-input::placeholder {
+  color: #64748b;
+}
+.spotlight-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(6, 182, 212, 0.2);
+  border-top-color: #06b6d4;
+  border-radius: 50%;
+  animation: spotlightSpin 0.6s linear infinite;
+}
+@keyframes spotlightSpin {
+  to { transform: rotate(360deg); }
+}
+.spotlight-close-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.spotlight-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+}
+
+.spotlight-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 18px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  font-size: 11.5px;
+}
+.spotlight-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+}
+.spotlight-scope-badge {
+  background: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 10px;
+}
+.spotlight-scope-badge.admin {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.spotlight-count {
+  color: #06b6d4;
+  font-weight: 600;
+}
+
+.spotlight-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  overflow-x: auto;
+  border-bottom: 1px solid #1e293b;
+  background: rgba(15, 23, 42, 0.6);
+}
+.spotlight-chips::-webkit-scrollbar { height: 4px; }
+.spotlight-chips::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+.spotlight-chip {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.spotlight-chip:hover {
+  border-color: #06b6d4;
+  color: #f8fafc;
+}
+.spotlight-chip.active {
+  background: #06b6d4;
+  border-color: #06b6d4;
+  color: #0f172a;
+}
+
+.spotlight-body {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 52vh;
+  padding: 8px 12px;
+}
+.spotlight-body::-webkit-scrollbar { width: 6px; }
+.spotlight-body::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+.spotlight-results {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.spotlight-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  border: 1px solid transparent;
+  background: rgba(30, 41, 59, 0.4);
+}
+.spotlight-item:hover, .spotlight-item.highlighted {
+  background: #1e293b;
+  border-color: rgba(6, 182, 212, 0.45);
+}
+.spotlight-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.spotlight-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spotlight-item-docno {
+  font-weight: 700;
+  font-size: 13px;
+  color: #38bdf8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spotlight-item-dt {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.spotlight-item-title {
+  font-size: 12px;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spotlight-item-proj {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+.spotlight-item-proj-code {
+  font-weight: 600;
+  color: #06b6d4;
+}
+.spotlight-item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin-left: 14px;
+  flex-shrink: 0;
+}
+.spotlight-status-badge {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.spotlight-drive-link {
+  color: #38bdf8;
+  font-size: 13px;
+  text-decoration: none;
+  opacity: 0.8;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.spotlight-drive-link:hover {
+  opacity: 1;
+  background: rgba(56, 189, 248, 0.15);
+}
+
+.spotlight-empty-state {
+  text-align: center;
+  padding: 36px 16px;
+}
+.spotlight-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 18px;
+  background: #1e293b;
+  border-top: 1px solid #334155;
+  font-size: 11px;
+  color: #64748b;
+}
+.spotlight-footer-shortcuts {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.spotlight-footer kbd {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 10px;
+  font-family: inherit;
+  color: #cbd5e1;
+  margin-right: 3px;
+}
+</style>
+
+<script>
+const _spotlightState = {
+  rawResults: [],
+  filteredResults: [],
+  activeChip: 'all',
+  highlightIndex: 0,
+  debounceTimer: null,
+  cachedWhoami: null
+};
+
+function _slEsc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function openGlobalSearch() {
+  const modal = document.getElementById('spotlight-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  const inp = document.getElementById('spotlight-input');
+  if (inp) {
+    inp.focus();
+    inp.select();
+  }
+  updateSpotlightContext();
+}
+
+function closeGlobalSearch() {
+  const modal = document.getElementById('spotlight-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function updateSpotlightContext() {
+  const badgeEl = document.getElementById('spotlight-scope-badge');
+  const textEl = document.getElementById('spotlight-scope-text');
+  if (!badgeEl || !textEl) return;
+
+  if (!_spotlightState.cachedWhoami) {
+    try {
+      _spotlightState.cachedWhoami = await apiFetch('/api/whoami');
+    } catch(e) {
+      _spotlightState.cachedWhoami = null;
+    }
+  }
+
+  const u = _spotlightState.cachedWhoami;
+  if (u) {
+    const isAdmin = u.role === 'admin' || u.role === 'superadmin';
+    if (isAdmin) {
+      badgeEl.className = 'spotlight-scope-badge admin';
+      badgeEl.textContent = '👑 Admin Scope';
+      textEl.textContent = 'Searching across all projects (Admin)';
+    } else {
+      const pCount = (u.projects || []).length;
+      badgeEl.className = 'spotlight-scope-badge';
+      badgeEl.textContent = '🔒 Assigned Scope';
+      textEl.textContent = pCount > 0 
+        ? ('Searching in your ' + pCount + ' assigned project' + (pCount === 1 ? '' : 's'))
+        : 'No projects assigned (Results restricted)';
+    }
+  }
+}
+
+function handleSpotlightInput(val) {
+  clearTimeout(_spotlightState.debounceTimer);
+  const q = val.trim();
+  const spinner = document.getElementById('spotlight-spinner');
+  const countEl = document.getElementById('spotlight-count');
+  const chipsEl = document.getElementById('spotlight-chips');
+
+  if (q.length < 2) {
+    if (spinner) spinner.classList.add('hidden');
+    if (countEl) countEl.classList.add('hidden');
+    if (chipsEl) chipsEl.classList.add('hidden');
+    _spotlightState.rawResults = [];
+    _spotlightState.filteredResults = [];
+    renderSpotlightInitial();
+    return;
+  }
+
+  if (spinner) spinner.classList.remove('hidden');
+
+  _spotlightState.debounceTimer = setTimeout(async () => {
+    try {
+      const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&limit=50');
+      if (spinner) spinner.classList.add('hidden');
+      if (!data) return;
+
+      _spotlightState.rawResults = data.results || [];
+      _spotlightState.activeChip = 'all';
+
+      const badgeEl = document.getElementById('spotlight-scope-badge');
+      const textEl = document.getElementById('spotlight-scope-text');
+      if (data.user_scope === 'all') {
+        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge admin'; badgeEl.textContent = '👑 Admin Scope'; }
+        if (textEl) textEl.textContent = 'Searching across all projects (Admin)';
+      } else if (data.user_scope === 'filtered') {
+        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge'; badgeEl.textContent = '🔒 Assigned Scope'; }
+      }
+
+      if (countEl) {
+        countEl.textContent = (data.total_found || _spotlightState.rawResults.length) + ' records found';
+        countEl.classList.remove('hidden');
+      }
+
+      renderSpotlightChips();
+      filterSpotlightByChip('all');
+    } catch(err) {
+      if (spinner) spinner.classList.add('hidden');
+      renderSpotlightError(err.message || 'Error executing search');
+    }
+  }, 300);
+}
+
+function renderSpotlightChips() {
+  const container = document.getElementById('spotlight-chips');
+  if (!container) return;
+  const recs = _spotlightState.rawResults;
+  if (!recs.length) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  const counts = {};
+  recs.forEach(r => {
+    const dt = (r.dt_id || 'OTHER').toUpperCase();
+    counts[dt] = (counts[dt] || 0) + 1;
+  });
+
+  const sortedDts = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
+  let html = '<div class="spotlight-chip ' + (_spotlightState.activeChip === 'all' ? 'active' : '') + '" onclick="filterSpotlightByChip(\\'all\\')">All (' + recs.length + ')</div>';
+  sortedDts.forEach(dt => {
+    html += '<div class="spotlight-chip ' + (_spotlightState.activeChip === dt ? 'active' : '') + '" onclick="filterSpotlightByChip(\\'' + dt + '\\')">' + dt + ' (' + counts[dt] + ')</div>';
+  });
+
+  container.innerHTML = html;
+  container.classList.remove('hidden');
+}
+
+function filterSpotlightByChip(dt) {
+  _spotlightState.activeChip = dt;
+  document.querySelectorAll('.spotlight-chip').forEach(el => {
+    const isAct = (dt === 'all' && el.textContent.startsWith('All')) || el.textContent.startsWith(dt + ' ');
+    el.classList.toggle('active', isAct);
+  });
+
+  if (dt === 'all') {
+    _spotlightState.filteredResults = [..._spotlightState.rawResults];
+  } else {
+    _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
+  }
+  _spotlightState.highlightIndex = 0;
+  renderSpotlightResults();
+}
+
+function renderSpotlightInitial() {
+  const container = document.getElementById('spotlight-results');
+  if (!container) return;
+  container.innerHTML = `
+    <div class="spotlight-empty-state">
+      <div style="font-size: 28px; margin-bottom: 8px;">⚡</div>
+      <div style="font-weight: 600; font-size: 14px; color: #f1f5f9;">Instant Global Search</div>
+      <div style="font-size: 12px; color: #94a3b8; margin-top: 4px; max-width: 440px; margin-left: auto; margin-right: auto;">
+        Type at least 2 characters to search across document numbers, titles, subjects, descriptions, and statuses across your authorized projects.
+      </div>
+      <div style="margin-top: 14px; display: inline-flex; gap: 8px; font-size: 11px; color: #94a3b8;">
+        <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
+        <span><kbd>↵</kbd> Open record</span>
+        <span><kbd>ESC</kbd> Close</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderSpotlightError(msg) {
+  const container = document.getElementById('spotlight-results');
+  if (!container) return;
+  container.innerHTML = `
+    <div class="spotlight-empty-state">
+      <div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div>
+      <div style="font-weight: 600; font-size: 13px; color: #ef4444;">Search Error</div>
+      <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">` + _slEsc(msg) + `</div>
+    </div>
+  `;
+}
+
+function renderSpotlightResults() {
+  const container = document.getElementById('spotlight-results');
+  if (!container) return;
+  const rows = _spotlightState.filteredResults;
+  if (!rows.length) {
+    const q = document.getElementById('spotlight-input')?.value || '';
+    container.innerHTML = `
+      <div class="spotlight-empty-state">
+        <div style="font-size: 26px; margin-bottom: 8px;">🔍</div>
+        <div style="font-weight: 600; font-size: 14px; color: #f1f5f9;">No Matching Records Found</div>
+        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">No records matched "` + _slEsc(q) + `" in your accessible projects.</div>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+  rows.forEach((r, idx) => {
+    const isHl = idx === _spotlightState.highlightIndex;
+    const docNo = r.doc_no || '—';
+    const title = r.title || 'Untitled Document';
+    const dt = r.dt_id || 'DOC';
+    const projCode = r.project_code || r.project_id || '';
+    const projName = r.project_name || '';
+    const status = r.status || '';
+    const stBadge = getSpotlightStatusBadge(status);
+    const driveLink = r.drive_link ? `<a class="spotlight-drive-link" href="${_slEsc(r.drive_link)}" target="_blank" onclick="event.stopPropagation()" title="Open attached Drive link">🔗</a>` : '';
+
+    html += `
+      <div class="spotlight-item ${isHl ? 'highlighted' : ''}" data-idx="${idx}" onclick="navigateToSpotlightRecord(_spotlightState.filteredResults[${idx}])">
+        <div class="spotlight-item-main">
+          <div class="spotlight-item-header">
+            <span class="spotlight-item-docno">${_slEsc(docNo)}</span>
+            <span class="spotlight-item-dt">${_slEsc(dt)}</span>
+            ${stBadge}
+          </div>
+          <div class="spotlight-item-title">${_slEsc(title)}</div>
+          <div class="spotlight-item-proj">
+            <span class="spotlight-item-proj-code">${_slEsc(projCode)}</span>
+            <span>•</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_slEsc(projName)}</span>
+          </div>
+        </div>
+        <div class="spotlight-item-meta">
+          ${driveLink}
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  scrollHighlightedIntoView();
+}
+
+function getSpotlightStatusBadge(status) {
+  if (!status) return '';
+  const s = String(status).trim();
+  const up = s.toUpperCase();
+  let bg = '#334155', fg = '#f8fafc';
+  if (up.startsWith('A-') || up.startsWith('A ') || up === 'A' || up.includes('APPROV') || up.includes('ACCEPT') || up.includes('CLOSED')) {
+    bg = '#064e3b'; fg = '#6ee7b7';
+  } else if (up.startsWith('D-') || up.startsWith('D ') || up === 'D' || up.includes('REJECT') || up.includes('CANCEL')) {
+    bg = '#7f1d1d'; fg = '#fca5a5';
+  } else if (up.startsWith('C-') || up.startsWith('C ') || up === 'C' || up.includes('REVISE')) {
+    bg = '#7c2d12'; fg = '#fdba74';
+  } else if (up.startsWith('B-') || up.startsWith('B ') || up === 'B' || up.includes('REVIEW') || up.includes('PENDING') || up.includes('OPEN') || up.includes('NOTED')) {
+    bg = '#713f12'; fg = '#fde047';
+  } else if (up.includes('INFO')) {
+    bg = '#1e3a8a'; fg = '#93c5fd';
+  }
+  return '<span class="spotlight-status-badge" style="background:' + bg + ';color:' + fg + ';">' + _slEsc(s) + '</span>';
+}
+
+function scrollHighlightedIntoView() {
+  const el = document.querySelector(`.spotlight-item[data-idx="${_spotlightState.highlightIndex}"]`);
+  if (el) {
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function navigateToSpotlightRecord(rec) {
+  if (!rec) return;
+  closeGlobalSearch();
+  const targetPid = rec.project_id || rec.project_code;
+  const targetDt = rec.dt_id;
+  const recId = rec.id;
+
+  if (typeof PID !== 'undefined' && (PID === targetPid || PID === rec.project_code)) {
+    if (typeof state !== 'undefined' && state.tab === targetDt) {
+      if (typeof setSelectedRegisterRow === 'function') {
+        setSelectedRegisterRow(recId);
+        const tr = document.querySelector(`#regtbl tbody tr[data-rec-id="${CSS.escape(String(recId))}"]`);
+        if (tr) {
+          tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          tr.style.transition = 'background 0.5s ease';
+          tr.style.background = 'rgba(6, 182, 212, 0.25)';
+          setTimeout(() => { tr.style.background = ''; }, 2500);
+        }
+      }
+    } else if (typeof switchTab === 'function') {
+      if (typeof state !== 'undefined') state.pendingHighlightId = recId;
+      switchTab(targetDt);
+    }
+  } else {
+    window.location.href = `/app?p=${encodeURIComponent(targetPid)}&tab=${encodeURIComponent(targetDt)}&highlight=${encodeURIComponent(recId)}`;
+  }
+}
+
+// Global Keyboard Handler for Spotlight
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    const modal = document.getElementById('spotlight-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      closeGlobalSearch();
+    } else {
+      openGlobalSearch();
+    }
+    return;
+  }
+
+  const modal = document.getElementById('spotlight-modal');
+  if (!modal || modal.classList.contains('hidden')) return;
+
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeGlobalSearch();
+    return;
+  }
+
+  const count = _spotlightState.filteredResults.length;
+  if (!count) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _spotlightState.highlightIndex = (_spotlightState.highlightIndex + 1) % count;
+    updateSpotlightHighlightClass();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _spotlightState.highlightIndex = (_spotlightState.highlightIndex - 1 + count) % count;
+    updateSpotlightHighlightClass();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const rec = _spotlightState.filteredResults[_spotlightState.highlightIndex];
+    if (rec) navigateToSpotlightRecord(rec);
+  }
+});
+
+function updateSpotlightHighlightClass() {
+  document.querySelectorAll('.spotlight-item').forEach(el => {
+    const idx = parseInt(el.getAttribute('data-idx'), 10);
+    el.classList.toggle('highlighted', idx === _spotlightState.highlightIndex);
+  });
+  scrollHighlightedIntoView();
+}
+
+function _initSpotlightListeners() {
+  const inp = document.getElementById('spotlight-input');
+  if (inp && !inp._spotlightBound) {
+    inp._spotlightBound = true;
+    inp.addEventListener('input', e => handleSpotlightInput(e.target.value));
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initSpotlightListeners);
+} else {
+  _initSpotlightListeners();
+}
+</script>
+"""
+
 def _user_info_html(u):
     if not u:
         return ('<a href="/login"><button class="tb-btn glow">🔐 Login</button></a>', "guest", "GUEST", "#fff3")
@@ -1657,6 +2393,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 <div id="topbar">
   <span style="font-size:20px">📋</span>
   <span style="font-weight:700;font-size:14px">Document Control Register</span>
+  {GLOBAL_SEARCH_TRIGGER_HTML}
   <div class="sp"></div>
   {btns}
   <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
@@ -3104,6 +3841,7 @@ init();
 </script>
 {ABOUT_MODAL_HTML}
 {GLOBAL_FOOTER_HTML}
+{SPOTLIGHT_MODAL_COMPONENT}
 </body></html>"""
 
 
@@ -3604,6 +4342,8 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   <span class="topbar-title-full" style="font-weight:700;font-size:14px;letter-spacing:.3px">Document Control Register</span>
   <span class="topbar-title-short" style="font-weight:800;font-size:13px;letter-spacing:.35px">DCR</span>
   
+  {GLOBAL_SEARCH_TRIGGER_HTML}
+
   <div style="flex:1"></div>
   
   <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:24px;cursor:pointer;padding:4px 16px;border-radius:8px;transition:all 0.2s" title="Edit Project Information">
@@ -4822,6 +5562,25 @@ function renderRows(){{
         }});
       }}, 50);
     }}
+  }}
+  const hlParam = new URLSearchParams(location.search).get('highlight') || state.pendingHighlightId;
+  if (hlParam) {{
+    state.pendingHighlightId = null;
+    if (window.history && window.history.replaceState && new URLSearchParams(location.search).get('highlight')) {{
+      const u = new URL(window.location);
+      u.searchParams.delete('highlight');
+      window.history.replaceState({{}}, '', u.toString());
+    }}
+    setTimeout(() => {{
+      setSelectedRegisterRow(hlParam);
+      const tr = document.querySelector(`#regtbl tbody tr[data-rec-id="${{CSS.escape(String(hlParam))}}"]`);
+      if (tr) {{
+        tr.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+        tr.style.transition = 'background 0.5s ease';
+        tr.style.background = 'rgba(6, 182, 212, 0.25)';
+        setTimeout(() => {{ tr.style.background = ''; }}, 2500);
+      }}
+    }}, 120);
   }}
   }} catch(err) {{
     const errStr = 'JS ERROR: ' + err.message;
@@ -7379,6 +8138,7 @@ async function saveProjectSettings() {{
 </script>
 {ABOUT_MODAL_HTML}
 {GLOBAL_FOOTER_HTML}
+{SPOTLIGHT_MODAL_COMPONENT}
 </body></html>"""
 
 
