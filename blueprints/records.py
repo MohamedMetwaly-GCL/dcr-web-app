@@ -76,12 +76,12 @@ def api_search_global():
         return jsonify(error="LOGIN_REQUIRED"), 403
 
     q_str = str(request.args.get("q", "")).strip()
-    dt_filter = str(request.args.get("dt_id", "")).strip()
+    dt_id = str(request.args.get("dt_id", "")).strip()
     try:
-        limit = int(request.args.get("limit", 50))
-        limit = max(1, min(limit, 200))
+        limit = min(int(request.args.get("limit", 300)), 500)
+        limit = max(1, limit)
     except (ValueError, TypeError):
-        limit = 50
+        limit = 300
 
     role = str(u.get("role", "")).strip().lower()
     is_admin = role in ("admin", "superadmin", "super_admin")
@@ -128,9 +128,9 @@ def api_search_global():
     ]
     params = [allowed_list, allowed_list, like_param, like_param, like_param, like_param, like_param]
 
-    if dt_filter and dt_filter.lower() != "all":
-        where_clauses.append("UPPER(r.dt_id) = %s")
-        params.append(dt_filter.upper())
+    if dt_id and dt_id.upper() != "ALL":
+        where_clauses.append("UPPER(r.dt_id) = UPPER(%s)")
+        params.append(dt_id)
 
     where_sql = " AND ".join(where_clauses)
     sql = f"""

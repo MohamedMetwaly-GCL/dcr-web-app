@@ -178,9 +178,33 @@ class TestGlobalSearch(unittest.TestCase):
         sql_query = sql_call_args[0]
         sql_params = sql_call_args[1]
 
-        self.assertIn("UPPER(r.dt_id) = %s", sql_query)
+        self.assertIn("UPPER(r.dt_id) = UPPER(%s)", sql_query)
         self.assertIn("NOC", sql_params)
         print("PASS: Optional dt_id filter parameter is correctly applied in SQL.")
+
+    # -------------------------------------------------------------------------
+    # 7. Default and Max Limit Verification (300 default, 500 max)
+    # -------------------------------------------------------------------------
+    @patch("blueprints.records.current_user")
+    @patch("blueprints.records.db.get_projects")
+    @patch("blueprints.records.db.q")
+    def test_search_limit_handling(self, mock_db_q, mock_get_projs, mock_user):
+        mock_user.return_value = {"username": "admin", "role": "admin"}
+        mock_get_projs.return_value = [{"id": "P1", "code": "PEM-058"}]
+        mock_db_q.return_value = []
+
+        # 1. Default limit when not specified is 300
+        resp = self.client.get("/api/records/search/global?q=valves")
+        self.assertEqual(resp.status_code, 200)
+        sql_params = mock_db_q.call_args[0][1]
+        self.assertEqual(sql_params[-1], 300)
+
+        # 2. Custom limit capped at 500
+        resp = self.client.get("/api/records/search/global?q=valves&limit=999")
+        self.assertEqual(resp.status_code, 200)
+        sql_params = mock_db_q.call_args[0][1]
+        self.assertEqual(sql_params[-1], 500)
+        print("PASS: Default limit is 300 and capped at 500.")
 
     # -------------------------------------------------------------------------
     # 7. Frontend Integration in html_render.py

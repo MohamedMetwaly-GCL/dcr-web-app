@@ -466,7 +466,9 @@ const _spotlightState = {
   activeChip: 'all',
   highlightIndex: 0,
   debounceTimer: null,
-  cachedWhoami: null
+  cachedWhoami: null,
+  currentQuery: '',
+  totalFound: 0
 };
 
 function _slEsc(s) {
@@ -534,6 +536,8 @@ function handleSpotlightInput(val) {
     if (chipsEl) chipsEl.classList.add('hidden');
     _spotlightState.rawResults = [];
     _spotlightState.filteredResults = [];
+    _spotlightState.currentQuery = '';
+    _spotlightState.totalFound = 0;
     renderSpotlightInitial();
     return;
   }
@@ -542,11 +546,13 @@ function handleSpotlightInput(val) {
 
   _spotlightState.debounceTimer = setTimeout(async () => {
     try {
-      const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&limit=50');
+      _spotlightState.currentQuery = q;
+      const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&limit=300');
       if (spinner) spinner.classList.add('hidden');
       if (!data) return;
 
       _spotlightState.rawResults = data.results || [];
+      _spotlightState.totalFound = (typeof data.total_found === 'number') ? data.total_found : _spotlightState.rawResults.length;
       _spotlightState.activeChip = 'all';
 
       const badgeEl = document.getElementById('spotlight-scope-badge');
@@ -559,7 +565,11 @@ function handleSpotlightInput(val) {
       }
 
       if (countEl) {
-        countEl.textContent = (data.total_found || _spotlightState.rawResults.length) + ' records found';
+        if (_spotlightState.totalFound > _spotlightState.rawResults.length) {
+          countEl.textContent = _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found';
+        } else {
+          countEl.textContent = _spotlightState.rawResults.length + ' records found';
+        }
         countEl.classList.remove('hidden');
       }
 
@@ -590,16 +600,20 @@ function renderSpotlightChips() {
   const sortedDts = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
   container.innerHTML = '';
 
+  const hasTruncated = _spotlightState.totalFound > recs.length;
+
   const allChip = document.createElement('div');
   allChip.className = 'spotlight-chip ' + (_spotlightState.activeChip === 'all' ? 'active' : '');
-  allChip.textContent = 'All (' + recs.length + ')';
+  allChip.setAttribute('data-dt', 'all');
+  allChip.textContent = 'All (' + recs.length + (hasTruncated ? '+' : '') + ')';
   allChip.onclick = () => filterSpotlightByChip('all');
   container.appendChild(allChip);
 
   sortedDts.forEach(dt => {
     const chip = document.createElement('div');
     chip.className = 'spotlight-chip ' + (_spotlightState.activeChip === dt ? 'active' : '');
-    chip.textContent = dt + ' (' + counts[dt] + ')';
+    chip.setAttribute('data-dt', dt);
+    chip.textContent = dt + ' (' + counts[dt] + (hasTruncated ? '+' : '') + ')';
     chip.onclick = () => filterSpotlightByChip(dt);
     container.appendChild(chip);
   });
@@ -607,18 +621,69 @@ function renderSpotlightChips() {
   container.classList.remove('hidden');
 }
 
-function filterSpotlightByChip(dt) {
+async function filterSpotlightByChip(dt) {
   _spotlightState.activeChip = dt;
   document.querySelectorAll('.spotlight-chip').forEach(el => {
-    const isAct = (dt === 'all' && el.textContent.startsWith('All')) || el.textContent.startsWith(dt + ' ');
-    el.classList.toggle('active', isAct);
+    const chipDt = el.getAttribute('data-dt');
+    el.classList.toggle('active', chipDt === dt);
   });
 
-  if (dt === 'all') {
+  const countEl = document.getElementById('spotlight-count');
+  const q = _spotlightState.currentQuery;
+
+  // When clicking a specific document type chip and the total found exceeds returned records,
+  // trigger a server-side fetch with &dt_id to retrieve all matching records for this type.
+  if (dt !== 'all' && _spotlightState.totalFound > _spotlightState.rawResults.length && q) {
+    const spinner = document.getElementById('spotlight-spinner');
+    if (spinner) spinner.classList.remove('hidden');
+    try {
+      const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&dt_id=' + encodeURIComponent(dt) + '&limit=300');
+      if (data && Array.isArray(data.results)) {
+        _spotlightState.filteredResults = data.results;
+
+        // Merge newly fetched records into rawResults
+        const existingIds = new Set(_spotlightState.rawResults.map(r => r.id));
+        data.results.forEach(r => {
+          if (!existingIds.has(r.id)) {
+            _spotlightState.rawResults.push(r);
+            existingIds.add(r.id);
+          }
+        });
+
+        // Update the active chip's count label with true server count
+        const activeChipEl = document.querySelector(`.spotlight-chip[data-dt="${CSS.escape(dt)}"]`);
+        if (activeChipEl) {
+          activeChipEl.textContent = dt + ' (' + (data.total_found || data.results.length) + ')';
+        }
+
+        if (countEl) {
+          countEl.textContent = (data.total_found || data.results.length) + ' ' + dt + ' records found';
+        }
+      } else {
+        _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
+      }
+    } catch(err) {
+      console.warn('Server-side dt_id search failed, falling back to in-memory filter:', err);
+      _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
+    } finally {
+      if (spinner) spinner.classList.add('hidden');
+    }
+  } else if (dt === 'all') {
     _spotlightState.filteredResults = [..._spotlightState.rawResults];
+    if (countEl) {
+      if (_spotlightState.totalFound > _spotlightState.rawResults.length) {
+        countEl.textContent = _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found';
+      } else {
+        countEl.textContent = _spotlightState.rawResults.length + ' records found';
+      }
+    }
   } else {
     _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
+    if (countEl) {
+      countEl.textContent = _spotlightState.filteredResults.length + ' ' + dt + ' records';
+    }
   }
+
   _spotlightState.highlightIndex = 0;
   renderSpotlightResults();
 }
