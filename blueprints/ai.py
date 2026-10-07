@@ -408,9 +408,14 @@ def _call_gemini_api(prompt, context_text):
     models_to_try = []
     if _working_gemini_model:
         models_to_try.append(_working_gemini_model)
-    for m in ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]:
+    for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-3.8-flash"]:
         if m not in models_to_try:
             models_to_try.append(m)
+
+    system_inst = custom_instruction or (
+        "You are a concise engineering assistant. Directly list matching documents "
+        "in a compact Markdown table or bullet points. Avoid long introductions or filler text."
+    )
 
     last_err = None
     try:
@@ -422,10 +427,7 @@ def _call_gemini_api(prompt, context_text):
                     model=clean_model,
                     contents=full_contents,
                     config=types.GenerateContentConfig(
-                        system_instruction=(
-                            "You are a concise engineering assistant. Directly list matching documents "
-                            "in a compact Markdown table or bullet points. Avoid long introductions or filler text."
-                        ),
+                        system_instruction=system_inst,
                         temperature=0.2,
                         max_output_tokens=1000,
                     ),
@@ -449,36 +451,59 @@ def _call_gemini_api(prompt, context_text):
 @ai_bp.route("/api/ai/query", methods=["POST"])
 def api_ai_query():
     """Main AI Assistant Query Endpoint."""
-    u = current_user()
-    if not u:
-        return jsonify(error="LOGIN_REQUIRED"), 403
-
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        return jsonify(error="AI Assistant is not configured on this instance."), 503
-
-    data = request.get_json(silent=True) or {}
-    prompt = str(data.get("prompt") or "").strip()
-    if not prompt:
-        return jsonify(error="Prompt is required"), 400
-
-    project_id = data.get("project_id")
-    tab = data.get("tab")
-
-    # RBAC Enforcement
-    target_pids = []
-    if project_id and str(project_id).strip().upper() not in ("ALL", ""):
-        pid = str(project_id).strip()
-        if not can_view_project(pid, u):
-            return jsonify(error="Forbidden"), 403
-        target_pids = [pid]
-    else:
-        target_pids = get_allowed_project_ids(u)
-
-    if not target_pids:
-        return jsonify(reply="You do not have access to any projects in the system."), 200
-
     try:
+        u = current_user()
+        if not u:
+            return jsonify(error="LOGIN_REQUIRED"), 403
+
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            return jsonify(error="AI Assistant is not configured on this instance."), 503
+
+        data = request.get_json(silent=True) or {}
+        prompt = str(data.get("prompt") or "").strip()
+        if not prompt:
+            return jsonify(error="Prompt is required"), 400
+
+        project_id = data.get("project_id")
+        tab = data.get("tab")
+
+        # RBAC Enforcement
+        target_pids = []
+        if project_id and str(project_id).strip().upper() not in ("ALL", ""):
+            pid = str(project_id).strip()
+            if not can_view_project(pid, u):
+                return jsonify(error="Forbidden"), 403
+            target_pids = [pid]
+        else:
+            target_pids = get_allowed_project_ids(u)
+
+        if not target_pids:
+            return jsonify(reply="You do not have access to any projects in the system."), 200
+
+        # Short-circuit for simple greetings/generic conversation
+        p_clean = re.sub(r"[^\w\s]", "", prompt).strip().lower()
+        greeting_words = [
+            "ازيك", "ازىك", "عامل ايه", "مرحبا", "أهلا", "اهلا", 
+            "سلام", "السلام عليكم", "صباح الخير", "مساء الخير", "hello", "hi", "hey", "هاي"
+        ]
+        is_greeting = any(g == p_clean or p_clean.startswith(g) for g in greeting_words) and len(prompt.split()) <= 4
+
+        if is_greeting:
+            greeting_inst = (
+                "You are the DCR Engineering AI Assistant for Gas Chill projects. "
+                "Respond warmly, concisely, and professionally in Arabic (or English if greeted in English). "
+                "State briefly that you can assist with project document registers, submittals, overdues, and NOCs."
+            )
+            reply, err = _call_gemini_api(prompt, "User is saying hello.", custom_instruction=greeting_inst)
+            if not reply:
+                reply = (
+                    "أهلاً بك يا باشمهندس! 👋 أنا مساعدك الذكي لنظام مراقبة وثائق ومشاريع جازشيل (DCR).\n\n"
+                    "أنا جاهز لمساعدتك في استعراض سجلات المشاريع، ومتابعة الوثائق المتأخرة، "
+                    "أو أوامر التغيير (NOC)، أو البحث عن اعتمادات الـ MS والشوب درونج. كيف يمكنني مساعدتك؟"
+                )
+            return jsonify(reply=reply), 200
+
         context_text = _build_ai_context(target_pids, user_prompt=prompt, active_tab=tab)
         reply, err = _call_gemini_api(prompt, context_text)
 
@@ -489,7 +514,8 @@ def api_ai_query():
             logger.error("[AI Assistant Query Error] %s", err)
             return jsonify(error=f"{err or 'Empty response from model'}"), 500
 
-        return jsonify(reply=reply)
+        return jsonify(reply=reply), 200
+
     except Exception as e:
         logger.exception("AI assistant query exception: %s", e)
-        return jsonify(error=f"Internal error processing AI query: {str(e)}"), 500
+        return jsonify(error=f"Internal Server Error: {str(e)}"), 500

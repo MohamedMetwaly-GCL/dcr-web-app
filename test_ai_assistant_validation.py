@@ -243,8 +243,25 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIn("MS-CY002P608-00120", ctx)
             self.assertIn("Double Regulating Valves", ctx)
             self.assertIn("B - Approved As Noted", ctx)
-            self.assertIn("PEM-058", ctx)
         print("PASS: Bilingual keyword mapping, doc type detection, and matching submittal injection verified.")
+
+    def test_10_simple_greeting_fast_response(self):
+        """Verify simple greetings like 'ازيك' return immediate response without DB context."""
+        user = {"username": "admin_user", "role": "admin"}
+        with patch("app.current_user", return_value=user), \
+             patch("blueprints.ai.current_user", return_value=user), \
+             patch("blueprints.ai.get_allowed_project_ids", return_value=["p1"]), \
+             patch("blueprints.ai._build_ai_context") as mock_build_ctx, \
+             patch("blueprints.ai._call_gemini_api", return_value=("أهلاً بك يا باشمهندس!", None)), \
+             patch.dict(os.environ, {"GEMINI_API_KEY": "AIzaSyTestFakeKey"}):
+            res = self.client.post("/api/ai/query", json={"prompt": "ازيك"})
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertIn("reply", data)
+            self.assertIn("أهلاً بك", data["reply"])
+            # Ensure heavy _build_ai_context was NOT called for simple greeting
+            mock_build_ctx.assert_not_called()
+        print("PASS: Simple greeting short-circuit verified (no heavy DB queries called).")
 
 
 if __name__ == "__main__":

@@ -1708,6 +1708,9 @@ body.dark .ai-msg.assistant .ai-msg-bubble th,
   align-items: center;
   gap: 10px;
 }
+.ai-loading-indicator.hidden {
+  display: none !important;
+}
 body.dark .ai-loading-indicator,
 .ai-assistant-drawer.dark-theme .ai-loading-indicator {
   background: rgba(99, 102, 241, 0.12);
@@ -2041,7 +2044,12 @@ function appendAiMessage(role, text) {
   if (role === 'user') {
     bubbleDiv.textContent = text;
   } else {
-    bubbleDiv.innerHTML = _renderSimpleMarkdown(text);
+    try {
+      bubbleDiv.innerHTML = _renderSimpleMarkdown(text);
+    } catch(errRender) {
+      console.warn('Markdown render error:', errRender);
+      bubbleDiv.textContent = text;
+    }
   }
 
   const timeDiv = document.createElement('div');
@@ -2077,7 +2085,10 @@ async function sendAiPrompt(promptText) {
 
   const loading = document.getElementById('ai-loading-indicator');
   const sendBtn = document.getElementById('ai-send-btn');
-  if (loading) loading.classList.remove('hidden');
+  if (loading) {
+    loading.classList.remove('hidden');
+    loading.style.display = 'flex';
+  }
   if (sendBtn) sendBtn.disabled = true;
   _aiAssistantState.isLoading = true;
 
@@ -2106,7 +2117,11 @@ async function sendAiPrompt(promptText) {
     });
 
     clearTimeout(timeoutId);
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(err => {
+      console.warn('Failed to parse AI response JSON:', err);
+      return {};
+    });
+    console.log('AI Response:', res.status, data);
 
     if (res.status === 503) {
       appendAiMessage('assistant', '⚠️ **AI Assistant is not configured on this instance.**\n\nPlease configure the `GEMINI_API_KEY` environment variable on Railway to enable Gemini Flash.');
@@ -2123,6 +2138,7 @@ async function sendAiPrompt(promptText) {
     }
   } catch(err) {
     clearTimeout(timeoutId);
+    console.error('Fetch error:', err);
     if (err && (err.name === 'AbortError' || err.code === 20)) {
       appendAiMessage('assistant', '⏱️ **Request Timed Out (60s):** Analysis took too long. Please retry with a simpler query.');
     } else {
@@ -2130,7 +2146,10 @@ async function sendAiPrompt(promptText) {
     }
   } finally {
     clearTimeout(timeoutId);
-    if (loading) loading.classList.add('hidden');
+    if (loading) {
+      loading.classList.add('hidden');
+      loading.style.display = 'none';
+    }
     if (sendBtn) sendBtn.disabled = false;
     _aiAssistantState.isLoading = false;
     if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
