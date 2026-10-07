@@ -1287,8 +1287,8 @@ if (document.readyState === 'loading') {
 
 AI_DRAWER_COMPONENT = r"""
 <!-- DCR AI ASSISTANT DRAWER COMPONENT -->
-<div id="ai-drawer-backdrop" class="ai-drawer-backdrop hidden" onclick="closeAiDrawer()"></div>
-<aside id="ai-assistant-drawer" class="ai-assistant-drawer hidden" aria-label="DCR AI Assistant">
+<div id="ai-drawer-backdrop" class="ai-drawer-backdrop hidden" onclick="closeAiDrawer()" style="display: none;"></div>
+<aside id="ai-assistant-drawer" class="ai-assistant-drawer hidden" aria-label="DCR AI Assistant" style="display: none;">
   <!-- Drawer Header -->
   <div class="ai-drawer-hdr">
     <div class="ai-drawer-hdr-info">
@@ -1357,6 +1357,8 @@ AI_DRAWER_COMPONENT = r"""
   gap: 5px !important;
   font-weight: 600 !important;
   transition: all 0.2s ease !important;
+  cursor: pointer !important;
+  z-index: 101 !important;
 }
 .tb-btn.ai-btn:hover {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.38), rgba(168, 85, 247, 0.38)) !important;
@@ -1366,17 +1368,24 @@ AI_DRAWER_COMPONENT = r"""
 }
 
 /* AI Drawer Backdrop */
-.ai-drawer-backdrop {
+#ai-drawer-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
   z-index: 10055;
   backdrop-filter: blur(2px);
   transition: opacity 0.25s ease;
+  display: none;
+}
+#ai-drawer-backdrop:not(.hidden) {
+  display: block !important;
+}
+#ai-drawer-backdrop.hidden {
+  display: none !important;
 }
 
 /* AI Assistant Drawer Container */
-.ai-assistant-drawer {
+#ai-assistant-drawer {
   position: fixed;
   top: 0;
   right: 0;
@@ -1387,16 +1396,19 @@ AI_DRAWER_COMPONENT = r"""
   background: #ffffff;
   color: #0f172a;
   box-shadow: -10px 0 35px rgba(0, 0, 0, 0.25);
-  display: flex;
+  display: none;
   flex-direction: column;
   transform: translateX(100%);
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.28s;
-  visibility: hidden;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
-.ai-assistant-drawer:not(.hidden) {
+#ai-assistant-drawer:not(.hidden) {
+  display: flex !important;
   transform: translateX(0);
-  visibility: visible;
+}
+#ai-assistant-drawer.hidden {
+  display: none !important;
+  transform: translateX(100%);
 }
 
 /* Dark Theme Overrides for Drawer */
@@ -1959,7 +1971,11 @@ function openAiDrawer() {
   drawer.classList.toggle('dark-theme', isDark);
 
   drawer.classList.remove('hidden');
-  if (backdrop) backdrop.classList.remove('hidden');
+  drawer.style.display = 'flex';
+  if (backdrop) {
+    backdrop.classList.remove('hidden');
+    backdrop.style.display = 'block';
+  }
   _aiAssistantState.isOpen = true;
 
   updateAiScopeBadge();
@@ -1977,8 +1993,14 @@ function openAiDrawer() {
 function closeAiDrawer() {
   const drawer = document.getElementById('ai-assistant-drawer');
   const backdrop = document.getElementById('ai-drawer-backdrop');
-  if (drawer) drawer.classList.add('hidden');
-  if (backdrop) backdrop.classList.add('hidden');
+  if (drawer) {
+    drawer.classList.add('hidden');
+    drawer.style.display = 'none';
+  }
+  if (backdrop) {
+    backdrop.classList.add('hidden');
+    backdrop.style.display = 'none';
+  }
   _aiAssistantState.isOpen = false;
 }
 
