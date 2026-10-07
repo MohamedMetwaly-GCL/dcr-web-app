@@ -235,11 +235,9 @@ def _call_gemini_api(prompt, context_text):
         "gemini-2.5-flash",
         "gemini-2.0-flash",
         "gemini-2.0-flash-exp",
-        "gemini-1.5-flash-latest",
         "gemini-flash-latest",
         "gemini-2.5-pro",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
+        "gemini-2.0-pro-exp-02-05",
     ]
 
     candidates = []
@@ -312,35 +310,6 @@ def _call_gemini_api(prompt, context_text):
     except Exception as e_client:
         last_err = e_client
         logger.warning("google-genai client error: %s", e_client)
-
-    # 3. Fallback to legacy google-generativeai if available
-    try:
-        import google.generativeai as legacy_genai
-
-        legacy_genai.configure(api_key=api_key)
-        for legacy_candidate in [
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro-latest",
-            "gemini-1.5-pro",
-            "gemini-pro",
-        ]:
-            try:
-                model = legacy_genai.GenerativeModel(
-                    model_name=legacy_candidate,
-                    system_instruction=SYSTEM_INSTRUCTION,
-                )
-                response = model.generate_content(full_contents)
-                if response and response.text:
-                    return response.text, None
-            except Exception as e_leg:
-                last_err = e_leg
-                continue
-    except ImportError:
-        pass
-    except Exception as e_legacy:
-        logger.warning("google-generativeai fallback failed: %s", e_legacy)
-        last_err = e_legacy
 
     logger.error("All Gemini API attempts failed: %s", last_err)
     return None, str(last_err)
