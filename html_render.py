@@ -74,14 +74,43 @@ GLOBAL_SEARCH_TRIGGER_HTML = """
 
 SPOTLIGHT_MODAL_COMPONENT = r"""
 <!-- SPOTLIGHT / GLOBAL SEARCH COMPONENT -->
-<div class="overlay hidden" id="spotlight-modal" style="z-index: 10050;" onclick="if(event.target===this) closeGlobalSearch()">
-  <div class="spotlight-palette" onclick="event.stopPropagation()">
+<div class="overlay hidden" id="spotlight-modal" style="z-index: 10050;">
+  <div class="spotlight-palette">
     <!-- Header with Search Input -->
     <div class="spotlight-header">
       <span class="spotlight-search-icon">🔍</span>
       <input type="text" id="spotlight-input" class="spotlight-input" placeholder="Search across all accessible projects (min. 2 chars)..." autocomplete="off" spellcheck="false">
       <div id="spotlight-spinner" class="spotlight-spinner hidden"></div>
       <button class="spotlight-close-btn" onclick="closeGlobalSearch()" title="Close (Esc)">✕</button>
+    </div>
+
+    <!-- Advanced Filter Bar (Project, Status, Date Range, Reset) -->
+    <div class="spotlight-filter-bar" id="spotlight-filter-bar">
+      <div class="spotlight-filter-group">
+        <label for="spotlight-project-filter" class="spotlight-filter-label">Project</label>
+        <select id="spotlight-project-filter" class="spotlight-select">
+          <option value="ALL">All Projects</option>
+        </select>
+      </div>
+      <div class="spotlight-filter-group">
+        <label for="spotlight-status-filter" class="spotlight-filter-label">Status</label>
+        <select id="spotlight-status-filter" class="spotlight-select">
+          <option value="ALL">All Statuses</option>
+          <option value="Approved">Approved</option>
+          <option value="Under Review">Under Review</option>
+          <option value="Revise & Resubmit">Revise & Resubmit</option>
+          <option value="Rejected">Rejected</option>
+        </select>
+      </div>
+      <div class="spotlight-filter-group">
+        <label for="spotlight-date-from" class="spotlight-filter-label">From</label>
+        <input type="date" id="spotlight-date-from" class="spotlight-date-input" title="From Date">
+      </div>
+      <div class="spotlight-filter-group">
+        <label for="spotlight-date-to" class="spotlight-filter-label">To</label>
+        <input type="date" id="spotlight-date-to" class="spotlight-date-input" title="To Date">
+      </div>
+      <button type="button" id="spotlight-reset-filters" class="spotlight-reset-btn hidden" onclick="resetSpotlightFilters()" title="Reset all filters">↺ Reset</button>
     </div>
 
     <!-- Meta Subtitle Bar (Context indicator + results count) -->
@@ -254,6 +283,67 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
 .spotlight-close-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #f8fafc;
+}
+
+/* Advanced Filter Bar */
+.spotlight-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #0b1120;
+  border-bottom: 1px solid #1e293b;
+  font-size: 11.5px;
+}
+.spotlight-filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.spotlight-filter-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  user-select: none;
+}
+.spotlight-select, .spotlight-date-input {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 11.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.spotlight-select:focus, .spotlight-date-input:focus {
+  border-color: #06b6d4;
+}
+.spotlight-select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+.spotlight-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
+.spotlight-reset-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: auto;
+}
+.spotlight-reset-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
 }
 
 .spotlight-meta-bar {
@@ -492,9 +582,62 @@ function closeGlobalSearch() {
   if (modal) modal.classList.add('hidden');
 }
 
+function getSpotlightFilterParams() {
+  const pFilter = document.getElementById('spotlight-project-filter')?.value || 'ALL';
+  const sFilter = document.getElementById('spotlight-status-filter')?.value || 'ALL';
+  const dFrom = document.getElementById('spotlight-date-from')?.value || '';
+  const dTo = document.getElementById('spotlight-date-to')?.value || '';
+
+  let params = '';
+  if (pFilter && pFilter !== 'ALL') {
+    params += '&project_id=' + encodeURIComponent(pFilter);
+  }
+  if (sFilter && sFilter !== 'ALL') {
+    params += '&status=' + encodeURIComponent(sFilter);
+  }
+  if (dFrom) {
+    params += '&date_from=' + encodeURIComponent(dFrom);
+  }
+  if (dTo) {
+    params += '&date_to=' + encodeURIComponent(dTo);
+  }
+  return params;
+}
+
+function updateResetButtonVisibility() {
+  const pFilter = document.getElementById('spotlight-project-filter')?.value || 'ALL';
+  const sFilter = document.getElementById('spotlight-status-filter')?.value || 'ALL';
+  const dFrom = document.getElementById('spotlight-date-from')?.value || '';
+  const dTo = document.getElementById('spotlight-date-to')?.value || '';
+  const resetBtn = document.getElementById('spotlight-reset-filters');
+  const hasActive = (pFilter !== 'ALL') || (sFilter !== 'ALL') || Boolean(dFrom) || Boolean(dTo);
+  if (resetBtn) {
+    resetBtn.classList.toggle('hidden', !hasActive);
+  }
+}
+
+function resetSpotlightFilters() {
+  const pSel = document.getElementById('spotlight-project-filter');
+  const sSel = document.getElementById('spotlight-status-filter');
+  const df = document.getElementById('spotlight-date-from');
+  const dt = document.getElementById('spotlight-date-to');
+  if (pSel) pSel.value = 'ALL';
+  if (sSel) sSel.value = 'ALL';
+  if (df) df.value = '';
+  if (dt) dt.value = '';
+  updateResetButtonVisibility();
+  triggerSpotlightSearch();
+}
+
+function triggerSpotlightSearch() {
+  const val = document.getElementById('spotlight-input')?.value || '';
+  handleSpotlightInput(val);
+}
+
 async function updateSpotlightContext() {
   const badgeEl = document.getElementById('spotlight-scope-badge');
   const textEl = document.getElementById('spotlight-scope-text');
+  const projSelect = document.getElementById('spotlight-project-filter');
   if (!badgeEl || !textEl) return;
 
   if (!_spotlightState.cachedWhoami) {
@@ -520,6 +663,23 @@ async function updateSpotlightContext() {
         ? ('Searching in your ' + pCount + ' assigned project' + (pCount === 1 ? '' : 's'))
         : 'No projects assigned (Results restricted)';
     }
+
+    if (projSelect && projSelect.options.length <= 1) {
+      try {
+        const projs = await apiFetch('/api/projects');
+        if (Array.isArray(projs)) {
+          projSelect.innerHTML = '<option value="ALL">All Projects</option>';
+          projs.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.id || p.code;
+            opt.textContent = (p.code ? p.code + ' - ' : '') + (p.name || p.id);
+            projSelect.appendChild(opt);
+          });
+        }
+      } catch(err) {
+        console.warn('Could not populate spotlight projects dropdown:', err);
+      }
+    }
   }
 }
 
@@ -529,6 +689,8 @@ function handleSpotlightInput(val) {
   const spinner = document.getElementById('spotlight-spinner');
   const countEl = document.getElementById('spotlight-count');
   const chipsEl = document.getElementById('spotlight-chips');
+
+  updateResetButtonVisibility();
 
   if (q.length < 2) {
     if (spinner) spinner.classList.add('hidden');
@@ -547,7 +709,8 @@ function handleSpotlightInput(val) {
   _spotlightState.debounceTimer = setTimeout(async () => {
     try {
       _spotlightState.currentQuery = q;
-      const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&limit=300');
+      const filterParams = getSpotlightFilterParams();
+      const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&limit=300' + filterParams);
       if (spinner) spinner.classList.add('hidden');
       if (!data) return;
 
@@ -637,7 +800,8 @@ async function filterSpotlightByChip(dt) {
     const spinner = document.getElementById('spotlight-spinner');
     if (spinner) spinner.classList.remove('hidden');
     try {
-      const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&dt_id=' + encodeURIComponent(dt) + '&limit=300');
+      const filterParams = getSpotlightFilterParams();
+      const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&dt_id=' + encodeURIComponent(dt) + '&limit=300' + filterParams);
       if (data && Array.isArray(data.results)) {
         _spotlightState.filteredResults = data.results;
 
@@ -789,32 +953,21 @@ function scrollHighlightedIntoView() {
   }
 }
 
-function navigateToSpotlightRecord(rec) {
-  if (!rec) return;
-  closeGlobalSearch();
-  const targetPid = rec.project_id || rec.project_code;
-  const targetDt = rec.dt_id;
-  const recId = rec.id;
-
-  if (typeof PID !== 'undefined' && (PID === targetPid || PID === rec.project_code)) {
-    if (typeof state !== 'undefined' && state.tab === targetDt) {
-      if (typeof setSelectedRegisterRow === 'function') {
-        setSelectedRegisterRow(recId);
-        const tr = document.querySelector(`#regtbl tbody tr[data-rec-id="${CSS.escape(String(recId))}"]`);
-        if (tr) {
-          tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          tr.style.transition = 'background 0.5s ease';
-          tr.style.background = 'rgba(6, 182, 212, 0.25)';
-          setTimeout(() => { tr.style.background = ''; }, 2500);
-        }
-      }
-    } else if (typeof switchTab === 'function') {
-      if (typeof state !== 'undefined') state.pendingHighlightId = recId;
-      switchTab(targetDt);
-    }
+function navigateToSpotlightRecord(recOrPid, maybeTab, maybeRecId) {
+  let targetPid = '', targetDt = '', recId = '';
+  if (typeof recOrPid === 'object' && recOrPid !== null) {
+    targetPid = recOrPid.project_id || recOrPid.project_code || '';
+    targetDt = recOrPid.dt_id || '';
+    recId = recOrPid.id || '';
   } else {
-    window.location.href = `/app?p=${encodeURIComponent(targetPid)}&tab=${encodeURIComponent(targetDt)}&highlight=${encodeURIComponent(recId)}`;
+    targetPid = recOrPid || '';
+    targetDt = maybeTab || '';
+    recId = maybeRecId || '';
   }
+  if (!targetPid && !targetDt && !recId) return;
+
+  const targetUrl = '/app?p=' + encodeURIComponent(targetPid) + '&tab=' + encodeURIComponent(targetDt) + '&highlight=' + encodeURIComponent(recId);
+  window.open(targetUrl, '_blank');
 }
 
 // Global Keyboard Handler for Spotlight
@@ -871,6 +1024,16 @@ function _initSpotlightListeners() {
     inp._spotlightBound = true;
     inp.addEventListener('input', e => handleSpotlightInput(e.target.value));
   }
+  ['spotlight-project-filter', 'spotlight-status-filter', 'spotlight-date-from', 'spotlight-date-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el._spotlightBound) {
+      el._spotlightBound = true;
+      el.addEventListener('change', () => {
+        updateResetButtonVisibility();
+        triggerSpotlightSearch();
+      });
+    }
+  });
 }
 
 // Expose globally on window
@@ -878,6 +1041,8 @@ window.openGlobalSearch = openGlobalSearch;
 window.closeGlobalSearch = closeGlobalSearch;
 window.navigateToSpotlightRecord = navigateToSpotlightRecord;
 window.filterSpotlightByChip = filterSpotlightByChip;
+window.resetSpotlightFilters = resetSpotlightFilters;
+window.triggerSpotlightSearch = triggerSpotlightSearch;
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _initSpotlightListeners);

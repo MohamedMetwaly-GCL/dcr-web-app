@@ -77,6 +77,10 @@ def api_search_global():
 
     q_str = str(request.args.get("q", "")).strip()
     dt_id = str(request.args.get("dt_id", "")).strip()
+    project_filter = str(request.args.get("project_id", "")).strip()
+    status_filter = str(request.args.get("status", "")).strip()
+    date_from = str(request.args.get("date_from", "")).strip()
+    date_to = str(request.args.get("date_to", "")).strip()
     try:
         limit = min(int(request.args.get("limit", 300)), 500)
         limit = max(1, limit)
@@ -131,6 +135,39 @@ def api_search_global():
     if dt_id and dt_id.upper() != "ALL":
         where_clauses.append("UPPER(r.dt_id) = UPPER(%s)")
         params.append(dt_id)
+
+    if project_filter and project_filter.upper() != "ALL":
+        where_clauses.append("(p.id = %s OR p.code = %s)")
+        params.extend([project_filter, project_filter])
+
+    if status_filter and status_filter.upper() != "ALL":
+        if "REVISE" in status_filter.upper():
+            st_pattern = "%Revise%"
+        elif "UNDER REVIEW" in status_filter.upper():
+            st_pattern = "%Review%"
+        elif "REJECT" in status_filter.upper():
+            st_pattern = "%Reject%"
+        elif "APPROV" in status_filter.upper():
+            st_pattern = "%Approv%"
+        else:
+            st_pattern = f"%{status_filter}%"
+        where_clauses.append("(COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE %s)")
+        params.append(st_pattern)
+
+    safe_issued_date = r"""(CASE 
+        WHEN (r.data->>'issuedDate') ~ '^\d{4}-\d{2}-\d{2}' THEN SUBSTRING(r.data->>'issuedDate', 1, 10)::date
+        WHEN (r.data->>'partAIssueDate') ~ '^\d{4}-\d{2}-\d{2}' THEN SUBSTRING(r.data->>'partAIssueDate', 1, 10)::date
+        ELSE NULL 
+    END)"""
+
+    import re
+    if date_from and re.match(r"^\d{4}-\d{2}-\d{2}$", date_from):
+        where_clauses.append(f"(r.created_at::date >= %s::date OR {safe_issued_date} >= %s::date)")
+        params.extend([date_from, date_from])
+
+    if date_to and re.match(r"^\d{4}-\d{2}-\d{2}$", date_to):
+        where_clauses.append(f"(r.created_at::date <= %s::date OR {safe_issued_date} <= %s::date)")
+        params.extend([date_to, date_to])
 
     where_sql = " AND ".join(where_clauses)
     sql = f"""

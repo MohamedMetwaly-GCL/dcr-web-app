@@ -207,7 +207,35 @@ class TestGlobalSearch(unittest.TestCase):
         print("PASS: Default limit is 300 and capped at 500.")
 
     # -------------------------------------------------------------------------
-    # 7. Frontend Integration in html_render.py
+    # 8. Advanced Filters: Project, Status, Date Range
+    # -------------------------------------------------------------------------
+    @patch("blueprints.records.current_user")
+    @patch("blueprints.records.db.get_projects")
+    @patch("blueprints.records.db.q")
+    def test_advanced_filters_sql(self, mock_db_q, mock_get_projs, mock_user):
+        mock_user.return_value = {"username": "admin", "role": "admin"}
+        mock_get_projs.return_value = [{"id": "P1", "code": "PEM-058"}]
+        mock_db_q.return_value = []
+
+        resp = self.client.get("/api/records/search/global?q=valves&project_id=PEM-058&status=Approved&date_from=2024-01-01&date_to=2024-12-31")
+        self.assertEqual(resp.status_code, 200)
+
+        sql_call_args = mock_db_q.call_args[0]
+        sql_query = sql_call_args[0]
+        sql_params = sql_call_args[1]
+
+        self.assertIn("(p.id = %s OR p.code = %s)", sql_query)
+        self.assertIn("PEM-058", sql_params)
+        self.assertIn("COALESCE(r.data->>'status'", sql_query)
+        self.assertIn("%Approv%", sql_params)
+        self.assertIn("r.created_at::date >= %s::date", sql_query)
+        self.assertIn("r.created_at::date <= %s::date", sql_query)
+        self.assertIn("2024-01-01", sql_params)
+        self.assertIn("2024-12-31", sql_params)
+        print("PASS: Advanced filters (project_id, status, date_from, date_to) correctly applied in SQL.")
+
+    # -------------------------------------------------------------------------
+    # 9. Frontend Integration in html_render.py
     # -------------------------------------------------------------------------
     @patch("html_render.can_edit")
     @patch("html_render.db.get_doc_types")
@@ -225,6 +253,13 @@ class TestGlobalSearch(unittest.TestCase):
             self.assertIn("id=\"spotlight-modal\"", dash_html, "Dashboard must render spotlight-modal overlay")
             self.assertIn("id=\"spotlight-input\"", dash_html, "Dashboard must contain spotlight-input")
             self.assertIn("Ctrl+K", dash_html, "Dashboard must mention Ctrl+K shortcut")
+            self.assertIn("spotlight-project-filter", dash_html, "Dashboard must render project filter select")
+            self.assertIn("spotlight-status-filter", dash_html, "Dashboard must render status filter select")
+            self.assertIn("spotlight-date-from", dash_html, "Dashboard must render date from input")
+            self.assertIn("spotlight-date-to", dash_html, "Dashboard must render date to input")
+            self.assertIn("spotlight-reset-filters", dash_html, "Dashboard must render reset filters button")
+            self.assertNotIn("if(event.target===this) closeGlobalSearch()", dash_html, "Backdrop click must not close modal")
+            self.assertIn("window.open(targetUrl, '_blank')", dash_html, "Record click must open in new tab without closing search")
 
             # 2. Register rendering
             proj = {"id": "PEM-058", "name": "CFC DCP PH-2A", "code": "PEM-058"}
@@ -232,7 +267,8 @@ class TestGlobalSearch(unittest.TestCase):
             self.assertIn("global-search-trigger", reg_html, "Register topbar must contain global search trigger")
             self.assertIn("id=\"spotlight-modal\"", reg_html, "Register must render spotlight-modal overlay")
             self.assertIn("pendingHighlightId", reg_html, "Register must include highlight handling logic")
-            print("PASS: Frontend markup and scripts verified in both Dashboard and Register views.")
+            self.assertIn("spotlight-project-filter", reg_html, "Register must render project filter select")
+            print("PASS: Frontend markup, filters, and script behaviors verified in both Dashboard and Register views.")
 
 if __name__ == "__main__":
     unittest.main()
