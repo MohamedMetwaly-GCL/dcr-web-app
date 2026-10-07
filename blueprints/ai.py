@@ -36,80 +36,88 @@ SYSTEM_INSTRUCTION = (
 
 
 KEYWORD_MAP = {
-    "محابس": ["valve", "valves", "valv", "butterfly", "check valve", "fittings"],
-    "محبس": ["valve", "valves", "valv"],
+    "محابس": ["valve", "valves", "valv", "butterfly", "check valve", "fittings", "محابس", "محبس"],
+    "محبس": ["valve", "valves", "valv", "butterfly", "check valve", "محابس", "محبس"],
+    "صمام": ["valve", "valves", "valv", "butterfly", "check valve", "صمام", "صمامات"],
+    "صمامات": ["valve", "valves", "valv", "butterfly", "check valve", "صمام", "صمامات"],
     "فالف": ["valve", "valves", "valv"],
     "فالفات": ["valve", "valves", "valv"],
-    "طلمبات": ["pump", "pumps"],
-    "طلمبة": ["pump", "pumps"],
-    "مضخات": ["pump", "pumps"],
-    "مضخة": ["pump", "pumps"],
+    "طلمبات": ["pump", "pumps", "طلمبات", "طلمبة"],
+    "طلمبة": ["pump", "pumps", "طلمبات", "طلمبة"],
+    "مضخات": ["pump", "pumps", "مضخات", "مضخة"],
+    "مضخة": ["pump", "pumps", "مضخات", "مضخة"],
     "بمب": ["pump", "pumps"],
-    "مواسير": ["pipe", "pipes", "piping"],
-    "ماسورة": ["pipe", "pipes", "piping"],
-    "أنابيب": ["pipe", "pipes", "piping"],
-    "انابيب": ["pipe", "pipes", "piping"],
-    "عزل": ["insulation", "insulated"],
-    "عوازل": ["insulation", "insulated"],
-    "مخططات": ["drawing", "drawings", "dwg"],
-    "مخطط": ["drawing", "drawings", "dwg"],
-    "رسومات": ["drawing", "drawings", "dwg"],
-    "رسم": ["drawing", "drawings", "dwg"],
-    "شوب درونج": ["shop drawing", "drawing", "dwg"],
-    "شوب دروينج": ["shop drawing", "drawing", "dwg"],
-    "شوبدروينج": ["shop drawing", "drawing", "dwg"],
-    "تكييف": ["chiller", "cooling", "hvac"],
-    "تكييفات": ["chiller", "cooling", "hvac"],
-    "مبردات": ["chiller", "chillers", "cooling"],
-    "مبرد": ["chiller", "cooling"],
-    "تشيلر": ["chiller", "chillers"],
-    "تشيلرات": ["chiller", "chillers"],
-    "فلاتر": ["filter", "filters"],
-    "فلتر": ["filter", "filters"],
-    "تهوية": ["fan", "fans", "ventilation"],
-    "مراوح": ["fan", "fans", "ventilation"],
-    "مروحة": ["fan", "fans", "ventilation"],
-    "لوحات": ["panel", "panels"],
-    "لوحة": ["panel", "panels"],
-    "كابلات": ["cable", "cables"],
-    "كيبلات": ["cable", "cables"],
-    "كابل": ["cable", "cables"],
-    "محولات": ["transformer", "transformers"],
-    "محول": ["transformer", "transformers"],
-    "مولدات": ["generator", "generators"],
-    "مولد": ["generator", "generators"],
-    "إنذار": ["alarm", "alarms"],
-    "انذار": ["alarm", "alarms"],
-    "حريق": ["fire"],
-    "إطفاء": ["fire", "fighting"],
-    "اطفاء": ["fire", "fighting"],
-    "دكت": ["duct", "ducts"],
-    "صاج": ["duct", "ducts"],
+    "مواسير": ["pipe", "pipes", "piping", "مواسير", "ماسورة"],
+    "ماسورة": ["pipe", "pipes", "piping", "مواسير", "ماسورة"],
+    "أنابيب": ["pipe", "pipes", "piping", "أنابيب", "انابيب"],
+    "انابيب": ["pipe", "pipes", "piping", "أنابيب", "انابيب"],
+    "عزل": ["insulation", "insulated", "عزل", "عوازل"],
+    "عوازل": ["insulation", "insulated", "عزل", "عوازل"],
+    "مخططات": ["drawing", "drawings", "dwg", "مخططات", "مخطط"],
+    "مخطط": ["drawing", "drawings", "dwg", "مخططات", "مخطط"],
+    "رسومات": ["drawing", "drawings", "dwg", "رسومات", "رسم"],
+    "رسم": ["drawing", "drawings", "dwg", "رسومات", "رسم"],
+    "شوب درونج": ["shop drawing", "drawing", "dwg", "شوب درونج"],
+    "شوب دروينج": ["shop drawing", "drawing", "dwg", "شوب دروينج"],
+    "شوبدروينج": ["shop drawing", "drawing", "dwg", "شوبدروينج"],
+    "تكييف": ["chiller", "cooling", "hvac", "تكييف"],
+    "تكييفات": ["chiller", "cooling", "hvac", "تكييفات"],
+    "مبردات": ["chiller", "chillers", "cooling", "مبردات", "مبرد"],
+    "مبرد": ["chiller", "cooling", "مبردات", "مبرد"],
+    "تشيلر": ["chiller", "chillers", "تشيلر"],
+    "تشيلرات": ["chiller", "chillers", "تشيلرات"],
+    "فلاتر": ["filter", "filters", "فلاتر", "فلتر"],
+    "فلتر": ["filter", "filters", "فلاتر", "فلتر"],
+    "تهوية": ["fan", "fans", "ventilation", "تهوية"],
+    "مراوح": ["fan", "fans", "ventilation", "مراوح", "مروحة"],
+    "مروحة": ["fan", "fans", "ventilation", "مراوح", "مروحة"],
+    "لوحات": ["panel", "panels", "لوحات", "لوحة"],
+    "لوحة": ["panel", "panels", "لوحات", "لوحة"],
+    "كابلات": ["cable", "cables", "كابلات", "كابل"],
+    "كيبلات": ["cable", "cables", "كيبلات", "كيبل"],
+    "كابل": ["cable", "cables", "كابلات", "كابل"],
+    "محولات": ["transformer", "transformers", "محولات", "محول"],
+    "محول": ["transformer", "transformers", "محولات", "محول"],
+    "مولدات": ["generator", "generators", "مولدات", "مولد"],
+    "مولد": ["generator", "generators", "مولدات", "مولد"],
+    "إنذار": ["alarm", "alarms", "إنذار", "انذار"],
+    "انذار": ["alarm", "alarms", "إنذار", "انذار"],
+    "حريق": ["fire", "حريق"],
+    "إطفاء": ["fire", "fighting", "إطفاء", "اطفاء"],
+    "اطفاء": ["fire", "fighting", "إطفاء", "اطفاء"],
+    "دكت": ["duct", "ducts", "دكت"],
+    "صاج": ["duct", "ducts", "صاج"],
 }
 
 ENGLISH_KEYWORD_MAP = {
-    "valve": ["valve", "valves", "valv", "butterfly", "check valve", "fittings"],
-    "valves": ["valve", "valves", "valv", "butterfly", "check valve", "fittings"],
-    "pump": ["pump", "pumps"],
-    "pumps": ["pump", "pumps"],
-    "pipe": ["pipe", "pipes", "piping"],
-    "pipes": ["pipe", "pipes", "piping"],
-    "piping": ["pipe", "pipes", "piping"],
-    "chiller": ["chiller", "chillers", "cooling", "hvac"],
-    "chillers": ["chiller", "chillers", "cooling", "hvac"],
-    "filter": ["filter", "filters"],
-    "filters": ["filter", "filters"],
-    "fan": ["fan", "fans", "ventilation"],
-    "fans": ["fan", "fans", "ventilation"],
-    "duct": ["duct", "ducts"],
-    "ducts": ["duct", "ducts"],
-    "panel": ["panel", "panels"],
-    "panels": ["panel", "panels"],
-    "cable": ["cable", "cables"],
-    "cables": ["cable", "cables"],
-    "insulation": ["insulation", "insulated"],
-    "drawing": ["drawing", "drawings", "dwg"],
-    "drawings": ["drawing", "drawings", "dwg"],
+    "valve": ["valve", "valves", "valv", "butterfly", "check valve", "fittings", "محابس", "محبس"],
+    "valves": ["valve", "valves", "valv", "butterfly", "check valve", "fittings", "محابس", "محبس"],
+    "fittings": ["fitting", "fittings", "valves", "valve"],
+    "pump": ["pump", "pumps", "طلمبات", "مضخات"],
+    "pumps": ["pump", "pumps", "طلمبات", "مضخات"],
+    "pipe": ["pipe", "pipes", "piping", "مواسير"],
+    "pipes": ["pipe", "pipes", "piping", "مواسير"],
+    "piping": ["pipe", "pipes", "piping", "مواسير"],
+    "chiller": ["chiller", "chillers", "cooling", "hvac", "تكييف", "مبرد"],
+    "chillers": ["chiller", "chillers", "cooling", "hvac", "تكييف", "مبردات"],
+    "filter": ["filter", "filters", "فلتر", "فلاتر"],
+    "filters": ["filter", "filters", "فلتر", "فلاتر"],
+    "fan": ["fan", "fans", "ventilation", "مراوح"],
+    "fans": ["fan", "fans", "ventilation", "مراوح"],
+    "duct": ["duct", "ducts", "دكت"],
+    "ducts": ["duct", "ducts", "دكت"],
+    "cable": ["cable", "cables", "كابلات"],
+    "cables": ["cable", "cables", "كابلات"],
+    "panel": ["panel", "panels", "لوحات"],
+    "panels": ["panel", "panels", "لوحات"],
+    "transformer": ["transformer", "transformers", "محولات"],
+    "transformers": ["transformer", "transformers", "محولات"],
+    "generator": ["generator", "generators", "مولدات"],
+    "generators": ["generator", "generators", "مولدات"],
+    "insulation": ["insulation", "insulated", "عزل"],
+    "fire": ["fire", "fighting", "حريق", "إطفاء"],
+    "drawing": ["drawing", "drawings", "dwg", "مخططات", "شوب درونج"],
+    "drawings": ["drawing", "drawings", "dwg", "مخططات", "شوب درونج"],
 }
 
 KNOWN_DOC_TYPES = ["MS", "SD", "MIR", "RFI", "IR", "NOC", "PR", "NCR", "ITP", "PQ", "WIR", "MAR", "MOM"]
@@ -140,7 +148,16 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         logger.warning("Error fetching projects for AI context: %s", e)
         projs = []
 
-    proj_map = {p["id"]: p for p in projs}
+    proj_map = {}
+    for p in projs:
+        proj_map[p["id"]] = p
+        if p.get("code"):
+            proj_map[p["code"]] = p
+            proj_map[p["code"].upper()] = p
+        if p.get("name"):
+            proj_map[p["name"]] = p
+            proj_map[p["name"].upper()] = p
+
     context_lines.append("### 1. ACTIVE PROJECT(S) SCOPE:")
     for p in projs:
         context_lines.append(f"- Project Code: {p['code']} | Name: {p['name']} (ID: {p['id']})")
@@ -181,6 +198,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         detected_doc_types.append(active_tab.upper())
 
     # Bilingual Keyword Extraction (Arabic to English mapping + raw keywords)
+    p_normalized = re.sub(r"[\u0600-\u06FFـ]+[_\-\s]*", " ", p_lower)
     search_terms = []
     for ar_kw, en_terms in KEYWORD_MAP.items():
         if ar_kw in p_lower:
@@ -190,7 +208,11 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     search_terms.append(term)
 
     for en_word, en_terms in ENGLISH_KEYWORD_MAP.items():
-        if re.search(r"\b" + re.escape(en_word) + r"\b", p_lower):
+        if (
+            re.search(r"\b" + re.escape(en_word) + r"\b", p_lower)
+            or re.search(r"\b" + re.escape(en_word) + r"\b", p_normalized)
+            or en_word in p_normalized.split()
+        ):
             for term in en_terms:
                 if term not in search_terms:
                     search_terms.append(term)
@@ -203,7 +225,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         "help", "query", "record", "records", "material", "materials", "method", "statement",
         "cost", "costs", "price", "change", "financial", "total", "summary", "kpi"
     }
-    raw_tokens = re.findall(r"[A-Za-z0-9_-]{3,}", user_prompt)
+    raw_tokens = re.findall(r"[A-Za-z0-9_-]{3,}", p_normalized)
     for tok in raw_tokens:
         tok_low = tok.lower()
         if (
@@ -421,19 +443,35 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     break
 
     if search_terms or detected_doc_types:
-        where_clauses = ["r.project_id = ANY(%s)"]
-        params = [scoped_search_pids]
+        expanded_search_pids = set()
+        for pid in scoped_search_pids:
+            expanded_search_pids.add(str(pid))
+            p = proj_map.get(pid)
+            if p:
+                if p.get("id"):
+                    expanded_search_pids.add(str(p["id"]))
+                if p.get("code"):
+                    expanded_search_pids.add(str(p["code"]))
+                if p.get("name"):
+                    expanded_search_pids.add(str(p["name"]))
+        expanded_pids_list = list(expanded_search_pids)
+        expanded_pids_upper = [x.upper() for x in expanded_pids_list]
+
+        where_clauses = ["(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))"]
+        params = [expanded_pids_list, expanded_pids_upper]
 
         # Enforce doc type filter if detected
         if detected_doc_types:
-            where_clauses.append("UPPER(r.dt_id) = ANY(%s)")
-            params.append([dt.upper() for dt in detected_doc_types])
+            dt_upper = [dt.upper() for dt in detected_doc_types]
+            dt_prefixes = [f"{dt}-%" for dt in detected_doc_types] + [f"{dt}/%" for dt in detected_doc_types]
+            where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR UPPER(COALESCE(d.code, '')) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s))")
+            params.extend([dt_upper, dt_upper, dt_prefixes])
 
         # Enforce equipment/keyword matching with ANY(keywords_array)
         if search_terms:
             kw_patterns = [f"%{term}%" for term in search_terms[:12]]
-            where_clauses.append("(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s))")
-            params.extend([kw_patterns, kw_patterns])
+            where_clauses.append("(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s) OR r.data::text ILIKE ANY(%s))")
+            params.extend([kw_patterns] * 7)
 
         order_clauses = []
         if is_approved_query:
@@ -461,13 +499,14 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             SELECT 
                 r.id,
                 r.project_id,
-                COALESCE(r.dt_id, '') AS doc_type,
+                COALESCE(d.code, r.dt_id, '') AS doc_type,
                 COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
                 COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
                 COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
                 COALESCE(r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS issued_date,
                 COALESCE(r.data->>'actualReplyDate', r.data->>'actualReply', r.data->>'partDReturnDate', '') AS actual_reply
             FROM records r
+            LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id) AND d.project_id = r.project_id
             WHERE {where_sql}
             ORDER BY {order_sql}
             LIMIT 10;
@@ -478,6 +517,34 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         except Exception as e_search:
             logger.warning("Error searching records in AI context: %s", e_search)
             matched_records = []
+
+        # If strict search with doc type returned 0 records, try relaxed search by keywords without doc type constraint
+        if not matched_records and detected_doc_types and search_terms:
+            relaxed_where_clauses = [
+                "(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))",
+                "(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s) OR r.data::text ILIKE ANY(%s))"
+            ]
+            relaxed_params = [expanded_pids_list, expanded_pids_upper] + [kw_patterns] * 7
+            relaxed_sql = f"""
+                SELECT 
+                    r.id,
+                    r.project_id,
+                    COALESCE(d.code, r.dt_id, '') AS doc_type,
+                    COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
+                    COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
+                    COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
+                    COALESCE(r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS issued_date,
+                    COALESCE(r.data->>'actualReplyDate', r.data->>'actualReply', r.data->>'partDReturnDate', '') AS actual_reply
+                FROM records r
+                LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id) AND d.project_id = r.project_id
+                WHERE {" AND ".join(relaxed_where_clauses)}
+                ORDER BY {order_sql}
+                LIMIT 10;
+            """
+            try:
+                matched_records = db.q(relaxed_sql, relaxed_params)
+            except Exception as e_rel:
+                logger.warning("Error running relaxed record search in AI context: %s", e_rel)
 
         if matched_records:
             context_lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
@@ -537,7 +604,7 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None, history=None
     models_to_try = []
     if _working_gemini_model:
         models_to_try.append(_working_gemini_model)
-    for m in ["gemini-2.5-flash", "gemini-2.5-pro"]:
+    for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-pro"]:
         if m not in models_to_try:
             models_to_try.append(m)
 
