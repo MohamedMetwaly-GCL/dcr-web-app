@@ -278,6 +278,50 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIsNone(err)
         print("PASS: _call_gemini_api with custom_instruction parameter verified.")
 
+    def test_12_format_fallback_response_direct_records(self):
+        """Verify _format_fallback_response_from_context builds markdown table from context."""
+        from blueprints.ai import _format_fallback_response_from_context
+        sample_context = (
+            "### 1. PROJECTS ACCESSIBLE & IDENTIFIED:\n"
+            "- Code: PEM-058 | Name: CFC Ph2 | ID: p1\n\n"
+            "### 5. MATCHING SUBMITTALS IN REGISTER:\n"
+            "Found 2 matching submittals based on query keywords and filters:\n"
+            "- DocNo: MS-058-012 | Title: Butterfly Valves | DocType: MS | Status: Approved | Date: 2026-04-12 | Project: PEM-058\n"
+            "- DocNo: MS-058-014 | Title: Check Valves | DocType: MS | Status: Approved with Comments | Date: 2026-05-02 | Project: PEM-058\n"
+        )
+        res = _format_fallback_response_from_context("CFC محابس ايه في MS شوفلي معتمد", sample_context)
+        self.assertIsNotNone(res)
+        self.assertIn("MS-058-012", res)
+        self.assertIn("Butterfly Valves", res)
+        self.assertIn("✅ **Approved**", res)
+        self.assertIn("🟡 **Approved with Comments**", res)
+        self.assertIn("503 High Demand", res)
+        print("PASS: Direct context formatting produces structured Markdown table on 503.")
+
+    def test_13_gemini_503_fallback_to_direct_context_endpoint(self):
+        """When Gemini throws 503 UNAVAILABLE, query endpoint falls back to direct DB formatting."""
+        user = {"username": "admin_user", "role": "admin"}
+        sample_context = (
+            "### 5. MATCHING SUBMITTALS IN REGISTER:\n"
+            "- DocNo: MS-058-012 | Title: Butterfly Valves | DocType: MS | Status: Approved | Date: 2026-04-12 | Project: PEM-058\n"
+        )
+        with patch("app.current_user", return_value=user), \
+             patch("blueprints.ai.current_user", return_value=user), \
+             patch("blueprints.ai.can_view_project", return_value=True), \
+             patch("blueprints.ai._build_ai_context", return_value=sample_context), \
+             patch("blueprints.ai._call_gemini_api", return_value=(None, "Gemini API Error: 503 UNAVAILABLE")), \
+             patch.dict(os.environ, {"GEMINI_API_KEY": "AIzaSyTestFakeKey"}):
+            res = self.client.post("/api/ai/query", json={
+                "prompt": "CFC محابس ايه في MS شوفلي معتمد",
+                "project_id": "p1"
+            })
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertIn("reply", data)
+            self.assertIn("MS-058-012", data["reply"])
+            self.assertIn("Butterfly Valves", data["reply"])
+        print("PASS: Endpoint gracefully recovers from Gemini 503 using direct DB context fallback.")
+
 
 if __name__ == "__main__":
     unittest.main()

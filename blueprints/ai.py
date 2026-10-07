@@ -7,6 +7,7 @@ they have explicit permission to view.
 import logging
 import os
 import re
+import time
 from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request
 from google import genai
@@ -388,7 +389,7 @@ _working_gemini_model = None
 
 
 def _call_gemini_api(prompt, context_text, custom_instruction=None):
-    """Calls Gemini Flash API with standard client and fast execution."""
+    """Calls Gemini Flash API with standard client, active models cascade, and 503 retry."""
     global _working_gemini_model
 
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -408,7 +409,15 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None):
     models_to_try = []
     if _working_gemini_model:
         models_to_try.append(_working_gemini_model)
-    for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-3.8-flash"]:
+    for m in [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-3.8-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-2.5-flash-lite",
+        "gemini-3.1-pro",
+    ]:
         if m not in models_to_try:
             models_to_try.append(m)
 
@@ -422,29 +431,141 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None):
         client = genai.Client(api_key=api_key)
         for model_name in models_to_try:
             clean_model = model_name.replace("models/", "").strip()
-            try:
-                resp = client.models.generate_content(
-                    model=clean_model,
-                    contents=full_contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_inst,
-                        temperature=0.2,
-                        max_output_tokens=1000,
-                    ),
-                )
-                if resp and resp.text:
-                    _working_gemini_model = clean_model
-                    return resp.text, None
-            except Exception as e_model:
-                last_err = e_model
-                logger.warning("Gemini model %s failed: %s", clean_model, e_model)
-                continue
+            # Try up to 2 attempts for transient 503 / high demand errors
+            for attempt in range(2):
+                try:
+                    resp = client.models.generate_content(
+                        model=clean_model,
+                        contents=full_contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_inst,
+                            temperature=0.2,
+                            max_output_tokens=1000,
+                        ),
+                    )
+                    if resp and resp.text:
+                        _working_gemini_model = clean_model
+                        return resp.text, None
+                except Exception as e_model:
+                    last_err = e_model
+                    if _working_gemini_model == clean_model:
+                        _working_gemini_model = None
+
+                    err_str = str(e_model).lower()
+                    is_transient = any(
+                        t in err_str
+                        for t in ["503", "unavailable", "high demand", "resourceexhausted", "429"]
+                    )
+                    if is_transient and attempt == 0:
+                        logger.warning(
+                            "Gemini model %s transient error (%s). Retrying in 1.2s...",
+                            clean_model,
+                            e_model,
+                        )
+                        time.sleep(1.2)
+                        continue
+                    else:
+                        logger.warning("Gemini model %s failed: %s", clean_model, e_model)
+                        break
     except Exception as e_client:
         last_err = e_client
         logger.error("Gemini client initialization error: %s", e_client)
 
     logger.error("[AI Assistant Error] Failed to generate: %s", last_err)
     return None, f"Gemini API Error: {str(last_err)}"
+
+
+def _format_fallback_response_from_context(prompt, context_text):
+    """Generates a structured, factual response directly from the extracted SQL context
+
+    when Gemini API encounters high demand (503) or is temporarily unavailable.
+    """
+    if not context_text or not context_text.strip():
+        return None
+
+    # 1. Matching submittals section
+    if "### 5. MATCHING SUBMITTALS IN REGISTER:" in context_text:
+        recs = []
+        for line in context_text.splitlines():
+            line_str = line.strip()
+            if line_str.startswith("- DocNo:"):
+                parts = {}
+                for segment in line_str[2:].split(" | "):
+                    if ":" in segment:
+                        k, v = segment.split(":", 1)
+                        parts[k.strip()] = v.strip()
+                if parts:
+                    recs.append(parts)
+
+        if recs:
+            rows = []
+            for r in recs:
+                st = r.get("Status", "—")
+                st_low = st.lower()
+                st_badge = st
+                if any(x in st_low for x in ["comment", "status b", "code b", "معتمد بملاحظات"]):
+                    st_badge = f"🟡 **{st}**"
+                elif any(x in st_low for x in ["reject", "revise", "code c", "status c", "مرفوض"]):
+                    st_badge = f"❌ **{st}**"
+                elif any(x in st_low for x in ["approv", "status a", "code a", "معتمد"]):
+                    st_badge = f"✅ **{st}**"
+
+                rows.append(
+                    f"| **{r.get('DocNo', '—')}** | {r.get('Title', '—')} | {r.get('DocType', '—')} | {st_badge} | {r.get('Date', '—')} | {r.get('Project', '—')} |"
+                )
+
+            table_md = "\n".join(rows)
+            return (
+                "> 💡 **ملاحظة تشغيلية:** نظراً لضغط مؤقت على خوادم المعالجة التوليدية من Google (503 High Demand)، "
+                "تم استخراج واعتماد النتائج التالية **مباشرة وفورياً من سجلات المشروع**:\n\n"
+                f"### 📋 السجلات المطابقة لبحثك ({len(recs)} وثيقة):\n\n"
+                "| رقم الوثيقة (Doc No) | الوصف / العنوان | النوع | الحالة (Status) | التاريخ | المشروع |\n"
+                "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+                f"{table_md}\n\n"
+                "📌 *البيانات أعلاه مستخرجة ومطابقة 100% لسجلات النظام الرسمية.*"
+            )
+        elif "No matching submittals found" in context_text:
+            return (
+                "> 💡 **ملاحظة تشغيلية:** تم البحث مباشرة في سجلات النظام في قاعدة البيانات:\n\n"
+                "⚠️ لم يتم العثور على وثائق مطابقة لكلمات البحث المحددة في نطاق المشروع. "
+                "يرجى مراجعة الكلمات الدلالية أو استعراض جدول السجل المباشر."
+            )
+
+    # 2. NOC summary section
+    p_low = prompt.lower()
+    if "### 3. NOTICE OF CHANGE" in context_text and any(x in p_low for x in ["noc", "تغيير", "أوامر"]):
+        lines = []
+        for line in context_text.splitlines():
+            if line.startswith("- Total") or line.startswith("  * "):
+                lines.append(line)
+        if lines:
+            return (
+                "> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) مباشرة من سجلات المشروع:\n\n"
+                "### 💰 ملخص أوامر التغيير (Notice of Change):\n\n"
+                + "\n".join(lines)
+            )
+
+    # 3. Overdue submittals section
+    if "### 4. OVERDUE SUBMITTALS" in context_text and any(x in p_low for x in ["overdue", "متأخر", "delay"]):
+        lines = [l for l in context_text.splitlines() if l.startswith("  * ") or l.startswith("- Total Overdue")]
+        if lines:
+            return (
+                "> 💡 **ملاحظة تشغيلية:** تم استخراج الوثائق المتأخرة مباشرة من سجلات النظام:\n\n"
+                "### ⏰ الوثائق المتأخرة (Overdue Submittals):\n\n"
+                + "\n".join(lines)
+            )
+
+    # 4. General register summary
+    if "### 2. REGISTER SUMMARY BY PROJECT:" in context_text:
+        stat_lines = [l for l in context_text.splitlines() if l.startswith("- Project [")]
+        if stat_lines:
+            return (
+                "> 💡 **ملاحظة تشغيلية:** تم استخراج إحصائيات السجلات مباشرة من النظام:\n\n"
+                "### 📊 ملخص السجلات والمستندات:\n\n"
+                + "\n".join(stat_lines)
+            )
+
+    return None
 
 
 @ai_bp.route("/query", methods=["POST"])
@@ -510,9 +631,22 @@ def api_ai_query():
         if err == "NO_API_KEY":
             return jsonify(error="AI Assistant is not configured on this instance."), 503
 
-        if err or not reply:
-            logger.error("[AI Assistant Query Error] %s", err)
-            return jsonify(error=f"{err or 'Empty response from model'}"), 500
+        if not reply:
+            logger.warning(
+                "[AI Assistant Gemini Unavailable] Falling back to direct context formatting. Gemini error: %s",
+                err,
+            )
+            fallback_reply = _format_fallback_response_from_context(prompt, context_text)
+            if fallback_reply:
+                return jsonify(reply=fallback_reply), 200
+
+            # If even direct context formatting didn't produce an answer, return a clear engineering message
+            return jsonify(
+                error=(
+                    "خوادم المعالجة التوليدية من Google تواجه ضغطاً مؤقتاً (503 High Demand). "
+                    "يرجى إعادة المحاولة بعد بضع ثوانٍ."
+                )
+            ), 503
 
         return jsonify(reply=reply), 200
 
