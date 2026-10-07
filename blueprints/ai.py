@@ -408,7 +408,7 @@ def _call_gemini_api(prompt, context_text):
     models_to_try = []
     if _working_gemini_model:
         models_to_try.append(_working_gemini_model)
-    for m in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+    for m in ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]:
         if m not in models_to_try:
             models_to_try.append(m)
 
@@ -416,9 +416,10 @@ def _call_gemini_api(prompt, context_text):
     try:
         client = genai.Client(api_key=api_key)
         for model_name in models_to_try:
+            clean_model = model_name.replace("models/", "").strip()
             try:
                 resp = client.models.generate_content(
-                    model=model_name,
+                    model=clean_model,
                     contents=full_contents,
                     config=types.GenerateContentConfig(
                         system_instruction=(
@@ -430,11 +431,11 @@ def _call_gemini_api(prompt, context_text):
                     ),
                 )
                 if resp and resp.text:
-                    _working_gemini_model = model_name
+                    _working_gemini_model = clean_model
                     return resp.text, None
             except Exception as e_model:
                 last_err = e_model
-                logger.warning("Gemini model %s failed: %s", model_name, e_model)
+                logger.warning("Gemini model %s failed: %s", clean_model, e_model)
                 continue
     except Exception as e_client:
         last_err = e_client
