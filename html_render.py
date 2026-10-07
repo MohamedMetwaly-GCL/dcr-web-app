@@ -2088,6 +2088,9 @@ async function sendAiPrompt(promptText) {
   const urlParams = new URLSearchParams(window.location.search);
   const activeTab = urlParams.get('tab') || '';
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
   try {
     const res = await fetch('/api/ai/query', {
       method: 'POST',
@@ -2098,15 +2101,19 @@ async function sendAiPrompt(promptText) {
         prompt: text,
         project_id: pid || null,
         tab: activeTab || null
-      })
+      }),
+      signal: controller.signal
     });
 
+    clearTimeout(timeoutId);
     const data = await res.json().catch(() => ({}));
 
     if (res.status === 503) {
       appendAiMessage('assistant', '⚠️ **AI Assistant is not configured on this instance.**\n\nPlease configure the `GEMINI_API_KEY` environment variable on Railway to enable Gemini Flash.');
     } else if (res.status === 403) {
       appendAiMessage('assistant', '🔒 **Authentication Required.**\n\nYour session may have expired. Please refresh the page and log in.');
+    } else if (res.status === 504) {
+      appendAiMessage('assistant', '⏱️ **Request Timed Out:** The AI model took too long to complete this analysis. Please retry with a more specific query.');
     } else if (!res.ok) {
       appendAiMessage('assistant', '⚠️ **Error:** ' + (data.error || 'Server error (' + res.status + ')'));
     } else if (data.reply) {
@@ -2115,8 +2122,14 @@ async function sendAiPrompt(promptText) {
       appendAiMessage('assistant', '⚠️ Received empty response from AI service.');
     }
   } catch(err) {
-    appendAiMessage('assistant', '⚠️ **Network Error:** Could not reach AI Assistant endpoint. Please check your connection.');
+    clearTimeout(timeoutId);
+    if (err && (err.name === 'AbortError' || err.code === 20)) {
+      appendAiMessage('assistant', '⏱️ **Request Timed Out (30s):** Analysis took too long. Please retry with a more specific query.');
+    } else {
+      appendAiMessage('assistant', '⚠️ **Network Error:** Could not reach AI Assistant endpoint. Please check your connection.');
+    }
   } finally {
+    clearTimeout(timeoutId);
     if (loading) loading.classList.add('hidden');
     if (sendBtn) sendBtn.disabled = false;
     _aiAssistantState.isLoading = false;

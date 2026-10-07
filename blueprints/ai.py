@@ -294,8 +294,8 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
     is_approved_query = any(ind in p_lower for ind in approval_indicators)
 
     if search_terms or detected_doc_types:
-        where_clauses = ["(r.project_id = ANY(%s) OR p.id = ANY(%s))"]
-        params = [scoped_search_pids, scoped_search_pids]
+        where_clauses = ["r.project_id = ANY(%s)"]
+        params = [scoped_search_pids]
 
         if detected_doc_types:
             where_clauses.append("UPPER(r.dt_id) = ANY(%s)")
@@ -303,11 +303,9 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
 
         if search_terms:
             kw_clauses = []
-            for term in search_terms[:6]:
-                kw_clauses.append(
-                    "(r.data->>'title' ILIKE %s OR r.data->>'docNo' ILIKE %s OR r.data::text ILIKE %s)"
-                )
-                params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
+            for term in search_terms[:3]:
+                kw_clauses.append("(r.data->>'title' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
+                params.extend([f"%{term}%", f"%{term}%"])
             where_clauses.append("(" + " OR ".join(kw_clauses) + ")")
 
         order_clauses = []
@@ -336,7 +334,6 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
             SELECT 
                 r.id,
                 r.project_id,
-                p.code AS proj_code,
                 COALESCE(r.dt_id, '') AS doc_type,
                 COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
                 COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
@@ -344,10 +341,9 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
                 COALESCE(r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS issued_date,
                 COALESCE(r.data->>'actualReplyDate', r.data->>'actualReply', r.data->>'partDReturnDate', '') AS actual_reply
             FROM records r
-            JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id)
             WHERE {where_sql}
             ORDER BY {order_sql}
-            LIMIT 25;
+            LIMIT 20;
         """
 
         try:
@@ -364,7 +360,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
                 title = rec.get("title") or "No Title"
                 st = rec.get("status") or "Pending"
                 dt = rec.get("doc_type") or "DOC"
-                p_code = rec.get("proj_code") or rec.get("project_id") or ""
+                p_code = proj_map.get(rec.get("project_id"), {}).get("code", rec.get("project_id", ""))
                 date_val = rec.get("actual_reply") or rec.get("issued_date") or "—"
                 context_lines.append(
                     f"- DocNo: {doc_no} | Title: {title} | DocType: {dt} | Status: {st} | Date: {date_val} | Project: {p_code}"
@@ -382,7 +378,7 @@ _working_gemini_model = None
 
 
 def _call_gemini_api(prompt, context_text):
-    """Calls Gemini Flash API with dynamic model discovery and fallback."""
+    """Calls Gemini Flash API with strict 15-second timeout and fast model execution."""
     global _working_gemini_model
 
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -399,32 +395,20 @@ def _call_gemini_api(prompt, context_text):
         "Use bullet points, bold key figures, and tables where appropriate."
     )
 
-    last_err = None
-
-    # 1. Preferred modern models order (latest first)
-    preferred_models = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-exp",
-        "gemini-flash-latest",
-        "gemini-2.5-pro",
-        "gemini-2.0-pro-exp-02-05",
-    ]
-
-    candidates = []
+    models_to_try = []
     if _working_gemini_model:
-        candidates.append(_working_gemini_model)
-    for m in preferred_models:
-        if m not in candidates:
-            candidates.append(m)
+        models_to_try.append(_working_gemini_model)
+    for m in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+        if m not in models_to_try:
+            models_to_try.append(m)
 
-    # Try preferred candidates via official google-genai SDK
+    last_err = None
     try:
-        client = genai.Client(api_key=api_key)
-        for model_candidate in candidates:
+        client = genai.Client(api_key=api_key, http_options={"timeout": 15.0})
+        for model_name in models_to_try:
             try:
                 resp = client.models.generate_content(
-                    model=model_candidate,
+                    model=model_name,
                     contents=full_contents,
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_INSTRUCTION,
@@ -432,58 +416,17 @@ def _call_gemini_api(prompt, context_text):
                     ),
                 )
                 if resp and resp.text:
-                    _working_gemini_model = model_candidate
+                    _working_gemini_model = model_name
                     return resp.text, None
-            except Exception as e_cand:
-                last_err = e_cand
-                logger.warning("Candidate model %s failed: %s", model_candidate, e_cand)
+            except Exception as e_model:
+                last_err = e_model
+                logger.warning("Gemini model %s failed or timed out: %s", model_name, e_model)
                 continue
-
-        # 2. Dynamic Discovery: Query API for available models supporting generateContent
-        try:
-            dynamic_models = []
-            for m in client.models.list():
-                m_name = getattr(m, "name", "") or ""
-                clean_name = m_name.replace("models/", "").strip()
-                if not clean_name:
-                    continue
-                supported = getattr(m, "supported_generation_methods", None) or getattr(m, "supported_actions", None)
-                if supported and "generateContent" not in supported:
-                    continue
-                if "gemini" in clean_name.lower():
-                    if "flash" in clean_name.lower():
-                        dynamic_models.insert(0, clean_name)
-                    else:
-                        dynamic_models.append(clean_name)
-
-            for model_dyn in dynamic_models:
-                if model_dyn in candidates:
-                    continue
-                try:
-                    resp = client.models.generate_content(
-                        model=model_dyn,
-                        contents=full_contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=SYSTEM_INSTRUCTION,
-                            temperature=0.2,
-                        ),
-                    )
-                    if resp and resp.text:
-                        _working_gemini_model = model_dyn
-                        return resp.text, None
-                except Exception as e_dyn:
-                    last_err = e_dyn
-                    logger.warning("Dynamic model %s failed: %s", model_dyn, e_dyn)
-                    continue
-        except Exception as list_err:
-            logger.warning("Dynamic model listing failed: %s", list_err)
-
     except Exception as e_client:
         last_err = e_client
-        logger.warning("google-genai client error: %s", e_client)
+        logger.error("Gemini client initialization error: %s", e_client)
 
-    logger.error("All Gemini API attempts failed: %s", last_err)
-    return None, str(last_err)
+    return None, f"AI service response timed out or failed: {str(last_err)}"
 
 
 @ai_bp.route("/query", methods=["POST"])
@@ -527,6 +470,8 @@ def api_ai_query():
             return jsonify(error="AI Assistant is not configured on this instance."), 503
 
         if err or not reply:
+            if "time" in str(err).lower():
+                return jsonify(error=f"AI service response timed out: {str(err)}"), 504
             return jsonify(
                 reply=(
                     "⚠️ **Unable to complete AI analysis.**\n\n"
