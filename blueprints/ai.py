@@ -9,6 +9,8 @@ import os
 import re
 from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request
+from google import genai
+from google.genai import types
 
 import db
 from auth import current_user, can_view_project, get_allowed_project_ids
@@ -221,39 +223,32 @@ def _call_gemini_api(prompt, context_text):
         "Use bullet points, bold key figures, and tables where appropriate."
     )
 
-    # 1. Try google-genai (newest official SDK)
+    last_err = None
+
+    # 1. Primary method: Official google-genai SDK
     try:
-        from google import genai
-        from google.genai import types
-
         client = genai.Client(api_key=api_key)
-        # Try gemini-2.5-flash first, fallback to gemini-1.5-flash
-        model_name = "gemini-2.5-flash"
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=full_contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    temperature=0.2,
-                ),
-            )
-            return response.text, None
-        except Exception as e1:
-            logger.warning("Gemini 2.5 flash error, falling back to 1.5 flash: %s", e1)
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=full_contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    temperature=0.2,
-                ),
-            )
-            return response.text, None
-    except Exception as e_sdk:
-        logger.warning("google-genai call failed: %s. Trying google-generativeai fallback.", e_sdk)
+        for model_name in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=full_contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        temperature=0.2,
+                    ),
+                )
+                if response and response.text:
+                    return response.text, None
+            except Exception as e_model:
+                last_err = e_model
+                logger.warning("google-genai model %s failed: %s", model_name, e_model)
+                continue
+    except Exception as e_client:
+        last_err = e_client
+        logger.warning("google-genai client initialization error: %s", e_client)
 
-    # 2. Fallback to google-generativeai if available
+    # 2. Fallback to legacy google-generativeai if installed
     try:
         import google.generativeai as legacy_genai
 
@@ -263,10 +258,16 @@ def _call_gemini_api(prompt, context_text):
             system_instruction=SYSTEM_INSTRUCTION,
         )
         response = model.generate_content(full_contents)
-        return response.text, None
+        if response and response.text:
+            return response.text, None
+    except ImportError:
+        pass
     except Exception as e_legacy:
-        logger.error("All Gemini API attempts failed: %s", e_legacy)
-        return None, str(e_legacy)
+        logger.warning("google-generativeai fallback failed: %s", e_legacy)
+        last_err = e_legacy
+
+    logger.error("All Gemini API attempts failed: %s", last_err)
+    return None, str(last_err)
 
 
 @ai_bp.route("/query", methods=["POST"])
