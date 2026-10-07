@@ -387,7 +387,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
 _working_gemini_model = None
 
 
-def _call_gemini_api(prompt, context_text):
+def _call_gemini_api(prompt, context_text, custom_instruction=None):
     """Calls Gemini Flash API with standard client and fast execution."""
     global _working_gemini_model
 

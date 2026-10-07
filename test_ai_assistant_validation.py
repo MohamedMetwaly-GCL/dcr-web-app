@@ -263,6 +263,21 @@ class TestAiAssistantValidation(unittest.TestCase):
             mock_build_ctx.assert_not_called()
         print("PASS: Simple greeting short-circuit verified (no heavy DB queries called).")
 
+    def test_11_call_gemini_api_custom_instruction(self):
+        """Verify _call_gemini_api accepts custom_instruction parameter without TypeError."""
+        from blueprints.ai import _call_gemini_api
+        with patch("google.genai.Client") as mock_client_cls, \
+             patch.dict(os.environ, {"GEMINI_API_KEY": "AIzaSyTestFakeKey"}):
+            mock_client = mock_client_cls.return_value
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.text = "مرحبا يا هندسة"
+            mock_client.models.generate_content.return_value = mock_resp
+
+            reply, err = _call_gemini_api("ازيك", "context", custom_instruction="Custom greeting")
+            self.assertEqual(reply, "مرحبا يا هندسة")
+            self.assertIsNone(err)
+        print("PASS: _call_gemini_api with custom_instruction parameter verified.")
+
 
 if __name__ == "__main__":
     unittest.main()
