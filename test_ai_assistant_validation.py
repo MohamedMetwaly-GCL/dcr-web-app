@@ -203,6 +203,49 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIn('ai-btn', reg_html)
         print("PASS: Frontend drawer and navbar buttons verified in Dashboard and Register views.")
 
+    def test_09_bilingual_keyword_and_doc_type_search(self):
+        """Verify Arabic keyword 'محابس' maps to 'valve', detects 'MS', and injects matching submittals."""
+        mock_projects = [{"id": "p_cfc", "name": "CFC Ph2", "code": "PEM-058"}]
+        mock_stats = []
+        mock_overdue = []
+        mock_submittals = [
+            {
+                "id": "rec_120",
+                "project_id": "p_cfc",
+                "proj_code": "PEM-058",
+                "doc_type": "MS",
+                "doc_no": "MS-CY002P608-00120",
+                "title": "Double Regulating Valves",
+                "status": "B - Approved As Noted",
+                "issued_date": "12-05-2022",
+                "actual_reply": "20-05-2022"
+            }
+        ]
+
+        with patch("db.q") as mock_q, \
+             patch("db.get_dashboard_stats", return_value=mock_stats), \
+             patch("db.get_overdue_records", return_value=mock_overdue):
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "UPPER(r.dt_id) = 'NOC'" in sql:
+                    return []
+                if "UPPER(r.dt_id) = ANY" in sql or "ORDER BY" in sql:
+                    # Targeted submittal search query
+                    return mock_submittals
+                return []
+            mock_q.side_effect = q_side_effect
+
+            user_query = "شوفلي معتمد MS محابس ايه في CFC"
+            ctx = _build_ai_context(["p_cfc"], user_prompt=user_query)
+
+            self.assertIn("MATCHING SUBMITTALS IN REGISTER", ctx)
+            self.assertIn("MS-CY002P608-00120", ctx)
+            self.assertIn("Double Regulating Valves", ctx)
+            self.assertIn("B - Approved As Noted", ctx)
+            self.assertIn("PEM-058", ctx)
+        print("PASS: Bilingual keyword mapping, doc type detection, and matching submittal injection verified.")
+
 
 if __name__ == "__main__":
     unittest.main()

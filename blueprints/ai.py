@@ -26,6 +26,61 @@ SYSTEM_INSTRUCTION = (
 )
 
 
+KEYWORD_MAP = {
+    "محابس": "valve",
+    "محبس": "valve",
+    "فالف": "valve",
+    "فالفات": "valve",
+    "طلمبات": "pump",
+    "طلمبة": "pump",
+    "مضخات": "pump",
+    "مضخة": "pump",
+    "بمب": "pump",
+    "مواسير": "pipe",
+    "ماسورة": "pipe",
+    "أنابيب": "pipe",
+    "انابيب": "pipe",
+    "عزل": "insulation",
+    "عوازل": "insulation",
+    "مخططات": "drawing",
+    "مخطط": "drawing",
+    "رسومات": "drawing",
+    "رسم": "drawing",
+    "شوب درونج": "shop drawing",
+    "شوب دروينج": "shop drawing",
+    "شوبدروينج": "shop drawing",
+    "تكييف": "chiller",
+    "تكييفات": "chiller",
+    "مبردات": "chiller",
+    "مبرد": "chiller",
+    "تشيلر": "chiller",
+    "تشيلرات": "chiller",
+    "فلاتر": "filter",
+    "فلتر": "filter",
+    "تهوية": "fan",
+    "مراوح": "fan",
+    "مروحة": "fan",
+    "لوحات": "panel",
+    "لوحة": "panel",
+    "كابلات": "cable",
+    "كيبلات": "cable",
+    "كابل": "cable",
+    "محولات": "transformer",
+    "محول": "transformer",
+    "مولدات": "generator",
+    "مولد": "generator",
+    "إنذار": "alarm",
+    "انذار": "alarm",
+    "حريق": "fire",
+    "إطفاء": "fire",
+    "اطفاء": "fire",
+    "دكت": "duct",
+    "صاج": "duct",
+}
+
+KNOWN_DOC_TYPES = ["MS", "SD", "MIR", "RFI", "IR", "NOC", "PR", "NCR", "ITP", "PQ", "WIR", "MAR", "MOM"]
+
+
 def _safe_float(val):
     if val is None or val == "":
         return 0.0
@@ -170,41 +225,154 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
         context_lines.append("- Zero (0) overdue submittals in this scope. All documents on track.")
     context_lines.append("")
 
-    # 5. Targeted Specific Search (if user asks about a specific doc number or keyword)
-    tokens = [t for t in re.findall(r"[A-Za-z0-9_-]{3,}", user_prompt) if not t.isdigit()]
-    if tokens:
-        # Check if user mentioned a document code pattern or specific word
-        matches = []
-        for token in tokens[:3]:
-            try:
-                found = db.q("""
-                    SELECT r.project_id, r.dt_id, r.data, p.code as proj_code
-                    FROM records r
-                    JOIN projects p ON p.id = r.project_id
-                    WHERE r.project_id = ANY(%s)
-                      AND (r.data::text ILIKE %s)
-                    LIMIT 6
-                """, (target_pids, f"%{token}%"))
-                for f in found:
-                    if f not in matches:
-                        matches.append(f)
-            except Exception as e:
-                logger.warning("Error searching specific records: %s", e)
+    # 5. Targeted Specific Search & Bilingual Semantic Mapping
+    scoped_search_pids = list(target_pids)
+    p_lower = user_prompt.lower()
 
-        if matches:
-            context_lines.append("### 5. MATCHING RECORDS IN REGISTER (RELEVANT TO QUERY):")
-            for m in matches[:10]:
-                d = m.get("data") or {}
-                doc_no = d.get("docNo") or d.get("nocNo") or d.get("letterRef") or "—"
-                title = d.get("title") or d.get("subject") or ""
-                st = d.get("status") or d.get("partDStatus") or ""
-                dt = m.get("dt_id")
-                p_code = m.get("proj_code")
-                issued = d.get("issuedDate") or d.get("partAIssueDate") or ""
-                reply = d.get("actualReplyDate") or d.get("partDReturnDate") or ""
-                context_lines.append(
-                    f"  * [{p_code}] {doc_no} ({dt}): '{title}' | Status: {st} | Issued: {issued} | Reply: {reply}"
+    # Detect Project Mention in Prompt (e.g. CFC, Assiut, Suez, PEM-058, etc.)
+    matched_pids = []
+    for p in projs:
+        p_code = (p.get("code") or "").lower()
+        p_name = (p.get("name") or "").lower()
+        if p_code and (p_code in p_lower or p_code.replace("pem-", "") in p_lower):
+            matched_pids.append(p["id"])
+            continue
+        name_words = [w for w in re.findall(r"[a-zA-Z0-9\u0600-\u06FF]{3,}", p_name) if len(w) >= 3]
+        if any(w in p_lower for w in name_words):
+            matched_pids.append(p["id"])
+    if matched_pids:
+        scoped_search_pids = matched_pids
+
+    # Detect Targeted Document Types (MS, SD, MIR, RFI, IR, NOC, PR, etc.)
+    detected_doc_types = []
+    for dt in KNOWN_DOC_TYPES:
+        if re.search(r"\b" + re.escape(dt) + r"\b", user_prompt, re.IGNORECASE):
+            detected_doc_types.append(dt.upper())
+
+    if "شوب درونج" in p_lower or "شوب دروينج" in p_lower or "شوبدروينج" in p_lower:
+        if "SD" not in detected_doc_types:
+            detected_doc_types.append("SD")
+    if "ماتريال" in p_lower or "اعتماد مواد" in p_lower:
+        if "MS" not in detected_doc_types:
+            detected_doc_types.append("MS")
+
+    if active_tab and active_tab.upper() in KNOWN_DOC_TYPES and not detected_doc_types:
+        detected_doc_types.append(active_tab.upper())
+
+    # Bilingual Keyword Extraction (Arabic to English mapping + raw keywords)
+    search_terms = []
+    for ar_kw, en_kw in KEYWORD_MAP.items():
+        if ar_kw in p_lower:
+            if en_kw not in search_terms:
+                search_terms.append(en_kw)
+            if ar_kw not in search_terms:
+                search_terms.append(ar_kw)
+
+    # General English/Alphanumeric tokens
+    stop_words = {
+        "and", "the", "for", "with", "all", "what", "show", "list", "give", "from",
+        "find", "submittal", "submittals", "document", "documents", "project", "projects",
+        "status", "approved", "noted", "date", "please", "cfc", "pem", "any", "our",
+        "help", "query", "record", "records"
+    }
+    raw_tokens = re.findall(r"[A-Za-z0-9_-]{3,}", user_prompt)
+    for tok in raw_tokens:
+        tok_low = tok.lower()
+        if (
+            tok.upper() not in KNOWN_DOC_TYPES
+            and tok_low not in stop_words
+            and not tok.isdigit()
+            and tok_low not in [s.lower() for s in search_terms]
+        ):
+            search_terms.append(tok)
+
+    # Approval Status Detection (e.g., معتمد, Approved, Status A/B)
+    approval_indicators = [
+        "معتمد", "معتمدة", "معتمدين", "موافقة", "موافق", "مقبول",
+        "approved", "approval", "status a", "status b", "code a", "code b"
+    ]
+    is_approved_query = any(ind in p_lower for ind in approval_indicators)
+
+    if search_terms or detected_doc_types:
+        where_clauses = ["(r.project_id = ANY(%s) OR p.id = ANY(%s))"]
+        params = [scoped_search_pids, scoped_search_pids]
+
+        if detected_doc_types:
+            where_clauses.append("UPPER(r.dt_id) = ANY(%s)")
+            params.append([dt.upper() for dt in detected_doc_types])
+
+        if search_terms:
+            kw_clauses = []
+            for term in search_terms[:6]:
+                kw_clauses.append(
+                    "(r.data->>'title' ILIKE %s OR r.data->>'docNo' ILIKE %s OR r.data::text ILIKE %s)"
                 )
+                params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
+            where_clauses.append("(" + " OR ".join(kw_clauses) + ")")
+
+        order_clauses = []
+        if is_approved_query:
+            order_clauses.append("""
+                CASE 
+                    WHEN (
+                        r.data->>'status' ILIKE '%Approv%' 
+                        OR r.data->>'status' ILIKE 'Status A%' 
+                        OR r.data->>'status' ILIKE 'Status B%'
+                        OR r.data->>'status' ILIKE '%Code A%'
+                        OR r.data->>'status' ILIKE '%Code B%'
+                        OR r.data->>'status' ILIKE '%معتمد%'
+                        OR r.data->>'partBStatus' ILIKE '%Approv%'
+                        OR r.data->>'partDStatus' ILIKE '%Approv%'
+                    ) THEN 0 
+                    ELSE 1 
+                END ASC
+            """)
+        order_clauses.append("r.created_at DESC NULLS LAST")
+
+        where_sql = " AND ".join(where_clauses)
+        order_sql = ", ".join(order_clauses)
+
+        search_sql = f"""
+            SELECT 
+                r.id,
+                r.project_id,
+                p.code AS proj_code,
+                COALESCE(r.dt_id, '') AS doc_type,
+                COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
+                COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
+                COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
+                COALESCE(r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS issued_date,
+                COALESCE(r.data->>'actualReplyDate', r.data->>'actualReply', r.data->>'partDReturnDate', '') AS actual_reply
+            FROM records r
+            JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id)
+            WHERE {where_sql}
+            ORDER BY {order_sql}
+            LIMIT 25;
+        """
+
+        try:
+            matched_records = db.q(search_sql, params)
+        except Exception as e_search:
+            logger.warning("Error searching records in AI context: %s", e_search)
+            matched_records = []
+
+        if matched_records:
+            context_lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
+            context_lines.append(f"Found {len(matched_records)} matching submittals based on query keywords and filters:")
+            for rec in matched_records:
+                doc_no = rec.get("doc_no") or "—"
+                title = rec.get("title") or "No Title"
+                st = rec.get("status") or "Pending"
+                dt = rec.get("doc_type") or "DOC"
+                p_code = rec.get("proj_code") or rec.get("project_id") or ""
+                date_val = rec.get("actual_reply") or rec.get("issued_date") or "—"
+                context_lines.append(
+                    f"- DocNo: {doc_no} | Title: {title} | DocType: {dt} | Status: {st} | Date: {date_val} | Project: {p_code}"
+                )
+            context_lines.append("")
+        else:
+            context_lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
+            context_lines.append("- No matching submittals found for the requested keywords/filters in the scoped project(s).")
             context_lines.append("")
 
     return "\n".join(context_lines)
@@ -225,6 +393,9 @@ def _call_gemini_api(prompt, context_text):
         f"### CONTEXT REGISTER DATA (READ-ONLY):\n{context_text}\n\n"
         f"### USER QUESTION:\n{prompt}\n\n"
         "Provide a structured, helpful, professional engineering response in Markdown format. "
+        "If the user asks in Arabic, answer in clear, professional Arabic (باللغة العربية الهندسية). "
+        "If the user asks in English, answer in English. "
+        "Highlight document numbers, statuses, titles, and approval codes clearly. "
         "Use bullet points, bold key figures, and tables where appropriate."
     )
 
