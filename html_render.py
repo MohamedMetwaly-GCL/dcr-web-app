@@ -1672,31 +1672,55 @@ body.dark .ai-msg.assistant .ai-msg-bubble code,
   font-size: 11px;
   margin: 6px 0;
 }
+.ai-message table,
+.ai-msg table,
+.ai-msg-bubble table,
 .ai-msg.assistant .ai-msg-bubble table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 8px 0;
-  font-size: 11px;
+  width: 100% !important;
+  display: block !important;
+  overflow-x: auto !important;
+  border-collapse: collapse !important;
+  font-size: 12px !important;
+  margin: 10px 0 !important;
 }
+.ai-message th, .ai-message td,
+.ai-msg th, .ai-msg td,
+.ai-msg-bubble th, .ai-msg-bubble td,
 .ai-msg.assistant .ai-msg-bubble th,
 .ai-msg.assistant .ai-msg-bubble td {
   border: 1px solid #cbd5e1;
-  padding: 5px 7px;
-  text-align: left;
+  padding: 6px 8px !important;
+  white-space: nowrap !important; /* Prevents ugly letter wrapping */
+  word-break: normal !important;
+  vertical-align: middle !important;
 }
 body.dark .ai-msg.assistant .ai-msg-bubble th,
 body.dark .ai-msg.assistant .ai-msg-bubble td,
 .ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble th,
-.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble td {
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble td,
+body.dark .ai-message th,
+body.dark .ai-message td {
   border-color: #334155;
 }
+.ai-message th,
+.ai-msg th,
+.ai-msg-bubble th,
 .ai-msg.assistant .ai-msg-bubble th {
   background: #f1f5f9;
   font-weight: 700;
 }
 body.dark .ai-msg.assistant .ai-msg-bubble th,
-.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble th {
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble th,
+body.dark .ai-message th {
   background: #1e293b;
+}
+.ai-message td:nth-child(2),
+.ai-msg td:nth-child(2),
+.ai-msg-bubble td:nth-child(2),
+.ai-msg.assistant .ai-msg-bubble td:nth-child(2) {
+  white-space: normal !important; /* Allow the Title/Description column to wrap nicely */
+  min-width: 160px !important;
+  word-break: normal !important;
 }
 
 /* Loading Animation */

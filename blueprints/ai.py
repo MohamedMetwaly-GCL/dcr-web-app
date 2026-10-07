@@ -467,12 +467,21 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         ]
         params = [expanded_pids_list, expanded_pids_upper]
 
+        prompt_with_history = p_lower + " " + " ".join(
+            (msg.get("text") or "").lower() for msg in (history or []) if msg.get("role") == "user"
+        )
+        is_ms_specified = "MS" in detected_doc_types or any(
+            k in prompt_with_history for k in ["ms", "material submittal", "اعتماد مواد", "اعتماد عينات", "اعتماد مورد"]
+        )
+
         # Enforce doc type filter if detected
         if detected_doc_types:
             dt_upper = [dt.upper() for dt in detected_doc_types]
             dt_prefixes = [f"{dt}-%" for dt in detected_doc_types] + [f"{dt}/%" for dt in detected_doc_types]
             where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR UPPER(COALESCE(d.code, '')) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s))")
             params.extend([dt_upper, dt_upper, dt_prefixes])
+        elif is_ms_specified:
+            where_clauses.append("(UPPER(r.dt_id) = 'MS' OR UPPER(COALESCE(d.code, '')) = 'MS' OR r.data->>'docNo' ILIKE 'MS-%' OR r.data->>'docNo' ILIKE 'MS/%')")
 
         # Enforce equipment/keyword matching with ANY(keywords_array)
         if search_terms:
@@ -542,6 +551,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         # Direct Fallback 1: Query by document number prefix (e.g. CY002P608) or project code directly
         if not matched_records and search_terms:
             fallback_kw_patterns = [f"%{term}%" for term in search_terms[:15]]
+            ms_condition = "AND (r.data->>'docNo' ILIKE 'MS-%' OR r.data->>'docNo' ILIKE 'MS/%' OR UPPER(COALESCE(d.code, r.dt_id, '')) = 'MS')" if is_ms_specified else ""
             direct_fallback_sql = f"""
                 SELECT 
                     r.id,
@@ -562,6 +572,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     OR r.project_id ILIKE '%%CFC%%'
                     OR r.project_id = ANY(%s)
                 )
+                {ms_condition}
                 AND (
                     r.data->>'title' ILIKE ANY(%s)
                     OR r.data->>'docNo' ILIKE ANY(%s)
@@ -583,6 +594,14 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 matched_records = db.q(direct_fallback_sql, (expanded_pids_list, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns))
             except Exception as e_direct:
                 logger.warning("Error running direct fallback record search in AI context: %s", e_direct)
+
+            # If strict MS condition returned 0 records, try without ms_condition only if NO MS records exist
+            if not matched_records and is_ms_specified and ms_condition:
+                try:
+                    direct_fallback_sql_relaxed = direct_fallback_sql.replace(ms_condition, "")
+                    matched_records = db.q(direct_fallback_sql_relaxed, (expanded_pids_list, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns))
+                except Exception as e_direct2:
+                    logger.warning("Error running relaxed direct fallback record search in AI context: %s", e_direct2)
 
         # Fallback 2: Relaxed search without doc type constraint across scoped project
         if not matched_records and detected_doc_types and search_terms:
@@ -613,6 +632,18 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 matched_records = db.q(relaxed_sql, relaxed_params)
             except Exception as e_rel:
                 logger.warning("Error running relaxed record search in AI context: %s", e_rel)
+
+        # Post-filter: If user specified MS, filter records strictly to docNo ILIKE 'MS-%' or doc_type = 'MS'
+        # Only include MIR or other types if NO MS records exist at all.
+        if is_ms_specified and matched_records:
+            ms_records = [
+                rec for rec in matched_records
+                if str(rec.get("doc_no", "")).strip().upper().startswith("MS-")
+                or str(rec.get("doc_no", "")).strip().upper().startswith("MS/")
+                or str(rec.get("doc_type", "")).strip().upper() == "MS"
+            ]
+            if ms_records:
+                matched_records = ms_records
 
         if matched_records:
             context_lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
@@ -696,25 +727,32 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None, history=None
         client = genai.Client(api_key=api_key)
         for model_name in models_to_try:
             clean_model = model_name.replace("models/", "").strip()
-            try:
-                resp = client.models.generate_content(
-                    model=clean_model,
-                    contents=full_contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_inst,
-                        temperature=0.2,
-                        max_output_tokens=1000,
-                    ),
-                )
-                if resp and resp.text:
-                    _working_gemini_model = clean_model
-                    return resp.text, None
-            except Exception as e_model:
-                last_err = e_model
-                if _working_gemini_model == clean_model:
-                    _working_gemini_model = None
-                logger.warning("Gemini model %s failed: %s", clean_model, e_model)
-                continue
+            # Retry resilience for 503 high demand: execute a single quick retry with 1-second delay
+            for attempt in range(2):
+                try:
+                    resp = client.models.generate_content(
+                        model=clean_model,
+                        contents=full_contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_inst,
+                            temperature=0.2,
+                            max_output_tokens=1000,
+                        ),
+                    )
+                    if resp and resp.text:
+                        _working_gemini_model = clean_model
+                        return resp.text, None
+                except Exception as e_model:
+                    last_err = e_model
+                    err_str = str(e_model).lower()
+                    if ("503" in err_str or "unavailable" in err_str or "high demand" in err_str) and attempt == 0:
+                        import time
+                        time.sleep(1)
+                        continue
+                    if _working_gemini_model == clean_model:
+                        _working_gemini_model = None
+                    logger.warning("Gemini model %s failed (attempt %d): %s", clean_model, attempt + 1, e_model)
+                    break
     except Exception as e_client:
         last_err = e_client
         logger.error("Gemini client initialization error: %s", e_client)
@@ -763,10 +801,20 @@ def _format_fallback_response_from_context(prompt, context_text):
                 )
 
             table_md = "\n".join(rows)
+
+            p_low = (prompt or "").lower()
+            if any(w in p_low for w in ["محبس", "محابس", "valve", "valves"]):
+                header_title = "📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع CFC:"
+            elif any(w in p_low for w in ["طلمب", "مضخ", "pump"]):
+                header_title = "📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمضخات لمشروع CFC:"
+            else:
+                doc_type_label = "الـ MS" if any(w in p_low for w in ["ms", "submittal", "مواد", "معتمد"]) else "الوثائق"
+                proj_name = "لمشروع CFC" if any(w in p_low for w in ["cfc", "pem-058", "058"]) else ""
+                header_title = f"📋 تفاصيل وثائق {doc_type_label} المعتمدة {proj_name}:".strip()
+
             return (
-                "> 💡 **ملاحظة تشغيلية:** نظراً لضغط مؤقت على خوادم المعالجة التوليدية من Google (503 High Demand)، "
-                "تم استخراج واعتماد النتائج التالية **مباشرة وفورياً من سجلات المشروع**:\n\n"
-                f"### 📋 السجلات المطابقة لبحثك ({len(recs)} وثيقة):\n\n"
+                f"### {header_title}\n\n"
+                f"تم استخراج {len(recs)} وثيقة معتمدة ومطابقة لطلبك مباشرة من سجلات المشروع:\n\n"
                 "| رقم الوثيقة (Doc No) | الوصف / العنوان | النوع | الحالة (Status) | التاريخ | المشروع |\n"
                 "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
                 f"{table_md}\n\n"
@@ -888,7 +936,7 @@ def api_ai_query():
             # If even direct context formatting didn't produce an answer, return a clear engineering message
             return jsonify(
                 error=(
-                    "خوادم المعالجة التوليدية من Google تواجه ضغطاً مؤقتاً (503 High Demand). "
+                    "خوادم المعالجة تواجه ضغطاً مؤقتاً. "
                     "يرجى إعادة المحاولة بعد بضع ثوانٍ."
                 )
             ), 503

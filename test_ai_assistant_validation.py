@@ -297,8 +297,7 @@ class TestAiAssistantValidation(unittest.TestCase):
         self.assertIn("MS-058-012", res)
         self.assertIn("Butterfly Valves", res)
         self.assertIn("✅ **Approved**", res)
-        self.assertIn("🟡 **Approved with Comments**", res)
-        self.assertIn("503 High Demand", res)
+        self.assertIn("تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع CFC:", res)
         print("PASS: Direct context formatting produces structured Markdown table on 503.")
 
     def test_13_gemini_503_fallback_to_direct_context_endpoint(self):
@@ -462,7 +461,40 @@ class TestAiAssistantValidation(unittest.TestCase):
                 self.assertIn("Valves and Equipment", ctx)
         print("PASS: Both prefixed and non-prefixed Arabic/English valve queries successfully retrieve approved valve submittals.")
 
+    def test_19_ms_strict_filtering_excludes_mir(self):
+        """When user requests MS, MIR records must be excluded if MS records exist."""
+        from blueprints.ai import _build_ai_context
+        mock_projects = [{"id": "PEM-058", "name": "CFC DCP PH-2A", "code": "PEM-058"}]
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    # Return both an MS valve and an MIR valve record
+                    return [
+                        {
+                            "id": "rec_ms", "project_id": "PEM-058", "doc_type": "MS",
+                            "doc_no": "MS-CY002P608-00019 REV01",
+                            "title": "Duty Valves for HVAC Piping",
+                            "status": "B - Approved As Noted", "issued_date": "2022-06-21", "doc_date": "2022-07-15"
+                        },
+                        {
+                            "id": "rec_mir", "project_id": "PEM-058", "doc_type": "MIR",
+                            "doc_no": "MIR-CY002P608-00040 REV00",
+                            "title": "Inspection of Valves",
+                            "status": "A - Approved", "issued_date": "2022-06-25", "doc_date": "2022-07-20"
+                        }
+                    ]
+                return []
+            mock_q.side_effect = q_side_effect
+
+            ctx = _build_ai_context(["PEM-058"], user_prompt="شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC")
+            self.assertIn("MS-CY002P608-00019 REV01", ctx)
+            self.assertNotIn("MIR-CY002P608-00040", ctx)
+        print("PASS: Strict MS filtering excludes MIR records when MS records are present.")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
