@@ -2089,7 +2089,7 @@ async function sendAiPrompt(promptText) {
   const activeTab = urlParams.get('tab') || '';
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), 50000);
 
   try {
     const res = await fetch('/api/ai/query', {
@@ -2124,7 +2124,7 @@ async function sendAiPrompt(promptText) {
   } catch(err) {
     clearTimeout(timeoutId);
     if (err && (err.name === 'AbortError' || err.code === 20)) {
-      appendAiMessage('assistant', '⏱️ **Request Timed Out (30s):** Analysis took too long. Please retry with a more specific query.');
+      appendAiMessage('assistant', '⏱️ **Request Timed Out (50s):** Analysis took too long. Please retry with a more specific query.');
     } else {
       appendAiMessage('assistant', '⚠️ **Network Error:** Could not reach AI Assistant endpoint. Please check your connection.');
     }
