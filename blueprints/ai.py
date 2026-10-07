@@ -537,15 +537,7 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None, history=None
     models_to_try = []
     if _working_gemini_model:
         models_to_try.append(_working_gemini_model)
-    for m in [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-3.8-flash",
-        "gemini-3.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-2.5-flash-lite",
-        "gemini-3.1-pro",
-    ]:
+    for m in ["gemini-2.5-flash", "gemini-2.5-pro"]:
         if m not in models_to_try:
             models_to_try.append(m)
 
@@ -567,42 +559,25 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None, history=None
         client = genai.Client(api_key=api_key)
         for model_name in models_to_try:
             clean_model = model_name.replace("models/", "").strip()
-            # Try up to 2 attempts for transient 503 / high demand errors
-            for attempt in range(2):
-                try:
-                    resp = client.models.generate_content(
-                        model=clean_model,
-                        contents=full_contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_inst,
-                            temperature=0.2,
-                            max_output_tokens=1000,
-                        ),
-                    )
-                    if resp and resp.text:
-                        _working_gemini_model = clean_model
-                        return resp.text, None
-                except Exception as e_model:
-                    last_err = e_model
-                    if _working_gemini_model == clean_model:
-                        _working_gemini_model = None
-
-                    err_str = str(e_model).lower()
-                    is_transient = any(
-                        t in err_str
-                        for t in ["503", "unavailable", "high demand", "resourceexhausted", "429"]
-                    )
-                    if is_transient and attempt == 0:
-                        logger.warning(
-                            "Gemini model %s transient error (%s). Retrying in 1.2s...",
-                            clean_model,
-                            e_model,
-                        )
-                        time.sleep(1.2)
-                        continue
-                    else:
-                        logger.warning("Gemini model %s failed: %s", clean_model, e_model)
-                        break
+            try:
+                resp = client.models.generate_content(
+                    model=clean_model,
+                    contents=full_contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_inst,
+                        temperature=0.2,
+                        max_output_tokens=1000,
+                    ),
+                )
+                if resp and resp.text:
+                    _working_gemini_model = clean_model
+                    return resp.text, None
+            except Exception as e_model:
+                last_err = e_model
+                if _working_gemini_model == clean_model:
+                    _working_gemini_model = None
+                logger.warning("Gemini model %s failed: %s", clean_model, e_model)
+                continue
     except Exception as e_client:
         last_err = e_client
         logger.error("Gemini client initialization error: %s", e_client)
@@ -748,18 +723,14 @@ def api_ai_query():
         is_greeting = any(g == p_clean or p_clean.startswith(g) for g in greeting_words) and len(prompt.split()) <= 4
 
         if is_greeting:
-            greeting_inst = (
-                "You are the DCR Engineering AI Assistant for Gas Chill projects. "
-                "Respond warmly, concisely, and professionally in Arabic (or English if greeted in English). "
-                "State briefly that you can assist with project document registers, submittals, overdues, and NOCs."
+            reply = (
+                "أهلاً بك يا باشمهندس! 👋 أنا مساعدك الذكي لنظام مراقبة وثائق ومشاريع جازشيل (DCR).\n\n"
+                "أنا جاهز لمساعدتك فوراً في:\n"
+                "- 📋 استعراض واعتمادات سجلات الـ (MS) والشوب درونج (SD).\n"
+                "- ⏰ متابعة الوثائق المتأخرة (Overdue Submittals).\n"
+                "- 💰 مراجعة أوامر التغيير والمطالبات (NOC).\n\n"
+                "تفضل بسؤالي عن أي مشروع أو معدة أو مستند!"
             )
-            reply, err = _call_gemini_api(prompt, "User is saying hello.", custom_instruction=greeting_inst, history=history)
-            if not reply:
-                reply = (
-                    "أهلاً بك يا باشمهندس! 👋 أنا مساعدك الذكي لنظام مراقبة وثائق ومشاريع جازشيل (DCR).\n\n"
-                    "أنا جاهز لمساعدتك في استعراض سجلات المشاريع، ومتابعة الوثائق المتأخرة، "
-                    "أو أوامر التغيير (NOC)، أو البحث عن اعتمادات الـ MS والشوب درونج. كيف يمكنني مساعدتك؟"
-                )
             return jsonify(reply=reply), 200
 
         context_text = _build_ai_context(target_pids, user_prompt=prompt, active_tab=tab, history=history)
