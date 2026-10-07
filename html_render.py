@@ -1285,6 +1285,879 @@ if (document.readyState === 'loading') {
 </script>
 """
 
+AI_DRAWER_COMPONENT = r"""
+<!-- DCR AI ASSISTANT DRAWER COMPONENT -->
+<div id="ai-drawer-backdrop" class="ai-drawer-backdrop hidden" onclick="closeAiDrawer()"></div>
+<aside id="ai-assistant-drawer" class="ai-assistant-drawer hidden" aria-label="DCR AI Assistant">
+  <!-- Drawer Header -->
+  <div class="ai-drawer-hdr">
+    <div class="ai-drawer-hdr-info">
+      <div class="ai-drawer-badge-row">
+        <span class="ai-drawer-badge">✨ Gemini Flash</span>
+        <span class="ai-drawer-readonly">🔒 Read-Only</span>
+      </div>
+      <div class="ai-drawer-title">DCR Engineering Assistant</div>
+      <div id="ai-drawer-active-scope" class="ai-drawer-scope-text">Scope: Detecting...</div>
+    </div>
+    <div class="ai-drawer-hdr-actions">
+      <button class="ai-btn-icon" onclick="clearAiChat()" title="Clear Chat History">🗑️</button>
+      <button class="ai-btn-icon" onclick="closeAiDrawer()" title="Close (Esc)">✕</button>
+    </div>
+  </div>
+
+  <!-- Quick Action Chips -->
+  <div class="ai-quick-bar">
+    <div class="ai-quick-label">Quick Queries:</div>
+    <div class="ai-quick-chips">
+      <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all overdue submittals and their delay days.')">📌 Overdue Submittals</button>
+      <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the total approved cost for Notice of Change (NOCs) and list the approved items?')">💵 Approved NOCs Total</button>
+      <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Provide a complete status breakdown of documents across the project registers.')">📊 Status Summary</button>
+    </div>
+  </div>
+
+  <!-- Chat Messages Stream -->
+  <div class="ai-chat-body" id="ai-chat-body">
+    <!-- Messages dynamically appended -->
+  </div>
+
+  <!-- Loading Animation -->
+  <div id="ai-loading-indicator" class="ai-loading-indicator hidden">
+    <div class="ai-pulse-dots">
+      <span></span><span></span><span></span>
+    </div>
+    <span class="ai-loading-txt">Querying registers & analyzing with Gemini Flash...</span>
+  </div>
+
+  <!-- Drawer Footer Input -->
+  <div class="ai-drawer-foot">
+    <form id="ai-chat-form" class="ai-chat-form" onsubmit="handleAiFormSubmit(event)">
+      <div class="ai-input-box">
+        <textarea id="ai-prompt-input" class="ai-prompt-input" placeholder="Ask about submittals, NOCs, costs, or document statuses..." rows="1" onkeydown="handleAiInputKeydown(event)"></textarea>
+        <button type="submit" id="ai-send-btn" class="ai-send-btn" title="Send (Enter)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+      </div>
+    </form>
+    <div class="ai-foot-hint">
+      <span><kbd>↵</kbd> Send</span>
+      <span><kbd>Shift+↵</kbd> New line</span>
+      <span class="ai-foot-sec">Factual responses from register data only</span>
+    </div>
+  </div>
+</aside>
+
+<style>
+/* AI Assistant Topbar Button */
+.tb-btn.ai-btn {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(168, 85, 247, 0.22)) !important;
+  border: 1px solid rgba(168, 85, 247, 0.45) !important;
+  color: #f1f5f9 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  font-weight: 600 !important;
+  transition: all 0.2s ease !important;
+}
+.tb-btn.ai-btn:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.38), rgba(168, 85, 247, 0.38)) !important;
+  border-color: #c084fc !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.45) !important;
+  transform: translateY(-0.5px) !important;
+}
+
+/* AI Drawer Backdrop */
+.ai-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 10055;
+  backdrop-filter: blur(2px);
+  transition: opacity 0.25s ease;
+}
+
+/* AI Assistant Drawer Container */
+.ai-assistant-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 430px;
+  max-width: calc(100vw - 20px);
+  z-index: 10060;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.28s;
+  visibility: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.ai-assistant-drawer:not(.hidden) {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+/* Dark Theme Overrides for Drawer */
+body.dark .ai-assistant-drawer,
+.ai-assistant-drawer.dark-theme {
+  background: #0f172a;
+  color: #f8fafc;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Drawer Header */
+.ai-drawer-hdr {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+body.dark .ai-drawer-hdr,
+.ai-assistant-drawer.dark-theme .ai-drawer-hdr {
+  background: #1e293b;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+.ai-drawer-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.ai-drawer-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15));
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+body.dark .ai-drawer-badge,
+.ai-assistant-drawer.dark-theme .ai-drawer-badge {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(168, 85, 247, 0.3));
+  color: #c084fc;
+}
+.ai-drawer-readonly {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #475569;
+}
+body.dark .ai-drawer-readonly,
+.ai-assistant-drawer.dark-theme .ai-drawer-readonly {
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+}
+.ai-drawer-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+body.dark .ai-drawer-title,
+.ai-assistant-drawer.dark-theme .ai-drawer-title {
+  color: #f8fafc;
+}
+.ai-drawer-scope-text {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+body.dark .ai-drawer-scope-text,
+.ai-assistant-drawer.dark-theme .ai-drawer-scope-text {
+  color: #94a3b8;
+}
+.ai-drawer-hdr-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-btn-icon {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 5px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.ai-btn-icon:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #0f172a;
+}
+body.dark .ai-btn-icon:hover,
+.ai-assistant-drawer.dark-theme .ai-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+/* Quick Action Chips */
+.ai-quick-bar {
+  padding: 8px 14px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+}
+body.dark .ai-quick-bar,
+.ai-assistant-drawer.dark-theme .ai-quick-bar {
+  background: #131d31;
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+.ai-quick-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 5px;
+  letter-spacing: 0.4px;
+}
+body.dark .ai-quick-label,
+.ai-assistant-drawer.dark-theme .ai-quick-label {
+  color: #94a3b8;
+}
+.ai-quick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ai-chip {
+  background: #ffffff;
+  color: #4f46e5;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.ai-chip:hover {
+  background: #4f46e5;
+  color: #ffffff;
+  border-color: #4f46e5;
+  transform: translateY(-0.5px);
+}
+body.dark .ai-chip,
+.ai-assistant-drawer.dark-theme .ai-chip {
+  background: #1e293b;
+  color: #a5b4fc;
+  border-color: rgba(99, 102, 241, 0.4);
+}
+body.dark .ai-chip:hover,
+.ai-assistant-drawer.dark-theme .ai-chip:hover {
+  background: #6366f1;
+  color: #ffffff;
+  border-color: #6366f1;
+}
+
+/* Chat Body */
+.ai-chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fbfcfd;
+}
+body.dark .ai-chat-body,
+.ai-assistant-drawer.dark-theme .ai-chat-body {
+  background: #0f172a;
+}
+.ai-chat-body::-webkit-scrollbar { width: 5px; }
+.ai-chat-body::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.4); border-radius: 3px; }
+
+/* Message Bubbles */
+.ai-msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 90%;
+  animation: aiMsgFadeIn 0.2s ease-out;
+}
+@keyframes aiMsgFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ai-msg.user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.ai-msg.assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+  max-width: 95%;
+}
+.ai-msg-bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.ai-msg.user .ai-msg-bubble {
+  background: #4f46e5;
+  color: #ffffff;
+  border-radius: 14px 14px 3px 14px;
+}
+.ai-msg.assistant .ai-msg-bubble {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px 14px 14px 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+body.dark .ai-msg.assistant .ai-msg-bubble,
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble {
+  background: #1e293b;
+  color: #f1f5f9;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+.ai-msg-time {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 3px;
+  padding: 0 4px;
+}
+
+/* Markdown styling inside assistant bubble */
+.ai-msg.assistant .ai-msg-bubble p { margin: 0 0 8px 0; }
+.ai-msg.assistant .ai-msg-bubble p:last-child { margin-bottom: 0; }
+.ai-msg.assistant .ai-msg-bubble ul,
+.ai-msg.assistant .ai-msg-bubble ol { margin: 4px 0 8px 18px; padding: 0; }
+.ai-msg.assistant .ai-msg-bubble li { margin-bottom: 3px; }
+.ai-msg.assistant .ai-msg-bubble h3,
+.ai-msg.assistant .ai-msg-bubble h4 { margin: 8px 0 4px 0; font-size: 13px; font-weight: 700; color: #4338ca; }
+body.dark .ai-msg.assistant .ai-msg-bubble h3,
+body.dark .ai-msg.assistant .ai-msg-bubble h4,
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble h3,
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble h4 { color: #a5b4fc; }
+.ai-msg.assistant .ai-msg-bubble code {
+  background: rgba(99, 102, 241, 0.08);
+  color: #4f46e5;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+body.dark .ai-msg.assistant .ai-msg-bubble code,
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble code {
+  background: rgba(255, 255, 255, 0.1);
+  color: #c084fc;
+}
+.ai-msg.assistant .ai-msg-bubble pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 11px;
+  margin: 6px 0;
+}
+.ai-msg.assistant .ai-msg-bubble table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 11px;
+}
+.ai-msg.assistant .ai-msg-bubble th,
+.ai-msg.assistant .ai-msg-bubble td {
+  border: 1px solid #cbd5e1;
+  padding: 5px 7px;
+  text-align: left;
+}
+body.dark .ai-msg.assistant .ai-msg-bubble th,
+body.dark .ai-msg.assistant .ai-msg-bubble td,
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble th,
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble td {
+  border-color: #334155;
+}
+.ai-msg.assistant .ai-msg-bubble th {
+  background: #f1f5f9;
+  font-weight: 700;
+}
+body.dark .ai-msg.assistant .ai-msg-bubble th,
+.ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble th {
+  background: #1e293b;
+}
+
+/* Loading Animation */
+.ai-loading-indicator {
+  padding: 8px 16px;
+  background: rgba(99, 102, 241, 0.06);
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+body.dark .ai-loading-indicator,
+.ai-assistant-drawer.dark-theme .ai-loading-indicator {
+  background: rgba(99, 102, 241, 0.12);
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+.ai-pulse-dots {
+  display: flex;
+  gap: 4px;
+}
+.ai-pulse-dots span {
+  width: 6px;
+  height: 6px;
+  background: #6366f1;
+  border-radius: 50%;
+  animation: aiPulse 1.2s infinite ease-in-out both;
+}
+.ai-pulse-dots span:nth-child(1) { animation-delay: -0.32s; }
+.ai-pulse-dots span:nth-child(2) { animation-delay: -0.16s; }
+@keyframes aiPulse {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.ai-loading-txt {
+  font-size: 11px;
+  color: #6366f1;
+  font-weight: 500;
+}
+body.dark .ai-loading-txt,
+.ai-assistant-drawer.dark-theme .ai-loading-txt {
+  color: #a5b4fc;
+}
+
+/* Drawer Footer */
+.ai-drawer-foot {
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+body.dark .ai-drawer-foot,
+.ai-assistant-drawer.dark-theme .ai-drawer-foot {
+  background: #1e293b;
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+.ai-input-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 6px 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+body.dark .ai-input-box,
+.ai-assistant-drawer.dark-theme .ai-input-box {
+  background: #0f172a;
+  border-color: #334155;
+}
+.ai-input-box:focus-within {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+.ai-prompt-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: inherit;
+  resize: none;
+  max-height: 100px;
+  line-height: 1.4;
+  padding: 2px 0;
+}
+.ai-send-btn {
+  background: #4f46e5;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.ai-send-btn:hover {
+  background: #4338ca;
+  transform: scale(1.05);
+}
+.ai-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.ai-foot-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+.ai-foot-hint kbd {
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 9px;
+  color: inherit;
+}
+body.dark .ai-foot-hint kbd,
+.ai-assistant-drawer.dark-theme .ai-foot-hint kbd {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.ai-foot-sec {
+  font-style: italic;
+  font-size: 9.5px;
+}
+</style>
+
+<script>
+const _aiAssistantState = {
+  isOpen: false,
+  isLoading: false,
+  messages: [],
+  activeProjectId: null,
+  activeProjectCode: null
+};
+
+function _aiEscape(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function _renderSimpleMarkdown(md) {
+  if (!md) return '';
+  let txt = _aiEscape(md);
+
+  // Code blocks: ```code```
+  txt = txt.replace(/```([\s\S]*?)```/g, function(match, code) {
+    return '<pre><code>' + code.trim() + '</code></pre>';
+  });
+
+  // Inline code: `code`
+  txt = txt.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Bold: **text**
+  txt = txt.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Italic: *text*
+  txt = txt.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  // Markdown Tables:
+  // Split lines and parse tables
+  const lines = txt.split('\n');
+  const out = [];
+  let inTable = false;
+  let tableRows = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('|') && line.endsWith('|')) {
+      // Table separator row check (e.g. |---|---|)
+      if (/^\|(\s*[-:]+[-|\s:]*)\|$/.test(line)) {
+        continue;
+      }
+      inTable = true;
+      const cells = line.split('|').slice(1, -1).map(c => c.trim());
+      tableRows.push(cells);
+    } else {
+      if (inTable) {
+        out.push(_buildHtmlTable(tableRows));
+        tableRows = [];
+        inTable = false;
+      }
+      if (line.startsWith('### ')) {
+        out.push('<h4>' + line.slice(4) + '</h4>');
+      } else if (line.startsWith('## ')) {
+        out.push('<h3>' + line.slice(3) + '</h3>');
+      } else if (line.startsWith('- ') || line.startsWith('* ')) {
+        out.push('<li>' + line.slice(2) + '</li>');
+      } else if (line.length > 0) {
+        out.push('<p>' + line + '</p>');
+      }
+    }
+  }
+  if (inTable && tableRows.length) {
+    out.push(_buildHtmlTable(tableRows));
+  }
+
+  let finalHtml = out.join('');
+  finalHtml = finalHtml.replace(/<li>[\s\S]*?<\/li>/g, function(match) {
+    return '<ul>' + match + '</ul>';
+  }).replace(/<\/ul>\s*<ul>/g, '');
+
+  return finalHtml;
+}
+
+function _buildHtmlTable(rows) {
+  if (!rows || !rows.length) return '';
+  let html = '<table>';
+  html += '<thead><tr>';
+  rows[0].forEach(h => { html += '<th>' + h + '</th>'; });
+  html += '</tr></thead><tbody>';
+  for (let r = 1; r < rows.length; r++) {
+    html += '<tr>';
+    rows[r].forEach(cell => { html += '<td>' + cell + '</td>'; });
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+function resolveActiveProjectScope() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const pParam = urlParams.get('p') || urlParams.get('project_id');
+  if (pParam) {
+    _aiAssistantState.activeProjectId = pParam;
+    return pParam;
+  }
+  const projSelect = document.getElementById('project-select') || document.getElementById('spotlight-project-filter');
+  if (projSelect && projSelect.value && projSelect.value !== 'ALL') {
+    _aiAssistantState.activeProjectId = projSelect.value;
+    return projSelect.value;
+  }
+  _aiAssistantState.activeProjectId = null;
+  return null;
+}
+
+function updateAiScopeBadge() {
+  const scopeEl = document.getElementById('ai-drawer-active-scope');
+  if (!scopeEl) return;
+  const pid = resolveActiveProjectScope();
+  if (pid) {
+    let projName = pid;
+    const topbarInfo = document.getElementById('topbar-proj-info');
+    if (topbarInfo) {
+      const titleSpan = topbarInfo.querySelector('span') || topbarInfo;
+      projName = titleSpan.textContent.trim() || pid;
+    }
+    scopeEl.textContent = 'Active Project: ' + projName;
+  } else {
+    scopeEl.textContent = 'Scope: All Authorized Projects (Global)';
+  }
+}
+
+function openAiDrawer() {
+  const drawer = document.getElementById('ai-assistant-drawer');
+  const backdrop = document.getElementById('ai-drawer-backdrop');
+  if (!drawer) return;
+
+  const isDark = document.body.classList.contains('dark') || document.documentElement.getAttribute('data-theme') === 'dark';
+  drawer.classList.toggle('dark-theme', isDark);
+
+  drawer.classList.remove('hidden');
+  if (backdrop) backdrop.classList.remove('hidden');
+  _aiAssistantState.isOpen = true;
+
+  updateAiScopeBadge();
+
+  if (_aiAssistantState.messages.length === 0) {
+    initAiWelcomeMessage();
+  }
+
+  const input = document.getElementById('ai-prompt-input');
+  if (input) {
+    setTimeout(() => input.focus(), 150);
+  }
+}
+
+function closeAiDrawer() {
+  const drawer = document.getElementById('ai-assistant-drawer');
+  const backdrop = document.getElementById('ai-drawer-backdrop');
+  if (drawer) drawer.classList.add('hidden');
+  if (backdrop) backdrop.classList.add('hidden');
+  _aiAssistantState.isOpen = false;
+}
+
+function toggleAiDrawer() {
+  if (_aiAssistantState.isOpen) {
+    closeAiDrawer();
+  } else {
+    openAiDrawer();
+  }
+}
+
+function initAiWelcomeMessage() {
+  const welcomeText = 
+    "Hello! I am your **DCR Engineering AI Assistant** powered by Gemini Flash.\n\n" +
+    "I have real-time, read-only access to your authorized project registers and can help you with:\n" +
+    "- 📌 **Overdue submittals** and delay days\n" +
+    "- 💵 **Notice of Change (NOC)** cost totals and approvals\n" +
+    "- 📊 **Register status breakdowns** (Approved, Under Review, Rejected)\n" +
+    "- 🔍 **Specific document numbers** or disciplines\n\n" +
+    "*How can I assist you today?*";
+  
+  appendAiMessage('assistant', welcomeText);
+}
+
+function appendAiMessage(role, text) {
+  const body = document.getElementById('ai-chat-body');
+  if (!body) return;
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'ai-msg ' + role;
+
+  const bubbleDiv = document.createElement('div');
+  bubbleDiv.className = 'ai-msg-bubble';
+
+  if (role === 'user') {
+    bubbleDiv.textContent = text;
+  } else {
+    bubbleDiv.innerHTML = _renderSimpleMarkdown(text);
+  }
+
+  const timeDiv = document.createElement('div');
+  timeDiv.className = 'ai-msg-time';
+  timeDiv.textContent = (role === 'user' ? 'You • ' : 'Gemini • ') + timeStr;
+
+  msgDiv.appendChild(bubbleDiv);
+  msgDiv.appendChild(timeDiv);
+  body.appendChild(msgDiv);
+
+  body.scrollTop = body.scrollHeight;
+  _aiAssistantState.messages.push({ role, text, time: timeStr });
+}
+
+function clearAiChat() {
+  _aiAssistantState.messages = [];
+  const body = document.getElementById('ai-chat-body');
+  if (body) body.innerHTML = '';
+  initAiWelcomeMessage();
+}
+
+async function sendAiPrompt(promptText) {
+  const text = (promptText || '').trim();
+  if (!text || _aiAssistantState.isLoading) return;
+
+  appendAiMessage('user', text);
+
+  const input = document.getElementById('ai-prompt-input');
+  if (input) {
+    input.value = '';
+    input.style.height = 'auto';
+  }
+
+  const loading = document.getElementById('ai-loading-indicator');
+  const sendBtn = document.getElementById('ai-send-btn');
+  if (loading) loading.classList.remove('hidden');
+  if (sendBtn) sendBtn.disabled = true;
+  _aiAssistantState.isLoading = true;
+
+  const bodyEl = document.getElementById('ai-chat-body');
+  if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+
+  const pid = resolveActiveProjectScope();
+  const urlParams = new URLSearchParams(window.location.search);
+  const activeTab = urlParams.get('tab') || '';
+
+  try {
+    const res = await fetch('/api/ai/query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        prompt: text,
+        project_id: pid || null,
+        tab: activeTab || null
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 503) {
+      appendAiMessage('assistant', '⚠️ **AI Assistant is not configured on this instance.**\n\nPlease configure the `GEMINI_API_KEY` environment variable on Railway to enable Gemini Flash.');
+    } else if (res.status === 403) {
+      appendAiMessage('assistant', '🔒 **Authentication Required.**\n\nYour session may have expired. Please refresh the page and log in.');
+    } else if (!res.ok) {
+      appendAiMessage('assistant', '⚠️ **Error:** ' + (data.error || 'Server error (' + res.status + ')'));
+    } else if (data.reply) {
+      appendAiMessage('assistant', data.reply);
+    } else {
+      appendAiMessage('assistant', '⚠️ Received empty response from AI service.');
+    }
+  } catch(err) {
+    appendAiMessage('assistant', '⚠️ **Network Error:** Could not reach AI Assistant endpoint. Please check your connection.');
+  } finally {
+    if (loading) loading.classList.add('hidden');
+    if (sendBtn) sendBtn.disabled = false;
+    _aiAssistantState.isLoading = false;
+    if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+    if (input) input.focus();
+  }
+}
+
+function sendAiQuickPrompt(promptText) {
+  if (!_aiAssistantState.isOpen) {
+    openAiDrawer();
+  }
+  sendAiPrompt(promptText);
+}
+
+function handleAiFormSubmit(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById('ai-prompt-input');
+  if (input) {
+    sendAiPrompt(input.value);
+  }
+}
+
+function handleAiInputKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleAiFormSubmit(e);
+  }
+}
+
+function _initAiTextareaAutoGrow() {
+  const input = document.getElementById('ai-prompt-input');
+  if (input && !input._autoGrowBound) {
+    input._autoGrowBound = true;
+    input.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+  }
+}
+
+window.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && _aiAssistantState.isOpen) {
+    closeAiDrawer();
+  }
+});
+
+// Expose globally on window
+window.openAiDrawer = openAiDrawer;
+window.closeAiDrawer = closeAiDrawer;
+window.toggleAiDrawer = toggleAiDrawer;
+window.sendAiQuickPrompt = sendAiQuickPrompt;
+window.clearAiChat = clearAiChat;
+window.sendAiPrompt = sendAiPrompt;
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initAiTextareaAutoGrow);
+} else {
+  _initAiTextareaAutoGrow();
+}
+</script>
+"""
+
 def _user_info_html(u):
     if not u:
         return ('<a href="/login"><button class="tb-btn glow">🔐 Login</button></a>', "guest", "GUEST", "#fff3")
@@ -2883,6 +3756,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   {btns}
   <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <button class="tb-btn ai-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)">✨<span class="tb-btn-text"> AI Assistant</span></button>
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
@@ -4327,6 +5201,7 @@ init();
 {ABOUT_MODAL_HTML}
 {GLOBAL_FOOTER_HTML}
 {SPOTLIGHT_MODAL_COMPONENT}
+{AI_DRAWER_COMPONENT}
 </body></html>"""
 
 
@@ -4840,6 +5715,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   <a href="/" class="tb-btn">📊<span class="tb-btn-text"> Dashboard</span></a>
   <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <button class="tb-btn ai-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)">✨<span class="tb-btn-text"> AI Assistant</span></button>
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span class="topbar-user"><span class="topbar-user-name">👤 {uname}</span>
@@ -8624,6 +9500,7 @@ async function saveProjectSettings() {{
 {ABOUT_MODAL_HTML}
 {GLOBAL_FOOTER_HTML}
 {SPOTLIGHT_MODAL_COMPONENT}
+{AI_DRAWER_COMPONENT}
 </body></html>"""
 
 
