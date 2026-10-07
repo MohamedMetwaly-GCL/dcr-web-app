@@ -210,8 +210,13 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
     return "\n".join(context_lines)
 
 
+_working_gemini_model = None
+
+
 def _call_gemini_api(prompt, context_text):
-    """Calls Gemini Flash API with the system instructions and registers context."""
+    """Calls Gemini Flash API with dynamic model discovery and fallback."""
+    global _working_gemini_model
+
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None, "NO_API_KEY"
@@ -225,41 +230,112 @@ def _call_gemini_api(prompt, context_text):
 
     last_err = None
 
-    # 1. Primary method: Official google-genai SDK
+    # 1. Preferred modern models order (latest first)
+    preferred_models = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-exp",
+        "gemini-1.5-flash-latest",
+        "gemini-flash-latest",
+        "gemini-2.5-pro",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+    ]
+
+    candidates = []
+    if _working_gemini_model:
+        candidates.append(_working_gemini_model)
+    for m in preferred_models:
+        if m not in candidates:
+            candidates.append(m)
+
+    # Try preferred candidates via official google-genai SDK
     try:
         client = genai.Client(api_key=api_key)
-        for model_name in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+        for model_candidate in candidates:
             try:
-                response = client.models.generate_content(
-                    model=model_name,
+                resp = client.models.generate_content(
+                    model=model_candidate,
                     contents=full_contents,
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_INSTRUCTION,
                         temperature=0.2,
                     ),
                 )
-                if response and response.text:
-                    return response.text, None
-            except Exception as e_model:
-                last_err = e_model
-                logger.warning("google-genai model %s failed: %s", model_name, e_model)
+                if resp and resp.text:
+                    _working_gemini_model = model_candidate
+                    return resp.text, None
+            except Exception as e_cand:
+                last_err = e_cand
+                logger.warning("Candidate model %s failed: %s", model_candidate, e_cand)
                 continue
+
+        # 2. Dynamic Discovery: Query API for available models supporting generateContent
+        try:
+            dynamic_models = []
+            for m in client.models.list():
+                m_name = getattr(m, "name", "") or ""
+                clean_name = m_name.replace("models/", "").strip()
+                if not clean_name:
+                    continue
+                supported = getattr(m, "supported_generation_methods", None) or getattr(m, "supported_actions", None)
+                if supported and "generateContent" not in supported:
+                    continue
+                if "gemini" in clean_name.lower():
+                    if "flash" in clean_name.lower():
+                        dynamic_models.insert(0, clean_name)
+                    else:
+                        dynamic_models.append(clean_name)
+
+            for model_dyn in dynamic_models:
+                if model_dyn in candidates:
+                    continue
+                try:
+                    resp = client.models.generate_content(
+                        model=model_dyn,
+                        contents=full_contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=SYSTEM_INSTRUCTION,
+                            temperature=0.2,
+                        ),
+                    )
+                    if resp and resp.text:
+                        _working_gemini_model = model_dyn
+                        return resp.text, None
+                except Exception as e_dyn:
+                    last_err = e_dyn
+                    logger.warning("Dynamic model %s failed: %s", model_dyn, e_dyn)
+                    continue
+        except Exception as list_err:
+            logger.warning("Dynamic model listing failed: %s", list_err)
+
     except Exception as e_client:
         last_err = e_client
-        logger.warning("google-genai client initialization error: %s", e_client)
+        logger.warning("google-genai client error: %s", e_client)
 
-    # 2. Fallback to legacy google-generativeai if installed
+    # 3. Fallback to legacy google-generativeai if available
     try:
         import google.generativeai as legacy_genai
 
         legacy_genai.configure(api_key=api_key)
-        model = legacy_genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=SYSTEM_INSTRUCTION,
-        )
-        response = model.generate_content(full_contents)
-        if response and response.text:
-            return response.text, None
+        for legacy_candidate in [
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro-latest",
+            "gemini-1.5-pro",
+            "gemini-pro",
+        ]:
+            try:
+                model = legacy_genai.GenerativeModel(
+                    model_name=legacy_candidate,
+                    system_instruction=SYSTEM_INSTRUCTION,
+                )
+                response = model.generate_content(full_contents)
+                if response and response.text:
+                    return response.text, None
+            except Exception as e_leg:
+                last_err = e_leg
+                continue
     except ImportError:
         pass
     except Exception as e_legacy:
