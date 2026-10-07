@@ -388,7 +388,7 @@ _working_gemini_model = None
 
 
 def _call_gemini_api(prompt, context_text):
-    """Calls Gemini Flash API with strict 45-second timeout and fast model execution."""
+    """Calls Gemini Flash API with standard client and fast execution."""
     global _working_gemini_model
 
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -414,7 +414,7 @@ def _call_gemini_api(prompt, context_text):
 
     last_err = None
     try:
-        client = genai.Client(api_key=api_key, http_options={"timeout": 45.0})
+        client = genai.Client(api_key=api_key)
         for model_name in models_to_try:
             try:
                 resp = client.models.generate_content(
@@ -425,8 +425,8 @@ def _call_gemini_api(prompt, context_text):
                             "You are a concise engineering assistant. Directly list matching documents "
                             "in a compact Markdown table or bullet points. Avoid long introductions or filler text."
                         ),
-                        temperature=0.1,
-                        max_output_tokens=800,
+                        temperature=0.2,
+                        max_output_tokens=1000,
                     ),
                 )
                 if resp and resp.text:
@@ -434,13 +434,14 @@ def _call_gemini_api(prompt, context_text):
                     return resp.text, None
             except Exception as e_model:
                 last_err = e_model
-                logger.warning("Gemini model %s failed or timed out: %s", model_name, e_model)
+                logger.warning("Gemini model %s failed: %s", model_name, e_model)
                 continue
     except Exception as e_client:
         last_err = e_client
         logger.error("Gemini client initialization error: %s", e_client)
 
-    return None, f"AI service response timed out or failed: {str(last_err)}"
+    logger.error("[AI Assistant Error] Failed to generate: %s", last_err)
+    return None, f"Gemini API Error: {str(last_err)}"
 
 
 @ai_bp.route("/query", methods=["POST"])
@@ -484,15 +485,8 @@ def api_ai_query():
             return jsonify(error="AI Assistant is not configured on this instance."), 503
 
         if err or not reply:
-            if "time" in str(err).lower():
-                return jsonify(error=f"AI service response timed out: {str(err)}"), 504
-            return jsonify(
-                reply=(
-                    "⚠️ **Unable to complete AI analysis.**\n\n"
-                    f"The AI service encountered an error: `{err or 'Empty response from model'}`. "
-                    "Please verify network connection and API quotas."
-                )
-            ), 200
+            logger.error("[AI Assistant Query Error] %s", err)
+            return jsonify(error=f"{err or 'Empty response from model'}"), 500
 
         return jsonify(reply=reply)
     except Exception as e:

@@ -2089,7 +2089,7 @@ async function sendAiPrompt(promptText) {
   const activeTab = urlParams.get('tab') || '';
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 50000);
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
     const res = await fetch('/api/ai/query', {
@@ -2112,10 +2112,10 @@ async function sendAiPrompt(promptText) {
       appendAiMessage('assistant', '⚠️ **AI Assistant is not configured on this instance.**\n\nPlease configure the `GEMINI_API_KEY` environment variable on Railway to enable Gemini Flash.');
     } else if (res.status === 403) {
       appendAiMessage('assistant', '🔒 **Authentication Required.**\n\nYour session may have expired. Please refresh the page and log in.');
-    } else if (res.status === 504) {
-      appendAiMessage('assistant', '⏱️ **Request Timed Out:** The AI model took too long to complete this analysis. Please retry with a more specific query.');
+    } else if (data.error) {
+      appendAiMessage('assistant', '⚠️ **AI Service Error:** ' + data.error);
     } else if (!res.ok) {
-      appendAiMessage('assistant', '⚠️ **Error:** ' + (data.error || 'Server error (' + res.status + ')'));
+      appendAiMessage('assistant', '⚠️ **Error (' + res.status + '):** ' + (data.error || 'Server error'));
     } else if (data.reply) {
       appendAiMessage('assistant', data.reply);
     } else {
@@ -2124,9 +2124,9 @@ async function sendAiPrompt(promptText) {
   } catch(err) {
     clearTimeout(timeoutId);
     if (err && (err.name === 'AbortError' || err.code === 20)) {
-      appendAiMessage('assistant', '⏱️ **Request Timed Out (50s):** Analysis took too long. Please retry with a more specific query.');
+      appendAiMessage('assistant', '⏱️ **Request Timed Out (60s):** Analysis took too long. Please retry with a simpler query.');
     } else {
-      appendAiMessage('assistant', '⚠️ **Network Error:** Could not reach AI Assistant endpoint. Please check your connection.');
+      appendAiMessage('assistant', '⚠️ **Network Error:** ' + (err.message || 'Could not reach AI Assistant endpoint.'));
     }
   } finally {
     clearTimeout(timeoutId);
