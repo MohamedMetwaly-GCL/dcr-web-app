@@ -76,25 +76,26 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
 <!-- SPOTLIGHT / GLOBAL SEARCH COMPONENT -->
 <div class="overlay hidden" id="spotlight-modal" style="z-index: 10050;">
   <div class="spotlight-palette">
-    <!-- Header with Search Input -->
+    <!-- Header with Search Input & Clear Button -->
     <div class="spotlight-header">
       <span class="spotlight-search-icon">🔍</span>
-      <input type="text" id="spotlight-input" class="spotlight-input" placeholder="Search across all accessible projects (min. 2 chars)..." autocomplete="off" spellcheck="false">
-      <div id="spotlight-spinner" class="spotlight-spinner hidden"></div>
+      <div class="spotlight-input-wrap">
+        <input type="text" id="spotlight-input" class="spotlight-input" placeholder="Search across all accessible projects (min. 2 chars)..." autocomplete="off" spellcheck="false">
+        <button id="spotlight-clear-btn" class="spotlight-clear-btn" type="button" onclick="clearSpotlightQuery()" title="Clear search" style="display: none;">✕</button>
+      </div>
+      <div id="spotlight-spinner" class="spotlight-spinner" style="display: none;"></div>
       <button class="spotlight-close-btn" onclick="closeGlobalSearch()" title="Close (Esc)">✕</button>
     </div>
 
-    <!-- Advanced Filter Bar (Project, Status, Date Range, Reset) -->
+    <!-- Compact Advanced Filter Bar (Project, Status, Date Range, Reset) -->
     <div class="spotlight-filter-bar" id="spotlight-filter-bar">
       <div class="spotlight-filter-group">
-        <label for="spotlight-project-filter" class="spotlight-filter-label">Project</label>
-        <select id="spotlight-project-filter" class="spotlight-select">
+        <select id="spotlight-project-filter" class="spotlight-select" title="Filter by Project">
           <option value="ALL">All Projects</option>
         </select>
       </div>
       <div class="spotlight-filter-group">
-        <label for="spotlight-status-filter" class="spotlight-filter-label">Status</label>
-        <select id="spotlight-status-filter" class="spotlight-select">
+        <select id="spotlight-status-filter" class="spotlight-select" title="Filter by Status">
           <option value="ALL">All Statuses</option>
           <option value="Approved">Approved</option>
           <option value="Under Review">Under Review</option>
@@ -102,12 +103,10 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
           <option value="Rejected">Rejected</option>
         </select>
       </div>
-      <div class="spotlight-filter-group">
-        <label for="spotlight-date-from" class="spotlight-filter-label">From</label>
+      <div class="spotlight-filter-group spotlight-dates-group">
+        <span class="spotlight-filter-label" title="Date Range">📅</span>
         <input type="date" id="spotlight-date-from" class="spotlight-date-input" title="From Date">
-      </div>
-      <div class="spotlight-filter-group">
-        <label for="spotlight-date-to" class="spotlight-filter-label">To</label>
+        <span class="spotlight-date-sep">→</span>
         <input type="date" id="spotlight-date-to" class="spotlight-date-input" title="To Date">
       </div>
       <button type="button" id="spotlight-reset-filters" class="spotlight-reset-btn hidden" onclick="resetSpotlightFilters()" title="Reset all filters">↺ Reset</button>
@@ -129,14 +128,14 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
     <div class="spotlight-body" id="spotlight-body">
       <div id="spotlight-results" class="spotlight-results">
         <div class="spotlight-empty-state">
-          <div style="font-size: 28px; margin-bottom: 8px;">⚡</div>
-          <div style="font-weight: 600; font-size: 14px; color: #f1f5f9;">Instant Global Search</div>
-          <div style="font-size: 12px; color: #94a3b8; margin-top: 4px; max-width: 440px; margin-left: auto; margin-right: auto;">
-            Search across document numbers, titles, subjects, descriptions, and statuses across your authorized projects.
+          <div style="font-size: 28px; margin-bottom: 8px;">🔍</div>
+          <div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">Instant Global Search</div>
+          <div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px; max-width: 440px; margin-left: auto; margin-right: auto;">
+            Type at least 2 characters to search across all accessible projects, document numbers, subjects, and statuses...
           </div>
-          <div style="margin-top: 14px; display: inline-flex; gap: 8px; font-size: 11px; color: #94a3b8;">
+          <div style="margin-top: 14px; display: inline-flex; gap: 8px; font-size: 11px; color: var(--sl-empty-sub);">
             <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
-            <span><kbd>↵</kbd> Open record</span>
+            <span><kbd>↵</kbd> Open in new tab</span>
             <span><kbd>ESC</kbd> Close</span>
           </div>
         </div>
@@ -147,10 +146,10 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
     <div class="spotlight-footer">
       <div class="spotlight-footer-shortcuts">
         <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
-        <span><kbd>↵</kbd> Open</span>
+        <span><kbd>↵</kbd> Open in new tab</span>
         <span><kbd>ESC</kbd> Close</span>
       </div>
-      <div style="font-size: 11px; color: #64748b; font-weight: 500;">🔒 RBAC-Filtered Results</div>
+      <div style="font-size: 11px; color: var(--sl-footer-text); font-weight: 500;">🔒 RBAC-Filtered Results</div>
     </div>
   </div>
 </div>
@@ -202,10 +201,70 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
 
 /* Spotlight Modal Overlay Styling */
 #spotlight-modal {
+  /* Default: Light Mode Theme Variables */
+  --sl-backdrop: rgba(15, 23, 42, 0.45);
+  --sl-card-bg: #ffffff;
+  --sl-card-border: #e2e8f0;
+  --sl-card-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  --sl-header-bg: #ffffff;
+  --sl-header-border: #e2e8f0;
+  --sl-input-bg: #f8fafc;
+  --sl-input-text: #0f172a;
+  --sl-input-border: #cbd5e1;
+  --sl-input-placeholder: #94a3b8;
+  --sl-filter-bar-bg: #f8fafc;
+  --sl-filter-bar-border: #e2e8f0;
+  --sl-filter-label: #64748b;
+  --sl-control-bg: #ffffff;
+  --sl-control-border: #cbd5e1;
+  --sl-control-text: #334155;
+  --sl-control-focus: #0284c7;
+  --sl-meta-bar-bg: #f1f5f9;
+  --sl-meta-bar-border: #e2e8f0;
+  --sl-meta-text: #64748b;
+  --sl-scope-bg: rgba(6, 182, 212, 0.12);
+  --sl-scope-border: rgba(6, 182, 212, 0.3);
+  --sl-scope-text: #0891b2;
+  --sl-scope-admin-bg: rgba(16, 185, 129, 0.12);
+  --sl-scope-admin-border: rgba(16, 185, 129, 0.3);
+  --sl-scope-admin-text: #059669;
+  --sl-count-text: #0284c7;
+  --sl-chip-container-bg: #ffffff;
+  --sl-chip-container-border: #e2e8f0;
+  --sl-chip-bg: #f1f5f9;
+  --sl-chip-border: #e2e8f0;
+  --sl-chip-text: #475569;
+  --sl-chip-hover-border: #0284c7;
+  --sl-chip-hover-text: #0f172a;
+  --sl-chip-active-bg: #0284c7;
+  --sl-chip-active-border: #0284c7;
+  --sl-chip-active-text: #ffffff;
+  --sl-body-bg: #f8fafc;
+  --sl-item-bg: #ffffff;
+  --sl-item-border: #e2e8f0;
+  --sl-item-hover-bg: #f1f5f9;
+  --sl-item-hover-border: #38bdf8;
+  --sl-docno-text: #0284c7;
+  --sl-dt-bg: #f1f5f9;
+  --sl-dt-border: #cbd5e1;
+  --sl-dt-text: #475569;
+  --sl-title-text: #0f172a;
+  --sl-proj-text: #64748b;
+  --sl-proj-code: #0891b2;
+  --sl-footer-bg: #f8fafc;
+  --sl-footer-border: #e2e8f0;
+  --sl-footer-text: #64748b;
+  --sl-kbd-bg: #ffffff;
+  --sl-kbd-border: #cbd5e1;
+  --sl-kbd-text: #334155;
+  --sl-empty-title: #0f172a;
+  --sl-empty-sub: #64748b;
+  --sl-scrollbar-thumb: #cbd5e1;
+
   position: fixed !important;
   inset: 0 !important;
   z-index: 10050 !important;
-  background: rgba(0, 0, 0, 0.72) !important;
+  background: var(--sl-backdrop) !important;
   backdrop-filter: blur(4px) !important;
   display: flex !important;
   align-items: center !important;
@@ -215,17 +274,80 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   display: none !important;
 }
 
+/* Dark Mode Theme Overrides */
+body.dark #spotlight-modal,
+#spotlight-modal.dark-theme {
+  --sl-backdrop: rgba(0, 0, 0, 0.72);
+  --sl-card-bg: #0f172a;
+  --sl-card-border: #334155;
+  --sl-card-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --sl-header-bg: #0f172a;
+  --sl-header-border: #1e293b;
+  --sl-input-bg: transparent;
+  --sl-input-text: #f8fafc;
+  --sl-input-border: #334155;
+  --sl-input-placeholder: #64748b;
+  --sl-filter-bar-bg: #0b1120;
+  --sl-filter-bar-border: #1e293b;
+  --sl-filter-label: #64748b;
+  --sl-control-bg: #1e293b;
+  --sl-control-border: #334155;
+  --sl-control-text: #e2e8f0;
+  --sl-control-focus: #06b6d4;
+  --sl-meta-bar-bg: #1e293b;
+  --sl-meta-bar-border: #334155;
+  --sl-meta-text: #94a3b8;
+  --sl-scope-bg: rgba(6, 182, 212, 0.15);
+  --sl-scope-border: rgba(6, 182, 212, 0.3);
+  --sl-scope-text: #06b6d4;
+  --sl-scope-admin-bg: rgba(16, 185, 129, 0.15);
+  --sl-scope-admin-border: rgba(16, 185, 129, 0.3);
+  --sl-scope-admin-text: #10b981;
+  --sl-count-text: #06b6d4;
+  --sl-chip-container-bg: rgba(15, 23, 42, 0.6);
+  --sl-chip-container-border: #1e293b;
+  --sl-chip-bg: #1e293b;
+  --sl-chip-border: #334155;
+  --sl-chip-text: #94a3b8;
+  --sl-chip-hover-border: #06b6d4;
+  --sl-chip-hover-text: #f8fafc;
+  --sl-chip-active-bg: #06b6d4;
+  --sl-chip-active-border: #06b6d4;
+  --sl-chip-active-text: #0f172a;
+  --sl-body-bg: #0f172a;
+  --sl-item-bg: rgba(30, 41, 59, 0.4);
+  --sl-item-border: transparent;
+  --sl-item-hover-bg: #1e293b;
+  --sl-item-hover-border: rgba(6, 182, 212, 0.45);
+  --sl-docno-text: #38bdf8;
+  --sl-dt-bg: rgba(255, 255, 255, 0.08);
+  --sl-dt-border: rgba(255, 255, 255, 0.12);
+  --sl-dt-text: #94a3b8;
+  --sl-title-text: #cbd5e1;
+  --sl-proj-text: #64748b;
+  --sl-proj-code: #06b6d4;
+  --sl-footer-bg: #1e293b;
+  --sl-footer-border: #334155;
+  --sl-footer-text: #64748b;
+  --sl-kbd-bg: rgba(0, 0, 0, 0.4);
+  --sl-kbd-border: rgba(255, 255, 255, 0.15);
+  --sl-kbd-text: #cbd5e1;
+  --sl-empty-title: #f1f5f9;
+  --sl-empty-sub: #94a3b8;
+  --sl-scrollbar-thumb: #334155;
+}
+
 /* Spotlight Palette Card */
 .spotlight-palette {
-  background: #0f172a;
-  border: 1px solid #334155;
+  background: var(--sl-card-bg);
+  border: 1px solid var(--sl-card-border);
   border-radius: 14px;
   width: 95%;
-  max-width: 680px;
+  max-width: 720px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow: var(--sl-card-shadow);
   overflow: hidden;
   animation: spotlightPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -237,35 +359,69 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
 .spotlight-header {
   display: flex;
   align-items: center;
-  padding: 12px 18px;
-  border-bottom: 1px solid #1e293b;
-  gap: 12px;
-  background: #0f172a;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--sl-header-border);
+  gap: 10px;
+  background: var(--sl-header-bg);
 }
 .spotlight-search-icon {
   font-size: 18px;
   opacity: 0.8;
+  flex-shrink: 0;
+}
+.spotlight-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  position: relative;
+  background: var(--sl-input-bg);
+  border: 1px solid var(--sl-input-border);
+  border-radius: 8px;
+  padding: 0 8px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.spotlight-input-wrap:focus-within {
+  border-color: var(--sl-control-focus);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
 }
 .spotlight-input {
   flex: 1;
   background: transparent;
   border: none;
   outline: none;
-  font-size: 15px;
-  color: #f8fafc;
+  font-size: 14px;
+  color: var(--sl-input-text);
   font-family: inherit;
-  padding: 4px 0;
+  padding: 6px 4px;
 }
 .spotlight-input::placeholder {
-  color: #64748b;
+  color: var(--sl-input-placeholder);
+}
+.spotlight-clear-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.spotlight-clear-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
 }
 .spotlight-spinner {
+  display: none;
   width: 18px;
   height: 18px;
   border: 2px solid rgba(6, 182, 212, 0.2);
   border-top-color: #06b6d4;
   border-radius: 50%;
   animation: spotlightSpin 0.6s linear infinite;
+  flex-shrink: 0;
 }
 @keyframes spotlightSpin {
   to { transform: rotate(360deg); }
@@ -279,62 +435,86 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   padding: 4px 8px;
   border-radius: 6px;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 .spotlight-close-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #0f172a;
+}
+body.dark .spotlight-close-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #f8fafc;
 }
 
-/* Advanced Filter Bar */
+/* Compact Advanced Filter Bar */
 .spotlight-filter-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #0b1120;
-  border-bottom: 1px solid #1e293b;
+  gap: 6px 8px;
+  padding: 6px 16px;
+  background: var(--sl-filter-bar-bg);
+  border-bottom: 1px solid var(--sl-filter-bar-border);
   font-size: 11.5px;
 }
 .spotlight-filter-group {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 .spotlight-filter-label {
-  color: #64748b;
+  color: var(--sl-filter-label);
   font-size: 11px;
   font-weight: 500;
   user-select: none;
 }
 .spotlight-select, .spotlight-date-input {
-  background: #1e293b;
-  border: 1px solid #334155;
-  color: #e2e8f0;
+  background: var(--sl-control-bg);
+  border: 1px solid var(--sl-control-border);
+  color: var(--sl-control-text);
   border-radius: 6px;
-  padding: 3px 7px;
+  padding: 3px 6px;
   font-size: 11.5px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s ease;
 }
+.spotlight-select {
+  max-width: 165px;
+}
+.spotlight-date-input {
+  width: 105px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+.spotlight-dates-group {
+  gap: 3px;
+}
+.spotlight-date-sep {
+  color: var(--sl-filter-label);
+  font-size: 10px;
+}
 .spotlight-select:focus, .spotlight-date-input:focus {
-  border-color: #06b6d4;
+  border-color: var(--sl-control-focus);
 }
 .spotlight-select option {
-  background: #0f172a;
-  color: #f8fafc;
+  background: var(--sl-card-bg);
+  color: var(--sl-input-text);
 }
 .spotlight-date-input::-webkit-calendar-picker-indicator {
-  filter: invert(0.8);
+  opacity: 0.6;
   cursor: pointer;
+  padding: 0;
+}
+body.dark .spotlight-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
 }
 .spotlight-reset-btn {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
   border-radius: 6px;
-  padding: 3px 8px;
+  padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -342,6 +522,15 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   margin-left: auto;
 }
 .spotlight-reset-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #dc2626;
+}
+body.dark .spotlight-reset-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+body.dark .spotlight-reset-btn:hover {
   background: rgba(239, 68, 68, 0.25);
   color: #fca5a5;
 }
@@ -350,33 +539,33 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 18px;
-  background: #1e293b;
-  border-bottom: 1px solid #334155;
+  padding: 6px 16px;
+  background: var(--sl-meta-bar-bg);
+  border-bottom: 1px solid var(--sl-meta-bar-border);
   font-size: 11.5px;
 }
 .spotlight-context {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #94a3b8;
+  color: var(--sl-meta-text);
 }
 .spotlight-scope-badge {
-  background: rgba(6, 182, 212, 0.15);
-  color: #06b6d4;
-  border: 1px solid rgba(6, 182, 212, 0.3);
-  padding: 2px 7px;
+  background: var(--sl-scope-bg);
+  color: var(--sl-scope-text);
+  border: 1px solid var(--sl-scope-border);
+  padding: 1px 6px;
   border-radius: 4px;
   font-weight: 600;
   font-size: 10px;
 }
 .spotlight-scope-badge.admin {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-  border-color: rgba(16, 185, 129, 0.3);
+  background: var(--sl-scope-admin-bg);
+  color: var(--sl-scope-admin-text);
+  border-color: var(--sl-scope-admin-border);
 }
 .spotlight-count {
-  color: #06b6d4;
+  color: var(--sl-count-text);
   font-weight: 600;
 }
 
@@ -384,18 +573,18 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 18px;
+  padding: 6px 16px;
   overflow-x: auto;
-  border-bottom: 1px solid #1e293b;
-  background: rgba(15, 23, 42, 0.6);
+  border-bottom: 1px solid var(--sl-chip-container-border);
+  background: var(--sl-chip-container-bg);
 }
 .spotlight-chips::-webkit-scrollbar { height: 4px; }
-.spotlight-chips::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+.spotlight-chips::-webkit-scrollbar-thumb { background: var(--sl-scrollbar-thumb); border-radius: 2px; }
 .spotlight-chip {
-  background: #1e293b;
-  border: 1px solid #334155;
-  color: #94a3b8;
-  padding: 3px 10px;
+  background: var(--sl-chip-bg);
+  border: 1px solid var(--sl-chip-border);
+  color: var(--sl-chip-text);
+  padding: 2px 9px;
   border-radius: 12px;
   font-size: 11px;
   font-weight: 600;
@@ -404,23 +593,24 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   transition: all 0.15s;
 }
 .spotlight-chip:hover {
-  border-color: #06b6d4;
-  color: #f8fafc;
+  border-color: var(--sl-chip-hover-border);
+  color: var(--sl-chip-hover-text);
 }
 .spotlight-chip.active {
-  background: #06b6d4;
-  border-color: #06b6d4;
-  color: #0f172a;
+  background: var(--sl-chip-active-bg);
+  border-color: var(--sl-chip-active-border);
+  color: var(--sl-chip-active-text);
 }
 
 .spotlight-body {
   flex: 1;
   overflow-y: auto;
-  max-height: 52vh;
+  max-height: 54vh;
   padding: 8px 12px;
+  background: var(--sl-body-bg);
 }
 .spotlight-body::-webkit-scrollbar { width: 6px; }
-.spotlight-body::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+.spotlight-body::-webkit-scrollbar-thumb { background: var(--sl-scrollbar-thumb); border-radius: 3px; }
 .spotlight-results {
   display: flex;
   flex-direction: column;
@@ -430,21 +620,21 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 9px 12px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
-  border: 1px solid transparent;
-  background: rgba(30, 41, 59, 0.4);
+  border: 1px solid var(--sl-item-border);
+  background: var(--sl-item-bg);
 }
 .spotlight-item:hover, .spotlight-item.highlighted {
-  background: #1e293b;
-  border-color: rgba(6, 182, 212, 0.45);
+  background: var(--sl-item-hover-bg);
+  border-color: var(--sl-item-hover-border);
 }
 .spotlight-item-main {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   flex: 1;
   min-width: 0;
 }
@@ -456,15 +646,15 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
 .spotlight-item-docno {
   font-weight: 700;
   font-size: 13px;
-  color: #38bdf8;
+  color: var(--sl-docno-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .spotlight-item-dt {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #94a3b8;
+  background: var(--sl-dt-bg);
+  border: 1px solid var(--sl-dt-border);
+  color: var(--sl-dt-text);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 10px;
@@ -473,7 +663,7 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
 }
 .spotlight-item-title {
   font-size: 12px;
-  color: #cbd5e1;
+  color: var(--sl-title-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -483,12 +673,12 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #64748b;
-  margin-top: 2px;
+  color: var(--sl-proj-text);
+  margin-top: 1px;
 }
 .spotlight-item-proj-code {
   font-weight: 600;
-  color: #06b6d4;
+  color: var(--sl-proj-code);
 }
 .spotlight-item-meta {
   display: flex;
@@ -506,31 +696,34 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   white-space: nowrap;
 }
 .spotlight-drive-link {
-  color: #38bdf8;
+  color: #0284c7;
   font-size: 13px;
   text-decoration: none;
   opacity: 0.8;
   padding: 2px 4px;
   border-radius: 4px;
 }
+body.dark .spotlight-drive-link {
+  color: #38bdf8;
+}
 .spotlight-drive-link:hover {
   opacity: 1;
-  background: rgba(56, 189, 248, 0.15);
+  background: rgba(2, 132, 199, 0.12);
 }
 
 .spotlight-empty-state {
   text-align: center;
-  padding: 36px 16px;
+  padding: 32px 16px;
 }
 .spotlight-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 9px 18px;
-  background: #1e293b;
-  border-top: 1px solid #334155;
+  padding: 8px 16px;
+  background: var(--sl-footer-bg);
+  border-top: 1px solid var(--sl-footer-border);
   font-size: 11px;
-  color: #64748b;
+  color: var(--sl-footer-text);
 }
 .spotlight-footer-shortcuts {
   display: flex;
@@ -538,13 +731,13 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
   gap: 12px;
 }
 .spotlight-footer kbd {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--sl-kbd-bg);
+  border: 1px solid var(--sl-kbd-border);
   border-radius: 3px;
   padding: 1px 4px;
   font-size: 10px;
   font-family: inherit;
-  color: #cbd5e1;
+  color: var(--sl-kbd-text);
   margin-right: 3px;
 }
 </style>
@@ -568,13 +761,39 @@ function _slEsc(s) {
 async function openGlobalSearch() {
   const modal = document.getElementById('spotlight-modal');
   if (!modal) return;
+
+  const isDark = document.body.classList.contains('dark') || document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    modal.classList.add('dark-theme');
+    modal.classList.remove('light-theme');
+  } else {
+    modal.classList.add('light-theme');
+    modal.classList.remove('dark-theme');
+  }
+
   modal.classList.remove('hidden');
   const inp = document.getElementById('spotlight-input');
+  const clearBtn = document.getElementById('spotlight-clear-btn');
+  const spinner = document.getElementById('spotlight-spinner');
+  if (spinner) spinner.style.display = 'none';
+
   if (inp) {
     inp.focus();
     inp.select();
+    if (clearBtn) clearBtn.style.display = inp.value ? 'flex' : 'none';
   }
   updateSpotlightContext();
+}
+
+function clearSpotlightQuery() {
+  const inp = document.getElementById('spotlight-input');
+  const clearBtn = document.getElementById('spotlight-clear-btn');
+  if (inp) {
+    inp.value = '';
+    inp.focus();
+  }
+  if (clearBtn) clearBtn.style.display = 'none';
+  handleSpotlightInput('');
 }
 
 function closeGlobalSearch() {
@@ -689,11 +908,16 @@ function handleSpotlightInput(val) {
   const spinner = document.getElementById('spotlight-spinner');
   const countEl = document.getElementById('spotlight-count');
   const chipsEl = document.getElementById('spotlight-chips');
+  const clearBtn = document.getElementById('spotlight-clear-btn');
+
+  if (clearBtn) {
+    clearBtn.style.display = val ? 'flex' : 'none';
+  }
 
   updateResetButtonVisibility();
 
   if (q.length < 2) {
-    if (spinner) spinner.classList.add('hidden');
+    if (spinner) spinner.style.display = 'none';
     if (countEl) countEl.classList.add('hidden');
     if (chipsEl) chipsEl.classList.add('hidden');
     _spotlightState.rawResults = [];
@@ -704,14 +928,13 @@ function handleSpotlightInput(val) {
     return;
   }
 
-  if (spinner) spinner.classList.remove('hidden');
+  if (spinner) spinner.style.display = 'block';
 
   _spotlightState.debounceTimer = setTimeout(async () => {
     try {
       _spotlightState.currentQuery = q;
       const filterParams = getSpotlightFilterParams();
       const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&limit=300' + filterParams);
-      if (spinner) spinner.classList.add('hidden');
       if (!data) return;
 
       _spotlightState.rawResults = data.results || [];
@@ -739,8 +962,9 @@ function handleSpotlightInput(val) {
       renderSpotlightChips();
       filterSpotlightByChip('all');
     } catch(err) {
-      if (spinner) spinner.classList.add('hidden');
       renderSpotlightError(err.message || 'Error executing search');
+    } finally {
+      if (spinner) spinner.style.display = 'none';
     }
   }, 300);
 }
@@ -798,7 +1022,7 @@ async function filterSpotlightByChip(dt) {
   // trigger a server-side fetch with &dt_id to retrieve all matching records for this type.
   if (dt !== 'all' && _spotlightState.totalFound > _spotlightState.rawResults.length && q) {
     const spinner = document.getElementById('spotlight-spinner');
-    if (spinner) spinner.classList.remove('hidden');
+    if (spinner) spinner.style.display = 'block';
     try {
       const filterParams = getSpotlightFilterParams();
       const data = await apiFetch('/api/records/search/global?q=' + encodeURIComponent(q) + '&dt_id=' + encodeURIComponent(dt) + '&limit=300' + filterParams);
@@ -830,7 +1054,7 @@ async function filterSpotlightByChip(dt) {
       console.warn('Server-side dt_id search failed, falling back to in-memory filter:', err);
       _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
     } finally {
-      if (spinner) spinner.classList.add('hidden');
+      if (spinner) spinner.style.display = 'none';
     }
   } else if (dt === 'all') {
     _spotlightState.filteredResults = [..._spotlightState.rawResults];
@@ -857,14 +1081,14 @@ function renderSpotlightInitial() {
   if (!container) return;
   container.innerHTML = `
     <div class="spotlight-empty-state">
-      <div style="font-size: 28px; margin-bottom: 8px;">⚡</div>
-      <div style="font-weight: 600; font-size: 14px; color: #f1f5f9;">Instant Global Search</div>
-      <div style="font-size: 12px; color: #94a3b8; margin-top: 4px; max-width: 440px; margin-left: auto; margin-right: auto;">
+      <div style="font-size: 28px; margin-bottom: 8px;">🔍</div>
+      <div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">Instant Global Search</div>
+      <div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px; max-width: 440px; margin-left: auto; margin-right: auto;">
         Type at least 2 characters to search across document numbers, titles, subjects, descriptions, and statuses across your authorized projects.
       </div>
-      <div style="margin-top: 14px; display: inline-flex; gap: 8px; font-size: 11px; color: #94a3b8;">
+      <div style="margin-top: 14px; display: inline-flex; gap: 8px; font-size: 11px; color: var(--sl-empty-sub);">
         <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
-        <span><kbd>↵</kbd> Open record</span>
+        <span><kbd>↵</kbd> Open in new tab</span>
         <span><kbd>ESC</kbd> Close</span>
       </div>
     </div>
@@ -874,7 +1098,7 @@ function renderSpotlightInitial() {
 function renderSpotlightError(msg) {
   const container = document.getElementById('spotlight-results');
   if (!container) return;
-  container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div><div style="font-weight: 600; font-size: 13px; color: #ef4444;">Search Error</div><div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">' + _slEsc(msg) + '</div></div>';
+  container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div><div style="font-weight: 600; font-size: 13px; color: #ef4444;">Search Error</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">' + _slEsc(msg) + '</div></div>';
 }
 
 function renderSpotlightResults() {
@@ -883,7 +1107,7 @@ function renderSpotlightResults() {
   const rows = _spotlightState.filteredResults;
   if (!rows.length) {
     const q = document.getElementById('spotlight-input')?.value || '';
-    container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 26px; margin-bottom: 8px;">🔍</div><div style="font-weight: 600; font-size: 14px; color: #f1f5f9;">No Matching Records Found</div><div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">No records matched "' + _slEsc(q) + '" in your accessible projects.</div></div>';
+    container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 26px; margin-bottom: 8px;">🔍</div><div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">No Matching Records Found</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">No records matched "' + _slEsc(q) + '" in your accessible projects.</div></div>';
     return;
   }
 
@@ -931,17 +1155,25 @@ function getSpotlightStatusBadge(status) {
   if (!status) return '';
   const s = String(status).trim();
   const up = s.toUpperCase();
-  let bg = '#334155', fg = '#f8fafc';
+  const isDark = document.body.classList.contains('dark') || document.getElementById('spotlight-modal')?.classList.contains('dark-theme');
+  let bg = isDark ? '#334155' : '#f1f5f9';
+  let fg = isDark ? '#f8fafc' : '#334155';
+
   if (up.startsWith('A-') || up.startsWith('A ') || up === 'A' || up.includes('APPROV') || up.includes('ACCEPT') || up.includes('CLOSED')) {
-    bg = '#064e3b'; fg = '#6ee7b7';
+    bg = isDark ? '#064e3b' : '#dcfce7';
+    fg = isDark ? '#6ee7b7' : '#15803d';
   } else if (up.startsWith('D-') || up.startsWith('D ') || up === 'D' || up.includes('REJECT') || up.includes('CANCEL')) {
-    bg = '#7f1d1d'; fg = '#fca5a5';
+    bg = isDark ? '#7f1d1d' : '#fee2e2';
+    fg = isDark ? '#fca5a5' : '#b91c1c';
   } else if (up.startsWith('C-') || up.startsWith('C ') || up === 'C' || up.includes('REVISE')) {
-    bg = '#7c2d12'; fg = '#fdba74';
+    bg = isDark ? '#7c2d12' : '#ffedd5';
+    fg = isDark ? '#fdba74' : '#c2410c';
   } else if (up.startsWith('B-') || up.startsWith('B ') || up === 'B' || up.includes('REVIEW') || up.includes('PENDING') || up.includes('OPEN') || up.includes('NOTED')) {
-    bg = '#713f12'; fg = '#fde047';
+    bg = isDark ? '#713f12' : '#fef3c7';
+    fg = isDark ? '#fde047' : '#b45309';
   } else if (up.includes('INFO')) {
-    bg = '#1e3a8a'; fg = '#93c5fd';
+    bg = isDark ? '#1e3a8a' : '#e0f2fe';
+    fg = isDark ? '#93c5fd' : '#0369a1';
   }
   return '<span class="spotlight-status-badge" style="background:' + bg + ';color:' + fg + ';">' + _slEsc(s) + '</span>';
 }
@@ -1039,6 +1271,7 @@ function _initSpotlightListeners() {
 // Expose globally on window
 window.openGlobalSearch = openGlobalSearch;
 window.closeGlobalSearch = closeGlobalSearch;
+window.clearSpotlightQuery = clearSpotlightQuery;
 window.navigateToSpotlightRecord = navigateToSpotlightRecord;
 window.filterSpotlightByChip = filterSpotlightByChip;
 window.resetSpotlightFilters = resetSpotlightFilters;
