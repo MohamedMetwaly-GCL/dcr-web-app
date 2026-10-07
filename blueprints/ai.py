@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_INSTRUCTION = (
     "You are the DCR Engineering AI Assistant for Gas Chill contracting projects. "
+    "In the project document registers, abbreviations are defined as follows: "
+    "- 'MS': Material Submittal (اعتماد مواد / عينات / موردين) or Method Statement depending on register. "
+    "- 'SD': Shop Drawing (مخططات تنفيذية / شوب درونج). "
+    "- 'MIR': Material Inspection Request (طلب فحص وتوريد مواد ومهمات). "
+    "- 'RFI': Request for Information (استفسارات وتوضيحات فنية). "
+    "- 'IR' / 'WIR': Inspection Request / Work Inspection Request (طلبات استلام أعمال). "
+    "- 'NOC': Notice of Change (أوامر التغيير / مطالبات مالية). "
+    "- 'PR': Purchase Request / Procurement (طلبات الشراء والتوريد). "
     "You provide accurate, concise, factual answers about document statuses, "
     "overdue submittals, and cost approvals using ONLY the provided project register context. "
     "Never modify or fabricate data."
@@ -28,55 +36,80 @@ SYSTEM_INSTRUCTION = (
 
 
 KEYWORD_MAP = {
-    "محابس": "valve",
-    "محبس": "valve",
-    "فالف": "valve",
-    "فالفات": "valve",
-    "طلمبات": "pump",
-    "طلمبة": "pump",
-    "مضخات": "pump",
-    "مضخة": "pump",
-    "بمب": "pump",
-    "مواسير": "pipe",
-    "ماسورة": "pipe",
-    "أنابيب": "pipe",
-    "انابيب": "pipe",
-    "عزل": "insulation",
-    "عوازل": "insulation",
-    "مخططات": "drawing",
-    "مخطط": "drawing",
-    "رسومات": "drawing",
-    "رسم": "drawing",
-    "شوب درونج": "shop drawing",
-    "شوب دروينج": "shop drawing",
-    "شوبدروينج": "shop drawing",
-    "تكييف": "chiller",
-    "تكييفات": "chiller",
-    "مبردات": "chiller",
-    "مبرد": "chiller",
-    "تشيلر": "chiller",
-    "تشيلرات": "chiller",
-    "فلاتر": "filter",
-    "فلتر": "filter",
-    "تهوية": "fan",
-    "مراوح": "fan",
-    "مروحة": "fan",
-    "لوحات": "panel",
-    "لوحة": "panel",
-    "كابلات": "cable",
-    "كيبلات": "cable",
-    "كابل": "cable",
-    "محولات": "transformer",
-    "محول": "transformer",
-    "مولدات": "generator",
-    "مولد": "generator",
-    "إنذار": "alarm",
-    "انذار": "alarm",
-    "حريق": "fire",
-    "إطفاء": "fire",
-    "اطفاء": "fire",
-    "دكت": "duct",
-    "صاج": "duct",
+    "محابس": ["valve", "valves", "valv", "butterfly", "check valve", "fittings"],
+    "محبس": ["valve", "valves", "valv"],
+    "فالف": ["valve", "valves", "valv"],
+    "فالفات": ["valve", "valves", "valv"],
+    "طلمبات": ["pump", "pumps"],
+    "طلمبة": ["pump", "pumps"],
+    "مضخات": ["pump", "pumps"],
+    "مضخة": ["pump", "pumps"],
+    "بمب": ["pump", "pumps"],
+    "مواسير": ["pipe", "pipes", "piping"],
+    "ماسورة": ["pipe", "pipes", "piping"],
+    "أنابيب": ["pipe", "pipes", "piping"],
+    "انابيب": ["pipe", "pipes", "piping"],
+    "عزل": ["insulation", "insulated"],
+    "عوازل": ["insulation", "insulated"],
+    "مخططات": ["drawing", "drawings", "dwg"],
+    "مخطط": ["drawing", "drawings", "dwg"],
+    "رسومات": ["drawing", "drawings", "dwg"],
+    "رسم": ["drawing", "drawings", "dwg"],
+    "شوب درونج": ["shop drawing", "drawing", "dwg"],
+    "شوب دروينج": ["shop drawing", "drawing", "dwg"],
+    "شوبدروينج": ["shop drawing", "drawing", "dwg"],
+    "تكييف": ["chiller", "cooling", "hvac"],
+    "تكييفات": ["chiller", "cooling", "hvac"],
+    "مبردات": ["chiller", "chillers", "cooling"],
+    "مبرد": ["chiller", "cooling"],
+    "تشيلر": ["chiller", "chillers"],
+    "تشيلرات": ["chiller", "chillers"],
+    "فلاتر": ["filter", "filters"],
+    "فلتر": ["filter", "filters"],
+    "تهوية": ["fan", "fans", "ventilation"],
+    "مراوح": ["fan", "fans", "ventilation"],
+    "مروحة": ["fan", "fans", "ventilation"],
+    "لوحات": ["panel", "panels"],
+    "لوحة": ["panel", "panels"],
+    "كابلات": ["cable", "cables"],
+    "كيبلات": ["cable", "cables"],
+    "كابل": ["cable", "cables"],
+    "محولات": ["transformer", "transformers"],
+    "محول": ["transformer", "transformers"],
+    "مولدات": ["generator", "generators"],
+    "مولد": ["generator", "generators"],
+    "إنذار": ["alarm", "alarms"],
+    "انذار": ["alarm", "alarms"],
+    "حريق": ["fire"],
+    "إطفاء": ["fire", "fighting"],
+    "اطفاء": ["fire", "fighting"],
+    "دكت": ["duct", "ducts"],
+    "صاج": ["duct", "ducts"],
+}
+
+ENGLISH_KEYWORD_MAP = {
+    "valve": ["valve", "valves", "valv", "butterfly", "check valve", "fittings"],
+    "valves": ["valve", "valves", "valv", "butterfly", "check valve", "fittings"],
+    "pump": ["pump", "pumps"],
+    "pumps": ["pump", "pumps"],
+    "pipe": ["pipe", "pipes", "piping"],
+    "pipes": ["pipe", "pipes", "piping"],
+    "piping": ["pipe", "pipes", "piping"],
+    "chiller": ["chiller", "chillers", "cooling", "hvac"],
+    "chillers": ["chiller", "chillers", "cooling", "hvac"],
+    "filter": ["filter", "filters"],
+    "filters": ["filter", "filters"],
+    "fan": ["fan", "fans", "ventilation"],
+    "fans": ["fan", "fans", "ventilation"],
+    "duct": ["duct", "ducts"],
+    "ducts": ["duct", "ducts"],
+    "panel": ["panel", "panels"],
+    "panels": ["panel", "panels"],
+    "cable": ["cable", "cables"],
+    "cables": ["cable", "cables"],
+    "insulation": ["insulation", "insulated"],
+    "drawing": ["drawing", "drawings", "dwg"],
+    "drawings": ["drawing", "drawings", "dwg"],
 }
 
 KNOWN_DOC_TYPES = ["MS", "SD", "MIR", "RFI", "IR", "NOC", "PR", "NCR", "ITP", "PQ", "WIR", "MAR", "MOM"]
@@ -92,7 +125,7 @@ def _safe_float(val):
         return 0.0
 
 
-def _build_ai_context(target_pids, user_prompt="", active_tab=None):
+def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None):
     """Generates concise, factual register context for the active project scope."""
     if not target_pids:
         return "No accessible projects found for the current user."
@@ -134,29 +167,41 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
         if re.search(r"\b" + re.escape(dt) + r"\b", user_prompt, re.IGNORECASE):
             detected_doc_types.append(dt.upper())
 
-    if "شوب درونج" in p_lower or "شوب دروينج" in p_lower or "شوبدروينج" in p_lower:
+    if any(w in p_lower for w in ["شوب درونج", "شوب دروينج", "شوبدروينج", "shop drawing", "shop drawings", "drawings", "مخططات"]):
         if "SD" not in detected_doc_types:
             detected_doc_types.append("SD")
-    if "ماتريال" in p_lower or "اعتماد مواد" in p_lower:
+    if any(w in p_lower for w in ["ماتريال", "اعتماد مواد", "اعتمادات مواد", "material submittal", "material submittals", "عينة", "عينات", "مورد"]):
         if "MS" not in detected_doc_types:
             detected_doc_types.append("MS")
+    if any(w in p_lower for w in ["فحص مواد", "توريد مواد", "material inspection"]):
+        if "MIR" not in detected_doc_types:
+            detected_doc_types.append("MIR")
 
     if active_tab and active_tab.upper() in KNOWN_DOC_TYPES and not detected_doc_types:
         detected_doc_types.append(active_tab.upper())
 
     # Bilingual Keyword Extraction (Arabic to English mapping + raw keywords)
     search_terms = []
-    for ar_kw, en_kw in KEYWORD_MAP.items():
+    for ar_kw, en_terms in KEYWORD_MAP.items():
         if ar_kw in p_lower:
-            if en_kw not in search_terms:
-                search_terms.append(en_kw)
+            terms_list = en_terms if isinstance(en_terms, list) else [en_terms]
+            for term in terms_list:
+                if term not in search_terms:
+                    search_terms.append(term)
+
+    for en_word, en_terms in ENGLISH_KEYWORD_MAP.items():
+        if re.search(r"\b" + re.escape(en_word) + r"\b", p_lower):
+            for term in en_terms:
+                if term not in search_terms:
+                    search_terms.append(term)
 
     # General English/Alphanumeric tokens
     stop_words = {
         "and", "the", "for", "with", "all", "what", "show", "list", "give", "from",
         "find", "submittal", "submittals", "document", "documents", "project", "projects",
         "status", "approved", "noted", "date", "please", "cfc", "pem", "any", "our",
-        "help", "query", "record", "records"
+        "help", "query", "record", "records", "material", "materials", "method", "statement",
+        "cost", "costs", "price", "change", "financial", "total", "summary", "kpi"
     }
     raw_tokens = re.findall(r"[A-Za-z0-9_-]{3,}", user_prompt)
     for tok in raw_tokens:
@@ -168,12 +213,76 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
             and tok_low not in [s.lower() for s in search_terms]
         ):
             search_terms.append(tok)
-            if len(search_terms) >= 3:
+            if len(search_terms) >= 12:
                 break
 
+    # ── Conversational Context & Clarification Recovery from Chat History ──
+    has_inherited_equipment = False
+    if history:
+        # 1. Recover Project Scope if missing from current prompt
+        if not matched_pids:
+            for msg in reversed(history):
+                if msg.get("role") == "user":
+                    prev_text = (msg.get("text") or "").lower()
+                    for p in projs:
+                        p_code = (p.get("code") or "").lower()
+                        p_name = (p.get("name") or "").lower()
+                        if p_code and (p_code in prev_text or p_code.replace("pem-", "") in prev_text):
+                            matched_pids.append(p["id"])
+                            break
+                        name_words = [w for w in re.findall(r"[a-zA-Z0-9\u0600-\u06FF]{3,}", p_name) if len(w) >= 3]
+                        if any(w in prev_text for w in name_words):
+                            matched_pids.append(p["id"])
+                            break
+                    if matched_pids:
+                        scoped_search_pids = matched_pids
+                        break
+
+        # 2. Recover Equipment Keywords if current prompt is a clarification or lacks equipment keywords
+        if not search_terms:
+            for msg in reversed(history):
+                if msg.get("role") == "user":
+                    prev_text = (msg.get("text") or "").lower()
+                    for ar_kw, en_terms in KEYWORD_MAP.items():
+                        if ar_kw in prev_text:
+                            terms_list = en_terms if isinstance(en_terms, list) else [en_terms]
+                            for term in terms_list:
+                                if term not in search_terms:
+                                    search_terms.append(term)
+                                    has_inherited_equipment = True
+                    for en_word, en_terms in ENGLISH_KEYWORD_MAP.items():
+                        if re.search(r"\b" + re.escape(en_word) + r"\b", prev_text):
+                            for term in en_terms:
+                                if term not in search_terms:
+                                    search_terms.append(term)
+                                    has_inherited_equipment = True
+                    if search_terms:
+                        break
+
+        # 3. Recover Doc Types if current prompt has no doc types
+        if not detected_doc_types:
+            for msg in reversed(history):
+                if msg.get("role") == "user":
+                    prev_text = (msg.get("text") or "").lower()
+                    for dt in KNOWN_DOC_TYPES:
+                        if re.search(r"\b" + re.escape(dt) + r"\b", msg.get("text") or "", re.IGNORECASE):
+                            if dt.upper() not in detected_doc_types:
+                                detected_doc_types.append(dt.upper())
+                    if any(w in prev_text for w in ["شوب درونج", "شوب دروينج", "شوبدروينج", "shop drawing", "shop drawings", "drawings", "مخططات"]):
+                        if "SD" not in detected_doc_types:
+                            detected_doc_types.append("SD")
+                    if any(w in prev_text for w in ["ماتريال", "اعتماد مواد", "اعتمادات مواد", "material submittal", "material submittals"]):
+                        if "MS" not in detected_doc_types:
+                            detected_doc_types.append("MS")
+                    if detected_doc_types:
+                        break
+
     # Determine query intent to slim down context payload
-    # When a specific engineering submittal keyword/doc query is detected (like "محابس", "valve", "شوب درونج", "MS", "SD", etc.)
-    has_submittal_keyword = any(ar_kw in p_lower for ar_kw in KEYWORD_MAP) or any(en_kw in [s.lower() for s in search_terms] for en_kw in KEYWORD_MAP.values())
+    has_submittal_keyword = (
+        any(ar_kw in p_lower for ar_kw in KEYWORD_MAP)
+        or any(re.search(r"\b" + re.escape(en_k) + r"\b", p_lower) for en_k in ENGLISH_KEYWORD_MAP)
+        or has_inherited_equipment
+    )
     has_submittal_doctype = any(dt in detected_doc_types for dt in ["MS", "SD", "MIR", "RFI", "IR", "PR", "NCR", "ITP", "PQ", "WIR", "MAR"])
 
     is_specific_submittal_query = has_submittal_keyword or has_submittal_doctype
@@ -297,27 +406,34 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
             context_lines.append("- Zero (0) overdue submittals in this scope. All documents on track.")
         context_lines.append("")
 
-    # 5. Targeted Specific Search & Bilingual Semantic Mapping
+    # 5. Targeted Specific Search & Multi-condition Strict Semantic Matching
     approval_indicators = [
         "معتمد", "معتمدة", "معتمدين", "موافقة", "موافق", "مقبول",
         "approved", "approval", "status a", "status b", "code a", "code b"
     ]
     is_approved_query = any(ind in p_lower for ind in approval_indicators)
+    if not is_approved_query and history:
+        for msg in reversed(history):
+            if msg.get("role") == "user":
+                prev_text = (msg.get("text") or "").lower()
+                if any(ind in prev_text for ind in approval_indicators):
+                    is_approved_query = True
+                    break
 
     if search_terms or detected_doc_types:
         where_clauses = ["r.project_id = ANY(%s)"]
         params = [scoped_search_pids]
 
+        # Enforce doc type filter if detected
         if detected_doc_types:
             where_clauses.append("UPPER(r.dt_id) = ANY(%s)")
             params.append([dt.upper() for dt in detected_doc_types])
 
+        # Enforce equipment/keyword matching with ANY(keywords_array)
         if search_terms:
-            kw_clauses = []
-            for term in search_terms[:3]:
-                kw_clauses.append("(r.data->>'title' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
-                params.extend([f"%{term}%", f"%{term}%"])
-            where_clauses.append("(" + " OR ".join(kw_clauses) + ")")
+            kw_patterns = [f"%{term}%" for term in search_terms[:12]]
+            where_clauses.append("(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s))")
+            params.extend([kw_patterns, kw_patterns])
 
         order_clauses = []
         if is_approved_query:
@@ -388,18 +504,30 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None):
 _working_gemini_model = None
 
 
-def _call_gemini_api(prompt, context_text, custom_instruction=None):
-    """Calls Gemini Flash API with standard client, active models cascade, and 503 retry."""
+def _call_gemini_api(prompt, context_text, custom_instruction=None, history=None):
+    """Calls Gemini Flash API with standard client, active models cascade, 503 retry, and history context."""
     global _working_gemini_model
 
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None, "NO_API_KEY"
 
+    history_lines = []
+    if history:
+        for msg in history[-6:]:
+            r_label = "User" if msg.get("role") == "user" else "Assistant"
+            m_text = (msg.get("text") or "").strip()
+            if m_text:
+                history_lines.append(f"{r_label}: {m_text}")
+    history_str = "\n".join(history_lines) if history_lines else "None"
+
     full_contents = (
         f"### CONTEXT REGISTER DATA (READ-ONLY):\n{context_text}\n\n"
-        f"### USER QUESTION:\n{prompt}\n\n"
+        f"### RECENT CONVERSATION HISTORY:\n{history_str}\n\n"
+        f"### USER CURRENT QUESTION / CLARIFICATION:\n{prompt}\n\n"
         "Provide a structured, helpful, professional engineering response in Markdown format. "
+        "IMPORTANT: In this engineering system, 'MS' refers to Material Submittal (اعتماد مواد / عينات / موردين). "
+        "Directly answer based on the matching records in the register context. "
         "If the user asks in Arabic, answer in clear, professional Arabic (باللغة العربية الهندسية). "
         "If the user asks in English, answer in English. "
         "Highlight document numbers, statuses, titles, and approval codes clearly. "
@@ -422,8 +550,16 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None):
             models_to_try.append(m)
 
     system_inst = custom_instruction or (
-        "You are a concise engineering assistant. Directly list matching documents "
-        "in a compact Markdown table or bullet points. Avoid long introductions or filler text."
+        "You are the DCR Engineering AI Assistant for Gas Chill contracting projects. "
+        "In this project register, document abbreviations are: "
+        "- MS = Material Submittal (اعتماد مواد / عينات / موردين) or Method Statement depending on register context. "
+        "- SD = Shop Drawing (شوب درونج / مخططات تنفيذية). "
+        "- MIR = Material Inspection Request (طلب فحص وتوريد مواد). "
+        "- RFI = Request for Information (استفسارات وتوضيحات فنية). "
+        "- NOC = Notice of Change (أوامر التغيير / مطالبات مالية). "
+        "Directly list matching documents from the provided context in a compact Markdown table or bullet points. "
+        "Never invent or assume records not present in the context. "
+        "Avoid long introductions or filler text."
     )
 
     last_err = None
@@ -588,6 +724,7 @@ def api_ai_query():
 
         project_id = data.get("project_id")
         tab = data.get("tab")
+        history = data.get("history") or []
 
         # RBAC Enforcement
         target_pids = []
@@ -616,7 +753,7 @@ def api_ai_query():
                 "Respond warmly, concisely, and professionally in Arabic (or English if greeted in English). "
                 "State briefly that you can assist with project document registers, submittals, overdues, and NOCs."
             )
-            reply, err = _call_gemini_api(prompt, "User is saying hello.", custom_instruction=greeting_inst)
+            reply, err = _call_gemini_api(prompt, "User is saying hello.", custom_instruction=greeting_inst, history=history)
             if not reply:
                 reply = (
                     "أهلاً بك يا باشمهندس! 👋 أنا مساعدك الذكي لنظام مراقبة وثائق ومشاريع جازشيل (DCR).\n\n"
@@ -625,8 +762,8 @@ def api_ai_query():
                 )
             return jsonify(reply=reply), 200
 
-        context_text = _build_ai_context(target_pids, user_prompt=prompt, active_tab=tab)
-        reply, err = _call_gemini_api(prompt, context_text)
+        context_text = _build_ai_context(target_pids, user_prompt=prompt, active_tab=tab, history=history)
+        reply, err = _call_gemini_api(prompt, context_text, history=history)
 
         if err == "NO_API_KEY":
             return jsonify(error="AI Assistant is not configured on this instance."), 503

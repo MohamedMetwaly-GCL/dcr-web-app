@@ -50,16 +50,19 @@ class TestAiAssistantValidation(unittest.TestCase):
     def test_03_missing_gemini_api_key_returns_503(self):
         """If GEMINI_API_KEY is not set, must return graceful 503."""
         user = {"username": "admin_user", "role": "admin"}
-        with patch("app.current_user", return_value=user), \
-             patch("blueprints.ai.current_user", return_value=user), \
-             patch.dict(os.environ, {}, clear=True):
-            os.environ["SECRET_KEY"] = "test-secret-key-1234567890"
-            if "GEMINI_API_KEY" in os.environ:
-                del os.environ["GEMINI_API_KEY"]
-            res = self.client.post("/api/ai/query", json={"prompt": "List overdue submittals"})
-            self.assertEqual(res.status_code, 503)
-            data = res.get_json()
-            self.assertEqual(data.get("error"), "AI Assistant is not configured on this instance.")
+        orig_key = os.environ.get("GEMINI_API_KEY")
+        if "GEMINI_API_KEY" in os.environ:
+            del os.environ["GEMINI_API_KEY"]
+        try:
+            with patch("app.current_user", return_value=user), \
+                 patch("blueprints.ai.current_user", return_value=user):
+                res = self.client.post("/api/ai/query", json={"prompt": "List overdue submittals"})
+                self.assertEqual(res.status_code, 503)
+                data = res.get_json()
+                self.assertEqual(data.get("error"), "AI Assistant is not configured on this instance.")
+        finally:
+            if orig_key is not None:
+                os.environ["GEMINI_API_KEY"] = orig_key
         print("PASS: Missing API key returns graceful 503.")
 
     def test_04_rbac_forbidden_project_returns_403(self):
@@ -322,6 +325,90 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIn("Butterfly Valves", data["reply"])
         print("PASS: Endpoint gracefully recovers from Gemini 503 using direct DB context fallback.")
 
+    def test_14_conversational_clarification_preserves_equipment_and_project(self):
+        """Clarification prompt 'MS = Material Submittal' retains 'valves' and 'CFC' from history."""
+        from blueprints.ai import _build_ai_context
+        mock_projects = [{"id": "p1", "name": "CFC Ph2", "code": "PEM-058"}]
+        history = [
+            {"role": "user", "text": "CFC محابس ايه في MS شوفلي معتمد"},
+            {"role": "assistant", "text": "هل تقصد Material Submittal؟"}
+        ]
+        with patch("db.q") as mock_q, \
+             patch("db.get_dashboard_stats", return_value=[]), \
+             patch("db.get_overdue_records", return_value=[]):
+            executed_sqls = []
+            def q_side_effect(sql, params=()):
+                executed_sqls.append((sql, params))
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    # Return matched valve record
+                    return [{
+                        "id": "r1", "project_id": "p1", "doc_type": "MS",
+                        "doc_no": "MS-058-012", "title": "Butterfly Valves",
+                        "status": "Approved", "issued_date": "2026-05-01", "actual_reply": "2026-05-15"
+                    }]
+                return []
+            mock_q.side_effect = q_side_effect
+
+            ctx = _build_ai_context(["p1"], user_prompt="MS = Material Submittal", history=history)
+            # Verify context extracted valve record rather than generic MS
+            self.assertIn("MS-058-012", ctx)
+            self.assertIn("Butterfly Valves", ctx)
+
+            # Verify SQL query combined project, doc type MS, AND valve keywords
+            search_calls = [c for c in executed_sqls if "FROM records r" in c[0]]
+            self.assertTrue(len(search_calls) > 0)
+            sql_text, sql_params = search_calls[0]
+            self.assertIn("UPPER(r.dt_id) = ANY", sql_text)
+            self.assertIn("ILIKE ANY", sql_text)
+            # Both conditions joined by AND
+            self.assertIn(" AND ", sql_text)
+            # Verify valve pattern exists in params
+            patterns_flattened = str(sql_params)
+            self.assertIn("%valve%", patterns_flattened)
+        print("PASS: Conversational clarification preserves equipment keywords and project scope from history.")
+
+    def test_15_expanded_valve_keywords_and_stemming(self):
+        """Verify expanded KEYWORD_MAP contains valve synonyms, stems, and related fittings."""
+        from blueprints.ai import KEYWORD_MAP, ENGLISH_KEYWORD_MAP
+        self.assertIn("محابس", KEYWORD_MAP)
+        valve_synonyms = KEYWORD_MAP["محابس"]
+        self.assertIn("valve", valve_synonyms)
+        self.assertIn("valves", valve_synonyms)
+        self.assertIn("valv", valve_synonyms)
+        self.assertIn("butterfly", valve_synonyms)
+        self.assertIn("check valve", valve_synonyms)
+        self.assertIn("fittings", valve_synonyms)
+
+        self.assertIn("valve", ENGLISH_KEYWORD_MAP)
+        self.assertIn("butterfly", ENGLISH_KEYWORD_MAP["valve"])
+        print("PASS: Expanded valve engineering keywords and stems verified.")
+
+    def test_16_strict_multi_condition_sql_never_returns_unrelated_records(self):
+        """Verify that when both MS and valves are specified, WHERE strictly combines both with AND."""
+        from blueprints.ai import _build_ai_context
+        mock_projects = [{"id": "p1", "name": "CFC Ph2", "code": "PEM-058"}]
+        with patch("db.q") as mock_q:
+            executed_sqls = []
+            def q_side_effect(sql, params=()):
+                executed_sqls.append((sql, params))
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            _build_ai_context(["p1"], user_prompt="شوفلي محابس MS معتمدة في CFC")
+            search_calls = [c for c in executed_sqls if "FROM records r" in c[0]]
+            self.assertTrue(len(search_calls) > 0)
+            sql_text, sql_params = search_calls[0]
+            # Ensure UPPER(r.dt_id) = ANY(%s) and keyword ILIKE ANY are BOTH present and AND-separated
+            self.assertIn("UPPER(r.dt_id) = ANY", sql_text)
+            self.assertIn("ILIKE ANY", sql_text)
+            self.assertIn("r.project_id = ANY(%s) AND UPPER(r.dt_id) = ANY(%s) AND (r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s))", sql_text)
+        print("PASS: Strict multi-condition SQL query enforces both doc_type AND keyword conditions with AND.")
+
 
 if __name__ == "__main__":
     unittest.main()
+

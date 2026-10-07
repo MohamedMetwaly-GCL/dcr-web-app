@@ -2111,7 +2111,8 @@ async function sendAiPrompt(promptText) {
       body: JSON.stringify({
         prompt: text,
         project_id: pid || null,
-        tab: activeTab || null
+        tab: activeTab || null,
+        history: (_aiAssistantState.messages || []).slice(0, -1).slice(-6).map(m => ({ role: m.role, text: m.text }))
       }),
       signal: controller.signal
     });
