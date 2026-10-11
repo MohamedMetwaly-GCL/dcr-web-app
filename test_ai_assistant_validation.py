@@ -680,8 +680,71 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertEqual(ctx.count("MS-CY002P608-00120 REV00"), 1)
         print("PASS: Duplicate document numbers strictly eliminated, appearing exactly once.")
 
+    def test_27_plural_and_arabic_ir_detection_and_strict_doctype_exclusion(self):
+        """Verify that IRs / تسليمات is detected and strictly excludes QS and SD submittals."""
+        from blueprints.ai import _build_ai_context
+        mock_projects = [{"id": "24CP01", "name": "EKH Hospital", "code": "24CP01"}]
+        mixed_records = [
+            {"id": "r1", "project_id": "24CP01", "doc_type": "IR", "doc_no": "24CP01-IR-SCAS-078", "title": "Inspection of Ground Floor HVAC", "status": "Approved"},
+            {"id": "r2", "project_id": "24CP01", "doc_type": "QS", "doc_no": "24CP01-QS-SCAS-039", "title": "QS Ground Floor Measurement", "status": "Approved"},
+            {"id": "r3", "project_id": "24CP01", "doc_type": "SD", "doc_no": "24CP01-SD-SCAS-166", "title": "Shop Drawing Ground Floor", "status": "Approved"},
+        ]
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM records r" in sql:
+                    return mixed_records
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            prompt = "عايز كل تسليمات IRs الخاصة بالدور الأرضي في مشروع EKH"
+            ctx = _build_ai_context(["24CP01"], user_prompt=prompt)
+
+            # Must contain only IR records
+            self.assertIn("24CP01-IR-SCAS-078", ctx)
+            self.assertNotIn("24CP01-QS-SCAS-039", ctx)
+            self.assertNotIn("24CP01-SD-SCAS-166", ctx)
+            self.assertIn("Found 1 matching submittals", ctx)
+        print("PASS: Plural IRs and Arabic inspection query strictly excludes QS and SD records.")
+
+    def test_28_direct_fallback_header_and_doctype_formatting(self):
+        """Verify fallback response uses 'الـ IR' in header and eliminates redundant 'وثائق الوثائق'."""
+        from blueprints.ai import _format_fallback_response_from_context
+        ctx_text = (
+            "### 5. MATCHING SUBMITTALS IN REGISTER:\n"
+            "Found 1 matching submittals in EKH (24CP01) based on query keywords and filters:\n"
+            "- DocNo: 24CP01-IR-SCAS-078 | Title: Ground Floor Inspection | DocType: IR | Status: Approved | Date: 2026-05-10 | Project: 24CP01\n"
+        )
+        prompt = "عايز كل تسليمات IRs الخاصة بالدور الأرضي في مشروع EKH"
+        reply = _format_fallback_response_from_context(prompt, ctx_text)
+
+        self.assertIsNotNone(reply)
+        self.assertIn("تفاصيل وثائق الـ IR", reply)
+        self.assertNotIn("وثائق الوثائق", reply)
+        self.assertNotIn("الـ MS", reply)
+        self.assertIn("24CP01-IR-SCAS-078", reply)
+        self.assertIn("EKH (24CP01)", reply)
+        print("PASS: Fallback response formats IR header accurately without redundant phrasing.")
+
+    def test_29_zero_records_for_ir_returns_clean_message(self):
+        """Verify that zero matches for IR query returns specific message without fallback dumps."""
+        from blueprints.ai import _format_fallback_response_from_context
+        ctx_text = (
+            "### 5. MATCHING SUBMITTALS IN REGISTER:\n"
+            "- No matching submittals found for the requested keywords/filters in EKH (24CP01).\n"
+        )
+        prompt = "عايز كل تسليمات IRs في مشروع EKH"
+        reply = _format_fallback_response_from_context(prompt, ctx_text)
+
+        self.assertIsNotNone(reply)
+        self.assertIn("لم يتم العثور على أي وثائق من نوع الـ IR مطابقة لطلبك", reply)
+        self.assertIn("EKH (24CP01)", reply)
+        print("PASS: Zero IR records returns specific clean message.")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

@@ -106,6 +106,23 @@ KEYWORD_MAP = {
     "اطفاء": ["fire", "fighting", "إطفاء", "اطفاء"],
     "دكت": ["duct", "ducts", "دكت"],
     "صاج": ["duct", "ducts", "صاج"],
+    "الدور الأرضي": ["ground", "gf", "ground floor", "الأرضي", "ارضي"],
+    "الدور الارضي": ["ground", "gf", "ground floor", "الأرضي", "ارضي"],
+    "الأرضي": ["ground", "gf", "ground floor", "الأرضي", "ارضي"],
+    "الارضي": ["ground", "gf", "ground floor", "الأرضي", "ارضي"],
+    "دور أرضي": ["ground", "gf", "ground floor", "دور أرضي"],
+    "دور ارضي": ["ground", "gf", "ground floor", "دور ارضي"],
+    "أول": ["first", "1st", "أول", "اول"],
+    "الاول": ["first", "1st", "الأول", "الاول"],
+    "الدور الأول": ["first", "1st", "first floor", "الأول", "الاول"],
+    "الدور الاول": ["first", "1st", "first floor", "الأول", "الاول"],
+    "ثاني": ["second", "2nd", "ثاني"],
+    "الثاني": ["second", "2nd", "الثاني"],
+    "الدور الثاني": ["second", "2nd", "second floor", "الثاني"],
+    "بيزمنت": ["basement", "b1", "b2", "بيزمنت", "بدروم"],
+    "بدروم": ["basement", "b1", "b2", "بيزمنت", "بدروم"],
+    "سطح": ["roof", "سطح", "السطح"],
+    "السطح": ["roof", "سطح", "السطح"],
 }
 
 ENGLISH_KEYWORD_MAP = {
@@ -139,9 +156,12 @@ ENGLISH_KEYWORD_MAP = {
     "fire": ["fire", "fighting", "حريق", "إطفاء"],
     "drawing": ["drawing", "drawings", "dwg", "مخططات", "شوب درونج"],
     "drawings": ["drawing", "drawings", "dwg", "مخططات", "شوب درونج"],
+    "ground": ["ground", "gf", "أرضي", "ارضي"],
+    "basement": ["basement", "بدروم", "بيزمنت"],
+    "roof": ["roof", "سطح"],
 }
 
-KNOWN_DOC_TYPES = ["MS", "SD", "MIR", "RFI", "IR", "NOC", "PR", "NCR", "ITP", "PQ", "WIR", "MAR", "MOM"]
+KNOWN_DOC_TYPES = ["MS", "SD", "MIR", "RFI", "IR", "NOC", "PR", "NCR", "ITP", "PQ", "WIR", "MAR", "MOM", "QS", "EI", "WN", "NCN", "LTR"]
 
 
 def _dedup_latest_revisions(records):
@@ -256,9 +276,12 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
     # Detect Targeted Document Types (MS, SD, MIR, RFI, IR, NOC, PR, etc.)
     detected_doc_types = []
     for dt in KNOWN_DOC_TYPES:
-        if re.search(r"\b" + re.escape(dt) + r"\b", user_prompt, re.IGNORECASE):
+        if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", user_prompt, re.IGNORECASE):
             detected_doc_types.append(dt.upper())
 
+    if any(w in p_lower for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال", "استلام أعمال", "inspection request", "inspection requests", "work inspection"]):
+        if "IR" not in detected_doc_types:
+            detected_doc_types.append("IR")
     if any(w in p_lower for w in ["شوب درونج", "شوب دروينج", "شوبدروينج", "shop drawing", "shop drawings", "drawings", "مخططات"]):
         if "SD" not in detected_doc_types:
             detected_doc_types.append("SD")
@@ -268,6 +291,12 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
     if any(w in p_lower for w in ["فحص مواد", "توريد مواد", "material inspection"]):
         if "MIR" not in detected_doc_types:
             detected_doc_types.append("MIR")
+    if any(w in p_lower for w in ["استفسار", "استفسارات", "طلب معلومات", "request for information"]):
+        if "RFI" not in detected_doc_types:
+            detected_doc_types.append("RFI")
+    if any(w in p_lower for w in ["حصر", "كميات", "حصر كميات", "مستخلص", "مستخلصات", "quantity surveyor"]):
+        if "QS" not in detected_doc_types:
+            detected_doc_types.append("QS")
 
     if active_tab and active_tab.upper() in KNOWN_DOC_TYPES and not detected_doc_types:
         detected_doc_types.append(active_tab.upper())
@@ -400,15 +429,24 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 if msg.get("role") == "user":
                     prev_text = (msg.get("text") or "").lower()
                     for dt in KNOWN_DOC_TYPES:
-                        if re.search(r"\b" + re.escape(dt) + r"\b", msg.get("text") or "", re.IGNORECASE):
+                        if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", msg.get("text") or "", re.IGNORECASE):
                             if dt.upper() not in detected_doc_types:
                                 detected_doc_types.append(dt.upper())
+                    if any(w in prev_text for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال", "استلام أعمال", "inspection request", "inspection requests", "work inspection"]):
+                        if "IR" not in detected_doc_types:
+                            detected_doc_types.append("IR")
                     if any(w in prev_text for w in ["شوب درونج", "شوب دروينج", "شوبدروينج", "shop drawing", "shop drawings", "drawings", "مخططات"]):
                         if "SD" not in detected_doc_types:
                             detected_doc_types.append("SD")
                     if any(w in prev_text for w in ["ماتريال", "اعتماد مواد", "اعتمادات مواد", "material submittal", "material submittals"]):
                         if "MS" not in detected_doc_types:
                             detected_doc_types.append("MS")
+                    if any(w in prev_text for w in ["فحص مواد", "توريد مواد", "material inspection"]):
+                        if "MIR" not in detected_doc_types:
+                            detected_doc_types.append("MIR")
+                    if any(w in prev_text for w in ["حصر", "كميات", "حصر كميات", "مستخلص", "مستخلصات", "quantity surveyor"]):
+                        if "QS" not in detected_doc_types:
+                            detected_doc_types.append("QS")
                     if detected_doc_types:
                         break
 
@@ -613,12 +651,26 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         # Enforce doc type filter if detected
         if detected_doc_types:
             dt_upper = [dt.upper() for dt in detected_doc_types]
-            dt_prefixes = [f"{dt}-%" for dt in detected_doc_types] + [f"{dt}/%" for dt in detected_doc_types]
-            where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR UPPER(r.dt_id) = 'MS' OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
-            params.extend([dt_upper, dt_prefixes, "MS-%", "MS/%"])
+            dt_prefixes = []
+            for dt in detected_doc_types:
+                dt_prefixes.extend([
+                    f"{dt}-%", f"{dt}/%", f"%-{dt}-%", f"%-{dt}/%", f"%/{dt}-%", f"%_{dt}_%", f"%/{dt}/%"
+                ])
+            where_clauses.append("""(
+                UPPER(r.dt_id) = ANY(%s) 
+                OR r.data->>'docNo' ILIKE ANY(%s)
+                OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = ANY(%s) AND project_id = r.project_id)
+            )""")
+            params.extend([dt_upper, dt_prefixes, dt_upper])
         elif is_ms_specified:
-            where_clauses.append("(UPPER(r.dt_id) = 'MS' OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
-            params.extend(["MS-%", "MS/%"])
+            where_clauses.append("""(
+                UPPER(r.dt_id) = 'MS' 
+                OR r.data->>'docNo' ILIKE %s 
+                OR r.data->>'docNo' ILIKE %s
+                OR r.data->>'docNo' ILIKE %s
+                OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = 'MS' AND project_id = r.project_id)
+            )""")
+            params.extend(["MS-%", "MS/%", "%-MS-%"])
 
         # Enforce equipment/keyword matching with ANY(keywords_array)
         if is_valve_query:
@@ -639,8 +691,9 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 OR r.data->>'subject' ILIKE ANY(%s) 
                 OR r.data->>'description' ILIKE ANY(%s) 
                 OR r.data->>'remarks' ILIKE ANY(%s)
+                OR r.data->>'floor' ILIKE ANY(%s)
             )""")
-            params.extend([kw_patterns] * 6)
+            params.extend([kw_patterns] * 7)
 
         if is_approved_query:
             where_clauses.append("""(
@@ -680,7 +733,16 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 r.id,
                 r.project_id,
                 COALESCE(
-                    NULLIF(CASE WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' THEN 'MS' END, ''),
+                    NULLIF(CASE 
+                        WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' OR r.data->>'docNo' ILIKE '%%-MS-%%' THEN 'MS'
+                        WHEN r.data->>'docNo' ILIKE 'IR-%%' OR r.data->>'docNo' ILIKE 'IR/%%' OR r.data->>'docNo' ILIKE '%%-IR-%%' THEN 'IR'
+                        WHEN r.data->>'docNo' ILIKE 'SD-%%' OR r.data->>'docNo' ILIKE 'SD/%%' OR r.data->>'docNo' ILIKE '%%-SD-%%' THEN 'SD'
+                        WHEN r.data->>'docNo' ILIKE 'MIR-%%' OR r.data->>'docNo' ILIKE 'MIR/%%' OR r.data->>'docNo' ILIKE '%%-MIR-%%' THEN 'MIR'
+                        WHEN r.data->>'docNo' ILIKE 'RFI-%%' OR r.data->>'docNo' ILIKE 'RFI/%%' OR r.data->>'docNo' ILIKE '%%-RFI-%%' THEN 'RFI'
+                        WHEN r.data->>'docNo' ILIKE 'QS-%%' OR r.data->>'docNo' ILIKE 'QS/%%' OR r.data->>'docNo' ILIKE '%%-QS-%%' THEN 'QS'
+                        WHEN r.data->>'docNo' ILIKE 'NOC-%%' OR r.data->>'docNo' ILIKE 'NOC/%%' OR r.data->>'docNo' ILIKE '%%-NOC-%%' THEN 'NOC'
+                    END, ''),
+                    (SELECT code FROM doc_types dt WHERE dt.id = r.dt_id AND dt.project_id = r.project_id LIMIT 1),
                     NULLIF(r.dt_id, ''),
                     'DOC'
                 ) AS doc_type,
@@ -706,8 +768,26 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         # Direct Fallback 1: Query by document number prefix (e.g. CY002P608 or 24CP01) or project code directly
         if not matched_records and (search_terms or is_valve_query):
             fallback_kw_patterns = list(VALVE_SQL_PATTERNS) if is_valve_query else [f"%{term}%" for term in search_terms[:15]]
-            ms_condition = "AND (r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s OR UPPER(r.dt_id) = 'MS')" if is_ms_specified else ""
-            ms_params = ["MS-%", "MS/%"] if is_ms_specified else []
+            dt_condition = ""
+            dt_fb_params = []
+            if detected_doc_types:
+                dt_upper = [dt.upper() for dt in detected_doc_types]
+                dt_patterns = []
+                for dt in detected_doc_types:
+                    dt_patterns.extend([f"{dt}-%", f"{dt}/%", f"%-{dt}-%", f"%-{dt}/%", f"%/{dt}-%", f"%_{dt}_%", f"%/{dt}/%"])
+                dt_condition = """AND (
+                    UPPER(r.dt_id) = ANY(%s) 
+                    OR r.data->>'docNo' ILIKE ANY(%s)
+                    OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = ANY(%s) AND project_id = r.project_id)
+                )"""
+                dt_fb_params = [dt_upper, dt_patterns, dt_upper]
+            elif is_ms_specified:
+                dt_condition = """AND (
+                    r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s 
+                    OR UPPER(r.dt_id) = 'MS'
+                    OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = 'MS' AND project_id = r.project_id)
+                )"""
+                dt_fb_params = ["MS-%", "MS/%", "%-MS-%"]
 
             fb_proj_clauses = []
             fb_proj_params = []
@@ -736,7 +816,16 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     r.id,
                     r.project_id,
                     COALESCE(
-                        NULLIF(CASE WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' THEN 'MS' END, ''),
+                        NULLIF(CASE 
+                            WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' OR r.data->>'docNo' ILIKE '%%-MS-%%' THEN 'MS'
+                            WHEN r.data->>'docNo' ILIKE 'IR-%%' OR r.data->>'docNo' ILIKE 'IR/%%' OR r.data->>'docNo' ILIKE '%%-IR-%%' THEN 'IR'
+                            WHEN r.data->>'docNo' ILIKE 'SD-%%' OR r.data->>'docNo' ILIKE 'SD/%%' OR r.data->>'docNo' ILIKE '%%-SD-%%' THEN 'SD'
+                            WHEN r.data->>'docNo' ILIKE 'MIR-%%' OR r.data->>'docNo' ILIKE 'MIR/%%' OR r.data->>'docNo' ILIKE '%%-MIR-%%' THEN 'MIR'
+                            WHEN r.data->>'docNo' ILIKE 'RFI-%%' OR r.data->>'docNo' ILIKE 'RFI/%%' OR r.data->>'docNo' ILIKE '%%-RFI-%%' THEN 'RFI'
+                            WHEN r.data->>'docNo' ILIKE 'QS-%%' OR r.data->>'docNo' ILIKE 'QS/%%' OR r.data->>'docNo' ILIKE '%%-QS-%%' THEN 'QS'
+                            WHEN r.data->>'docNo' ILIKE 'NOC-%%' OR r.data->>'docNo' ILIKE 'NOC/%%' OR r.data->>'docNo' ILIKE '%%-NOC-%%' THEN 'NOC'
+                        END, ''),
+                        (SELECT code FROM doc_types dt WHERE dt.id = r.dt_id AND dt.project_id = r.project_id LIMIT 1),
                         NULLIF(r.dt_id, ''),
                         'DOC'
                     ) AS doc_type,
@@ -749,12 +838,13 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     COALESCE(r.data->>'trade', '') AS trade
                 FROM records r
                 WHERE {' AND '.join(fb_proj_clauses)}
-                {ms_condition}
+                {dt_condition}
                 AND (
                     r.data->>'title' ILIKE ANY(%s)
                     OR r.data->>'docNo' ILIKE ANY(%s)
                     OR r.data->>'itemRef' ILIKE ANY(%s)
                     OR r.data->>'description' ILIKE ANY(%s)
+                    OR r.data->>'floor' ILIKE ANY(%s)
                 )
                 ORDER BY 
                     CASE 
@@ -770,22 +860,47 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             """
             fb_order_params = ["%Approv%", "Status B%", "B - %", "A - %"]
             try:
-                matched_records = db.q(direct_fallback_sql, (*fb_proj_params, *ms_params, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, *fb_order_params))
+                matched_records = db.q(direct_fallback_sql, (*fb_proj_params, *dt_fb_params, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, *fb_order_params))
             except Exception as e_direct:
                 logger.warning("Error running direct fallback record search in AI context: %s", e_direct)
 
-        # Fallback 2: Relaxed search without doc type constraint across scoped project ONLY IF NOT A VALVE QUERY
-        if not matched_records and detected_doc_types and search_terms and not is_valve_query:
+        # Fallback 2: Relaxed search KEEPING doc type constraint if specified
+        if not matched_records and search_terms and not is_valve_query:
             relaxed_where_clauses = [
                 "(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))",
-                "(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s))"
             ]
-            relaxed_params = [expanded_pids_list, expanded_pids_upper] + [kw_patterns] * 6
+            relaxed_params = [expanded_pids_list, expanded_pids_upper]
+            if detected_doc_types:
+                dt_upper = [dt.upper() for dt in detected_doc_types]
+                dt_patterns = []
+                for dt in detected_doc_types:
+                    dt_patterns.extend([f"{dt}-%", f"{dt}/%", f"%-{dt}-%", f"%-{dt}/%", f"%/{dt}-%", f"%_{dt}_%", f"%/{dt}/%"])
+                relaxed_where_clauses.append("""(
+                    UPPER(r.dt_id) = ANY(%s) 
+                    OR r.data->>'docNo' ILIKE ANY(%s)
+                    OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = ANY(%s) AND project_id = r.project_id)
+                )""")
+                relaxed_params.extend([dt_upper, dt_patterns, dt_upper])
+            relaxed_where_clauses.append("(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s) OR r.data->>'floor' ILIKE ANY(%s))")
+            relaxed_params.append(kw_patterns)
             relaxed_sql = f"""
                 SELECT 
                     r.id,
                     r.project_id,
-                    COALESCE(NULLIF(r.dt_id, ''), 'DOC') AS doc_type,
+                    COALESCE(
+                        NULLIF(CASE 
+                            WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' OR r.data->>'docNo' ILIKE '%%-MS-%%' THEN 'MS'
+                            WHEN r.data->>'docNo' ILIKE 'IR-%%' OR r.data->>'docNo' ILIKE 'IR/%%' OR r.data->>'docNo' ILIKE '%%-IR-%%' THEN 'IR'
+                            WHEN r.data->>'docNo' ILIKE 'SD-%%' OR r.data->>'docNo' ILIKE 'SD/%%' OR r.data->>'docNo' ILIKE '%%-SD-%%' THEN 'SD'
+                            WHEN r.data->>'docNo' ILIKE 'MIR-%%' OR r.data->>'docNo' ILIKE 'MIR/%%' OR r.data->>'docNo' ILIKE '%%-MIR-%%' THEN 'MIR'
+                            WHEN r.data->>'docNo' ILIKE 'RFI-%%' OR r.data->>'docNo' ILIKE 'RFI/%%' OR r.data->>'docNo' ILIKE '%%-RFI-%%' THEN 'RFI'
+                            WHEN r.data->>'docNo' ILIKE 'QS-%%' OR r.data->>'docNo' ILIKE 'QS/%%' OR r.data->>'docNo' ILIKE '%%-QS-%%' THEN 'QS'
+                            WHEN r.data->>'docNo' ILIKE 'NOC-%%' OR r.data->>'docNo' ILIKE 'NOC/%%' OR r.data->>'docNo' ILIKE '%%-NOC-%%' THEN 'NOC'
+                        END, ''),
+                        (SELECT code FROM doc_types dt WHERE dt.id = r.dt_id AND dt.project_id = r.project_id LIMIT 1),
+                        NULLIF(r.dt_id, ''),
+                        'DOC'
+                    ) AS doc_type,
                     COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
                     COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
                     COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
@@ -817,16 +932,31 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 unique_records.append(rec)
             matched_records = unique_records
 
-        # Post-filter 1: If user specified MS, filter records strictly to docNo ILIKE 'MS-%' or doc_type = 'MS'
-        if is_ms_specified and matched_records:
-            ms_records = [
-                rec for rec in matched_records
-                if str(rec.get("doc_no", "")).strip().upper().startswith("MS-")
-                or str(rec.get("doc_no", "")).strip().upper().startswith("MS/")
-                or str(rec.get("doc_type", "")).strip().upper() == "MS"
-            ]
-            if ms_records:
-                matched_records = ms_records
+        # Post-filter 1: If user specified doc types (e.g. IR, MS, SD), strictly enforce them
+        target_types = set([dt.upper() for dt in detected_doc_types])
+        if is_ms_specified:
+            target_types.add("MS")
+
+        if target_types and matched_records:
+            filtered_by_type = []
+            for rec in matched_records:
+                doc_type_val = str(rec.get("doc_type") or "").strip().upper()
+                doc_no_val = str(rec.get("doc_no") or "").strip().upper()
+                if doc_type_val in target_types:
+                    filtered_by_type.append(rec)
+                    continue
+                matches_doc_no = False
+                for t in target_types:
+                    if re.search(r"(?:^|[\s/_-])" + re.escape(t) + r"(?:[\s/_-]|$)", doc_no_val):
+                        matches_doc_no = True
+                        break
+                if matches_doc_no:
+                    filtered_by_type.append(rec)
+
+            if filtered_by_type:
+                matched_records = filtered_by_type
+            else:
+                matched_records = []
 
         # Post-filter 1b: If user requested approved records, retain only approved submittals
         if is_approved_query and matched_records:
@@ -936,6 +1066,11 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None, history=None
         "- MIR = Material Inspection Request (طلب فحص وتوريد مواد). "
         "- RFI = Request for Information (استفسارات وتوضيحات فنية). "
         "- NOC = Notice of Change (أوامر التغيير / مطالبات مالية). "
+        "- IR = Inspection Request / Work Inspection (طلب استلام أعمال / فحص موقعي / تسليمات). "
+        "- QS = Quantity Surveyor (حصر كميات / مستخلصات). "
+        "- WIR = Work Inspection Request. "
+        "- NCR = Non-Conformance Report (تقرير عدم مطابقة). "
+        "Strictly adhere to the user's requested document type: if the user requests IRs (تسليمات / فحص أعمال), ONLY return IR records, never mix or return SD, MS, or QS documents. "
         "Directly list matching documents from the provided context in a compact Markdown table or bullet points. "
         "Never invent or assume records not present in the context. "
         "Avoid long introductions or filler text."
@@ -1046,13 +1181,39 @@ def _format_fallback_response_from_context(prompt, context_text):
                 else:
                     proj_display = "المشروع المحدد"
 
+            # Detect target doc type label for header
+            found_dts = []
+            for dt in KNOWN_DOC_TYPES:
+                if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", prompt, re.IGNORECASE):
+                    found_dts.append(dt.upper())
+            if any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال", "استلام أعمال", "inspection request", "inspection requests", "work inspection"]):
+                if "IR" not in found_dts:
+                    found_dts.append("IR")
+            if any(w in p_low for w in ["شوب درونج", "شوب دروينج", "شوبدروينج", "shop drawing", "shop drawings", "drawings", "مخططات"]):
+                if "SD" not in found_dts:
+                    found_dts.append("SD")
+            if any(w in p_low for w in ["ماتريال", "اعتماد مواد", "اعتمادات مواد", "material submittal", "material submittals", "عينة", "عينات", "مورد"]):
+                if "MS" not in found_dts:
+                    found_dts.append("MS")
+            if any(w in p_low for w in ["فحص مواد", "توريد مواد", "material inspection"]):
+                if "MIR" not in found_dts:
+                    found_dts.append("MIR")
+            if any(w in p_low for w in ["استفسار", "استفسارات", "طلب معلومات", "request for information"]):
+                if "RFI" not in found_dts:
+                    found_dts.append("RFI")
+            if any(w in p_low for w in ["حصر", "كميات", "حصر كميات", "مستخلص", "مستخلصات", "quantity surveyor"]):
+                if "QS" not in found_dts:
+                    found_dts.append("QS")
+
             if is_valve:
                 header_title = f"📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع {proj_display}:"
             elif is_pump:
                 header_title = f"📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمضخات لمشروع {proj_display}:"
+            elif found_dts:
+                dt_str = " / ".join(f"الـ {dt}" for dt in found_dts)
+                header_title = f"📋 تفاصيل وثائق {dt_str} لمشروع {proj_display}:"
             else:
-                doc_type_label = "الـ MS" if any(w in p_low for w in ["ms", "submittal", "مواد", "معتمد"]) else "الوثائق"
-                header_title = f"📋 تفاصيل وثائق {doc_type_label} المعتمدة لمشروع {proj_display}:"
+                header_title = f"📋 تفاصيل وثائق المشروع المعتمدة لمشروع {proj_display}:"
 
             return (
                 f"### {header_title}\n\n"
@@ -1066,6 +1227,14 @@ def _format_fallback_response_from_context(prompt, context_text):
             p_low = (prompt or "").lower()
             is_valve = any(w in p_low for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves"])
             is_pump = any(w in p_low for w in ["طلمب", "مضخ", "pump"])
+
+            found_dts = []
+            for dt in KNOWN_DOC_TYPES:
+                if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", prompt, re.IGNORECASE):
+                    found_dts.append(dt.upper())
+            if any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال"]):
+                if "IR" not in found_dts:
+                    found_dts.append("IR")
 
             proj_display = None
             for alias, pinfo in PROJECT_ALIASES.items():
@@ -1091,6 +1260,9 @@ def _format_fallback_response_from_context(prompt, context_text):
                 return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_display}."
             elif is_pump:
                 return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_display}."
+            elif found_dts:
+                dt_str = " / ".join(f"الـ {dt}" for dt in found_dts)
+                return f"لم يتم العثور على أي وثائق من نوع {dt_str} مطابقة لطلبك في سجلات مشروع {proj_display}."
             else:
                 return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_display}."
 
