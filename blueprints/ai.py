@@ -41,7 +41,7 @@ SYSTEM_INSTRUCTION = (
 
 
 VALVE_TERMS = ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve"]
-VALVE_SQL_PATTERNS = ["%valve%", "%valves%", "%butterfly%", "%gate valve%", "%ball valve%", "%check valve%"]
+VALVE_SQL_PATTERNS = tuple(["%valve%", "%valves%", "%butterfly%", "%gate valve%", "%ball valve%", "%check valve%"])
 
 PROJECT_ALIASES = {
     "cfc": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
@@ -149,12 +149,24 @@ def _dedup_latest_revisions(records):
     base_map = {}
     for r in records:
         doc_no = str(r.get("doc_no") or "").strip()
-        base_no = re.sub(r"[\s_-]*REV\s*\d+.*$", "", doc_no, flags=re.IGNORECASE).strip()
-        rev_match = re.search(r"REV\s*(\d+)", doc_no, re.IGNORECASE)
-        rev_num = int(rev_match.group(1)) if rev_match else 0
+        if not doc_no or doc_no == "—":
+            rec_id = r.get("id") or id(r)
+            base_map[f"_id_{rec_id}"] = {"record": r, "rev": 0}
+            continue
 
-        if base_no not in base_map or rev_num > base_map[base_no]["rev"]:
-            base_map[base_no] = {"record": r, "rev": rev_num}
+        rev_match = re.search(r"[\s_-]*REV\.?\s*(\d+)", doc_no, re.IGNORECASE)
+        if rev_match:
+            rev_num = int(rev_match.group(1))
+            base_no = doc_no[:rev_match.start()].strip()
+            if not base_no:
+                base_no = doc_no
+        else:
+            rev_num = 0
+            base_no = doc_no
+
+        base_key = base_no.upper()
+        if base_key not in base_map or rev_num > base_map[base_key]["rev"]:
+            base_map[base_key] = {"record": r, "rev": rev_num}
 
     return [item["record"] for item in base_map.values()]
 
@@ -186,7 +198,9 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
 
     proj_map = {}
     for p in projs:
-        proj_map[p["id"]] = p
+        p_id = p.get("id", "")
+        if p_id:
+            proj_map[p_id] = p
         if p.get("code"):
             proj_map[p["code"]] = p
             proj_map[p["code"].upper()] = p
@@ -196,7 +210,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
 
     context_lines.append("### 1. ACTIVE PROJECT(S) SCOPE:")
     for p in projs:
-        context_lines.append(f"- Project Code: {p['code']} | Name: {p['name']} (ID: {p['id']})")
+        context_lines.append(f"- Project Code: {p.get('code', p.get('id', ''))} | Name: {p.get('name', '')} (ID: {p.get('id', '')})")
     context_lines.append("")
 
     # Project Scope Detection from Prompt (e.g. CFC, EKH, Assiut, Suez, PEM-058, 24CP01, etc.)
@@ -556,10 +570,38 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         expanded_pids_list = list(expanded_search_pids)
         expanded_pids_upper = [x.upper() for x in expanded_pids_list]
 
-        where_clauses = [
-            "(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))"
-        ]
-        params = [expanded_pids_list, expanded_pids_upper]
+        is_cfc = any(x in ["CFC", "PEM-058", "058"] for x in expanded_pids_upper) or any(
+            x in p_lower for x in ["cfc", "pem-058", "058"]
+        )
+        is_ekh = any(x in ["EKH", "24CP01"] for x in expanded_pids_upper) or any(
+            x in p_lower for x in ["ekh", "24cp01"]
+        )
+
+        where_clauses = []
+        params = []
+
+        if is_cfc:
+            where_clauses.append("""(
+                r.project_id ILIKE %s OR r.project_id ILIKE %s 
+                OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
+                OR r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
+                OR r.data->>'docNo' ILIKE '%%CY002P608%%'
+            )""")
+            params.extend(["%CFC%", "%PEM-058%", "%PEM-058%", "%CFC%", expanded_pids_list, expanded_pids_upper])
+        elif is_ekh:
+            where_clauses.append("""(
+                r.project_id ILIKE %s OR r.project_id ILIKE %s 
+                OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
+                OR r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
+                OR r.data->>'docNo' ILIKE '%%24CP01%%'
+            )""")
+            params.extend(["%EKH%", "%24CP01%", "%24CP01%", "%EKH%", expanded_pids_list, expanded_pids_upper])
+        else:
+            where_clauses.append("""(
+                r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
+                OR r.project_id::text IN (SELECT id::text FROM projects WHERE id = ANY(%s) OR code = ANY(%s) OR name = ANY(%s))
+            )""")
+            params.extend([expanded_pids_list, expanded_pids_upper, expanded_pids_list, expanded_pids_list, expanded_pids_list])
 
         prompt_with_history = p_lower + " " + " ".join(
             (msg.get("text") or "").lower() for msg in (history or []) if msg.get("role") == "user"
@@ -571,8 +613,8 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         # Enforce doc type filter if detected
         if detected_doc_types:
             dt_upper = [dt.upper() for dt in detected_doc_types]
-            dt_prefixes = [f"{dt}-%" for dt in detected_doc_types] + [f"{dt}/%" for dt in detected_doc_types]
-            where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR UPPER(COALESCE(d.code, '')) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s))")
+            dt_prefixes = tuple([f"{dt}-%" for dt in detected_doc_types] + [f"{dt}/%" for dt in detected_doc_types])
+            where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR UPPER(COALESCE(d.code, '')) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR UPPER(r.dt_id) = 'MS' OR r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%')")
             params.extend([dt_upper, dt_upper, dt_prefixes])
         elif is_ms_specified:
             where_clauses.append("(UPPER(r.dt_id) = 'MS' OR UPPER(COALESCE(d.code, '')) = 'MS' OR r.data->>'docNo' ILIKE 'MS-%' OR r.data->>'docNo' ILIKE 'MS/%')")
@@ -588,7 +630,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             )""")
             params.extend([VALVE_SQL_PATTERNS] * 5)
         elif search_terms:
-            kw_patterns = [f"%{term}%" for term in search_terms[:15]]
+            kw_patterns = tuple(f"%{term}%" for term in search_terms[:15])
             where_clauses.append("""(
                 r.data->>'title' ILIKE ANY(%s) 
                 OR r.data->>'docNo' ILIKE ANY(%s) 
@@ -602,10 +644,10 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         if is_approved_query:
             where_clauses.append("""(
                 COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Approv%' 
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE 'Status A%' 
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE 'Status B%'
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE 'B - %'
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE 'A - %'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Status A%' 
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Status B%'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%B - %'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%A - %'
                 OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Code A%'
                 OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Code B%'
                 OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%معتمد%'
@@ -613,25 +655,19 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             )""")
 
         order_clauses = []
-        if is_approved_query:
-            order_clauses.append("""
-                CASE 
-                    WHEN (
-                        r.data->>'status' ILIKE '%Approv%' 
-                        OR r.data->>'status' ILIKE 'Status A%' 
-                        OR r.data->>'status' ILIKE 'Status B%'
-                        OR r.data->>'status' ILIKE 'B - %'
-                        OR r.data->>'status' ILIKE 'A - %'
-                        OR r.data->>'status' ILIKE '%Code A%'
-                        OR r.data->>'status' ILIKE '%Code B%'
-                        OR r.data->>'status' ILIKE '%معتمد%'
-                        OR r.data->>'partBStatus' ILIKE '%Approv%'
-                        OR r.data->>'partBStatus' ILIKE '%Accept%'
-                        OR r.data->>'partDStatus' ILIKE '%Approv%'
-                    ) THEN 0 
-                    ELSE 1 
-                END ASC
-            """)
+        order_clauses.append("""
+            CASE 
+                WHEN (
+                    COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Approv%' 
+                    OR COALESCE(r.data->>'status', '') ILIKE '%Status B%'
+                    OR COALESCE(r.data->>'status', '') ILIKE '%Status A%'
+                    OR COALESCE(r.data->>'status', '') ILIKE '%B - %'
+                    OR COALESCE(r.data->>'status', '') ILIKE '%A - %'
+                    OR COALESCE(r.data->>'status', '') ILIKE '%معتمد%'
+                ) THEN 0 
+                ELSE 1 
+            END ASC
+        """)
         order_clauses.append("r.created_at DESC NULLS LAST")
         order_clauses.append("r.id DESC")
 
@@ -651,7 +687,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 COALESCE(r.data->>'discipline', '') AS discipline,
                 COALESCE(r.data->>'trade', '') AS trade
             FROM records r
-            LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id) AND d.project_id = r.project_id
+            LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id)
             WHERE {where_sql}
             ORDER BY {order_sql}
             LIMIT 50;
@@ -665,15 +701,30 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
 
         # Direct Fallback 1: Query by document number prefix (e.g. CY002P608 or 24CP01) or project code directly
         if not matched_records and (search_terms or is_valve_query):
-            fallback_kw_patterns = VALVE_SQL_PATTERNS if is_valve_query else [f"%{term}%" for term in search_terms[:15]]
+            fallback_kw_patterns = VALVE_SQL_PATTERNS if is_valve_query else tuple(f"%{term}%" for term in search_terms[:15])
             ms_condition = "AND (r.data->>'docNo' ILIKE 'MS-%' OR r.data->>'docNo' ILIKE 'MS/%' OR UPPER(COALESCE(d.code, r.dt_id, '')) = 'MS')" if is_ms_specified else ""
 
-            proj_prefix_conditions = []
-            if any(p in ["CFC", "PEM-058", "058"] for p in expanded_pids_upper):
-                proj_prefix_conditions.append("r.data->>'docNo' ILIKE '%%CY002P608%%'")
-            if any(p in ["EKH", "24CP01"] for p in expanded_pids_upper):
-                proj_prefix_conditions.append("r.data->>'docNo' ILIKE '%%24CP01%%'")
-            prefix_sql = ("OR " + " OR ".join(proj_prefix_conditions)) if proj_prefix_conditions else ""
+            fb_proj_clauses = []
+            fb_proj_params = []
+            if is_cfc:
+                fb_proj_clauses.append("""(
+                    r.project_id ILIKE %s OR r.project_id ILIKE %s 
+                    OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
+                    OR r.data->>'docNo' ILIKE '%%CY002P608%%'
+                    OR r.project_id = ANY(%s)
+                )""")
+                fb_proj_params.extend(["%CFC%", "%PEM-058%", "%PEM-058%", "%CFC%", expanded_pids_list])
+            elif is_ekh:
+                fb_proj_clauses.append("""(
+                    r.project_id ILIKE %s OR r.project_id ILIKE %s 
+                    OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
+                    OR r.data->>'docNo' ILIKE '%%24CP01%%'
+                    OR r.project_id = ANY(%s)
+                )""")
+                fb_proj_params.extend(["%EKH%", "%24CP01%", "%24CP01%", "%EKH%", expanded_pids_list])
+            else:
+                fb_proj_clauses.append("(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))")
+                fb_proj_params.extend([expanded_pids_list, expanded_pids_upper])
 
             direct_fallback_sql = f"""
                 SELECT 
@@ -688,12 +739,8 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     COALESCE(r.data->>'discipline', '') AS discipline,
                     COALESCE(r.data->>'trade', '') AS trade
                 FROM records r
-                LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id) AND d.project_id = r.project_id
-                WHERE (
-                    r.project_id = ANY(%s)
-                    OR UPPER(r.project_id) = ANY(%s)
-                    {prefix_sql}
-                )
+                LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id)
+                WHERE {' AND '.join(fb_proj_clauses)}
                 {ms_condition}
                 AND (
                     r.data->>'title' ILIKE ANY(%s)
@@ -714,7 +761,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 LIMIT 50;
             """
             try:
-                matched_records = db.q(direct_fallback_sql, (expanded_pids_list, expanded_pids_upper, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns))
+                matched_records = db.q(direct_fallback_sql, (*fb_proj_params, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns))
             except Exception as e_direct:
                 logger.warning("Error running direct fallback record search in AI context: %s", e_direct)
 
@@ -738,7 +785,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     COALESCE(r.data->>'discipline', '') AS discipline,
                     COALESCE(r.data->>'trade', '') AS trade
                 FROM records r
-                LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id) AND d.project_id = r.project_id
+                LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id)
                 WHERE {" AND ".join(relaxed_where_clauses)}
                 ORDER BY {order_sql}
                 LIMIT 50;

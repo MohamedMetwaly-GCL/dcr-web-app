@@ -229,13 +229,12 @@ class TestAiAssistantValidation(unittest.TestCase):
              patch("db.get_dashboard_stats", return_value=mock_stats), \
              patch("db.get_overdue_records", return_value=mock_overdue):
             def q_side_effect(sql, params=()):
+                if "FROM records r" in sql:
+                    return mock_submittals
                 if "FROM projects" in sql:
                     return mock_projects
                 if "UPPER(r.dt_id) = 'NOC'" in sql:
                     return []
-                if "UPPER(r.dt_id) = ANY" in sql or "ORDER BY" in sql:
-                    # Targeted submittal search query
-                    return mock_submittals
                 return []
             mock_q.side_effect = q_side_effect
 
@@ -338,8 +337,6 @@ class TestAiAssistantValidation(unittest.TestCase):
             executed_sqls = []
             def q_side_effect(sql, params=()):
                 executed_sqls.append((sql, params))
-                if "FROM projects" in sql:
-                    return mock_projects
                 if "FROM records r" in sql:
                     # Return matched valve record
                     return [{
@@ -347,6 +344,8 @@ class TestAiAssistantValidation(unittest.TestCase):
                         "doc_no": "MS-058-012", "title": "Butterfly Valves",
                         "status": "Approved", "issued_date": "2026-05-01", "actual_reply": "2026-05-15"
                     }]
+                if "FROM projects" in sql:
+                    return mock_projects
                 return []
             mock_q.side_effect = q_side_effect
 
@@ -394,6 +393,8 @@ class TestAiAssistantValidation(unittest.TestCase):
             executed_sqls = []
             def q_side_effect(sql, params=()):
                 executed_sqls.append((sql, params))
+                if "FROM records r" in sql:
+                    return []
                 if "FROM projects" in sql:
                     return mock_projects
                 return []
@@ -418,8 +419,6 @@ class TestAiAssistantValidation(unittest.TestCase):
             executed_sqls = []
             def q_side_effect(sql, params=()):
                 executed_sqls.append((sql, params))
-                if "FROM projects" in sql:
-                    return mock_projects
                 if "FROM records r" in sql:
                     return [{
                         "id": "rec_032", "project_id": "CFC DCP PH-2A", "doc_type": "MS",
@@ -427,6 +426,8 @@ class TestAiAssistantValidation(unittest.TestCase):
                         "title": "Insulation for Piping, Fittings, Valves and Equipment",
                         "status": "Approved", "issued_date": "2022-06-21", "actual_reply": "2022-07-15"
                     }]
+                if "FROM projects" in sql:
+                    return mock_projects
                 return []
             mock_q.side_effect = q_side_effect
 
@@ -442,8 +443,6 @@ class TestAiAssistantValidation(unittest.TestCase):
         mock_projects = [{"id": "PEM-058", "name": "CFC DCP PH-2A", "code": "PEM-058"}]
         with patch("db.q") as mock_q:
             def q_side_effect(sql, params=()):
-                if "FROM projects" in sql:
-                    return mock_projects
                 if "FROM records r" in sql:
                     return [{
                         "id": "rec_032", "project_id": "PEM-058", "doc_type": "MS",
@@ -451,6 +450,8 @@ class TestAiAssistantValidation(unittest.TestCase):
                         "title": "Insulation for Piping, Fittings, Valves and Equipment",
                         "status": "Approved", "issued_date": "2022-06-21", "actual_reply": "2022-07-15"
                     }]
+                if "FROM projects" in sql:
+                    return mock_projects
                 return []
             mock_q.side_effect = q_side_effect
 
@@ -469,8 +470,6 @@ class TestAiAssistantValidation(unittest.TestCase):
         mock_projects = [{"id": "PEM-058", "name": "CFC DCP PH-2A", "code": "PEM-058"}]
         with patch("db.q") as mock_q:
             def q_side_effect(sql, params=()):
-                if "FROM projects" in sql:
-                    return mock_projects
                 if "FROM records r" in sql:
                     # Return both an MS valve and an MIR valve record
                     return [
@@ -487,6 +486,8 @@ class TestAiAssistantValidation(unittest.TestCase):
                             "status": "A - Approved", "issued_date": "2022-06-25", "doc_date": "2022-07-20"
                         }
                     ]
+                if "FROM projects" in sql:
+                    return mock_projects
                 return []
             mock_q.side_effect = q_side_effect
 
@@ -501,8 +502,6 @@ class TestAiAssistantValidation(unittest.TestCase):
         mock_projects = [{"id": "PEM-058", "name": "CFC Ph2", "code": "PEM-058"}]
         with patch("db.q") as mock_q:
             def q_side_effect(sql, params=()):
-                if "FROM projects" in sql:
-                    return mock_projects
                 if "FROM records r" in sql:
                     return [
                         {
@@ -524,6 +523,8 @@ class TestAiAssistantValidation(unittest.TestCase):
                             "status": "B - Approved As Noted", "issued_date": "2022-06-21", "doc_date": "2022-07-15"
                         }
                     ]
+                if "FROM projects" in sql:
+                    return mock_projects
                 return []
             mock_q.side_effect = q_side_effect
 
@@ -549,6 +550,8 @@ class TestAiAssistantValidation(unittest.TestCase):
             executed_sqls = []
             def q_side_effect(sql, params=()):
                 executed_sqls.append((sql, params))
+                if "FROM records r" in sql:
+                    return []
                 if "FROM projects" in sql:
                     return mock_projects
                 return []
