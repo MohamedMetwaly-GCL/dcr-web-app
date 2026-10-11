@@ -41,7 +41,7 @@ SYSTEM_INSTRUCTION = (
 
 
 VALVE_TERMS = ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve"]
-VALVE_SQL_PATTERNS = tuple(["%valve%", "%valves%", "%butterfly%", "%gate valve%", "%ball valve%", "%check valve%"])
+VALVE_SQL_PATTERNS = ["%valve%", "%valves%", "%butterfly%", "%gate valve%", "%ball valve%", "%check valve%"]
 
 PROJECT_ALIASES = {
     "cfc": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
@@ -585,17 +585,17 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 r.project_id ILIKE %s OR r.project_id ILIKE %s 
                 OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
                 OR r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
-                OR r.data->>'docNo' ILIKE '%%CY002P608%%'
+                OR r.data->>'docNo' ILIKE %s
             )""")
-            params.extend(["%CFC%", "%PEM-058%", "%PEM-058%", "%CFC%", expanded_pids_list, expanded_pids_upper])
+            params.extend(["%CFC%", "%PEM-058%", "%PEM-058%", "%CFC%", expanded_pids_list, expanded_pids_upper, "%CY002P608%"])
         elif is_ekh:
             where_clauses.append("""(
                 r.project_id ILIKE %s OR r.project_id ILIKE %s 
                 OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
                 OR r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
-                OR r.data->>'docNo' ILIKE '%%24CP01%%'
+                OR r.data->>'docNo' ILIKE %s
             )""")
-            params.extend(["%EKH%", "%24CP01%", "%24CP01%", "%EKH%", expanded_pids_list, expanded_pids_upper])
+            params.extend(["%EKH%", "%24CP01%", "%24CP01%", "%EKH%", expanded_pids_list, expanded_pids_upper, "%24CP01%"])
         else:
             where_clauses.append("""(
                 r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
@@ -613,11 +613,12 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         # Enforce doc type filter if detected
         if detected_doc_types:
             dt_upper = [dt.upper() for dt in detected_doc_types]
-            dt_prefixes = tuple([f"{dt}-%" for dt in detected_doc_types] + [f"{dt}/%" for dt in detected_doc_types])
-            where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR UPPER(COALESCE(d.code, '')) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR UPPER(r.dt_id) = 'MS' OR r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%')")
-            params.extend([dt_upper, dt_upper, dt_prefixes])
+            dt_prefixes = [f"{dt}-%" for dt in detected_doc_types] + [f"{dt}/%" for dt in detected_doc_types]
+            where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR UPPER(COALESCE(d.code, '')) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR UPPER(r.dt_id) = 'MS' OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
+            params.extend([dt_upper, dt_upper, dt_prefixes, "MS-%", "MS/%"])
         elif is_ms_specified:
-            where_clauses.append("(UPPER(r.dt_id) = 'MS' OR UPPER(COALESCE(d.code, '')) = 'MS' OR r.data->>'docNo' ILIKE 'MS-%' OR r.data->>'docNo' ILIKE 'MS/%')")
+            where_clauses.append("(UPPER(r.dt_id) = 'MS' OR UPPER(COALESCE(d.code, '')) = 'MS' OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
+            params.extend(["MS-%", "MS/%"])
 
         # Enforce equipment/keyword matching with ANY(keywords_array)
         if is_valve_query:
@@ -630,7 +631,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             )""")
             params.extend([VALVE_SQL_PATTERNS] * 5)
         elif search_terms:
-            kw_patterns = tuple(f"%{term}%" for term in search_terms[:15])
+            kw_patterns = [f"%{term}%" for term in search_terms[:15]]
             where_clauses.append("""(
                 r.data->>'title' ILIKE ANY(%s) 
                 OR r.data->>'docNo' ILIKE ANY(%s) 
@@ -701,8 +702,9 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
 
         # Direct Fallback 1: Query by document number prefix (e.g. CY002P608 or 24CP01) or project code directly
         if not matched_records and (search_terms or is_valve_query):
-            fallback_kw_patterns = VALVE_SQL_PATTERNS if is_valve_query else tuple(f"%{term}%" for term in search_terms[:15])
-            ms_condition = "AND (r.data->>'docNo' ILIKE 'MS-%' OR r.data->>'docNo' ILIKE 'MS/%' OR UPPER(COALESCE(d.code, r.dt_id, '')) = 'MS')" if is_ms_specified else ""
+            fallback_kw_patterns = list(VALVE_SQL_PATTERNS) if is_valve_query else [f"%{term}%" for term in search_terms[:15]]
+            ms_condition = "AND (r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s OR UPPER(COALESCE(d.code, r.dt_id, '')) = 'MS')" if is_ms_specified else ""
+            ms_params = ["MS-%", "MS/%"] if is_ms_specified else []
 
             fb_proj_clauses = []
             fb_proj_params = []
@@ -710,18 +712,18 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 fb_proj_clauses.append("""(
                     r.project_id ILIKE %s OR r.project_id ILIKE %s 
                     OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
-                    OR r.data->>'docNo' ILIKE '%%CY002P608%%'
+                    OR r.data->>'docNo' ILIKE %s
                     OR r.project_id = ANY(%s)
                 )""")
-                fb_proj_params.extend(["%CFC%", "%PEM-058%", "%PEM-058%", "%CFC%", expanded_pids_list])
+                fb_proj_params.extend(["%CFC%", "%PEM-058%", "%PEM-058%", "%CFC%", "%CY002P608%", expanded_pids_list])
             elif is_ekh:
                 fb_proj_clauses.append("""(
                     r.project_id ILIKE %s OR r.project_id ILIKE %s 
                     OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
-                    OR r.data->>'docNo' ILIKE '%%24CP01%%'
+                    OR r.data->>'docNo' ILIKE %s
                     OR r.project_id = ANY(%s)
                 )""")
-                fb_proj_params.extend(["%EKH%", "%24CP01%", "%24CP01%", "%EKH%", expanded_pids_list])
+                fb_proj_params.extend(["%EKH%", "%24CP01%", "%24CP01%", "%EKH%", "%24CP01%", expanded_pids_list])
             else:
                 fb_proj_clauses.append("(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))")
                 fb_proj_params.extend([expanded_pids_list, expanded_pids_upper])
@@ -750,18 +752,19 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 )
                 ORDER BY 
                     CASE 
-                        WHEN COALESCE(r.data->>'status', '') ILIKE '%%Approv%%' 
-                             OR COALESCE(r.data->>'status', '') ILIKE 'Status B%%'
-                             OR COALESCE(r.data->>'status', '') ILIKE 'B - %%'
-                             OR COALESCE(r.data->>'status', '') ILIKE 'A - %%'
+                        WHEN COALESCE(r.data->>'status', '') ILIKE %s 
+                             OR COALESCE(r.data->>'status', '') ILIKE %s
+                             OR COALESCE(r.data->>'status', '') ILIKE %s
+                             OR COALESCE(r.data->>'status', '') ILIKE %s
                         THEN 0 
                         ELSE 1 
                     END ASC,
                     r.id DESC
                 LIMIT 50;
             """
+            fb_order_params = ["%Approv%", "Status B%", "B - %", "A - %"]
             try:
-                matched_records = db.q(direct_fallback_sql, (*fb_proj_params, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns))
+                matched_records = db.q(direct_fallback_sql, (*fb_proj_params, *ms_params, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, *fb_order_params))
             except Exception as e_direct:
                 logger.warning("Error running direct fallback record search in AI context: %s", e_direct)
 
@@ -806,6 +809,15 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             if ms_records:
                 matched_records = ms_records
 
+        # Post-filter 1b: If user requested approved records, retain only approved submittals
+        if is_approved_query and matched_records:
+            approved_subset = [
+                rec for rec in matched_records
+                if any(x in (rec.get("status") or "").lower() for x in ["approv", "b -", "a -", "status b", "status a", "code b", "code a", "معتمد", "accept"])
+            ]
+            if approved_subset:
+                matched_records = approved_subset
+
         # Post-filter 2: If user queried for valves, enforce strictly that title or docNo contains valve stem
         if is_valve_query and matched_records:
             valve_stems = ["valve", "valves", "valv", "butterfly", "gate valve", "check valve", "ball valve", "محبس", "محابس", "صمام", "صمامات"]
@@ -816,8 +828,9 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             ]
             matched_records = valve_records
 
-        # Post-filter 3: Deduplicate latest revisions so each distinct submittal displays once
-        if matched_records:
+        # Post-filter 3: Deduplicate latest revisions only if user requested latest revision
+        is_latest_only = any(k in p_lower for k in ["أحدث", "اخر", "آخر", "latest"])
+        if matched_records and is_latest_only:
             matched_records = _dedup_latest_revisions(matched_records)
 
         target_scope_list = []

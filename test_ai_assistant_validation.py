@@ -597,6 +597,62 @@ class TestAiAssistantValidation(unittest.TestCase):
         self.assertIn("MS-CY002P608-00020 REV00", doc_nos)
         print("PASS: Revision deduplication correctly keeps only the latest revision.")
 
+    def test_24_cfc_ms_valves_matches_14_records_when_present(self):
+        """Verify that 14 approved valve MS records in CFC are all included in context without premature truncation."""
+        from blueprints.ai import _build_ai_context, _format_fallback_response_from_context
+        mock_projects = [{"id": "PEM-058", "name": "CFC District Cooling Plant Phase 2", "code": "PEM-058"}]
+        mock_valves_14 = [
+            {"id": f"rec_{i}", "project_id": "CFC DCP PH-2A", "doc_type": "MS", "doc_no": f"MS-CY002P608-000{i:02d} REV00", "title": f"Valve System {i}", "status": "B - Approved As Noted", "doc_date": "2021-06-01"}
+            for i in range(1, 15)
+        ]
+        with patch("db.q") as mock_q:
+            executed_sqls = []
+            def q_side_effect(sql, params=()):
+                executed_sqls.append((sql, params))
+                if "FROM records r" in sql:
+                    return mock_valves_14
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            ctx = _build_ai_context(["PEM-058"], user_prompt="شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC")
+            self.assertIn("Found 14 matching submittals", ctx)
+            for i in range(1, 15):
+                self.assertIn(f"MS-CY002P608-000{i:02d} REV00", ctx)
+
+            # Also verify fallback formatting builds markdown table with all 14 rows
+            fallback_res = _format_fallback_response_from_context("شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC", ctx)
+            self.assertIn("تم استخراج 14 وثيقة معتمدة ومطابقة لطلبك", fallback_res)
+            self.assertIn("MS-CY002P608-00001 REV00", fallback_res)
+            self.assertIn("MS-CY002P608-00014 REV00", fallback_res)
+        print("PASS: 14 approved valve MS records in CFC correctly retrieved and formatted.")
+
+    def test_25_sql_arrays_are_python_lists_for_psycopg2(self):
+        """Verify all array parameters passed to ILIKE ANY / = ANY are Python lists, never tuples."""
+        from blueprints.ai import _build_ai_context
+        mock_projects = [{"id": "PEM-058", "name": "CFC District Cooling Plant Phase 2", "code": "PEM-058"}]
+        with patch("db.q") as mock_q:
+            executed_sqls = []
+            def q_side_effect(sql, params=()):
+                executed_sqls.append((sql, params))
+                if "FROM records r" in sql:
+                    return []
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            _build_ai_context(["PEM-058"], user_prompt="شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC")
+            search_calls = [c for c in executed_sqls if "FROM records r" in c[0]]
+            self.assertTrue(len(search_calls) > 0)
+            sql_text, sql_params = search_calls[0]
+            for p in sql_params:
+                # Any collection passed to PostgreSQL must be a list for ARRAY adaptation
+                if isinstance(p, (tuple, list, set)):
+                    self.assertIsInstance(p, list, f"Parameter {p} must be a list for PostgreSQL ARRAY adaptation")
+        print("PASS: All PostgreSQL ANY(...) array bindings are Python lists, preventing DatatypeMismatch.")
+
 
 if __name__ == "__main__":
     unittest.main()
