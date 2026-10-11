@@ -653,6 +653,33 @@ class TestAiAssistantValidation(unittest.TestCase):
                     self.assertIsInstance(p, list, f"Parameter {p} must be a list for PostgreSQL ARRAY adaptation")
         print("PASS: All PostgreSQL ANY(...) array bindings are Python lists, preventing DatatypeMismatch.")
 
+    def test_26_no_duplicate_documents_in_results(self):
+        """Verify that identical document numbers are never repeated multiple times in results."""
+        from blueprints.ai import _build_ai_context
+        mock_projects = [{"id": "PEM-058", "name": "CFC District Cooling Plant Phase 2", "code": "PEM-058"}]
+        # Duplicate records simulating cross-project join duplication
+        duplicate_records = [
+            {"id": "r1", "project_id": "PEM-058", "doc_type": "MAT", "doc_no": "MS-CY002P608-00116 REV00", "title": "Fire Fighting Valves", "status": "Approved"},
+            {"id": "r1", "project_id": "PEM-058", "doc_type": "MS", "doc_no": "MS-CY002P608-00116 REV00", "title": "Fire Fighting Valves", "status": "Approved"},
+            {"id": "r1", "project_id": "PEM-058", "doc_type": "MAT", "doc_no": "MS-CY002P608-00116 REV00", "title": "Fire Fighting Valves", "status": "Approved"},
+            {"id": "r1", "project_id": "PEM-058", "doc_type": "MS", "doc_no": "MS-CY002P608-00116 REV00", "title": "Fire Fighting Valves", "status": "Approved"},
+            {"id": "r2", "project_id": "PEM-058", "doc_type": "MS", "doc_no": "MS-CY002P608-00120 REV00", "title": "Duty Valves", "status": "Approved"},
+        ]
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM records r" in sql:
+                    return duplicate_records
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            ctx = _build_ai_context(["PEM-058"], user_prompt="شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC")
+            self.assertIn("Found 2 matching submittals", ctx)
+            self.assertEqual(ctx.count("MS-CY002P608-00116 REV00"), 1)
+            self.assertEqual(ctx.count("MS-CY002P608-00120 REV00"), 1)
+        print("PASS: Duplicate document numbers strictly eliminated, appearing exactly once.")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -614,10 +614,10 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         if detected_doc_types:
             dt_upper = [dt.upper() for dt in detected_doc_types]
             dt_prefixes = [f"{dt}-%" for dt in detected_doc_types] + [f"{dt}/%" for dt in detected_doc_types]
-            where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR UPPER(COALESCE(d.code, '')) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR UPPER(r.dt_id) = 'MS' OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
-            params.extend([dt_upper, dt_upper, dt_prefixes, "MS-%", "MS/%"])
+            where_clauses.append("(UPPER(r.dt_id) = ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR UPPER(r.dt_id) = 'MS' OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
+            params.extend([dt_upper, dt_prefixes, "MS-%", "MS/%"])
         elif is_ms_specified:
-            where_clauses.append("(UPPER(r.dt_id) = 'MS' OR UPPER(COALESCE(d.code, '')) = 'MS' OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
+            where_clauses.append("(UPPER(r.dt_id) = 'MS' OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)")
             params.extend(["MS-%", "MS/%"])
 
         # Enforce equipment/keyword matching with ANY(keywords_array)
@@ -679,7 +679,11 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             SELECT 
                 r.id,
                 r.project_id,
-                COALESCE(d.code, r.dt_id, '') AS doc_type,
+                COALESCE(
+                    NULLIF(CASE WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' THEN 'MS' END, ''),
+                    NULLIF(r.dt_id, ''),
+                    'DOC'
+                ) AS doc_type,
                 COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
                 COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
                 COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
@@ -688,7 +692,6 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 COALESCE(r.data->>'discipline', '') AS discipline,
                 COALESCE(r.data->>'trade', '') AS trade
             FROM records r
-            LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id)
             WHERE {where_sql}
             ORDER BY {order_sql}
             LIMIT 50;
@@ -703,7 +706,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         # Direct Fallback 1: Query by document number prefix (e.g. CY002P608 or 24CP01) or project code directly
         if not matched_records and (search_terms or is_valve_query):
             fallback_kw_patterns = list(VALVE_SQL_PATTERNS) if is_valve_query else [f"%{term}%" for term in search_terms[:15]]
-            ms_condition = "AND (r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s OR UPPER(COALESCE(d.code, r.dt_id, '')) = 'MS')" if is_ms_specified else ""
+            ms_condition = "AND (r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s OR UPPER(r.dt_id) = 'MS')" if is_ms_specified else ""
             ms_params = ["MS-%", "MS/%"] if is_ms_specified else []
 
             fb_proj_clauses = []
@@ -732,7 +735,11 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 SELECT 
                     r.id,
                     r.project_id,
-                    COALESCE(d.code, r.dt_id, '') AS doc_type,
+                    COALESCE(
+                        NULLIF(CASE WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' THEN 'MS' END, ''),
+                        NULLIF(r.dt_id, ''),
+                        'DOC'
+                    ) AS doc_type,
                     COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
                     COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
                     COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
@@ -741,7 +748,6 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     COALESCE(r.data->>'discipline', '') AS discipline,
                     COALESCE(r.data->>'trade', '') AS trade
                 FROM records r
-                LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id)
                 WHERE {' AND '.join(fb_proj_clauses)}
                 {ms_condition}
                 AND (
@@ -779,7 +785,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 SELECT 
                     r.id,
                     r.project_id,
-                    COALESCE(d.code, r.dt_id, '') AS doc_type,
+                    COALESCE(NULLIF(r.dt_id, ''), 'DOC') AS doc_type,
                     COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
                     COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
                     COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
@@ -788,7 +794,6 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     COALESCE(r.data->>'discipline', '') AS discipline,
                     COALESCE(r.data->>'trade', '') AS trade
                 FROM records r
-                LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id)
                 WHERE {" AND ".join(relaxed_where_clauses)}
                 ORDER BY {order_sql}
                 LIMIT 50;
@@ -797,6 +802,20 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 matched_records = db.q(relaxed_sql, relaxed_params)
             except Exception as e_rel:
                 logger.warning("Error running relaxed record search in AI context: %s", e_rel)
+
+        # Post-filter 0: Deduplicate records by unique doc_no and rec_id so no document is ever repeated
+        if matched_records:
+            seen_doc_keys = set()
+            unique_records = []
+            for rec in matched_records:
+                rec_id = str(rec.get("id") or "").strip()
+                doc_no = str(rec.get("doc_no") or "").strip().upper()
+                doc_key = doc_no if (doc_no and doc_no != "—") else rec_id
+                if doc_key in seen_doc_keys:
+                    continue
+                seen_doc_keys.add(doc_key)
+                unique_records.append(rec)
+            matched_records = unique_records
 
         # Post-filter 1: If user specified MS, filter records strictly to docNo ILIKE 'MS-%' or doc_type = 'MS'
         if is_ms_specified and matched_records:
