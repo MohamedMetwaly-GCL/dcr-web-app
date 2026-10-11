@@ -40,13 +40,27 @@ SYSTEM_INSTRUCTION = (
 )
 
 
+VALVE_TERMS = ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve"]
+VALVE_SQL_PATTERNS = ["%valve%", "%valves%", "%butterfly%", "%gate valve%", "%ball valve%", "%check valve%"]
+
+PROJECT_ALIASES = {
+    "cfc": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+    "pem-058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+    "pem058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+    "058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+    "ekh": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
+    "24cp01": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
+    "assiut": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
+    "suez": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
+}
+
 KEYWORD_MAP = {
-    "محابس": ["valve", "valves", "valv", "butterfly", "check valve", "fittings", "محابس", "محبس"],
-    "محبس": ["valve", "valves", "valv", "butterfly", "check valve", "محابس", "محبس"],
-    "صمام": ["valve", "valves", "valv", "butterfly", "check valve", "صمام", "صمامات"],
-    "صمامات": ["valve", "valves", "valv", "butterfly", "check valve", "صمام", "صمامات"],
-    "فالف": ["valve", "valves", "valv"],
-    "فالفات": ["valve", "valves", "valv"],
+    "محابس": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محابس", "محبس"],
+    "محبس": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محابس", "محبس"],
+    "صمام": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "صمام", "صمامات"],
+    "صمامات": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "صمام", "صمامات"],
+    "فالف": ["valve", "valves", "valv", "butterfly"],
+    "فالفات": ["valve", "valves", "valv", "butterfly"],
     "طلمبات": ["pump", "pumps", "طلمبات", "طلمبة"],
     "طلمبة": ["pump", "pumps", "طلمبات", "طلمبة"],
     "مضخات": ["pump", "pumps", "مضخات", "مضخة"],
@@ -95,9 +109,11 @@ KEYWORD_MAP = {
 }
 
 ENGLISH_KEYWORD_MAP = {
-    "valve": ["valve", "valves", "valv", "butterfly", "check valve", "fittings", "محابس", "محبس"],
-    "valves": ["valve", "valves", "valv", "butterfly", "check valve", "fittings", "محابس", "محبس"],
-    "fittings": ["fitting", "fittings", "valves", "valve"],
+    "valve": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محابس", "محبس"],
+    "valves": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محابس", "محبس"],
+    "butterfly": ["butterfly", "valve", "valves"],
+    "fittings": ["fitting", "fittings"],
+    "fitting": ["fitting", "fittings"],
     "pump": ["pump", "pumps", "طلمبات", "مضخات"],
     "pumps": ["pump", "pumps", "طلمبات", "مضخات"],
     "pipe": ["pipe", "pipes", "piping", "مواسير"],
@@ -126,6 +142,21 @@ ENGLISH_KEYWORD_MAP = {
 }
 
 KNOWN_DOC_TYPES = ["MS", "SD", "MIR", "RFI", "IR", "NOC", "PR", "NCR", "ITP", "PQ", "WIR", "MAR", "MOM"]
+
+
+def _dedup_latest_revisions(records):
+    """If multiple revisions of the same base document exist, keeps the latest revision."""
+    base_map = {}
+    for r in records:
+        doc_no = str(r.get("doc_no") or "").strip()
+        base_no = re.sub(r"[\s_-]*REV\s*\d+.*$", "", doc_no, flags=re.IGNORECASE).strip()
+        rev_match = re.search(r"REV\s*(\d+)", doc_no, re.IGNORECASE)
+        rev_num = int(rev_match.group(1)) if rev_match else 0
+
+        if base_no not in base_map or rev_num > base_map[base_no]["rev"]:
+            base_map[base_no] = {"record": r, "rev": rev_num}
+
+    return [item["record"] for item in base_map.values()]
 
 
 def _safe_float(val):
@@ -168,18 +199,43 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
         context_lines.append(f"- Project Code: {p['code']} | Name: {p['name']} (ID: {p['id']})")
     context_lines.append("")
 
-    # Project Scope Detection from Prompt (e.g. CFC, Assiut, Suez, PEM-058, etc.)
+    # Project Scope Detection from Prompt (e.g. CFC, EKH, Assiut, Suez, PEM-058, 24CP01, etc.)
     scoped_search_pids = list(target_pids)
     matched_pids = []
-    for p in projs:
-        p_code = (p.get("code") or "").lower()
-        p_name = (p.get("name") or "").lower()
-        if p_code and (p_code in p_lower or p_code.replace("pem-", "") in p_lower):
-            matched_pids.append(p["id"])
-            continue
-        name_words = [w for w in re.findall(r"[a-zA-Z0-9\u0600-\u06FF]{3,}", p_name) if len(w) >= 3]
-        if any(w in p_lower for w in name_words):
-            matched_pids.append(p["id"])
+
+    # Check known project aliases in current prompt first
+    for alias, pinfo in PROJECT_ALIASES.items():
+        if re.search(r"\b" + re.escape(alias) + r"\b", p_lower) or alias in p_lower:
+            for p in projs:
+                p_code = (p.get("code") or "").upper()
+                p_name = (p.get("name") or "").upper()
+                p_id = str(p.get("id"))
+                if (
+                    p_code == pinfo["code"].upper()
+                    or pinfo["name_pattern"].upper() in p_name
+                    or pinfo["code"].upper() in p_code
+                    or p_id == pinfo["code"]
+                    or p_id == pinfo["name_pattern"]
+                ):
+                    if p["id"] not in matched_pids:
+                        matched_pids.append(p["id"])
+            if not matched_pids:
+                matched_pids.append(pinfo["code"])
+            break
+
+    # If no alias matched, check all projects in projs directly against current prompt
+    if not matched_pids:
+        for p in projs:
+            p_code = (p.get("code") or "").lower()
+            p_name = (p.get("name") or "").lower()
+            if p_code and (re.search(r"\b" + re.escape(p_code) + r"\b", p_lower) or p_code in p_lower or p_code.replace("pem-", "") in p_lower):
+                matched_pids.append(p["id"])
+                continue
+            name_words = [w for w in re.findall(r"[a-zA-Z0-9\u0600-\u06FF]{3,}", p_name) if len(w) >= 3]
+            if any(re.search(r"\b" + re.escape(w) + r"\b", p_lower) for w in name_words if w not in ["the", "and", "project", "مشروع", "phase", "dcp"]):
+                matched_pids.append(p["id"])
+
+    # If project was explicitly mentioned in CURRENT prompt, ALWAYS OVERRIDE HISTORY:
     if matched_pids:
         scoped_search_pids = matched_pids
 
@@ -202,71 +258,109 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
     if active_tab and active_tab.upper() in KNOWN_DOC_TYPES and not detected_doc_types:
         detected_doc_types.append(active_tab.upper())
 
+    # Detect if query is specifically targeting valves
+    is_valve_query = any(w in p_lower for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves", "butterfly"])
+
     # Bilingual Keyword Extraction (Arabic to English mapping + raw keywords)
     p_normalized = re.sub(r"[\u0600-\u06FFـ]+[_\-\s]*", " ", p_lower)
     search_terms = []
-    for ar_kw, en_terms in KEYWORD_MAP.items():
-        if ar_kw in p_lower:
-            terms_list = en_terms if isinstance(en_terms, list) else [en_terms]
-            for term in terms_list:
-                if term not in search_terms:
-                    search_terms.append(term)
 
-    for en_word, en_terms in ENGLISH_KEYWORD_MAP.items():
-        if (
-            re.search(r"\b" + re.escape(en_word) + r"\b", p_lower)
-            or re.search(r"\b" + re.escape(en_word) + r"\b", p_normalized)
-            or en_word in p_normalized.split()
-        ):
-            for term in en_terms:
-                if term not in search_terms:
-                    search_terms.append(term)
+    if is_valve_query:
+        search_terms = list(VALVE_TERMS)
+    else:
+        for ar_kw, en_terms in KEYWORD_MAP.items():
+            if ar_kw in p_lower:
+                terms_list = en_terms if isinstance(en_terms, list) else [en_terms]
+                for term in terms_list:
+                    if term not in search_terms:
+                        search_terms.append(term)
 
-    # General English/Alphanumeric tokens
-    stop_words = {
-        "and", "the", "for", "with", "all", "what", "show", "list", "give", "from",
-        "find", "submittal", "submittals", "document", "documents", "project", "projects",
-        "status", "approved", "noted", "date", "please", "cfc", "pem", "any", "our",
-        "help", "query", "record", "records", "material", "materials", "method", "statement",
-        "cost", "costs", "price", "change", "financial", "total", "summary", "kpi"
-    }
-    raw_tokens = re.findall(r"[A-Za-z0-9_-]{3,}", p_normalized)
-    for tok in raw_tokens:
-        tok_low = tok.lower()
-        if (
-            tok.upper() not in KNOWN_DOC_TYPES
-            and tok_low not in stop_words
-            and not tok.isdigit()
-            and tok_low not in [s.lower() for s in search_terms]
-        ):
-            search_terms.append(tok)
-            if len(search_terms) >= 12:
-                break
+        for en_word, en_terms in ENGLISH_KEYWORD_MAP.items():
+            if (
+                re.search(r"\b" + re.escape(en_word) + r"\b", p_lower)
+                or re.search(r"\b" + re.escape(en_word) + r"\b", p_normalized)
+                or en_word in p_normalized.split()
+            ):
+                for term in en_terms:
+                    if term not in search_terms:
+                        search_terms.append(term)
+
+        # General English/Alphanumeric tokens (excluding project names/codes and stop words)
+        stop_words = {
+            "and", "the", "for", "with", "all", "what", "show", "list", "give", "from",
+            "find", "submittal", "submittals", "document", "documents", "project", "projects",
+            "status", "approved", "noted", "date", "please", "cfc", "pem", "any", "our",
+            "help", "query", "record", "records", "material", "materials", "method", "statement",
+            "cost", "costs", "price", "change", "financial", "total", "summary", "kpi",
+            "ekh", "24cp01", "pem058", "pem-058", "058", "assiut", "suez", "pem-045", "pem-044",
+            "fitting", "fittings", "pipe", "pipes", "piping", "conduit", "upvc", "pvc"
+        }
+        for p in projs:
+            if p.get("code"):
+                stop_words.add(p["code"].lower())
+            if p.get("name"):
+                for w in re.findall(r"[a-zA-Z0-9_-]{3,}", p["name"]):
+                    stop_words.add(w.lower())
+
+        raw_tokens = re.findall(r"[A-Za-z0-9_-]{3,}", p_normalized)
+        for tok in raw_tokens:
+            tok_low = tok.lower()
+            if (
+                tok.upper() not in KNOWN_DOC_TYPES
+                and tok_low not in stop_words
+                and not tok.isdigit()
+                and tok_low not in [s.lower() for s in search_terms]
+            ):
+                search_terms.append(tok)
+                if len(search_terms) >= 12:
+                    break
 
     # ── Conversational Context & Clarification Recovery from Chat History ──
     has_inherited_equipment = False
     if history:
-        # 1. Recover Project Scope if missing from current prompt
+        # 1. Recover Project Scope ONLY if missing from current prompt
         if not matched_pids:
             for msg in reversed(history):
                 if msg.get("role") == "user":
                     prev_text = (msg.get("text") or "").lower()
-                    for p in projs:
-                        p_code = (p.get("code") or "").lower()
-                        p_name = (p.get("name") or "").lower()
-                        if p_code and (p_code in prev_text or p_code.replace("pem-", "") in prev_text):
-                            matched_pids.append(p["id"])
+                    for alias, pinfo in PROJECT_ALIASES.items():
+                        if re.search(r"\b" + re.escape(alias) + r"\b", prev_text) or alias in prev_text:
+                            for p in projs:
+                                p_code = (p.get("code") or "").upper()
+                                p_name = (p.get("name") or "").upper()
+                                if p_code == pinfo["code"].upper() or pinfo["name_pattern"].upper() in p_name:
+                                    if p["id"] not in matched_pids:
+                                        matched_pids.append(p["id"])
+                            if not matched_pids:
+                                matched_pids.append(pinfo["code"])
                             break
-                        name_words = [w for w in re.findall(r"[a-zA-Z0-9\u0600-\u06FF]{3,}", p_name) if len(w) >= 3]
-                        if any(w in prev_text for w in name_words):
-                            matched_pids.append(p["id"])
-                            break
+                    if not matched_pids:
+                        for p in projs:
+                            p_code = (p.get("code") or "").lower()
+                            p_name = (p.get("name") or "").lower()
+                            if p_code and (p_code in prev_text or p_code.replace("pem-", "") in prev_text):
+                                matched_pids.append(p["id"])
+                                break
+                            name_words = [w for w in re.findall(r"[a-zA-Z0-9\u0600-\u06FF]{3,}", p_name) if len(w) >= 3]
+                            if any(w in prev_text for w in name_words if w not in ["the", "and", "project", "مشروع"]):
+                                matched_pids.append(p["id"])
+                                break
                     if matched_pids:
                         scoped_search_pids = matched_pids
                         break
 
-        # 2. Recover Equipment Keywords if current prompt is a clarification or lacks equipment keywords
-        if not search_terms:
+        # 2. Recover Valve or Equipment Keywords if current prompt is a clarification or lacks equipment keywords
+        if not is_valve_query:
+            for msg in reversed(history):
+                if msg.get("role") == "user":
+                    prev_text = (msg.get("text") or "").lower()
+                    if any(w in prev_text for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves", "butterfly"]):
+                        is_valve_query = True
+                        search_terms = list(VALVE_TERMS)
+                        has_inherited_equipment = True
+                        break
+
+        if not search_terms and not is_valve_query:
             for msg in reversed(history):
                 if msg.get("role") == "user":
                     prev_text = (msg.get("text") or "").lower()
@@ -484,7 +578,16 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             where_clauses.append("(UPPER(r.dt_id) = 'MS' OR UPPER(COALESCE(d.code, '')) = 'MS' OR r.data->>'docNo' ILIKE 'MS-%' OR r.data->>'docNo' ILIKE 'MS/%')")
 
         # Enforce equipment/keyword matching with ANY(keywords_array)
-        if search_terms:
+        if is_valve_query:
+            where_clauses.append("""(
+                r.data->>'title' ILIKE ANY(%s) 
+                OR r.data->>'docNo' ILIKE ANY(%s) 
+                OR r.data->>'itemRef' ILIKE ANY(%s) 
+                OR r.data->>'description' ILIKE ANY(%s) 
+                OR r.data->>'subject' ILIKE ANY(%s)
+            )""")
+            params.extend([VALVE_SQL_PATTERNS] * 5)
+        elif search_terms:
             kw_patterns = [f"%{term}%" for term in search_terms[:15]]
             where_clauses.append("""(
                 r.data->>'title' ILIKE ANY(%s) 
@@ -492,10 +595,22 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 OR r.data->>'itemRef' ILIKE ANY(%s) 
                 OR r.data->>'subject' ILIKE ANY(%s) 
                 OR r.data->>'description' ILIKE ANY(%s) 
-                OR r.data->>'remarks' ILIKE ANY(%s) 
-                OR r.data::text ILIKE ANY(%s)
+                OR r.data->>'remarks' ILIKE ANY(%s)
             )""")
-            params.extend([kw_patterns] * 7)
+            params.extend([kw_patterns] * 6)
+
+        if is_approved_query:
+            where_clauses.append("""(
+                COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Approv%' 
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE 'Status A%' 
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE 'Status B%'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE 'B - %'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE 'A - %'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Code A%'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Code B%'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%معتمد%'
+                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Accept%'
+            )""")
 
         order_clauses = []
         if is_approved_query:
@@ -539,7 +654,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id) AND d.project_id = r.project_id
             WHERE {where_sql}
             ORDER BY {order_sql}
-            LIMIT 25;
+            LIMIT 50;
         """
 
         try:
@@ -548,10 +663,18 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             logger.warning("Error searching records in AI context: %s", e_search)
             matched_records = []
 
-        # Direct Fallback 1: Query by document number prefix (e.g. CY002P608) or project code directly
-        if not matched_records and search_terms:
-            fallback_kw_patterns = [f"%{term}%" for term in search_terms[:15]]
+        # Direct Fallback 1: Query by document number prefix (e.g. CY002P608 or 24CP01) or project code directly
+        if not matched_records and (search_terms or is_valve_query):
+            fallback_kw_patterns = VALVE_SQL_PATTERNS if is_valve_query else [f"%{term}%" for term in search_terms[:15]]
             ms_condition = "AND (r.data->>'docNo' ILIKE 'MS-%' OR r.data->>'docNo' ILIKE 'MS/%' OR UPPER(COALESCE(d.code, r.dt_id, '')) = 'MS')" if is_ms_specified else ""
+
+            proj_prefix_conditions = []
+            if any(p in ["CFC", "PEM-058", "058"] for p in expanded_pids_upper):
+                proj_prefix_conditions.append("r.data->>'docNo' ILIKE '%%CY002P608%%'")
+            if any(p in ["EKH", "24CP01"] for p in expanded_pids_upper):
+                proj_prefix_conditions.append("r.data->>'docNo' ILIKE '%%24CP01%%'")
+            prefix_sql = ("OR " + " OR ".join(proj_prefix_conditions)) if proj_prefix_conditions else ""
+
             direct_fallback_sql = f"""
                 SELECT 
                     r.id,
@@ -567,16 +690,16 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 FROM records r
                 LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id) AND d.project_id = r.project_id
                 WHERE (
-                    r.data->>'docNo' ILIKE '%%CY002P608%%'
-                    OR r.project_id ILIKE '%%PEM-058%%'
-                    OR r.project_id ILIKE '%%CFC%%'
-                    OR r.project_id = ANY(%s)
+                    r.project_id = ANY(%s)
+                    OR UPPER(r.project_id) = ANY(%s)
+                    {prefix_sql}
                 )
                 {ms_condition}
                 AND (
                     r.data->>'title' ILIKE ANY(%s)
                     OR r.data->>'docNo' ILIKE ANY(%s)
-                    OR r.data::text ILIKE ANY(%s)
+                    OR r.data->>'itemRef' ILIKE ANY(%s)
+                    OR r.data->>'description' ILIKE ANY(%s)
                 )
                 ORDER BY 
                     CASE 
@@ -588,28 +711,20 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                         ELSE 1 
                     END ASC,
                     r.id DESC
-                LIMIT 25;
+                LIMIT 50;
             """
             try:
-                matched_records = db.q(direct_fallback_sql, (expanded_pids_list, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns))
+                matched_records = db.q(direct_fallback_sql, (expanded_pids_list, expanded_pids_upper, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns))
             except Exception as e_direct:
                 logger.warning("Error running direct fallback record search in AI context: %s", e_direct)
 
-            # If strict MS condition returned 0 records, try without ms_condition only if NO MS records exist
-            if not matched_records and is_ms_specified and ms_condition:
-                try:
-                    direct_fallback_sql_relaxed = direct_fallback_sql.replace(ms_condition, "")
-                    matched_records = db.q(direct_fallback_sql_relaxed, (expanded_pids_list, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns))
-                except Exception as e_direct2:
-                    logger.warning("Error running relaxed direct fallback record search in AI context: %s", e_direct2)
-
-        # Fallback 2: Relaxed search without doc type constraint across scoped project
-        if not matched_records and detected_doc_types and search_terms:
+        # Fallback 2: Relaxed search without doc type constraint across scoped project ONLY IF NOT A VALVE QUERY
+        if not matched_records and detected_doc_types and search_terms and not is_valve_query:
             relaxed_where_clauses = [
                 "(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))",
-                "(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s) OR r.data::text ILIKE ANY(%s))"
+                "(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s))"
             ]
-            relaxed_params = [expanded_pids_list, expanded_pids_upper] + [kw_patterns] * 7
+            relaxed_params = [expanded_pids_list, expanded_pids_upper] + [kw_patterns] * 6
             relaxed_sql = f"""
                 SELECT 
                     r.id,
@@ -626,15 +741,14 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 LEFT JOIN doc_types d ON (d.id = r.dt_id OR d.code = r.dt_id) AND d.project_id = r.project_id
                 WHERE {" AND ".join(relaxed_where_clauses)}
                 ORDER BY {order_sql}
-                LIMIT 25;
+                LIMIT 50;
             """
             try:
                 matched_records = db.q(relaxed_sql, relaxed_params)
             except Exception as e_rel:
                 logger.warning("Error running relaxed record search in AI context: %s", e_rel)
 
-        # Post-filter: If user specified MS, filter records strictly to docNo ILIKE 'MS-%' or doc_type = 'MS'
-        # Only include MIR or other types if NO MS records exist at all.
+        # Post-filter 1: If user specified MS, filter records strictly to docNo ILIKE 'MS-%' or doc_type = 'MS'
         if is_ms_specified and matched_records:
             ms_records = [
                 rec for rec in matched_records
@@ -645,9 +759,35 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             if ms_records:
                 matched_records = ms_records
 
+        # Post-filter 2: If user queried for valves, enforce strictly that title or docNo contains valve stem
+        if is_valve_query and matched_records:
+            valve_stems = ["valve", "valves", "valv", "butterfly", "gate valve", "check valve", "ball valve", "محبس", "محابس", "صمام", "صمامات"]
+            valve_records = [
+                rec for rec in matched_records
+                if any(stem in (rec.get("title") or "").lower() for stem in valve_stems)
+                or any(stem in (rec.get("doc_no") or "").lower() for stem in valve_stems)
+            ]
+            matched_records = valve_records
+
+        # Post-filter 3: Deduplicate latest revisions so each distinct submittal displays once
+        if matched_records:
+            matched_records = _dedup_latest_revisions(matched_records)
+
+        target_scope_list = []
+        for sp in scoped_search_pids:
+            p = proj_map.get(sp)
+            if p:
+                target_scope_list.append(f"{p.get('name', '')} ({p.get('code', '')})")
+            else:
+                for pinfo in PROJECT_ALIASES.values():
+                    if str(sp) in [pinfo["code"], pinfo["name_pattern"]]:
+                        target_scope_list.append(pinfo["display"])
+                        break
+        target_scope_str = ", ".join(target_scope_list) if target_scope_list else "the scoped project(s)"
+
         if matched_records:
             context_lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
-            context_lines.append(f"Found {len(matched_records)} matching submittals based on query keywords and filters:")
+            context_lines.append(f"Found {len(matched_records)} matching submittals in {target_scope_str} based on query keywords and filters:")
             for rec in matched_records:
                 doc_no = rec.get("doc_no") or "—"
                 title = rec.get("title") or "No Title"
@@ -663,7 +803,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             context_lines.append("")
         else:
             context_lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
-            context_lines.append("- No matching submittals found for the requested keywords/filters in the scoped project(s).")
+            context_lines.append(f"- No matching submittals found for the requested keywords/filters in {target_scope_str}.")
             context_lines.append("")
 
     return "\n".join(context_lines)
@@ -803,14 +943,37 @@ def _format_fallback_response_from_context(prompt, context_text):
             table_md = "\n".join(rows)
 
             p_low = (prompt or "").lower()
-            if any(w in p_low for w in ["محبس", "محابس", "valve", "valves"]):
-                header_title = "📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع CFC:"
-            elif any(w in p_low for w in ["طلمب", "مضخ", "pump"]):
-                header_title = "📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمضخات لمشروع CFC:"
+            is_valve = any(w in p_low for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves"])
+            is_pump = any(w in p_low for w in ["طلمب", "مضخ", "pump"])
+
+            # Resolve project display name
+            proj_display = None
+            for alias, pinfo in PROJECT_ALIASES.items():
+                if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
+                    proj_display = pinfo["display"]
+                    break
+
+            if not proj_display:
+                for pinfo in PROJECT_ALIASES.values():
+                    if f"Project: {pinfo['code']}" in context_text or f"({pinfo['code']})" in context_text or pinfo["name_pattern"] in context_text:
+                        proj_display = pinfo["display"]
+                        break
+
+            if not proj_display:
+                if "CY002P608" in context_text or "PEM-058" in context_text:
+                    proj_display = "CFC (PEM-058)"
+                elif "24CP01" in context_text or "EKH" in context_text:
+                    proj_display = "EKH (24CP01)"
+                else:
+                    proj_display = "المشروع المحدد"
+
+            if is_valve:
+                header_title = f"📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع {proj_display}:"
+            elif is_pump:
+                header_title = f"📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمضخات لمشروع {proj_display}:"
             else:
                 doc_type_label = "الـ MS" if any(w in p_low for w in ["ms", "submittal", "مواد", "معتمد"]) else "الوثائق"
-                proj_name = "لمشروع CFC" if any(w in p_low for w in ["cfc", "pem-058", "058"]) else ""
-                header_title = f"📋 تفاصيل وثائق {doc_type_label} المعتمدة {proj_name}:".strip()
+                header_title = f"📋 تفاصيل وثائق {doc_type_label} المعتمدة لمشروع {proj_display}:"
 
             return (
                 f"### {header_title}\n\n"
@@ -820,12 +983,37 @@ def _format_fallback_response_from_context(prompt, context_text):
                 f"{table_md}\n\n"
                 "📌 *البيانات أعلاه مستخرجة ومطابقة 100% لسجلات النظام الرسمية.*"
             )
-        elif "No matching submittals found" in context_text:
-            return (
-                "> 💡 **ملاحظة تشغيلية:** تم البحث مباشرة في سجلات النظام في قاعدة البيانات:\n\n"
-                "⚠️ لم يتم العثور على وثائق مطابقة لكلمات البحث المحددة في نطاق المشروع. "
-                "يرجى مراجعة الكلمات الدلالية أو استعراض جدول السجل المباشر."
-            )
+        elif "No matching submittals found" in context_text or not recs:
+            p_low = (prompt or "").lower()
+            is_valve = any(w in p_low for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves"])
+            is_pump = any(w in p_low for w in ["طلمب", "مضخ", "pump"])
+
+            proj_display = None
+            for alias, pinfo in PROJECT_ALIASES.items():
+                if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
+                    proj_display = pinfo["display"]
+                    break
+
+            if not proj_display:
+                for pinfo in PROJECT_ALIASES.values():
+                    if f"Project: {pinfo['code']}" in context_text or f"({pinfo['code']})" in context_text or pinfo["name_pattern"] in context_text:
+                        proj_display = pinfo["display"]
+                        break
+
+            if not proj_display:
+                if "CY002P608" in context_text or "PEM-058" in context_text:
+                    proj_display = "CFC (PEM-058)"
+                elif "24CP01" in context_text or "EKH" in context_text:
+                    proj_display = "EKH (24CP01)"
+                else:
+                    proj_display = "المشروع المحدد"
+
+            if is_valve:
+                return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_display}."
+            elif is_pump:
+                return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_display}."
+            else:
+                return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_display}."
 
     # 2. NOC summary section
     p_low = prompt.lower()

@@ -297,7 +297,7 @@ class TestAiAssistantValidation(unittest.TestCase):
         self.assertIn("MS-058-012", res)
         self.assertIn("Butterfly Valves", res)
         self.assertIn("✅ **Approved**", res)
-        self.assertIn("تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع CFC:", res)
+        self.assertIn("تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع CFC (PEM-058):", res)
         print("PASS: Direct context formatting produces structured Markdown table on 503.")
 
     def test_13_gemini_503_fallback_to_direct_context_endpoint(self):
@@ -369,7 +369,7 @@ class TestAiAssistantValidation(unittest.TestCase):
         print("PASS: Conversational clarification preserves equipment keywords and project scope from history.")
 
     def test_15_expanded_valve_keywords_and_stemming(self):
-        """Verify expanded KEYWORD_MAP contains valve synonyms, stems, and related fittings."""
+        """Verify expanded KEYWORD_MAP contains valve synonyms and stems, but excludes generic fittings/pipes."""
         from blueprints.ai import KEYWORD_MAP, ENGLISH_KEYWORD_MAP
         self.assertIn("محابس", KEYWORD_MAP)
         valve_synonyms = KEYWORD_MAP["محابس"]
@@ -378,11 +378,13 @@ class TestAiAssistantValidation(unittest.TestCase):
         self.assertIn("valv", valve_synonyms)
         self.assertIn("butterfly", valve_synonyms)
         self.assertIn("check valve", valve_synonyms)
-        self.assertIn("fittings", valve_synonyms)
+        # Ensure generic fittings/pipes are NOT included to prevent keyword pollution
+        self.assertNotIn("fittings", valve_synonyms)
+        self.assertNotIn("pipes", valve_synonyms)
 
         self.assertIn("valve", ENGLISH_KEYWORD_MAP)
         self.assertIn("butterfly", ENGLISH_KEYWORD_MAP["valve"])
-        print("PASS: Expanded valve engineering keywords and stems verified.")
+        print("PASS: Expanded valve engineering keywords and stems verified without pollution.")
 
     def test_16_strict_multi_condition_sql_never_returns_unrelated_records(self):
         """Verify that when both MS and valves are specified, WHERE strictly combines both with AND."""
@@ -492,6 +494,105 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIn("MS-CY002P608-00019 REV01", ctx)
             self.assertNotIn("MIR-CY002P608-00040", ctx)
         print("PASS: Strict MS filtering excludes MIR records when MS records are present.")
+
+    def test_20_no_unrelated_fittings_or_pipes_in_valve_search(self):
+        """Valve searches must never match generic conduit or pipe fittings lacking valve stems."""
+        from blueprints.ai import _build_ai_context
+        mock_projects = [{"id": "PEM-058", "name": "CFC Ph2", "code": "PEM-058"}]
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    return [
+                        {
+                            "id": "r1", "project_id": "PEM-058", "doc_type": "MS",
+                            "doc_no": "MS-CY002P608-00019 REV01",
+                            "title": "Duty Valves for HVAC Piping (Manual Butterfly Valve)",
+                            "status": "B - Approved As Noted", "issued_date": "2022-06-21", "doc_date": "2022-07-15"
+                        },
+                        {
+                            "id": "r2", "project_id": "PEM-058", "doc_type": "MS",
+                            "doc_no": "MS-CY002P608-00025 REV00",
+                            "title": "UPVC Pipes & Fittings",
+                            "status": "B - Approved As Noted", "issued_date": "2022-06-21", "doc_date": "2022-07-15"
+                        },
+                        {
+                            "id": "r3", "project_id": "PEM-058", "doc_type": "MS",
+                            "doc_no": "MS-CY002P608-00028 REV00",
+                            "title": "PVC Conduit & Fittings",
+                            "status": "B - Approved As Noted", "issued_date": "2022-06-21", "doc_date": "2022-07-15"
+                        }
+                    ]
+                return []
+            mock_q.side_effect = q_side_effect
+
+            ctx = _build_ai_context(["PEM-058"], user_prompt="شوفلي MS معتمد الخاص بالمحابس في CFC")
+            self.assertIn("MS-CY002P608-00019 REV01", ctx)
+            self.assertIn("Duty Valves", ctx)
+            self.assertNotIn("UPVC Pipes & Fittings", ctx)
+            self.assertNotIn("PVC Conduit & Fittings", ctx)
+        print("PASS: Unrelated pipe and conduit fittings excluded from valve search.")
+
+    def test_21_project_override_prevents_context_bleed(self):
+        """Current prompt mentioning EKH must completely override CFC from chat history."""
+        from blueprints.ai import _build_ai_context
+        mock_projects = [
+            {"id": "p_cfc", "name": "CFC Ph2", "code": "PEM-058"},
+            {"id": "p_ekh", "name": "EKH Project", "code": "24CP01"}
+        ]
+        history = [
+            {"role": "user", "text": "شوفلي معتمد MS محابس في CFC"},
+            {"role": "assistant", "text": "تم العثور على 14 محبس معتمد في CFC"}
+        ]
+        with patch("db.q") as mock_q:
+            executed_sqls = []
+            def q_side_effect(sql, params=()):
+                executed_sqls.append((sql, params))
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            _build_ai_context(["p_cfc", "p_ekh"], user_prompt="طب شوفلي معتمد محابس في EKH", history=history)
+            search_calls = [c for c in executed_sqls if "FROM records r" in c[0]]
+            self.assertTrue(len(search_calls) > 0)
+            sql_text, sql_params = search_calls[0]
+            # Params must contain EKH or 24CP01, but NOT CFC / PEM-058
+            params_str = str(sql_params).upper()
+            self.assertIn("24CP01", params_str)
+            self.assertNotIn("PEM-058", params_str)
+            self.assertNotIn("CY002P608", params_str)
+        print("PASS: Project override strictly prevents history context bleed.")
+
+    def test_22_zero_valve_records_returns_explicit_message_not_fallback_dump(self):
+        """When 0 valve records exist for a project, fallback must explicitly state none found."""
+        from blueprints.ai import _format_fallback_response_from_context
+        sample_context = (
+            "### 1. ACTIVE PROJECT(S) SCOPE:\n"
+            "- Project Code: 24CP01 | Name: EKH Project (ID: p_ekh)\n\n"
+            "### 5. MATCHING SUBMITTALS IN REGISTER:\n"
+            "- No matching submittals found for the requested keywords/filters in EKH Project (24CP01).\n"
+        )
+        res = _format_fallback_response_from_context("شوفلي معتمد MS محابس في EKH", sample_context)
+        self.assertEqual(res, "لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع EKH (24CP01).")
+        print("PASS: Zero valve records returns explicit message rather than arbitrary fallback dumps.")
+
+    def test_23_dedup_latest_revisions_retains_latest_revision(self):
+        """Multiple revisions of same document must be deduplicated to retain only the latest revision."""
+        from blueprints.ai import _dedup_latest_revisions
+        records = [
+            {"doc_no": "MS-CY002P608-00019 REV00", "title": "Duty Valves", "status": "C - Revise and Resubmit"},
+            {"doc_no": "MS-CY002P608-00019 REV01", "title": "Duty Valves", "status": "B - Approved As Noted"},
+            {"doc_no": "MS-CY002P608-00020 REV00", "title": "Fire Fighting Valves", "status": "B - Approved As Noted"},
+        ]
+        deduped = _dedup_latest_revisions(records)
+        self.assertEqual(len(deduped), 2)
+        doc_nos = [r["doc_no"] for r in deduped]
+        self.assertIn("MS-CY002P608-00019 REV01", doc_nos)
+        self.assertNotIn("MS-CY002P608-00019 REV00", doc_nos)
+        self.assertIn("MS-CY002P608-00020 REV00", doc_nos)
+        print("PASS: Revision deduplication correctly keeps only the latest revision.")
 
 
 if __name__ == "__main__":
