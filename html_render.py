@@ -1638,6 +1638,32 @@ body.dark .ai-chat-body,
   font-size: 12.5px;
   line-height: 1.55;
   word-break: break-word;
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+.ai-msg-bubble blockquote,
+.ai-blockquote {
+  border-left: 3.5px solid #6366f1;
+  padding: 6px 12px;
+  margin: 8px 0;
+  background: rgba(99, 102, 241, 0.07);
+  border-radius: 0 6px 6px 0;
+  font-size: 12px;
+  color: #334155;
+}
+body.dark .ai-msg-bubble blockquote,
+body.dark .ai-blockquote,
+.ai-assistant-drawer.dark-theme .ai-msg-bubble blockquote {
+  background: rgba(99, 102, 241, 0.16);
+  border-left-color: #a5b4fc;
+  color: #cbd5e1;
+}
+[dir="rtl"] .ai-msg-bubble blockquote,
+[dir="rtl"] .ai-blockquote,
+.ai-msg-bubble[dir="rtl"] blockquote {
+  border-left: none !important;
+  border-right: 3.5px solid #6366f1 !important;
+  border-radius: 6px 0 0 6px !important;
 }
 .ai-msg.user .ai-msg-bubble {
   background: #4f46e5;
@@ -1945,7 +1971,10 @@ function _renderSimpleMarkdown(md) {
         tableRows = [];
         inTable = false;
       }
-      if (line.startsWith('### ')) {
+      if (line.startsWith('&gt; ') || line.startsWith('> ')) {
+        const qContent = line.replace(/^(&gt;|>)\s*/, '');
+        out.push('<blockquote class="ai-blockquote">' + qContent + '</blockquote>');
+      } else if (line.startsWith('### ')) {
         out.push('<h4>' + line.slice(4) + '</h4>');
       } else if (line.startsWith('## ')) {
         out.push('<h3>' + line.slice(3) + '</h3>');
@@ -2091,6 +2120,7 @@ function appendAiMessage(role, text) {
 
   const bubbleDiv = document.createElement('div');
   bubbleDiv.className = 'ai-msg-bubble';
+  bubbleDiv.setAttribute('dir', 'auto');
 
   if (role === 'user') {
     bubbleDiv.textContent = text;

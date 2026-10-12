@@ -221,7 +221,8 @@ def is_global_prompt(prompt: str) -> bool:
         "across", "registers", "all projects", "كل المشاريع", "جميع المشاريع",
         "المشاريع كلها", "بين المشاريع", "لكل المشاريع", "across projects",
         "all register", "overall", "global", "total approved cost for notice of change",
-        "status breakdown of documents", "عبر المشاريع", "في جميع", "في كل", "لكافة المشاريع"
+        "status breakdown of documents", "عبر المشاريع", "في جميع", "في كل", "لكافة المشاريع",
+        "notice of change (nocs)", "approved nocs total", "overdue submittals"
     ]
     return any(indicator in p for indicator in global_indicators)
 
@@ -422,20 +423,48 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
     elif any(w in p_low for w in ["مرفوض", "مرفوضة", "rejected", "revise"]):
         detected_status = "rejected"
 
+    is_english = not bool(re.search(r"[\u0600-\u06FF]", prompt))
+
     # 1. NOC Financial Query
     if detected_dt == "NOC" or any(w in p_low for w in ["noc", "change", "تكلفة", "cost", "مالي", "أوامر تغيير"]):
         fin = ai_tools.get_noc_financials(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
         proj_title = fin.get("project_display_name") or (fin.get("project_scope")[0] if fin.get("project_scope") else None) or "All Projects"
-        return (
-            f"> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) مباشرة من سجلات النظام:\n\n"
-            f"### 💰 ملخص أوامر التغيير (Notice of Change) لمشروع {proj_title}:\n\n"
-            f"- **إجمالي عدد أوامر التغيير:** {fin.get('total_count', 0)}\n"
-            f"- **إجمالي التكلفة المقدمة:** {fin.get('total_submitted_cost', 0):,.2f} EGP\n"
-            f"- **إجمالي التكلفة المعتمدة:** {fin.get('total_approved_cost', 0):,.2f} EGP\n"
-            f"- **الأوامر المعتمدة:** {fin.get('approved_count', 0)}\n"
-            f"- **الأوامر قيد المراجعة:** {fin.get('pending_count', 0)}\n"
-            f"- **الأوامر المرفوضة:** {fin.get('rejected_count', 0)}\n"
-        )
+        if is_english:
+            items_str = ""
+            if fin.get("items"):
+                app_items = [it for it in fin["items"] if "approv" in str(it.get("status", "")).lower() or "part c" in str(it.get("status", "")).lower()]
+                if app_items:
+                    item_rows = [f"- **{it.get('doc_no')}**: {it.get('subject', '—')} | Approved: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
+                    items_str = "\n\n**Approved NOC Items:**\n" + "\n".join(item_rows)
+            return (
+                f"> 💡 **Operational Summary:** Notice of Change (NOC) metrics retrieved directly from register records:\n\n"
+                f"### 💰 Notice of Change (NOC) Financial Summary for {proj_title}:\n\n"
+                f"- **Total NOC Count:** {fin.get('total_count', 0)}\n"
+                f"- **Total Submitted Cost:** {fin.get('total_submitted_cost', 0):,.2f} EGP\n"
+                f"- **Total Approved Cost:** {fin.get('total_approved_cost', 0):,.2f} EGP\n"
+                f"- **Approved Orders:** {fin.get('approved_count', 0)}\n"
+                f"- **Under Review / Pending Orders:** {fin.get('pending_count', 0)}\n"
+                f"- **Rejected / Cancelled Orders:** {fin.get('rejected_count', 0)}"
+                + items_str
+            )
+        else:
+            items_str = ""
+            if fin.get("items"):
+                app_items = [it for it in fin["items"] if "approv" in str(it.get("status", "")).lower() or "part c" in str(it.get("status", "")).lower()]
+                if app_items:
+                    item_rows = [f"- **{it.get('doc_no')}**: {it.get('subject', '—')} | القيمة المعتمدة: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
+                    items_str = "\n\n**تفاصيل الأوامر المعتمدة:**\n" + "\n".join(item_rows)
+            return (
+                f"> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) مباشرة من سجلات النظام:\n\n"
+                f"### 💰 ملخص أوامر التغيير (Notice of Change) لمشروع {proj_title}:\n\n"
+                f"- **إجمالي عدد أوامر التغيير:** {fin.get('total_count', 0)}\n"
+                f"- **إجمالي التكلفة المقدمة:** {fin.get('total_submitted_cost', 0):,.2f} EGP\n"
+                f"- **إجمالي التكلفة المعتمدة:** {fin.get('total_approved_cost', 0):,.2f} EGP\n"
+                f"- **الأوامر المعتمدة:** {fin.get('approved_count', 0)}\n"
+                f"- **الأوامر قيد المراجعة:** {fin.get('pending_count', 0)}\n"
+                f"- **الأوامر المرفوضة:** {fin.get('rejected_count', 0)}"
+                + items_str
+            )
 
     # 2. Overdue Submittals Query
     if any(w in p_low for w in ["overdue", "متأخر", "متأخرات", "تأخير", "delay"]):
@@ -449,12 +478,23 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
         proj_title = ov.get("project_display_name") or (ov.get("project_scope")[0] if ov.get("project_scope") else None) or "All Projects"
         records = ov.get("records", [])
         if not records:
+            if is_english:
+                return f"No overdue submittals exceeding SLA reply dates were found in project {proj_title}."
             return f"لا توجد أي وثائق متأخرة تجاوزت فترة الرد التعاقدية في نطاق مشروع {proj_title}."
 
         table_rows = []
         for r in records:
             table_rows.append(
                 f"| `{r.get('docNo')}` | {r.get('title', '—')} | {r.get('dt_code', '—')} | ⚠️ متأخر {r.get('days_overdue')} يوم | {r.get('expected_reply') or r.get('issuedDate') or '—'} | {r.get('proj_code', '')} |"
+            )
+
+        if is_english:
+            return (
+                f"### ⏰ Overdue Submittals for {proj_title}:\n\n"
+                f"Found **{len(records)}** overdue submittals exceeding SLA contractual reply dates:\n\n"
+                "| Doc No | Title / Subject | Type | Overdue | Expected Date | Project |\n"
+                "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
+                + "\n".join(table_rows)
             )
 
         return (
@@ -471,10 +511,24 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
         proj_title = summary.get("project_display_name") or (summary.get("project_scope")[0] if summary.get("project_scope") else None) or "All Projects"
         stat_lines = []
         for p in summary.get("projects", []):
-            stat_lines.append(
-                f"- **مشروع [{p.get('code')}] {p.get('name')}:** إجمالي الوثائق={p.get('total')}, "
-                f"المعتمد={p.get('approved')} ({p.get('pct')}%), قيد المراجعة={p.get('pending')}, "
-                f"المتأخر={p.get('overdue')}, المرفوض={p.get('rejected')}"
+            if is_english:
+                stat_lines.append(
+                    f"- **Project [{p.get('code')}] {p.get('name')}:** Total={p.get('total')}, "
+                    f"Approved={p.get('approved')} ({p.get('pct')}%), Under Review={p.get('pending')}, "
+                    f"Overdue={p.get('overdue')}, Rejected={p.get('rejected')}"
+                )
+            else:
+                stat_lines.append(
+                    f"- **مشروع [{p.get('code')}] {p.get('name')}:** إجمالي الوثائق={p.get('total')}, "
+                    f"المعتمد={p.get('approved')} ({p.get('pct')}%), قيد المراجعة={p.get('pending')}, "
+                    f"المتأخر={p.get('overdue')}, المرفوض={p.get('rejected')}"
+                )
+        if is_english:
+            return (
+                f"> 💡 **Operational Summary:** Register metrics retrieved directly from system database:\n\n"
+                f"### 📊 Register Summary for {proj_title}:\n\n"
+                + "\n".join(stat_lines)
+                + f"\n\n**Grand Total:** {summary.get('grand_total_documents', 0)} documents with an overall approval rate of **{summary.get('overall_approval_pct', 0)}%**."
             )
         return (
             f"> 💡 **ملاحظة تشغيلية:** تم استخراج إحصائيات السجلات مباشرة من النظام:\n\n"
@@ -509,6 +563,17 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
     appr_label = " المعتمدة" if detected_status == "approved" else ""
 
     if not records:
+        if is_english:
+            if detected_keyword == "valve":
+                return f"No approved submittals for valves were found in project {proj_title}."
+            if detected_keyword == "pump":
+                return f"No approved submittals for pumps were found in project {proj_title}."
+            if detected_disc and detected_dt:
+                return f"No {detected_dt} submittals for {detected_disc} were found in project {proj_title}."
+            if detected_dt:
+                return f"No matching {detected_dt} submittals were found in project {proj_title}."
+            return f"No matching documents were found in project {proj_title}."
+
         if detected_keyword == "valve":
             return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_title}."
         if detected_keyword == "pump":
