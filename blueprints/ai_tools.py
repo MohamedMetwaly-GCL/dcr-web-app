@@ -523,6 +523,7 @@ def search_submittals(
             "r.data->>'workDescription'",
             "r.data->>'brand'",
             "r.data->>'itemRef'",
+            "r.data::text",
         ):
             field_or = " OR ".join([f"{field} ILIKE %s"] * len(kw_patterns))
             sub_clauses.append(f"({field_or})")
@@ -535,7 +536,10 @@ def search_submittals(
         st_clean = str(status).strip().lower()
         patterns = []
         if "approv" in st_clean:
-            patterns = ["%Approv%", "Status B%", "Status A%", "B - %", "A - %", "%معتمد%"]
+            patterns = [
+                "%Approv%", "Status B%", "Status A%", "Code B%", "Code A%",
+                "B - %", "A - %", "%معتمد%", "%Accepted%", "%Accept%"
+            ]
         elif "reject" in st_clean or "revise" in st_clean:
             patterns = ["%Reject%", "%Revise%", "Status C%", "Status D%", "C - %", "D - %", "%مرفوض%"]
         elif "pend" in st_clean:
@@ -543,6 +547,8 @@ def search_submittals(
         if patterns:
             expr = "COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', r.data->>'partDStatus', '')"
             st_or = " OR ".join([f"{expr} ILIKE %s"] * len(patterns))
+            if "approv" in st_clean:
+                st_or = f"({st_or} OR TRIM({expr}) IN ('A', 'B') OR UPPER({expr}) = 'APPROVED')"
             where_clauses.append(f"({st_or})")
             params.extend(patterns)
 
@@ -651,12 +657,44 @@ def search_submittals(
                 code_val = r_pid
         r["project_code"] = code_val
 
-    return {
+    # Cross-document type fallback: if specific doc_type returned 0 records,
+    # find whether matching equipment/material exists under other document types (e.g. NOC, IR, SD)
+    related_other_types = []
+    if not records and doc_type and (keyword or discipline):
+        try:
+            alt_res = search_submittals(
+                allowed_project_ids=allowed_project_ids,
+                project_code=project_code,
+                doc_type=None,
+                discipline=discipline,
+                trade=trade,
+                keyword=keyword,
+                status=status,
+                latest_revision_only=latest_revision_only,
+                limit=limit,
+            )
+            related_other_types = [
+                r for r in alt_res.get("records", [])
+                if (r.get("doc_type") or "").upper() != str(doc_type).upper()
+            ]
+        except Exception as e:
+            logger.warning("Error searching related other types: %s", e)
+            related_other_types = []
+
+    res_payload = {
         "project_display_name": project_display,
         "project_scope": [project_display],
         "count": len(records),
         "records": records,
     }
+    if related_other_types:
+        res_payload["related_other_types"] = related_other_types
+        res_payload["message"] = (
+            f"No {doc_type} submittals found for '{keyword or discipline}', "
+            f"but found {len(related_other_types)} related records under other document types."
+        )
+
+    return res_payload
 
 
 # ─────────────────────────────────────────────────────────────
@@ -869,6 +907,28 @@ def get_noc_financials(
         logger.error("get_noc_financials error: %s", e)
         rows = []
 
+    target_projs = _resolve_target_projects(allowed_project_ids, project_code)
+    by_project_map = {}
+    for tp in target_projs:
+        tp_code = tp.get("code") or tp.get("id")
+        tp_name = tp.get("name") or tp_code
+        if "CFC" in str(tp_code) or "058" in str(tp_code):
+            tp_code = "PEM-058"
+            tp_name = "CFC (PEM-058)"
+        elif "24CP01" in str(tp_code) or "EKH" in str(tp_code):
+            tp_code = "24CP01"
+            tp_name = "EKH (24CP01)"
+        by_project_map[tp_code] = {
+            "project_code": tp_code,
+            "project_name": tp_name,
+            "total_count": 0,
+            "total_submitted_cost": 0.0,
+            "total_approved_cost": 0.0,
+            "approved_count": 0,
+            "pending_count": 0,
+            "rejected_count": 0,
+        }
+
     total_submitted = 0.0
     total_approved = 0.0
     approved_items = []
@@ -925,12 +985,32 @@ def get_noc_financials(
         total_approved += app_cost
         all_items.append(item)
 
+        if p_code not in by_project_map:
+            by_project_map[p_code] = {
+                "project_code": p_code,
+                "project_name": row.get("proj_name") or p_code,
+                "total_count": 0,
+                "total_submitted_cost": 0.0,
+                "total_approved_cost": 0.0,
+                "approved_count": 0,
+                "pending_count": 0,
+                "rejected_count": 0,
+            }
+
+        p_stats = by_project_map[p_code]
+        p_stats["total_count"] += 1
+        p_stats["total_submitted_cost"] += sub_cost
+        p_stats["total_approved_cost"] += app_cost
+
         if is_app:
             approved_items.append(item)
+            p_stats["approved_count"] += 1
         elif is_rej:
             rejected_items.append(item)
+            p_stats["rejected_count"] += 1
         else:
             pending_items.append(item)
+            p_stats["pending_count"] += 1
 
     return {
         "project_display_name": project_display,
@@ -941,6 +1021,7 @@ def get_noc_financials(
         "approved_count": len(approved_items),
         "pending_count": len(pending_items),
         "rejected_count": len(rejected_items),
+        "by_project": list(by_project_map.values()),
         "items": all_items[:50],
     }
 

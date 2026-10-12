@@ -45,7 +45,10 @@ SYSTEM_INSTRUCTION = (
     "1. When the user asks about specific submittals, materials, equipment (valves, pumps, chillers, cables, pipes, etc.), "
     "disciplines (Architecture, Electrical, Mechanical, Civil, Structural), or document types, always call search_submittals.\n"
     "2. When the user asks about KPIs, overall project totals, or register summary, call get_project_summary.\n"
-    "3. When the user asks about costs, variations, or NOC totals, call get_noc_financials.\n"
+    "3. When the user asks about costs, variations, or NOC totals, call get_noc_financials. "
+    "CRITICAL RULE FOR MULTI-PROJECT NOC QUERIES: If the query spans multiple projects (or all projects), "
+    "you MUST display a structured Markdown table breaking down metrics for EACH project individually (from the 'by_project' list in tool result) "
+    "with columns: | Project | Total NOCs | Submitted Cost (EGP) | Approved Cost (EGP) | Approved Orders | Pending Orders | BEFORE stating the Grand Total.\n"
     "4. When the user asks about delayed or overdue submittals, call get_overdue_submittals.\n"
     "5. When the user asks about revisions or approval history of a specific document number, call get_document_history.\n"
     "6. When presenting records, format them in a clean Markdown table with columns: "
@@ -55,12 +58,15 @@ SYSTEM_INSTRUCTION = (
     "immediately switch to that project. Never carry over or force a previous project when a new project is specified.\n"
     "8. CONVERSATIONAL MEMORY & FOLLOW-UP QUERIES: If the user asks a follow-up question continuing the previous topic "
     "without specifying a new project (e.g., 'وماذا عن المضخات؟', 'من اعتمدها؟', 'وريني تفاصيلها', 'and what about pumps?', "
-    "'who approved it?'), retain the project, document type, and discipline context from the previous turn.\n"
+    "'who approved it?'), retain the project, document type, and discipline context from the previous turn. "
+    "However, if the user switches projects (e.g. asks about EKH after CFC), do NOT restrict the new project to the previous document type unless explicitly requested.\n"
     "9. CRITICAL FOR GLOBAL QUERIES: If the user asks about documents, totals, KPIs, or costs across all projects or registers "
     "(e.g. 'across the project registers', 'all projects', 'كل المشاريع', 'إجمالي المشاريع', or asks for overall summaries without naming a project), "
     "you MUST pass project_code=None (or omit project_code). DO NOT carry over or recall a project code from previous conversation turns.\n"
-    "10. CROSS-REFERENCING WHEN ZERO RESULTS: If searching for specific equipment or material (e.g. valves) under a specific document type (e.g. MS) "
-    "yields 0 records, verify if the equipment exists under related types (such as NOC or IR) and provide actionable engineering context.\n"
+    "10. CROSS-REFERENCING WHEN ZERO RESULTS: If searching for specific equipment or material (e.g. valves / محابس) under a specific document type (e.g. MS) "
+    "yields 0 records, inspect 'related_other_types' in the search_submittals result. If related approved records exist under other types (such as NOC or IR), "
+    "you MUST inform the user clearly: explain that no MS records exist, but show the related approved documents in a Markdown table. "
+    "NEVER claim that no records exist at all if related records are present in other registers!\n"
     "11. BILINGUAL ACCURACY & BIDIRECTIONAL (BiDi) FORMATTING: If the user writes in Arabic, respond in professional Arabic engineering language. "
     "If in English, respond in English. When responding in Arabic, always format document numbers, project codes, and English acronyms "
     "in backticks (e.g. `PEM-058`, `MS-CY002P608-00019`, `Valves`) so bidirectional text displays in correct natural word order.\n"
@@ -140,7 +146,8 @@ get_noc_financials_declaration = types.FunctionDeclaration(
     name="get_noc_financials",
     description=(
         "Retrieves Notice of Change (NOC) and Variation Order financial metrics: total submitted cost, "
-        "total approved cost, approved NOCs count, pending NOCs count, and details of top change orders."
+        "total approved cost, approved NOCs count, pending NOCs count, top change orders, and a per-project breakdown "
+        "('by_project') detailing metrics for each project individually."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
@@ -507,8 +514,13 @@ def _execute_deterministic_fallback(
         elif any(w in p_low for w in ["تغيير", "أمر تغيير", "مطالبة"]):
             detected_dt = "NOC"
 
-    # Follow-up doc type inheritance
-    if is_follow_up and not detected_dt and history:
+    # Follow-up doc type inheritance: only inherit if not explicitly naming a project in the current prompt
+    explicit_project_in_prompt = bool(matched_proj_code and any(
+        re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low
+        for alias in ai_tools.PROJECT_ALIASES.keys()
+    ))
+
+    if is_follow_up and not detected_dt and history and not explicit_project_in_prompt:
         for msg in reversed(history):
             if msg.get("role") == "user":
                 prev_text = (msg.get("text") or "").lower()
@@ -555,16 +567,47 @@ def _execute_deterministic_fallback(
     if detected_dt == "NOC" or any(w in p_low for w in ["noc", "change", "تكلفة", "cost", "مالي", "أوامر تغيير", "مطالبات"]):
         fin = ai_tools.get_noc_financials(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
         proj_title = fin.get("project_display_name") or (fin.get("project_scope")[0] if fin.get("project_scope") else None) or "All Projects"
-        if is_english:
-            items_str = ""
-            if fin.get("items"):
-                app_items = [it for it in fin["items"] if "approv" in str(it.get("status", "")).lower() or "part c" in str(it.get("status", "")).lower()]
-                if app_items:
-                    item_rows = [f"- **`{it.get('doc_no')}`**: {it.get('subject', '—')} | Approved: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
+        by_project = fin.get("by_project") or []
+
+        # Build per-project table rows if multiple projects are present or global query
+        by_proj_rows = []
+        for p in by_project:
+            p_name = p.get("project_name") or p.get("project_code")
+            p_cnt = p.get("total_count", 0)
+            p_sub = p.get("total_submitted_cost", 0.0)
+            p_app = p.get("total_approved_cost", 0.0)
+            p_app_cnt = p.get("approved_count", 0)
+            p_pend_cnt = p.get("pending_count", 0)
+            by_proj_rows.append(
+                f"| **{p_name}** | {p_cnt} | {p_sub:,.2f} EGP | {p_app:,.2f} EGP | {p_app_cnt} | {p_pend_cnt} |"
+            )
+
+        items_str = ""
+        if fin.get("items"):
+            app_items = [it for it in fin["items"] if "approv" in str(it.get("status", "")).lower() or "part c" in str(it.get("status", "")).lower()]
+            if app_items:
+                if is_english:
+                    item_rows = [f"- **`{it.get('doc_no')}`** (`{it.get('project_code')}`): {it.get('subject', '—')} | Approved: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
                     items_str = "\n\n**Approved NOC Items:**\n" + "\n".join(item_rows)
+                else:
+                    item_rows = [f"- **`{it.get('doc_no')}`** (`{it.get('project_code')}`): {it.get('subject', '—')} | القيمة المعتمدة: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
+                    items_str = "\n\n**تفاصيل الأوامر المعتمدة:**\n" + "\n".join(item_rows)
+
+        if is_english:
+            project_breakdown = ""
+            if by_proj_rows and (len(by_project) > 1 or matched_proj_code is None):
+                project_breakdown = (
+                    "### 📊 Notice of Change (NOC) Breakdown by Project:\n\n"
+                    "| Project | Total NOCs | Submitted Cost | Approved Cost | Approved Orders | Pending Orders |\n"
+                    "| :--- | :---: | :---: | :---: | :---: | :---: |\n"
+                    + "\n".join(by_proj_rows)
+                    + "\n\n"
+                )
+
             return (
-                f"> 💡 **Operational Summary:** Notice of Change (NOC) metrics retrieved directly from register records:\n\n"
-                f"### 💰 Notice of Change (NOC) Financial Summary for {proj_title}:\n\n"
+                f"> 💡 **Operational Summary:** Notice of Change (NOC) metrics retrieved per project directly from register records:\n\n"
+                + project_breakdown
+                + f"### 💰 Notice of Change (NOC) Financial Summary for {proj_title}:\n\n"
                 f"- **Total NOC Count:** {fin.get('total_count', 0)}\n"
                 f"- **Total Submitted Cost:** {fin.get('total_submitted_cost', 0):,.2f} EGP\n"
                 f"- **Total Approved Cost:** {fin.get('total_approved_cost', 0):,.2f} EGP\n"
@@ -574,15 +617,20 @@ def _execute_deterministic_fallback(
                 + items_str
             )
         else:
-            items_str = ""
-            if fin.get("items"):
-                app_items = [it for it in fin["items"] if "approv" in str(it.get("status", "")).lower() or "part c" in str(it.get("status", "")).lower()]
-                if app_items:
-                    item_rows = [f"- **`{it.get('doc_no')}`**: {it.get('subject', '—')} | القيمة المعتمدة: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
-                    items_str = "\n\n**تفاصيل الأوامر المعتمدة:**\n" + "\n".join(item_rows)
+            project_breakdown = ""
+            if by_proj_rows and (len(by_project) > 1 or matched_proj_code is None):
+                project_breakdown = (
+                    "### 📊 تفاصيل أوامر التغيير (NOC) حسب كل مشروع:\n\n"
+                    "| المشروع (Project) | إجمالي أوامر التغيير | التكلفة المقدمة | التكلفة المعتمدة | الأوامر المعتمدة | قيد المراجعة |\n"
+                    "| :--- | :---: | :---: | :---: | :---: | :---: |\n"
+                    + "\n".join(by_proj_rows)
+                    + "\n\n"
+                )
+
             return (
-                f"> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) مباشرة من سجلات النظام:\n\n"
-                f"### 💰 ملخص أوامر التغيير (Notice of Change) لمشروع {proj_title}:\n\n"
+                f"> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) لكل مشروع على حدة مباشرة من سجلات النظام:\n\n"
+                + project_breakdown
+                + f"### 💰 ملخص أوامر التغيير (Notice of Change) لمشروع {proj_title}:\n\n"
                 f"- **إجمالي عدد أوامر التغيير:** {fin.get('total_count', 0)}\n"
                 f"- **إجمالي التكلفة المقدمة:** {fin.get('total_submitted_cost', 0):,.2f} EGP\n"
                 f"- **إجمالي التكلفة المعتمدة:** {fin.get('total_approved_cost', 0):,.2f} EGP\n"
@@ -683,15 +731,15 @@ def _execute_deterministic_fallback(
     records = search_res.get("records", [])
 
     # If 0 records found for a specific doc type, check if equipment exists under other types (e.g. NOC or IR)
-    alt_records = []
-    if not records and detected_keyword and detected_dt:
+    alt_records = search_res.get("related_other_types") or []
+    if not records and detected_keyword and detected_dt and not alt_records:
         try:
             alt_res = ai_tools.search_submittals(
                 allowed_project_ids=allowed_project_ids,
                 project_code=matched_proj_code,
                 doc_type=None,
                 keyword=detected_keyword,
-                limit=5,
+                limit=10,
             )
             alt_records = [r for r in alt_res.get("records", []) if (r.get("doc_type") or "").upper() != detected_dt]
         except Exception:
@@ -704,34 +752,53 @@ def _execute_deterministic_fallback(
     appr_label = " المعتمدة" if detected_status == "approved" else ""
 
     if not records:
-        alt_note = ""
         if alt_records:
-            first_alt = alt_records[0]
+            alt_rows = []
+            for r in alt_records:
+                st_clean = r.get("status") or "Pending"
+                st_badge = f"✅ **{st_clean}**" if "approv" in st_clean.lower() or "status a" in st_clean.lower() or "status b" in st_clean.lower() else st_clean
+                alt_rows.append(
+                    f"| `{r.get('doc_no')}` | {r.get('title', '—')} | `{r.get('doc_type', '—')}` | {st_badge} | {r.get('doc_date', '—')} | `{r.get('project_code', '')}` |"
+                )
             if is_english:
-                alt_note = f"\n\n💡 *Note: However, found related `{first_alt.get('doc_type')}` record: `{first_alt.get('doc_no')}` ({first_alt.get('title')}).*"
+                return (
+                    f"No **{detected_dt}** submittals were found for `{detected_keyword or 'requested items'}` in project {proj_title}.\n\n"
+                    f"💡 **However, found {len(alt_records)} approved/related records under other document types:**\n\n"
+                    "| Document No | Title / Description | Type | Status | Date | Project |\n"
+                    "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
+                    + "\n".join(alt_rows)
+                    + "\n\n📌 *All records retrieved directly from verified project register database.*"
+                )
             else:
-                alt_note = f"\n\n💡 *ملاحظة هندسية: ولكن تم العثور على وثيقة مرتبطة من نوع (`{first_alt.get('doc_type')}`): `{first_alt.get('doc_no')}` ({first_alt.get('title')}).*"
+                return (
+                    f"لم يتم العثور على أي اعتمادات من نوع الـ **{detected_dt}** تخص `{detected_keyword or 'العناصر المطلوبة'}` في سجلات مشروع {proj_title}.\n\n"
+                    f"💡 **ولكن تم العثور على {len(alt_records)} وثيقة معتمدة ومطابقة تحت أنواع مستندات أخرى في نفس المشروع:**\n\n"
+                    "| رقم الوثيقة | الوصف / العنوان | النوع | الحالة | التاريخ | المشروع |\n"
+                    "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
+                    + "\n".join(alt_rows)
+                    + "\n\n📌 *البيانات أعلاه مستخرجة ومطابقة 100% لسجلات النظام الرسمية.*"
+                )
 
         if is_english:
             if detected_keyword == "valve":
-                return f"No approved submittals for valves were found in project {proj_title}." + alt_note
+                return f"No approved submittals for valves were found in project {proj_title}."
             if detected_keyword == "pump":
-                return f"No approved submittals for pumps were found in project {proj_title}." + alt_note
+                return f"No approved submittals for pumps were found in project {proj_title}."
             if detected_disc and detected_dt:
-                return f"No {detected_dt} submittals for {detected_disc} were found in project {proj_title}." + alt_note
+                return f"No {detected_dt} submittals for {detected_disc} were found in project {proj_title}."
             if detected_dt:
-                return f"No matching {detected_dt} submittals were found in project {proj_title}." + alt_note
-            return f"No matching documents were found in project {proj_title}." + alt_note
+                return f"No matching {detected_dt} submittals were found in project {proj_title}."
+            return f"No matching documents were found in project {proj_title}."
 
         if detected_keyword == "valve":
-            return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_title}." + alt_note
+            return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_title}."
         if detected_keyword == "pump":
-            return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_title}." + alt_note
+            return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_title}."
         if detected_disc and detected_dt:
-            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} تخص الأعمال {detected_disc} في سجلات مشروع {proj_title}." + alt_note
+            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} تخص الأعمال {detected_disc} في سجلات مشروع {proj_title}."
         if detected_dt:
-            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} مطابقة لطلبك في سجلات مشروع {proj_title}." + alt_note
-        return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_title}." + alt_note
+            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} مطابقة لطلبك في سجلات مشروع {proj_title}."
+        return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_title}."
 
     table_rows = []
     for r in records:

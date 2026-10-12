@@ -739,6 +739,96 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIn("رقم الوثيقة", ar_res)
         print("PASS: Bilingual response accurately distinguishes and renders English and Arabic.")
 
+    def test_37_get_noc_financials_per_project_breakdown(self):
+        """get_noc_financials and fallback must isolate and display metrics for each project individually."""
+        mock_projects = [
+            {"id": "PEM-058", "name": "CFC Ph2", "code": "PEM-058", "data": {}},
+            {"id": "24CP01", "name": "EKH Hospital", "code": "24CP01", "data": {}},
+        ]
+        mock_nocs = [
+            {"project_id": "PEM-058", "proj_code": "PEM-058", "proj_name": "CFC", "data": {"docNo": "NOC-01", "submittedCost": "100000", "finalApprovedCost": "90000", "partDStatus": "Approved"}},
+            {"project_id": "24CP01", "proj_code": "24CP01", "proj_name": "EKH", "data": {"docNo": "NOC-02", "submittedCost": "200000", "finalApprovedCost": "180000", "partDStatus": "Approved"}},
+        ]
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM records r" in sql:
+                    return mock_nocs
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            fin = ai_tools.get_noc_financials(allowed_project_ids=["PEM-058", "24CP01"])
+            self.assertIn("by_project", fin)
+            by_proj = fin["by_project"]
+            self.assertEqual(len(by_proj), 2)
+            cfc_stat = next(p for p in by_proj if p["project_code"] == "PEM-058")
+            ekh_stat = next(p for p in by_proj if p["project_code"] == "24CP01")
+            self.assertEqual(cfc_stat["total_submitted_cost"], 100000.0)
+            self.assertEqual(ekh_stat["total_submitted_cost"], 200000.0)
+
+            # Fallback rendering test
+            res = _execute_deterministic_fallback(
+                prompt="What is the total approved cost for Notice of Change (NOCs) and list the approved items?",
+                allowed_project_ids=["PEM-058", "24CP01"]
+            )
+            self.assertIn("Notice of Change (NOC) Breakdown by Project", res)
+            self.assertIn("PEM-058", res)
+            self.assertIn("24CP01", res)
+            self.assertIn("100,000.00 EGP", res)
+            self.assertIn("200,000.00 EGP", res)
+        print("PASS: NOC financials accurately breaks down metrics for each project individually.")
+
+    def test_38_valves_cross_doctype_recommendation(self):
+        """When 0 MS valve records exist, search_submittals and fallback surface approved NOC valve submittal."""
+        mock_projects = [{"id": "CFC DCP PH-2A", "name": "CFC DCP PH-2A", "code": "PEM-058", "data": {}}]
+        mock_records = [
+            {
+                "id": "r1",
+                "project_id": "CFC DCP PH-2A",
+                "dt_id": "NOC",
+                "doc_type": "NOC",
+                "doc_no": "NOC-00007 REV01",
+                "title": "Cooling towers fittings and valves",
+                "status": "Approved",
+                "doc_date": "2026-05-01",
+                "project_code": "PEM-058"
+            }
+        ]
+
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    # If specific doc_type MS is queried, return 0; if without doc_type, return NOC record
+                    if "UPPER(r.dt_id) = %s" in sql:
+                        return []
+                    return mock_records
+                return []
+            mock_q.side_effect = q_side_effect
+
+            res = ai_tools.search_submittals(
+                allowed_project_ids=["PEM-058", "CFC DCP PH-2A"],
+                project_code="CFC",
+                doc_type="MS",
+                keyword="valve",
+                status="approved"
+            )
+            self.assertEqual(res["count"], 0)
+            self.assertTrue(len(res.get("related_other_types", [])) > 0)
+            self.assertEqual(res["related_other_types"][0]["doc_no"], "NOC-00007 REV01")
+
+            # Fallback rendering test
+            reply = _execute_deterministic_fallback(
+                prompt="شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC",
+                allowed_project_ids=["PEM-058", "CFC DCP PH-2A"]
+            )
+            self.assertIn("NOC-00007 REV01", reply)
+            self.assertIn("Cooling towers fittings and valves", reply)
+            self.assertIn("وثيقة معتمدة ومطابقة تحت أنواع مستندات أخرى", reply)
+        print("PASS: Cross-document type fallback surfaces related approved valve records.")
+
 
 if __name__ == "__main__":
     unittest.main()
