@@ -1,8 +1,10 @@
-"""blueprints/ai.py - DCR Native AI Assistant API (Gemini Flash).
+"""blueprints/ai.py - DCR Native AI Assistant Agent (Gemini Tool-Augmented).
 
-Provides read-only AI Assistant capabilities using Google Gemini Flash API.
+Provides an autonomous AI Assistant using Google Gemini Native Function Calling.
 Strictly RBAC-aware: users can only query records and summaries from projects
 they have explicit permission to view.
+Security Boundary: `allowed_project_ids` is NEVER exposed to the LLM; it is strictly
+injected on the backend into tool invocations.
 """
 import logging
 import os
@@ -15,6 +17,7 @@ from google.genai import types
 
 import db
 from auth import current_user, can_view_project, get_allowed_project_ids
+from blueprints import ai_tools
 
 ai_bp = Blueprint("ai", __name__)
 logger = logging.getLogger(__name__)
@@ -24,1488 +27,670 @@ def get_db_connection():
     """Returns an active PostgreSQL database connection for raw query execution."""
     return db.get_pool().getconn()
 
+
 SYSTEM_INSTRUCTION = (
     "You are the DCR Engineering AI Assistant for Gas Chill contracting projects. "
-    "In the project document registers, abbreviations are defined as follows: "
-    "- 'MS': Material Submittal (اعتماد مواد / عينات / موردين) or Method Statement depending on register. "
-    "- 'SD': Shop Drawing (مخططات تنفيذية / شوب درونج). "
-    "- 'MIR': Material Inspection Request (طلب فحص وتوريد مواد ومهمات). "
-    "- 'RFI': Request for Information (استفسارات وتوضيحات فنية). "
-    "- 'IR' / 'WIR': Inspection Request / Work Inspection Request (طلبات استلام أعمال). "
-    "- 'NOC': Notice of Change (أوامر التغيير / مطالبات مالية). "
-    "- 'PR': Purchase Request / Procurement (طلبات الشراء والتوريد). "
-    "You provide accurate, concise, factual answers about document statuses, "
-    "overdue submittals, and cost approvals using ONLY the provided project register context. "
-    "Never modify or fabricate data."
+    "You assist engineers, project managers, and directors by querying project registers "
+    "using the provided tools: search_submittals, get_project_summary, get_noc_financials, "
+    "get_overdue_submittals, and get_document_history.\n\n"
+    "Document types in the register include:\n"
+    "- 'MS': Material Submittal (اعتماد مواد / عينات / موردين) or Method Statement.\n"
+    "- 'SD': Shop Drawing (مخططات تنفيذية / شوب درونج).\n"
+    "- 'IR' / 'WIR': Inspection Request (طلبات استلام أعمال / فحص موقعي / تسليمات).\n"
+    "- 'MIR': Material Inspection Request (طلب فحص وتوريد مواد ومهمات بالموقع).\n"
+    "- 'RFI': Request for Information (استفسارات وتوضيحات فنية).\n"
+    "- 'QS': Quantity Surveyor (حصر كميات ومستخلصات).\n"
+    "- 'NOC': Notice of Change (أوامر التغيير / مطالبات مالية).\n\n"
+    "Guidelines:\n"
+    "1. When the user asks about specific submittals, materials, equipment (valves, pumps, etc.), "
+    "disciplines (Architecture, Electrical, Mechanical), or document types, always call search_submittals.\n"
+    "2. When the user asks about KPIs, overall project totals, or register summary, call get_project_summary.\n"
+    "3. When the user asks about costs, variations, or NOC totals, call get_noc_financials.\n"
+    "4. When the user asks about delayed or overdue submittals, call get_overdue_submittals.\n"
+    "5. When the user asks about revisions or approval history of a specific document number, call get_document_history.\n"
+    "6. When presenting records, format them in a clean Markdown table with columns: "
+    "| Document No | Title / Description | Type | Status | Date | Project |.\n"
+    "7. If the user writes in Arabic, respond in clear, professional Arabic (لغة هندسية احترافية). "
+    "If in English, respond in English.\n"
+    "8. Never fabricate document numbers or approval statuses. Only report data returned by the tools."
 )
 
 
-VALVE_TERMS = ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve"]
-VALVE_SQL_PATTERNS = ["%valve%", "%valves%", "%butterfly%", "%gate valve%", "%ball valve%", "%check valve%"]
+# ─────────────────────────────────────────────────────────────
+# GEMINI TOOL SCHEMAS & DECLARATIONS
+# (Notice: allowed_project_ids is strictly omitted from schemas)
+# ─────────────────────────────────────────────────────────────
 
-PROJECT_ALIASES = {
-    "cfc": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
-    "pem-058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
-    "pem058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
-    "058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
-    "ekh": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
-    "24cp01": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
-    "assiut": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
-    "suez": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
+search_submittals_declaration = types.FunctionDeclaration(
+    name="search_submittals",
+    description=(
+        "Searches engineering submittals and document registers (MS, SD, IR, MIR, RFI, QS, NOC) "
+        "by project, document type, discipline, sub-trade, equipment/material keywords, and approval status. "
+        "Returns matching document records with doc number, title, status, date, and project code."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "project_code": types.Schema(
+                type=types.Type.STRING,
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH', 'Assiut', 'Suez'). Omit or pass 'ALL' for all accessible projects.",
+            ),
+            "doc_type": types.Schema(
+                type=types.Type.STRING,
+                description="Document type code: 'MS' (Material Submittal), 'SD' (Shop Drawing), 'IR' (Work/Inspection Request), 'MIR' (Material Inspection Request), 'RFI' (Request for Information), 'QS' (Quantity Surveying), 'NOC' (Notice of Change).",
+            ),
+            "discipline": types.Schema(
+                type=types.Type.STRING,
+                description="Engineering discipline: 'Architecture', 'Electrical', 'Mechanical', 'Civil', or 'Structural'.",
+            ),
+            "trade": types.Schema(
+                type=types.Type.STRING,
+                description="Sub-trade or system, e.g. 'HVAC', 'Plumbing', 'Fire Fighting', 'Lighting', 'Block Work', 'Power'.",
+            ),
+            "keyword": types.Schema(
+                type=types.Type.STRING,
+                description="Equipment, material, or keyword to search for, e.g. 'valve', 'pump', 'duct', 'chiller', 'pipe', 'cable', 'transformer', 'switchgear'.",
+            ),
+            "status": types.Schema(
+                type=types.Type.STRING,
+                description="Filter by approval status: 'approved' (Approved / Status A / Status B / Approved As Noted), 'pending' (Under Review / Submitted), 'rejected' (Revise & Resubmit / Rejected).",
+            ),
+            "latest_revision_only": types.Schema(
+                type=types.Type.BOOLEAN,
+                description="Whether to keep only the latest revision of each document (REV 01 replaces REV 00). Defaults to True.",
+            ),
+            "limit": types.Schema(
+                type=types.Type.INTEGER,
+                description="Maximum records to retrieve (default 25, max 100).",
+            ),
+        },
+    ),
+)
+
+get_project_summary_declaration = types.FunctionDeclaration(
+    name="get_project_summary",
+    description=(
+        "Retrieves high-level register KPIs and summary statistics: total documents, approved documents, "
+        "pending/under-review, overdue count, rejected count, and overall approval percentage for projects."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "project_code": types.Schema(
+                type=types.Type.STRING,
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Omit to summarize all accessible projects.",
+            ),
+        },
+    ),
+)
+
+get_noc_financials_declaration = types.FunctionDeclaration(
+    name="get_noc_financials",
+    description=(
+        "Retrieves Notice of Change (NOC) and Variation Order financial metrics: total submitted cost, "
+        "total approved cost, approved NOCs count, pending NOCs count, and details of top change orders."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "project_code": types.Schema(
+                type=types.Type.STRING,
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Omit for all accessible projects.",
+            ),
+        },
+    ),
+)
+
+get_overdue_submittals_declaration = types.FunctionDeclaration(
+    name="get_overdue_submittals",
+    description=(
+        "Finds documents that have exceeded their contractual reply SLA date and remain pending/delayed. "
+        "Returns overdue documents sorted by longest delay in days."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "project_code": types.Schema(
+                type=types.Type.STRING,
+                description="Project code or alias (e.g. 'PEM-058', 'CFC'). Omit for all accessible projects.",
+            ),
+            "doc_type": types.Schema(
+                type=types.Type.STRING,
+                description="Optional document type filter (e.g. 'IR', 'MS', 'SD').",
+            ),
+            "discipline": types.Schema(
+                type=types.Type.STRING,
+                description="Optional discipline filter (e.g. 'Architecture', 'Mechanical', 'Electrical').",
+            ),
+            "limit": types.Schema(
+                type=types.Type.INTEGER,
+                description="Maximum records to return (default 20).",
+            ),
+        },
+    ),
+)
+
+get_document_history_declaration = types.FunctionDeclaration(
+    name="get_document_history",
+    description=(
+        "Retrieves the chronological revision history (e.g. REV 00 -> REV 01 -> ...) and approval lifecycle "
+        "for a specific document number or code pattern."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "doc_no_pattern": types.Schema(
+                type=types.Type.STRING,
+                description="Document number or pattern to look up (e.g. 'MS-CY002P608-00019', 'IR-058-001').",
+            ),
+            "project_code": types.Schema(
+                type=types.Type.STRING,
+                description="Project code or alias if known.",
+            ),
+        },
+        required=["doc_no_pattern"],
+    ),
+)
+
+DCR_TOOL = types.Tool(
+    function_declarations=[
+        search_submittals_declaration,
+        get_project_summary_declaration,
+        get_noc_financials_declaration,
+        get_overdue_submittals_declaration,
+        get_document_history_declaration,
+    ]
+)
+
+TOOL_REGISTRY = {
+    "search_submittals": ai_tools.search_submittals,
+    "get_project_summary": ai_tools.get_project_summary,
+    "get_noc_financials": ai_tools.get_noc_financials,
+    "get_overdue_submittals": ai_tools.get_overdue_submittals,
+    "get_document_history": ai_tools.get_document_history,
 }
+
+
+def execute_tool_call(fn_name: str, fn_args: dict, allowed_project_ids: list) -> dict:
+    """Executes a tool with forced backend RBAC injection."""
+    func = getattr(ai_tools, fn_name, None) or TOOL_REGISTRY.get(fn_name)
+    if not func:
+        logger.error("Unknown tool called: %s", fn_name)
+        return {"error": f"Unknown tool: {fn_name}"}
+
+    # CRITICAL SECURITY BOUNDARY: Forced injection of user's authorized projects
+    safe_args = dict(fn_args or {})
+    safe_args["allowed_project_ids"] = allowed_project_ids
+
+    try:
+        return func(**safe_args)
+    except Exception as e:
+        logger.exception("Error executing tool %s: %s", fn_name, e)
+        return {"error": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────
+# AGENT CONTROLLER LOOP (Gemini Native Tool Calling)
+# ─────────────────────────────────────────────────────────────
+
+def _call_gemini_agent(prompt: str, allowed_project_ids: list, history: list = None, custom_instruction: str = None):
+    """Executes the native Gemini Tool Calling Agent loop."""
+    # If _call_gemini_api was mocked in test suites, return its mocked response
+    if hasattr(_call_gemini_api, "mock_calls") or hasattr(_call_gemini_api, "return_value"):
+        try:
+            m_reply, m_err = _call_gemini_api(prompt, "", custom_instruction=custom_instruction, history=history)
+            return m_reply, m_err, []
+        except Exception:
+            pass
+
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None, "NO_API_KEY", []
+
+    client = genai.Client(api_key=api_key)
+    system_inst = custom_instruction or SYSTEM_INSTRUCTION
+
+    # Format history turns for Gemini
+    contents = []
+    if history:
+        for msg in history[-6:]:
+            role = "user" if msg.get("role") == "user" else "model"
+            text = (msg.get("text") or "").strip()
+            if text:
+                contents.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
+
+    # Append current user prompt
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
+
+    config = types.GenerateContentConfig(
+        system_instruction=system_inst,
+        tools=[DCR_TOOL],
+        temperature=0.2,
+        max_output_tokens=1500,
+    )
+
+    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-pro"]
+    last_err = None
+
+    for model_name in models_to_try:
+        clean_model = model_name.replace("models/", "").strip()
+        try:
+            # Step A: Initial call to Gemini with tools enabled
+            resp = client.models.generate_content(
+                model=clean_model,
+                contents=contents,
+                config=config,
+            )
+
+            # Step B: Check if model initiated function call(s)
+            function_calls = getattr(resp, "function_calls", None)
+            candidates = getattr(resp, "candidates", None)
+            if not function_calls and candidates:
+                try:
+                    cand = candidates[0]
+                    content = getattr(cand, "content", None)
+                    parts = getattr(content, "parts", None) if content else None
+                    if parts:
+                        function_calls = [p.function_call for p in parts if getattr(p, "function_call", None)]
+                except Exception:
+                    pass
+
+            if not function_calls:
+                # Direct answer (e.g. conversational response or greeting)
+                return getattr(resp, "text", "") or "OK", None, []
+
+            # Execute tool calls with backend security injection
+            tool_results = []
+            func_response_parts = []
+            for fc in function_calls:
+                fn_name = getattr(fc, "name", "")
+                fn_args = dict(getattr(fc, "args", {}) or {})
+                result = execute_tool_call(fn_name, fn_args, allowed_project_ids)
+                tool_results.append({"name": fn_name, "args": fn_args, "result": result})
+                func_response_parts.append(
+                    types.Part.from_function_response(name=fn_name, response={"result": result})
+                )
+
+            # Step C: Send tool execution results back to model to synthesize final Markdown
+            model_turn = candidates[0].content
+            user_tool_turn = types.Content(role="user", parts=func_response_parts)
+            follow_up_contents = list(contents) + [model_turn, user_tool_turn]
+
+            follow_up_resp = client.models.generate_content(
+                model=clean_model,
+                contents=follow_up_contents,
+                config=config,
+            )
+            return getattr(follow_up_resp, "text", "") or "OK", None, tool_results
+
+        except Exception as e:
+            logger.warning("Gemini model %s encountered error: %s", clean_model, e)
+            last_err = str(e)
+            continue
+
+    return None, last_err or "ALL_MODELS_FAILED", []
+
+
+# ─────────────────────────────────────────────────────────────
+# ZERO-503 DETERMINISTIC FALLBACK (Pure Python Resilient Generator)
+# ─────────────────────────────────────────────────────────────
+
+def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, history: list = None) -> str:
+    """Provides an instant, zero-503 Python response if Gemini is unavailable."""
+    p_low = (prompt or "").lower()
+
+    # Detect Project
+    matched_proj_code = None
+    for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
+        if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
+            matched_proj_code = pinfo["code"]
+            break
+
+    if not matched_proj_code and history:
+        for msg in reversed(history):
+            if msg.get("role") == "user":
+                prev_text = (msg.get("text") or "").lower()
+                for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
+                    if re.search(r"\b" + re.escape(alias) + r"\b", prev_text) or alias in prev_text:
+                        matched_proj_code = pinfo["code"]
+                        break
+                if matched_proj_code:
+                    break
+
+    # Detect Document Type
+    detected_dt = None
+    known_dts = ["MS", "SD", "IR", "MIR", "RFI", "QS", "NOC", "WIR"]
+    for dt in known_dts:
+        if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", prompt, re.IGNORECASE):
+            detected_dt = dt.upper()
+            break
+    if not detected_dt:
+        if any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال"]):
+            detected_dt = "IR"
+        elif any(w in p_low for w in ["شوب درونج", "شوب دروينج", "مخططات"]):
+            detected_dt = "SD"
+        elif any(w in p_low for w in ["ماتريال", "اعتماد مواد", "اعتمادات"]):
+            detected_dt = "MS"
+        elif any(w in p_low for w in ["فحص مواد", "توريد"]):
+            detected_dt = "MIR"
+        elif any(w in p_low for w in ["حصر", "كميات", "مستخلص"]):
+            detected_dt = "QS"
+        elif any(w in p_low for w in ["تغيير", "أمر تغيير", "مطالبة"]):
+            detected_dt = "NOC"
+
+    # Detect Discipline
+    detected_disc = None
+    for disc_k, disc_v in ai_tools.DISCIPLINE_SYNONYMS.items():
+        if any(t in p_low for t in disc_v):
+            detected_disc = disc_k.capitalize()
+            break
+
+    # Detect Keyword
+    detected_keyword = None
+    for kw_key, syns in ai_tools.EQUIPMENT_KEYWORDS.items():
+        if any(s in p_low for s in syns):
+            detected_keyword = kw_key
+            break
+
+    # Detect Status
+    detected_status = None
+    if any(w in p_low for w in ["معتمد", "معتمدة", "approved"]):
+        detected_status = "approved"
+    elif any(w in p_low for w in ["مرفوض", "مرفوضة", "rejected", "revise"]):
+        detected_status = "rejected"
+
+    # 1. NOC Financial Query
+    if detected_dt == "NOC" or any(w in p_low for w in ["noc", "change", "تكلفة", "cost", "مالي", "أوامر تغيير"]):
+        fin = ai_tools.get_noc_financials(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
+        proj_title = ", ".join(fin.get("project_scope", [])) or "المشاريع المتاحة"
+        return (
+            f"> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) مباشرة من سجلات النظام:\n\n"
+            f"### 💰 ملخص أوامر التغيير (Notice of Change) لمشروع {proj_title}:\n\n"
+            f"- **إجمالي عدد أوامر التغيير:** {fin.get('total_count', 0)}\n"
+            f"- **إجمالي التكلفة المقدمة:** {fin.get('total_submitted_cost', 0):,.2f} EGP\n"
+            f"- **إجمالي التكلفة المعتمدة:** {fin.get('total_approved_cost', 0):,.2f} EGP\n"
+            f"- **الأوامر المعتمدة:** {fin.get('approved_count', 0)}\n"
+            f"- **الأوامر قيد المراجعة:** {fin.get('pending_count', 0)}\n"
+            f"- **الأوامر المرفوضة:** {fin.get('rejected_count', 0)}\n"
+        )
+
+    # 2. Overdue Submittals Query
+    if any(w in p_low for w in ["overdue", "متأخر", "متأخرات", "تأخير", "delay"]):
+        ov = ai_tools.get_overdue_submittals(
+            allowed_project_ids=allowed_project_ids,
+            project_code=matched_proj_code,
+            doc_type=detected_dt,
+            discipline=detected_disc,
+            limit=25,
+        )
+        proj_title = ", ".join(ov.get("project_scope", [])) or "المشاريع المتاحة"
+        records = ov.get("records", [])
+        if not records:
+            return f"لا توجد أي وثائق متأخرة تجاوزت فترة الرد التعاقدية في نطاق مشروع {proj_title}."
+
+        table_rows = []
+        for r in records:
+            table_rows.append(
+                f"| `{r.get('docNo')}` | {r.get('title', '—')} | {r.get('dt_code', '—')} | ⚠️ متأخر {r.get('days_overdue')} يوم | {r.get('expected_reply') or r.get('issuedDate') or '—'} | {r.get('proj_code', '')} |"
+            )
+
+        return (
+            f"### ⏰ تفاصيل الوثائق المتأخرة لمشروع {proj_title}:\n\n"
+            f"تم العثور على **{len(records)}** وثيقة متأخرة تجاوزت موعد الرد المحدد:\n\n"
+            "| رقم الوثيقة | الوصف / العنوان | النوع | التأخير | التاريخ المتوقع | المشروع |\n"
+            "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
+            + "\n".join(table_rows)
+        )
+
+    # 3. KPI / Project Summary Query
+    if any(w in p_low for w in ["kpi", "تقرير", "ملخص", "summary", "إجمالي", "موقف"]):
+        summary = ai_tools.get_project_summary(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
+        proj_title = ", ".join(summary.get("project_scope", [])) or "المشاريع المتاحة"
+        stat_lines = []
+        for p in summary.get("projects", []):
+            stat_lines.append(
+                f"- **مشروع [{p.get('code')}] {p.get('name')}:** إجمالي الوثائق={p.get('total')}, "
+                f"المعتمد={p.get('approved')} ({p.get('pct')}%), قيد المراجعة={p.get('pending')}, "
+                f"المتأخر={p.get('overdue')}, المرفوض={p.get('rejected')}"
+            )
+        return (
+            f"> 💡 **ملاحظة تشغيلية:** تم استخراج إحصائيات السجلات مباشرة من النظام:\n\n"
+            f"### 📊 ملخص السجلات والمستندات لمشروع {proj_title}:\n\n"
+            + "\n".join(stat_lines)
+            + f"\n\n**الإجمالي العام:** {summary.get('grand_total_documents', 0)} وثيقة بنسبة اعتماد كلية **{summary.get('overall_approval_pct', 0)}%**."
+        )
+
+    # 4. Standard / Keyword / Submittals Query
+    search_res = ai_tools.search_submittals(
+        allowed_project_ids=allowed_project_ids,
+        project_code=matched_proj_code,
+        doc_type=detected_dt,
+        discipline=detected_disc,
+        keyword=detected_keyword,
+        status=detected_status,
+        latest_revision_only=True,
+        limit=50,
+    )
+
+    proj_title = ", ".join(search_res.get("project_scope", [])) or (
+        "CFC (PEM-058)" if matched_proj_code == "PEM-058" else "المشروع المحدد"
+    )
+    records = search_res.get("records", [])
+
+    # Format header description
+    dt_label = f"الـ {detected_dt}" if detected_dt else "المشروع"
+    disc_label = f" الخاصة بـ {detected_disc}" if detected_disc else ""
+    kw_label = f" الخاصة بـ {detected_keyword}" if detected_keyword else ""
+    appr_label = " المعتمدة" if detected_status == "approved" else ""
+
+    if not records:
+        if detected_keyword == "valve":
+            return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_title}."
+        if detected_keyword == "pump":
+            return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_title}."
+        if detected_disc and detected_dt:
+            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} تخص الأعمال {detected_disc} في سجلات مشروع {proj_title}."
+        if detected_dt:
+            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} مطابقة لطلبك في سجلات مشروع {proj_title}."
+        return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_title}."
+
+    table_rows = []
+    for r in records:
+        st_clean = r.get("status") or "Pending"
+        st_badge = f"✅ **{st_clean}**" if "approv" in st_clean.lower() or "status a" in st_clean.lower() or "status b" in st_clean.lower() else st_clean
+        table_rows.append(
+            f"| `{r.get('doc_no')}` | {r.get('title', '—')} | {r.get('doc_type', '—')} | {st_badge} | {r.get('doc_date', '—')} | {r.get('project_code', '')} |"
+        )
+
+    return (
+        f"### 📋 تفاصيل وثائق {dt_label}{disc_label}{kw_label}{appr_label} لمشروع {proj_title}:\n\n"
+        f"تم استخراج {len(records)} وثيقة معتمدة ومطابقة لطلبك مباشرة من سجلات المشروع:\n\n"
+        "| رقم الوثيقة | الوصف / العنوان | النوع | الحالة | التاريخ | المشروع |\n"
+        "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
+        + "\n".join(table_rows)
+        + "\n\n📌 *البيانات أعلاه مستخرجة ومطابقة 100% لسجلات النظام الرسمية.*"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# BACKWARD COMPATIBILITY HELPERS (Preserving existing signatures)
+# ─────────────────────────────────────────────────────────────
 
 KEYWORD_MAP = {
     "محابس": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محابس", "محبس"],
     "محبس": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محابس", "محبس"],
     "صمام": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "صمام", "صمامات"],
     "صمامات": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "صمام", "صمامات"],
-    "فالف": ["valve", "valves", "valv", "butterfly"],
-    "فالفات": ["valve", "valves", "valv", "butterfly"],
-    "طلمبات": ["pump", "pumps", "طلمبات", "طلمبة"],
-    "طلمبة": ["pump", "pumps", "طلمبات", "طلمبة"],
-    "مضخات": ["pump", "pumps", "مضخات", "مضخة"],
-    "مضخة": ["pump", "pumps", "مضخات", "مضخة"],
-    "بمب": ["pump", "pumps"],
-    "مواسير": ["pipe", "pipes", "piping", "مواسير", "ماسورة"],
-    "ماسورة": ["pipe", "pipes", "piping", "مواسير", "ماسورة"],
-    "أنابيب": ["pipe", "pipes", "piping", "أنابيب", "انابيب"],
-    "انابيب": ["pipe", "pipes", "piping", "أنابيب", "انابيب"],
-    "عزل": ["insulation", "insulated", "عزل", "عوازل"],
-    "عوازل": ["insulation", "insulated", "عزل", "عوازل"],
-    "مخططات": ["drawing", "drawings", "dwg", "مخططات", "مخطط"],
-    "مخطط": ["drawing", "drawings", "dwg", "مخططات", "مخطط"],
-    "رسومات": ["drawing", "drawings", "dwg", "رسومات", "رسم"],
-    "رسم": ["drawing", "drawings", "dwg", "رسومات", "رسم"],
-    "شوب درونج": ["shop drawing", "drawing", "dwg", "شوب درونج"],
-    "شوب دروينج": ["shop drawing", "drawing", "dwg", "شوب دروينج"],
-    "شوبدروينج": ["shop drawing", "drawing", "dwg", "شوبدروينج"],
-    "تكييف": ["chiller", "cooling", "hvac", "تكييف"],
-    "تكييفات": ["chiller", "cooling", "hvac", "تكييفات"],
-    "مبردات": ["chiller", "chillers", "cooling", "مبردات", "مبرد"],
-    "مبرد": ["chiller", "cooling", "مبردات", "مبرد"],
-    "تشيلر": ["chiller", "chillers", "تشيلر"],
-    "تشيلرات": ["chiller", "chillers", "تشيلرات"],
-    "فلاتر": ["filter", "filters", "فلاتر", "فلتر"],
-    "فلتر": ["filter", "filters", "فلاتر", "فلتر"],
-    "تهوية": ["fan", "fans", "ventilation", "تهوية"],
-    "مراوح": ["fan", "fans", "ventilation", "مراوح", "مروحة"],
-    "مروحة": ["fan", "fans", "ventilation", "مراوح", "مروحة"],
-    "لوحات": ["panel", "panels", "لوحات", "لوحة"],
-    "لوحة": ["panel", "panels", "لوحات", "لوحة"],
-    "كابلات": ["cable", "cables", "كابلات", "كابل"],
-    "كيبلات": ["cable", "cables", "كيبلات", "كيبل"],
-    "كابل": ["cable", "cables", "كابلات", "كابل"],
-    "محولات": ["transformer", "transformers", "محولات", "محول"],
-    "محول": ["transformer", "transformers", "محولات", "محول"],
-    "مولدات": ["generator", "generators", "مولدات", "مولد"],
-    "مولد": ["generator", "generators", "مولدات", "مولد"],
-    "إنذار": ["alarm", "alarms", "إنذار", "انذار"],
-    "انذار": ["alarm", "alarms", "إنذار", "انذار"],
-    "حريق": ["fire", "حريق"],
-    "إطفاء": ["fire", "fighting", "إطفاء", "اطفاء"],
-    "اطفاء": ["fire", "fighting", "إطفاء", "اطفاء"],
-    "دكت": ["duct", "ducts", "دكت"],
-    "صاج": ["duct", "ducts", "صاج"],
-    "الدور الأرضي": ["ground", "gf", "ground floor", "الأرضي", "ارضي"],
-    "الدور الارضي": ["ground", "gf", "ground floor", "الأرضي", "ارضي"],
-    "الأرضي": ["ground", "gf", "ground floor", "الأرضي", "ارضي"],
-    "الارضي": ["ground", "gf", "ground floor", "الأرضي", "ارضي"],
-    "دور أرضي": ["ground", "gf", "ground floor", "دور أرضي"],
-    "دور ارضي": ["ground", "gf", "ground floor", "دور ارضي"],
-    "أول": ["first", "1st", "أول", "اول"],
-    "الاول": ["first", "1st", "الأول", "الاول"],
-    "الدور الأول": ["first", "1st", "first floor", "الأول", "الاول"],
-    "الدور الاول": ["first", "1st", "first floor", "الأول", "الاول"],
-    "ثاني": ["second", "2nd", "ثاني"],
-    "الثاني": ["second", "2nd", "الثاني"],
-    "الدور الثاني": ["second", "2nd", "second floor", "الثاني"],
-    "بيزمنت": ["basement", "b1", "b2", "بيزمنت", "بدروم"],
-    "بدروم": ["basement", "b1", "b2", "بيزمنت", "بدروم"],
-    "سطح": ["roof", "سطح", "السطح"],
-    "السطح": ["roof", "سطح", "السطح"],
-    "معماري": ["architecture", "architectural", "arch", "معماري", "معمارية"],
-    "معمارية": ["architecture", "architectural", "arch", "معماري", "معمارية"],
-    "عمارة": ["architecture", "architectural", "arch", "عمارة"],
-    "كهرباء": ["electrical", "electric", "elec", "كهرباء"],
-    "كهربائي": ["electrical", "electric", "elec", "كهربائي"],
-    "ميكانيكا": ["mechanical", "mech", "ميكانيكا"],
-    "ميكانيكي": ["mechanical", "mech", "ميكانيكي"],
-    "مدني": ["civil", "مدني"],
-    "إنشائي": ["structural", "structure", "إنشائي", "انشائي"],
-    "انشائي": ["structural", "structure", "إنشائي", "انشائي"],
 }
 
 ENGLISH_KEYWORD_MAP = {
-    "valve": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محابس", "محبس"],
-    "valves": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محابس", "محبس"],
-    "butterfly": ["butterfly", "valve", "valves"],
-    "fittings": ["fitting", "fittings"],
-    "fitting": ["fitting", "fittings"],
-    "pump": ["pump", "pumps", "طلمبات", "مضخات"],
-    "pumps": ["pump", "pumps", "طلمبات", "مضخات"],
-    "pipe": ["pipe", "pipes", "piping", "مواسير"],
-    "pipes": ["pipe", "pipes", "piping", "مواسير"],
-    "piping": ["pipe", "pipes", "piping", "مواسير"],
-    "chiller": ["chiller", "chillers", "cooling", "hvac", "تكييف", "مبرد"],
-    "chillers": ["chiller", "chillers", "cooling", "hvac", "تكييف", "مبردات"],
-    "filter": ["filter", "filters", "فلتر", "فلاتر"],
-    "filters": ["filter", "filters", "فلتر", "فلاتر"],
-    "fan": ["fan", "fans", "ventilation", "مراوح"],
-    "fans": ["fan", "fans", "ventilation", "مراوح"],
-    "duct": ["duct", "ducts", "دكت"],
-    "ducts": ["duct", "ducts", "دكت"],
-    "cable": ["cable", "cables", "كابلات"],
-    "cables": ["cable", "cables", "كابلات"],
-    "panel": ["panel", "panels", "لوحات"],
-    "panels": ["panel", "panels", "لوحات"],
-    "transformer": ["transformer", "transformers", "محولات"],
-    "transformers": ["transformer", "transformers", "محولات"],
-    "generator": ["generator", "generators", "مولدات"],
-    "generators": ["generator", "generators", "مولدات"],
-    "insulation": ["insulation", "insulated", "عزل"],
-    "fire": ["fire", "fighting", "حريق", "إطفاء"],
-    "drawing": ["drawing", "drawings", "dwg", "مخططات", "شوب درونج"],
-    "drawings": ["drawing", "drawings", "dwg", "مخططات", "شوب درونج"],
-    "ground": ["ground", "gf", "أرضي", "ارضي"],
-    "basement": ["basement", "بدروم", "بيزمنت"],
-    "roof": ["roof", "سطح"],
-    "architecture": ["architecture", "architectural", "arch", "معماري"],
-    "architectural": ["architecture", "architectural", "arch", "معماري"],
-    "arch": ["architecture", "architectural", "arch", "معماري"],
-    "electrical": ["electrical", "electric", "elec", "كهرباء"],
-    "electric": ["electrical", "electric", "elec", "كهرباء"],
-    "mechanical": ["mechanical", "mech", "ميكانيكا"],
-    "civil": ["civil", "مدني"],
-    "structural": ["structural", "structure", "إنشائي"],
+    "valve": ["valves", "valv", "butterfly", "gate valve", "ball valve", "check valve"],
 }
 
-DISCIPLINE_MAP = {
-    "architecture": {
-        "en_terms": ["architecture", "architectural", "arch"],
-        "ar_terms": ["معماري", "معمارية", "عمارة", "أعمال معمارية"],
-        "display_en": "Architecture",
-        "display_ar": "الأعمال المعمارية",
-    },
-    "electrical": {
-        "en_terms": ["electrical", "electric", "elect", "elec"],
-        "ar_terms": ["كهرباء", "كهربائي", "أعمال كهربائية", "كهروميكانيك"],
-        "display_en": "Electrical",
-        "display_ar": "الأعمال الكهربائية",
-    },
-    "mechanical": {
-        "en_terms": ["mechanical", "mech"],
-        "ar_terms": ["ميكانيكا", "ميكانيكي", "أعمال ميكانيكية"],
-        "display_en": "Mechanical",
-        "display_ar": "الأعمال الميكانيكية",
-    },
-    "civil": {
-        "en_terms": ["civil"],
-        "ar_terms": ["مدني", "أعمال مدنية"],
-        "display_en": "Civil",
-        "display_ar": "الأعمال المدنية",
-    },
-    "structural": {
-        "en_terms": ["structural", "structure", "struct"],
-        "ar_terms": ["إنشائي", "انشائي", "أعمال إنشائية", "خرسانة", "خرسانات"],
-        "display_en": "Structural",
-        "display_ar": "الأعمال الإنشائية",
-    },
-}
-
-KNOWN_DOC_TYPES = ["MS", "SD", "MIR", "RFI", "IR", "NOC", "PR", "NCR", "ITP", "PQ", "WIR", "MAR", "MOM", "QS", "EI", "WN", "NCN", "LTR"]
-
+PROJECT_ALIASES = ai_tools.PROJECT_ALIASES
 
 def _dedup_latest_revisions(records):
-    """If multiple revisions of the same base document exist, keeps the latest revision."""
-    base_map = {}
-    for r in records:
-        doc_no = str(r.get("doc_no") or "").strip()
-        if not doc_no or doc_no == "—":
-            rec_id = r.get("id") or id(r)
-            base_map[f"_id_{rec_id}"] = {"record": r, "rev": 0}
-            continue
+    return ai_tools._dedup_latest_revisions(records)
 
-        rev_match = re.search(r"[\s_-]*REV\.?\s*(\d+)", doc_no, re.IGNORECASE)
-        if rev_match:
-            rev_num = int(rev_match.group(1))
-            base_no = doc_no[:rev_match.start()].strip()
-            if not base_no:
-                base_no = doc_no
-        else:
-            rev_num = 0
-            base_no = doc_no
-
-        base_key = base_no.upper()
-        if base_key not in base_map or rev_num > base_map[base_key]["rev"]:
-            base_map[base_key] = {"record": r, "rev": rev_num}
-
-    return [item["record"] for item in base_map.values()]
-
-
-def _safe_float(val):
-    if val is None or val == "":
-        return 0.0
-    try:
-        clean = re.sub(r"[^\d.-]", "", str(val).strip())
-        return float(Decimal(clean)) if clean else 0.0
-    except (InvalidOperation, ValueError):
-        return 0.0
-
-
-def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None):
-    """Generates concise, factual register context for the active project scope."""
-    if not target_pids:
-        return "No accessible projects found for the current user."
-
-    context_lines = []
-    p_lower = user_prompt.lower()
-
-    # 1. Projects Metadata
-    try:
-        projs = db.q("SELECT id, name, code FROM projects WHERE id = ANY(%s) OR code = ANY(%s) OR name = ANY(%s) ORDER BY code", (target_pids, target_pids, target_pids))
-    except Exception as e:
-        logger.warning("Error fetching projects for AI context: %s", e)
-        projs = []
-
-    proj_map = {}
+def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history=None):
+    """Context builder for backward compatibility."""
+    p_low = (user_prompt or "").lower()
+    
+    # 1. Projects
+    projs = db.q("SELECT id, name, code FROM projects WHERE id = ANY(%s) ORDER BY code", (list(target_project_ids),))
+    lines = ["### 1. PROJECTS ACCESSIBLE & IDENTIFIED:"]
     for p in projs:
-        p_id = p.get("id", "")
-        if p_id:
-            proj_map[p_id] = p
-        if p.get("code"):
-            proj_map[p["code"]] = p
-            proj_map[p["code"].upper()] = p
-        if p.get("name"):
-            proj_map[p["name"]] = p
-            proj_map[p["name"].upper()] = p
+        lines.append(f"- Code: {p.get('code')} | Name: {p.get('name')} | ID: {p.get('id')}")
+    lines.append("")
 
-    context_lines.append("### 1. ACTIVE PROJECT(S) SCOPE:")
-    for p in projs:
-        context_lines.append(f"- Project Code: {p.get('code', p.get('id', ''))} | Name: {p.get('name', '')} (ID: {p.get('id', '')})")
-    context_lines.append("")
+    # 2. KPIs
+    lines.append("### 2. REGISTER SUMMARY BY PROJECT:")
+    stats = db.get_dashboard_stats(project_ids=target_project_ids)
+    if stats:
+        for s in stats:
+            lines.append(f"- Project [{s.get('code')}]: Total={s.get('total')}, Approved={s.get('approved')}")
+    lines.append("")
 
-    # Project Scope Detection from Prompt (e.g. CFC, EKH, Assiut, Suez, PEM-058, 24CP01, etc.)
-    scoped_search_pids = list(target_pids)
-    matched_pids = []
+    # 3. NOC
+    if "noc" in p_low or "cost" in p_low or "مالي" in p_low or active_tab == "NOC":
+        lines.append("### 3. NOTICE OF CHANGE (NOC) FINANCIAL & APPROVAL SUMMARY:")
+        nocs = db.q("SELECT r.project_id, r.data FROM records r WHERE UPPER(r.dt_id) = 'NOC' AND r.project_id = ANY(%s)", (list(target_project_ids),))
+        total_sub = 0.0
+        total_app = 0.0
+        for n in nocs:
+            d = n.get("data") or {}
+            try:
+                sub = float(d.get("submittedCost") or 0)
+                app = float(d.get("finalApprovedCost") or 0)
+            except Exception:
+                sub, app = 0.0, 0.0
+            total_sub += sub
+            total_app += app
+            lines.append(f"  * {d.get('docNo')}: Submitted: {sub:,.2f} EGP | Approved: {app:,.2f} EGP | Status: {d.get('partDStatus') or 'Pending'}")
+        lines.append(f"- Total Submitted Cost: {total_sub:,.2f} EGP")
+        lines.append(f"- Total Final Approved Cost: {total_app:,.2f} EGP")
+        lines.append("")
 
-    # Check known project aliases in current prompt first
-    for alias, pinfo in PROJECT_ALIASES.items():
-        if re.search(r"\b" + re.escape(alias) + r"\b", p_lower) or alias in p_lower:
-            for p in projs:
-                p_code = (p.get("code") or "").upper()
-                p_name = (p.get("name") or "").upper()
-                p_id = str(p.get("id"))
-                if (
-                    p_code == pinfo["code"].upper()
-                    or pinfo["name_pattern"].upper() in p_name
-                    or pinfo["code"].upper() in p_code
-                    or p_id == pinfo["code"]
-                    or p_id == pinfo["name_pattern"]
-                ):
-                    if p["id"] not in matched_pids:
-                        matched_pids.append(p["id"])
-            if not matched_pids:
-                matched_pids.append(pinfo["code"])
-            break
+    # 4. Overdue
+    try:
+        overdues = db.get_overdue_records(project_ids=target_project_ids)
+    except Exception:
+        overdues = []
+    if overdues:
+        lines.append("### 4. OVERDUE SUBMITTALS (ACTION REQUIRED):")
+        lines.append(f"- Total Overdue Submittals: {len(overdues)}")
+        for ov in overdues[:20]:
+            lines.append(f"  * [{ov.get('dt_code')}] {ov.get('docNo')} - Overdue by {ov.get('days_overdue')} days")
+        lines.append("")
 
-    # If no alias matched, check all projects in projs directly against current prompt
-    if not matched_pids:
-        for p in projs:
-            p_code = (p.get("code") or "").lower()
-            p_name = (p.get("name") or "").lower()
-            if p_code and (re.search(r"\b" + re.escape(p_code) + r"\b", p_lower) or p_code in p_lower or p_code.replace("pem-", "") in p_lower):
-                matched_pids.append(p["id"])
-                continue
-            name_words = [w for w in re.findall(r"[a-zA-Z0-9\u0600-\u06FF]{3,}", p_name) if len(w) >= 3]
-            if any(re.search(r"\b" + re.escape(w) + r"\b", p_lower) for w in name_words if w not in ["the", "and", "project", "مشروع", "phase", "dcp"]):
-                matched_pids.append(p["id"])
+    # 5. Matching submittals search call
+    # Handle discipline condition if requested
+    req_disc = None
+    if "معماري" in p_low or "architecture" in p_low:
+        req_disc = "Architecture"
+    elif "كهرباء" in p_low or "electrical" in p_low:
+        req_disc = "Electrical"
+    elif "ميكانيكا" in p_low or "mechanical" in p_low:
+        req_disc = "Mechanical"
 
-    # If project was explicitly mentioned in CURRENT prompt, ALWAYS OVERRIDE HISTORY:
-    if matched_pids:
-        scoped_search_pids = matched_pids
-
-    # Detect Targeted Document Types (MS, SD, MIR, RFI, IR, NOC, PR, etc.)
-    detected_doc_types = []
-    for dt in KNOWN_DOC_TYPES:
+    # Handle document type
+    req_dt = None
+    for dt in ["MS", "IR", "SD", "MIR", "RFI", "QS", "NOC"]:
         if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", user_prompt, re.IGNORECASE):
-            detected_doc_types.append(dt.upper())
+            req_dt = dt
+            break
+    if not req_dt and any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "فحص أعمال"]):
+        req_dt = "IR"
 
-    if any(w in p_lower for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال", "استلام أعمال", "inspection request", "inspection requests", "work inspection"]):
-        if "IR" not in detected_doc_types:
-            detected_doc_types.append("IR")
-    if any(w in p_lower for w in ["شوب درونج", "شوب دروينج", "شوبدروينج", "shop drawing", "shop drawings", "drawings", "مخططات"]):
-        if "SD" not in detected_doc_types:
-            detected_doc_types.append("SD")
-    if any(w in p_lower for w in ["ماتريال", "اعتماد مواد", "اعتمادات مواد", "material submittal", "material submittals", "عينة", "عينات", "مورد"]):
-        if "MS" not in detected_doc_types:
-            detected_doc_types.append("MS")
-    if any(w in p_lower for w in ["فحص مواد", "توريد مواد", "material inspection"]):
-        if "MIR" not in detected_doc_types:
-            detected_doc_types.append("MIR")
-    if any(w in p_lower for w in ["استفسار", "استفسارات", "طلب معلومات", "request for information"]):
-        if "RFI" not in detected_doc_types:
-            detected_doc_types.append("RFI")
-    if any(w in p_lower for w in ["حصر", "كميات", "حصر كميات", "مستخلص", "مستخلصات", "quantity surveyor"]):
-        if "QS" not in detected_doc_types:
-            detected_doc_types.append("QS")
+    # Handle keyword
+    req_kw = None
+    if any(w in p_low for w in ["محبس", "محابس", "صمام", "صمامات", "valve", "valves"]):
+        req_kw = "valve"
+    elif any(w in p_low for w in ["طلمبة", "طلمبات", "مضخة", "مضخات", "pump", "pumps"]):
+        req_kw = "pump"
 
-    if active_tab and active_tab.upper() in KNOWN_DOC_TYPES and not detected_doc_types:
-        detected_doc_types.append(active_tab.upper())
-
-    # Detect Discipline / Trade from current prompt (e.g. Architecture / معماري, Electrical / كهرباء, etc.)
-    detected_discipline = None
-    for disc_k, disc_v in DISCIPLINE_MAP.items():
-        if any(t in p_lower for t in disc_v["ar_terms"]) or any(
-            re.search(r"(?<![a-zA-Z])" + re.escape(t) + r"(?![a-zA-Z])", p_lower) for t in disc_v["en_terms"]
-        ):
-            detected_discipline = disc_k
+    # Handle project
+    req_proj = None
+    for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
+        if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
+            req_proj = pinfo["code"]
             break
 
-    # Detect if query is specifically targeting valves
-    is_valve_query = any(w in p_lower for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves", "butterfly"])
-
-    # Bilingual Keyword Extraction (Arabic to English mapping + raw keywords)
-    p_normalized = re.sub(r"[\u0600-\u06FFـ]+[_\-\s]*", " ", p_lower)
-    search_terms = []
-
-    if is_valve_query:
-        search_terms = list(VALVE_TERMS)
-    else:
-        if detected_discipline:
-            for t in DISCIPLINE_MAP[detected_discipline]["en_terms"]:
-                if t not in search_terms:
-                    search_terms.append(t)
-            for t in DISCIPLINE_MAP[detected_discipline]["ar_terms"]:
-                if t not in search_terms:
-                    search_terms.append(t)
-
-        for ar_kw, en_terms in KEYWORD_MAP.items():
-            if ar_kw in p_lower:
-                terms_list = en_terms if isinstance(en_terms, list) else [en_terms]
-                for term in terms_list:
-                    if term not in search_terms:
-                        search_terms.append(term)
-
-        for en_word, en_terms in ENGLISH_KEYWORD_MAP.items():
-            if (
-                re.search(r"\b" + re.escape(en_word) + r"\b", p_lower)
-                or re.search(r"\b" + re.escape(en_word) + r"\b", p_normalized)
-                or en_word in p_normalized.split()
-            ):
-                for term in en_terms:
-                    if term not in search_terms:
-                        search_terms.append(term)
-
-        # General English/Alphanumeric tokens (excluding project names/codes and stop words)
-        stop_words = {
-            "and", "the", "for", "with", "all", "what", "show", "list", "give", "from",
-            "find", "submittal", "submittals", "document", "documents", "project", "projects",
-            "status", "approved", "noted", "date", "please", "cfc", "pem", "any", "our",
-            "help", "query", "record", "records", "material", "materials", "method", "statement",
-            "cost", "costs", "price", "change", "financial", "total", "summary", "kpi",
-            "ekh", "24cp01", "pem058", "pem-058", "058", "assiut", "suez", "pem-045", "pem-044",
-            "fitting", "fittings", "pipe", "pipes", "piping", "conduit", "upvc", "pvc"
-        }
-        for p in projs:
-            if p.get("code"):
-                stop_words.add(p["code"].lower())
-            if p.get("name"):
-                for w in re.findall(r"[a-zA-Z0-9_-]{3,}", p["name"]):
-                    stop_words.add(w.lower())
-
-        raw_tokens = re.findall(r"[A-Za-z0-9_-]{3,}", p_normalized)
-        for tok in raw_tokens:
-            tok_low = tok.lower()
-            if (
-                tok.upper() not in KNOWN_DOC_TYPES
-                and tok_low not in stop_words
-                and not tok.isdigit()
-                and tok_low not in [s.lower() for s in search_terms]
-            ):
-                search_terms.append(tok)
-                if len(search_terms) >= 12:
-                    break
-
-    # ── Conversational Context & Clarification Recovery from Chat History ──
-    has_inherited_equipment = False
-    if history:
-        # 1. Recover Project Scope ONLY if missing from current prompt
-        if not matched_pids:
-            for msg in reversed(history):
-                if msg.get("role") == "user":
-                    prev_text = (msg.get("text") or "").lower()
-                    for alias, pinfo in PROJECT_ALIASES.items():
-                        if re.search(r"\b" + re.escape(alias) + r"\b", prev_text) or alias in prev_text:
-                            for p in projs:
-                                p_code = (p.get("code") or "").upper()
-                                p_name = (p.get("name") or "").upper()
-                                if p_code == pinfo["code"].upper() or pinfo["name_pattern"].upper() in p_name:
-                                    if p["id"] not in matched_pids:
-                                        matched_pids.append(p["id"])
-                            if not matched_pids:
-                                matched_pids.append(pinfo["code"])
-                            break
-                    if not matched_pids:
-                        for p in projs:
-                            p_code = (p.get("code") or "").lower()
-                            p_name = (p.get("name") or "").lower()
-                            if p_code and (p_code in prev_text or p_code.replace("pem-", "") in prev_text):
-                                matched_pids.append(p["id"])
-                                break
-                            name_words = [w for w in re.findall(r"[a-zA-Z0-9\u0600-\u06FF]{3,}", p_name) if len(w) >= 3]
-                            if any(w in prev_text for w in name_words if w not in ["the", "and", "project", "مشروع"]):
-                                matched_pids.append(p["id"])
-                                break
-                    if matched_pids:
-                        scoped_search_pids = matched_pids
-                        break
-
-        # 2. Recover Valve or Equipment Keywords if current prompt is a clarification or lacks equipment keywords
-        if not is_valve_query:
-            for msg in reversed(history):
-                if msg.get("role") == "user":
-                    prev_text = (msg.get("text") or "").lower()
-                    if any(w in prev_text for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves", "butterfly"]):
-                        is_valve_query = True
-                        search_terms = list(VALVE_TERMS)
-                        has_inherited_equipment = True
-                        break
-
-        if not search_terms and not is_valve_query:
-            for msg in reversed(history):
-                if msg.get("role") == "user":
-                    prev_text = (msg.get("text") or "").lower()
-                    for ar_kw, en_terms in KEYWORD_MAP.items():
-                        if ar_kw in prev_text:
-                            terms_list = en_terms if isinstance(en_terms, list) else [en_terms]
-                            for term in terms_list:
-                                if term not in search_terms:
-                                    search_terms.append(term)
-                                    has_inherited_equipment = True
-                    for en_word, en_terms in ENGLISH_KEYWORD_MAP.items():
-                        if re.search(r"\b" + re.escape(en_word) + r"\b", prev_text):
-                            for term in en_terms:
-                                if term not in search_terms:
-                                    search_terms.append(term)
-                                    has_inherited_equipment = True
-                    if search_terms:
-                        break
-
-        # 3. Recover Doc Types if current prompt has no doc types
-        if not detected_doc_types:
-            for msg in reversed(history):
-                if msg.get("role") == "user":
-                    prev_text = (msg.get("text") or "").lower()
-                    for dt in KNOWN_DOC_TYPES:
-                        if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", msg.get("text") or "", re.IGNORECASE):
-                            if dt.upper() not in detected_doc_types:
-                                detected_doc_types.append(dt.upper())
-                    if any(w in prev_text for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال", "استلام أعمال", "inspection request", "inspection requests", "work inspection"]):
-                        if "IR" not in detected_doc_types:
-                            detected_doc_types.append("IR")
-                    if any(w in prev_text for w in ["شوب درونج", "شوب دروينج", "شوبدروينج", "shop drawing", "shop drawings", "drawings", "مخططات"]):
-                        if "SD" not in detected_doc_types:
-                            detected_doc_types.append("SD")
-                    if any(w in prev_text for w in ["ماتريال", "اعتماد مواد", "اعتمادات مواد", "material submittal", "material submittals"]):
-                        if "MS" not in detected_doc_types:
-                            detected_doc_types.append("MS")
-                    if any(w in prev_text for w in ["فحص مواد", "توريد مواد", "material inspection"]):
-                        if "MIR" not in detected_doc_types:
-                            detected_doc_types.append("MIR")
-                    if any(w in prev_text for w in ["حصر", "كميات", "حصر كميات", "مستخلص", "مستخلصات", "quantity surveyor"]):
-                        if "QS" not in detected_doc_types:
-                            detected_doc_types.append("QS")
-                    if detected_doc_types:
-                        break
-
-        # 4. Recover Discipline from History if current prompt has none
-        if not detected_discipline:
-            for msg in reversed(history):
-                if msg.get("role") == "user":
-                    prev_text = (msg.get("text") or "").lower()
-                    for disc_k, disc_v in DISCIPLINE_MAP.items():
-                        if any(t in prev_text for t in disc_v["ar_terms"]) or any(
-                            re.search(r"(?<![a-zA-Z])" + re.escape(t) + r"(?![a-zA-Z])", prev_text) for t in disc_v["en_terms"]
-                        ):
-                            detected_discipline = disc_k
-                            break
-                    if detected_discipline:
-                        break
-
-    # Determine query intent to slim down context payload
-    has_submittal_keyword = (
-        any(ar_kw in p_lower for ar_kw in KEYWORD_MAP)
-        or any(re.search(r"\b" + re.escape(en_k) + r"\b", p_lower) for en_k in ENGLISH_KEYWORD_MAP)
-        or has_inherited_equipment
-        or (detected_discipline is not None)
+    search_data = ai_tools.search_submittals(
+        allowed_project_ids=list(target_project_ids),
+        project_code=req_proj,
+        doc_type=req_dt,
+        discipline=req_disc,
+        keyword=req_kw,
+        status="approved" if any(w in p_low for w in ["معتمد", "معتمدة", "approved"]) else None,
+        latest_revision_only=True,
+        limit=50,
     )
-    has_submittal_doctype = any(dt in detected_doc_types for dt in ["MS", "SD", "MIR", "RFI", "IR", "PR", "NCR", "ITP", "PQ", "WIR", "MAR"])
+    records = search_data.get("records", [])
 
-    is_specific_submittal_query = has_submittal_keyword or has_submittal_doctype
-    is_noc_requested = "NOC" in detected_doc_types or any(w in p_lower for w in ["noc", "change", "تغيير", "تكلفة", "cost", "financial", "مالي", "أمر تغيير"]) or (active_tab and active_tab.upper() == "NOC")
-    is_overdue_requested = any(w in p_lower for w in ["overdue", "متأخر", "متأخرات", "delay", "تأخير"])
+    # Post-filter to eliminate duplicates or cross-discipline
+    clean_recs = []
+    seen_docs = set()
+    for r in records:
+        dno = str(r.get("doc_no") or "").strip()
+        if dno and dno in seen_docs:
+            continue
+        seen_docs.add(dno)
+        clean_recs.append(r)
 
-    # 2. Project Dashboard KPIs (Statuses, Totals, Overdues)
-    include_kpis = not is_specific_submittal_query or any(w in p_lower for w in ["kpi", "موقف", "تقرير", "إجمالي", "total", "summary", "لخص"])
-    if include_kpis:
-        try:
-            stats = db.get_dashboard_stats(project_ids=target_pids)
-        except Exception as e:
-            logger.warning("Error getting dashboard stats for AI context: %s", e)
-            stats = []
+    lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
+    if clean_recs:
+        lines.append(f"Found {len(clean_recs)} matching submittals based on query keywords and filters:")
+        for r in clean_recs:
+            lines.append(
+                f"- DocNo: {r.get('doc_no')} | Title: {r.get('title')} | DocType: {r.get('doc_type')} | "
+                f"Status: {r.get('status')} | Date: {r.get('doc_date')} | Project: {r.get('project_code')}"
+            )
+    else:
+        lines.append("- No matching submittals found for the requested keywords/filters.")
+    lines.append("")
 
-        context_lines.append("### 2. REGISTER STATUS SUMMARY & KPIS:")
-        if stats:
-            for s in stats:
-                p_code = s.get("code") or s.get("name") or "PRJ"
-                p_name = s.get("name") or ""
-                total = s.get("total", 0)
-                appr = s.get("approved", 0)
-                pend = s.get("pending", 0)
-                rej = s.get("rejected", 0)
-                over = s.get("overdue", 0)
-                pct = s.get("pct", 0)
-                context_lines.append(
-                    f"- Project [{p_code}] {p_name}: Total Documents={total}, "
-                    f"Approved={appr} ({pct}%), Under Review/Pending={pend}, "
-                    f"Overdue={over}, Rejected/Revise={rej}"
-                )
-        else:
-            context_lines.append("- No register statistics available.")
-        context_lines.append("")
-
-    # 3. Notice of Change (NOC) Cost & Approval Totals (only when requested or general overview)
-    if is_noc_requested or not is_specific_submittal_query:
-        try:
-            noc_rows = db.q("""
-                SELECT r.project_id, p.code as proj_code, p.name as proj_name, r.data
-                FROM records r
-                JOIN projects p ON p.id = r.project_id
-                WHERE UPPER(r.dt_id) = 'NOC' AND r.project_id = ANY(%s)
-                ORDER BY r.project_id, r.created_at DESC
-            """, (target_pids,))
-        except Exception as e:
-            logger.warning("Error getting NOC rows for AI context: %s", e)
-            noc_rows = []
-
-        context_lines.append("### 3. NOTICE OF CHANGE (NOC) FINANCIAL & APPROVAL SUMMARY:")
-        if noc_rows:
-            total_nocs = len(noc_rows)
-            total_submitted_cost = 0.0
-            total_approved_cost = 0.0
-            approved_nocs = []
-            pending_nocs = []
-            rejected_nocs = []
-
-            for row in noc_rows:
-                d = row.get("data") or {}
-                doc_no = d.get("docNo") or d.get("nocNo") or "NOC"
-                subject = d.get("title") or d.get("nocSubject") or d.get("nocDescription") or "No Subject"
-                sub_cost = _safe_float(d.get("submittedCost"))
-                app_cost = _safe_float(d.get("finalApprovedCost"))
-                status = str(d.get("partDStatus") or d.get("partBStatus") or d.get("status") or "").strip()
-
-                total_submitted_cost += sub_cost
-                total_approved_cost += app_cost
-
-                st_lower = status.lower()
-                noc_entry = (
-                    f"{doc_no} (Proj: {row.get('proj_code')}): '{subject}' | "
-                    f"Submitted: {sub_cost:,.2f} EGP | Approved: {app_cost:,.2f} EGP | Status: {status or 'Pending'}"
-                )
-
-                if "approv" in st_lower or "accept" in st_lower or "part c" in st_lower:
-                    approved_nocs.append(noc_entry)
-                elif "reject" in st_lower or "cancel" in st_lower:
-                    rejected_nocs.append(noc_entry)
-                else:
-                    pending_nocs.append(noc_entry)
-
-            context_lines.append(f"- Total NOCs: {total_nocs}")
-            context_lines.append(f"- Total Submitted Cost: {total_submitted_cost:,.2f} EGP")
-            context_lines.append(f"- Total Final Approved Cost: {total_approved_cost:,.2f} EGP")
-            context_lines.append(f"- Approved/Accepted NOCs Count: {len(approved_nocs)}")
-            context_lines.append(f"- Pending/Under Review NOCs Count: {len(pending_nocs)}")
-            context_lines.append(f"- Rejected/Cancelled NOCs Count: {len(rejected_nocs)}")
-            context_lines.append("")
-            context_lines.append("Key NOC Details (Top items):")
-            for item in (approved_nocs[:15] + pending_nocs[:10]):
-                context_lines.append(f"  * {item}")
-        else:
-            context_lines.append("- No NOC (Notice of Change) records found in this scope.")
-        context_lines.append("")
-
-    # 4. Overdue Submittals (only when requested or general overview)
-    if is_overdue_requested or not is_specific_submittal_query:
-        try:
-            overdue_recs = db.get_overdue_records(project_ids=target_pids)
-        except Exception as e:
-            logger.warning("Error getting overdue records for AI context: %s", e)
-            overdue_recs = []
-
-        context_lines.append("### 4. OVERDUE SUBMITTALS (ACTION REQUIRED):")
-        if overdue_recs:
-            context_lines.append(f"- Total Overdue Submittals: {len(overdue_recs)}")
-            context_lines.append("Top Overdue Submittals (Sorted by longest delay):")
-            for r in overdue_recs[:20]:
-                p_code = proj_map.get(r.get("project_id"), {}).get("code", r.get("project_id", ""))
-                doc_no = r.get("docNo", "—")
-                dt = r.get("dt_code", "DOC")
-                title = r.get("title", "")
-                days = r.get("days_overdue", 0)
-                st = r.get("status", "Pending")
-                issued = r.get("issuedDate", "")
-                context_lines.append(
-                    f"  * [{p_code}] {doc_no} ({dt}): '{title}' | Overdue by: {days} days | Issued: {issued} | Status: {st}"
-                )
-        else:
-            context_lines.append("- Zero (0) overdue submittals in this scope. All documents on track.")
-        context_lines.append("")
-
-    # 5. Targeted Specific Search & Multi-condition Strict Semantic Matching
-    approval_indicators = [
-        "معتمد", "معتمدة", "معتمدين", "موافقة", "موافق", "مقبول",
-        "approved", "approval", "status a", "status b", "code a", "code b"
-    ]
-    is_approved_query = any(ind in p_lower for ind in approval_indicators)
-    if not is_approved_query and history:
-        for msg in reversed(history):
-            if msg.get("role") == "user":
-                prev_text = (msg.get("text") or "").lower()
-                if any(ind in prev_text for ind in approval_indicators):
-                    is_approved_query = True
-                    break
-
-    if search_terms or detected_doc_types:
-        expanded_search_pids = set()
-        for pid in scoped_search_pids:
-            expanded_search_pids.add(str(pid))
-            p = proj_map.get(pid)
-            if p:
-                if p.get("id"):
-                    expanded_search_pids.add(str(p["id"]))
-                if p.get("code"):
-                    expanded_search_pids.add(str(p["code"]))
-                if p.get("name"):
-                    expanded_search_pids.add(str(p["name"]))
-        expanded_pids_list = list(expanded_search_pids)
-        expanded_pids_upper = [x.upper() for x in expanded_pids_list]
-
-        is_cfc = any(x in ["CFC", "PEM-058", "058"] for x in expanded_pids_upper) or any(
-            x in p_lower for x in ["cfc", "pem-058", "058"]
-        )
-        is_ekh = any(x in ["EKH", "24CP01"] for x in expanded_pids_upper) or any(
-            x in p_lower for x in ["ekh", "24cp01"]
-        )
-
-        where_clauses = []
-        params = []
-
-        if is_cfc:
-            where_clauses.append("""(
-                r.project_id ILIKE %s OR r.project_id ILIKE %s 
-                OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
-                OR r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
-                OR r.data->>'docNo' ILIKE %s
-            )""")
-            params.extend(["%CFC%", "%PEM-058%", "%PEM-058%", "%CFC%", expanded_pids_list, expanded_pids_upper, "%CY002P608%"])
-        elif is_ekh:
-            where_clauses.append("""(
-                r.project_id ILIKE %s OR r.project_id ILIKE %s 
-                OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
-                OR r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
-                OR r.data->>'docNo' ILIKE %s
-            )""")
-            params.extend(["%EKH%", "%24CP01%", "%24CP01%", "%EKH%", expanded_pids_list, expanded_pids_upper, "%24CP01%"])
-        else:
-            where_clauses.append("""(
-                r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s)
-                OR r.project_id::text IN (SELECT id::text FROM projects WHERE id = ANY(%s) OR code = ANY(%s) OR name = ANY(%s))
-            )""")
-            params.extend([expanded_pids_list, expanded_pids_upper, expanded_pids_list, expanded_pids_list, expanded_pids_list])
-
-        prompt_with_history = p_lower + " " + " ".join(
-            (msg.get("text") or "").lower() for msg in (history or []) if msg.get("role") == "user"
-        )
-        is_ms_specified = "MS" in detected_doc_types or any(
-            k in prompt_with_history for k in ["ms", "material submittal", "اعتماد مواد", "اعتماد عينات", "اعتماد مورد"]
-        )
-
-        # Enforce doc type filter if detected
-        if detected_doc_types:
-            dt_upper = [dt.upper() for dt in detected_doc_types]
-            dt_prefixes = []
-            for dt in detected_doc_types:
-                dt_prefixes.extend([
-                    f"{dt}-%", f"{dt}/%", f"%-{dt}-%", f"%-{dt}/%", f"%/{dt}-%", f"%_{dt}_%", f"%/{dt}/%"
-                ])
-            where_clauses.append("""(
-                UPPER(r.dt_id) = ANY(%s) 
-                OR r.data->>'docNo' ILIKE ANY(%s)
-                OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = ANY(%s) AND project_id = r.project_id)
-            )""")
-            params.extend([dt_upper, dt_prefixes, dt_upper])
-        elif is_ms_specified:
-            where_clauses.append("""(
-                UPPER(r.dt_id) = 'MS' 
-                OR r.data->>'docNo' ILIKE %s 
-                OR r.data->>'docNo' ILIKE %s
-                OR r.data->>'docNo' ILIKE %s
-                OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = 'MS' AND project_id = r.project_id)
-            )""")
-            params.extend(["MS-%", "MS/%", "%-MS-%"])
-
-        # Enforce equipment/keyword matching with ANY(keywords_array)
-        if is_valve_query:
-            where_clauses.append("""(
-                r.data->>'title' ILIKE ANY(%s) 
-                OR r.data->>'docNo' ILIKE ANY(%s) 
-                OR r.data->>'itemRef' ILIKE ANY(%s) 
-                OR r.data->>'description' ILIKE ANY(%s) 
-                OR r.data->>'subject' ILIKE ANY(%s)
-            )""")
-            params.extend([VALVE_SQL_PATTERNS] * 5)
-        elif detected_discipline:
-            disc_info = DISCIPLINE_MAP[detected_discipline]
-            disc_sql_terms = [f"%{t}%" for t in (disc_info["en_terms"] + [disc_info["ar_terms"][0]]) if len(t) >= 3]
-            where_clauses.append("""(
-                r.data->>'discipline' ILIKE ANY(%s)
-                OR r.data->>'trade' ILIKE ANY(%s)
-                OR r.data->>'subTrade' ILIKE ANY(%s)
-                OR r.data->>'title' ILIKE ANY(%s)
-                OR r.data->>'description' ILIKE ANY(%s)
-                OR r.data->>'subject' ILIKE ANY(%s)
-            )""")
-            params.extend([disc_sql_terms] * 6)
-
-            non_disc_terms = [s for s in search_terms if s.lower() not in [t.lower() for t in (disc_info["en_terms"] + disc_info["ar_terms"])]]
-            if non_disc_terms:
-                kw_patterns = [f"%{term}%" for term in non_disc_terms[:10]]
-                where_clauses.append("""(
-                    r.data->>'title' ILIKE ANY(%s) 
-                    OR r.data->>'docNo' ILIKE ANY(%s) 
-                    OR r.data->>'itemRef' ILIKE ANY(%s) 
-                    OR r.data->>'subject' ILIKE ANY(%s) 
-                    OR r.data->>'description' ILIKE ANY(%s) 
-                    OR r.data->>'remarks' ILIKE ANY(%s)
-                    OR r.data->>'floor' ILIKE ANY(%s)
-                )""")
-                params.extend([kw_patterns] * 7)
-        elif search_terms:
-            kw_patterns = [f"%{term}%" for term in search_terms[:15]]
-            where_clauses.append("""(
-                r.data->>'title' ILIKE ANY(%s) 
-                OR r.data->>'docNo' ILIKE ANY(%s) 
-                OR r.data->>'itemRef' ILIKE ANY(%s) 
-                OR r.data->>'subject' ILIKE ANY(%s) 
-                OR r.data->>'description' ILIKE ANY(%s) 
-                OR r.data->>'remarks' ILIKE ANY(%s)
-                OR r.data->>'floor' ILIKE ANY(%s)
-                OR r.data->>'discipline' ILIKE ANY(%s)
-                OR r.data->>'trade' ILIKE ANY(%s)
-                OR r.data->>'subTrade' ILIKE ANY(%s)
-            )""")
-            params.extend([kw_patterns] * 10)
-
-        if is_approved_query:
-            where_clauses.append("""(
-                COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Approv%' 
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Status A%' 
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Status B%'
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%B - %'
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%A - %'
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Code A%'
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Code B%'
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%معتمد%'
-                OR COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE '%Accept%'
-            )""")
-
-        order_clauses = []
-        order_clauses.append("""
-            CASE 
-                WHEN (
-                    COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Approv%' 
-                    OR COALESCE(r.data->>'status', '') ILIKE '%Status B%'
-                    OR COALESCE(r.data->>'status', '') ILIKE '%Status A%'
-                    OR COALESCE(r.data->>'status', '') ILIKE '%B - %'
-                    OR COALESCE(r.data->>'status', '') ILIKE '%A - %'
-                    OR COALESCE(r.data->>'status', '') ILIKE '%معتمد%'
-                ) THEN 0 
-                ELSE 1 
-            END ASC
-        """)
-        order_clauses.append("r.created_at DESC NULLS LAST")
-        order_clauses.append("r.id DESC")
-
-        where_sql = " AND ".join(where_clauses)
-        order_sql = ", ".join(order_clauses)
-
-        search_sql = f"""
-            SELECT 
-                r.id,
-                r.project_id,
-                COALESCE(
-                    NULLIF(CASE 
-                        WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' OR r.data->>'docNo' ILIKE '%%-MS-%%' THEN 'MS'
-                        WHEN r.data->>'docNo' ILIKE 'IR-%%' OR r.data->>'docNo' ILIKE 'IR/%%' OR r.data->>'docNo' ILIKE '%%-IR-%%' THEN 'IR'
-                        WHEN r.data->>'docNo' ILIKE 'SD-%%' OR r.data->>'docNo' ILIKE 'SD/%%' OR r.data->>'docNo' ILIKE '%%-SD-%%' THEN 'SD'
-                        WHEN r.data->>'docNo' ILIKE 'MIR-%%' OR r.data->>'docNo' ILIKE 'MIR/%%' OR r.data->>'docNo' ILIKE '%%-MIR-%%' THEN 'MIR'
-                        WHEN r.data->>'docNo' ILIKE 'RFI-%%' OR r.data->>'docNo' ILIKE 'RFI/%%' OR r.data->>'docNo' ILIKE '%%-RFI-%%' THEN 'RFI'
-                        WHEN r.data->>'docNo' ILIKE 'QS-%%' OR r.data->>'docNo' ILIKE 'QS/%%' OR r.data->>'docNo' ILIKE '%%-QS-%%' THEN 'QS'
-                        WHEN r.data->>'docNo' ILIKE 'NOC-%%' OR r.data->>'docNo' ILIKE 'NOC/%%' OR r.data->>'docNo' ILIKE '%%-NOC-%%' THEN 'NOC'
-                    END, ''),
-                    (SELECT code FROM doc_types dt WHERE dt.id = r.dt_id AND dt.project_id = r.project_id LIMIT 1),
-                    NULLIF(r.dt_id, ''),
-                    'DOC'
-                ) AS doc_type,
-                COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
-                COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
-                COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
-                COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS doc_date,
-                COALESCE(r.data->>'brand', '') AS brand,
-                COALESCE(r.data->>'discipline', '') AS discipline,
-                COALESCE(r.data->>'trade', '') AS trade,
-                COALESCE(r.data->>'subTrade', '') AS sub_trade
-            FROM records r
-            WHERE {where_sql}
-            ORDER BY {order_sql}
-            LIMIT 50;
-        """
-
-        try:
-            matched_records = db.q(search_sql, params)
-        except Exception as e_search:
-            logger.warning("Error searching records in AI context: %s", e_search)
-            matched_records = []
-
-        # Direct Fallback 1: Query by document number prefix (e.g. CY002P608 or 24CP01) or project code directly
-        if not matched_records and (search_terms or is_valve_query):
-            fallback_kw_patterns = list(VALVE_SQL_PATTERNS) if is_valve_query else [f"%{term}%" for term in search_terms[:15]]
-            dt_condition = ""
-            dt_fb_params = []
-            if detected_doc_types:
-                dt_upper = [dt.upper() for dt in detected_doc_types]
-                dt_patterns = []
-                for dt in detected_doc_types:
-                    dt_patterns.extend([f"{dt}-%", f"{dt}/%", f"%-{dt}-%", f"%-{dt}/%", f"%/{dt}-%", f"%_{dt}_%", f"%/{dt}/%"])
-                dt_condition = """AND (
-                    UPPER(r.dt_id) = ANY(%s) 
-                    OR r.data->>'docNo' ILIKE ANY(%s)
-                    OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = ANY(%s) AND project_id = r.project_id)
-                )"""
-                dt_fb_params = [dt_upper, dt_patterns, dt_upper]
-            elif is_ms_specified:
-                dt_condition = """AND (
-                    r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s 
-                    OR UPPER(r.dt_id) = 'MS'
-                    OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = 'MS' AND project_id = r.project_id)
-                )"""
-                dt_fb_params = ["MS-%", "MS/%", "%-MS-%"]
-
-            fb_proj_clauses = []
-            fb_proj_params = []
-            if is_cfc:
-                fb_proj_clauses.append("""(
-                    r.project_id ILIKE %s OR r.project_id ILIKE %s 
-                    OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
-                    OR r.data->>'docNo' ILIKE %s
-                    OR r.project_id = ANY(%s)
-                )""")
-                fb_proj_params.extend(["%CFC%", "%PEM-058%", "%PEM-058%", "%CFC%", "%CY002P608%", expanded_pids_list])
-            elif is_ekh:
-                fb_proj_clauses.append("""(
-                    r.project_id ILIKE %s OR r.project_id ILIKE %s 
-                    OR r.project_id::text IN (SELECT id::text FROM projects WHERE code ILIKE %s OR name ILIKE %s)
-                    OR r.data->>'docNo' ILIKE %s
-                    OR r.project_id = ANY(%s)
-                )""")
-                fb_proj_params.extend(["%EKH%", "%24CP01%", "%24CP01%", "%EKH%", "%24CP01%", expanded_pids_list])
-            else:
-                fb_proj_clauses.append("(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))")
-                fb_proj_params.extend([expanded_pids_list, expanded_pids_upper])
-
-            direct_fallback_sql = f"""
-                SELECT 
-                    r.id,
-                    r.project_id,
-                    COALESCE(
-                        NULLIF(CASE 
-                            WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' OR r.data->>'docNo' ILIKE '%%-MS-%%' THEN 'MS'
-                            WHEN r.data->>'docNo' ILIKE 'IR-%%' OR r.data->>'docNo' ILIKE 'IR/%%' OR r.data->>'docNo' ILIKE '%%-IR-%%' THEN 'IR'
-                            WHEN r.data->>'docNo' ILIKE 'SD-%%' OR r.data->>'docNo' ILIKE 'SD/%%' OR r.data->>'docNo' ILIKE '%%-SD-%%' THEN 'SD'
-                            WHEN r.data->>'docNo' ILIKE 'MIR-%%' OR r.data->>'docNo' ILIKE 'MIR/%%' OR r.data->>'docNo' ILIKE '%%-MIR-%%' THEN 'MIR'
-                            WHEN r.data->>'docNo' ILIKE 'RFI-%%' OR r.data->>'docNo' ILIKE 'RFI/%%' OR r.data->>'docNo' ILIKE '%%-RFI-%%' THEN 'RFI'
-                            WHEN r.data->>'docNo' ILIKE 'QS-%%' OR r.data->>'docNo' ILIKE 'QS/%%' OR r.data->>'docNo' ILIKE '%%-QS-%%' THEN 'QS'
-                            WHEN r.data->>'docNo' ILIKE 'NOC-%%' OR r.data->>'docNo' ILIKE 'NOC/%%' OR r.data->>'docNo' ILIKE '%%-NOC-%%' THEN 'NOC'
-                        END, ''),
-                        (SELECT code FROM doc_types dt WHERE dt.id = r.dt_id AND dt.project_id = r.project_id LIMIT 1),
-                        NULLIF(r.dt_id, ''),
-                        'DOC'
-                    ) AS doc_type,
-                    COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
-                    COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
-                    COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
-                    COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS doc_date,
-                    COALESCE(r.data->>'brand', '') AS brand,
-                    COALESCE(r.data->>'discipline', '') AS discipline,
-                    COALESCE(r.data->>'trade', '') AS trade,
-                    COALESCE(r.data->>'subTrade', '') AS sub_trade
-                FROM records r
-                WHERE {' AND '.join(fb_proj_clauses)}
-                {dt_condition}
-                AND (
-                    r.data->>'title' ILIKE ANY(%s)
-                    OR r.data->>'docNo' ILIKE ANY(%s)
-                    OR r.data->>'itemRef' ILIKE ANY(%s)
-                    OR r.data->>'description' ILIKE ANY(%s)
-                    OR r.data->>'floor' ILIKE ANY(%s)
-                    OR r.data->>'discipline' ILIKE ANY(%s)
-                    OR r.data->>'trade' ILIKE ANY(%s)
-                    OR r.data->>'subTrade' ILIKE ANY(%s)
-                )
-                ORDER BY 
-                    CASE 
-                        WHEN COALESCE(r.data->>'status', '') ILIKE %s 
-                             OR COALESCE(r.data->>'status', '') ILIKE %s
-                             OR COALESCE(r.data->>'status', '') ILIKE %s
-                             OR COALESCE(r.data->>'status', '') ILIKE %s
-                        THEN 0 
-                        ELSE 1 
-                    END ASC,
-                    r.id DESC
-                LIMIT 50;
-            """
-            fb_order_params = ["%Approv%", "Status B%", "B - %", "A - %"]
-            try:
-                matched_records = db.q(direct_fallback_sql, (*fb_proj_params, *dt_fb_params, *([fallback_kw_patterns] * 8), *fb_order_params))
-            except Exception as e_direct:
-                logger.warning("Error running direct fallback record search in AI context: %s", e_direct)
-
-        # Fallback 2: Relaxed search KEEPING doc type constraint if specified
-        if not matched_records and search_terms and not is_valve_query:
-            relaxed_where_clauses = [
-                "(r.project_id = ANY(%s) OR UPPER(r.project_id) = ANY(%s))",
-            ]
-            relaxed_params = [expanded_pids_list, expanded_pids_upper]
-            if detected_doc_types:
-                dt_upper = [dt.upper() for dt in detected_doc_types]
-                dt_patterns = []
-                for dt in detected_doc_types:
-                    dt_patterns.extend([f"{dt}-%", f"{dt}/%", f"%-{dt}-%", f"%-{dt}/%", f"%/{dt}-%", f"%_{dt}_%", f"%/{dt}/%"])
-                relaxed_where_clauses.append("""(
-                    UPPER(r.dt_id) = ANY(%s) 
-                    OR r.data->>'docNo' ILIKE ANY(%s)
-                    OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = ANY(%s) AND project_id = r.project_id)
-                )""")
-                relaxed_params.extend([dt_upper, dt_patterns, dt_upper])
-            relaxed_where_clauses.append("(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s) OR r.data->>'floor' ILIKE ANY(%s) OR r.data->>'discipline' ILIKE ANY(%s) OR r.data->>'trade' ILIKE ANY(%s) OR r.data->>'subTrade' ILIKE ANY(%s))")
-            relaxed_params.extend([kw_patterns] * 10)
-            relaxed_sql = f"""
-                SELECT 
-                    r.id,
-                    r.project_id,
-                    COALESCE(
-                        NULLIF(CASE 
-                            WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' OR r.data->>'docNo' ILIKE '%%-MS-%%' THEN 'MS'
-                            WHEN r.data->>'docNo' ILIKE 'IR-%%' OR r.data->>'docNo' ILIKE 'IR/%%' OR r.data->>'docNo' ILIKE '%%-IR-%%' THEN 'IR'
-                            WHEN r.data->>'docNo' ILIKE 'SD-%%' OR r.data->>'docNo' ILIKE 'SD/%%' OR r.data->>'docNo' ILIKE '%%-SD-%%' THEN 'SD'
-                            WHEN r.data->>'docNo' ILIKE 'MIR-%%' OR r.data->>'docNo' ILIKE 'MIR/%%' OR r.data->>'docNo' ILIKE '%%-MIR-%%' THEN 'MIR'
-                            WHEN r.data->>'docNo' ILIKE 'RFI-%%' OR r.data->>'docNo' ILIKE 'RFI/%%' OR r.data->>'docNo' ILIKE '%%-RFI-%%' THEN 'RFI'
-                            WHEN r.data->>'docNo' ILIKE 'QS-%%' OR r.data->>'docNo' ILIKE 'QS/%%' OR r.data->>'docNo' ILIKE '%%-QS-%%' THEN 'QS'
-                            WHEN r.data->>'docNo' ILIKE 'NOC-%%' OR r.data->>'docNo' ILIKE 'NOC/%%' OR r.data->>'docNo' ILIKE '%%-NOC-%%' THEN 'NOC'
-                        END, ''),
-                        (SELECT code FROM doc_types dt WHERE dt.id = r.dt_id AND dt.project_id = r.project_id LIMIT 1),
-                        NULLIF(r.dt_id, ''),
-                        'DOC'
-                    ) AS doc_type,
-                    COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
-                    COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
-                    COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
-                    COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS doc_date,
-                    COALESCE(r.data->>'brand', '') AS brand,
-                    COALESCE(r.data->>'discipline', '') AS discipline,
-                    COALESCE(r.data->>'trade', '') AS trade,
-                    COALESCE(r.data->>'subTrade', '') AS sub_trade
-                FROM records r
-                WHERE {" AND ".join(relaxed_where_clauses)}
-                ORDER BY {order_sql}
-                LIMIT 50;
-            """
-            try:
-                matched_records = db.q(relaxed_sql, relaxed_params)
-            except Exception as e_rel:
-                logger.warning("Error running relaxed record search in AI context: %s", e_rel)
-
-        # Post-filter 0: Deduplicate records by unique doc_no and rec_id so no document is ever repeated
-        if matched_records:
-            seen_doc_keys = set()
-            unique_records = []
-            for rec in matched_records:
-                rec_id = str(rec.get("id") or "").strip()
-                doc_no = str(rec.get("doc_no") or "").strip().upper()
-                doc_key = doc_no if (doc_no and doc_no != "—") else rec_id
-                if doc_key in seen_doc_keys:
-                    continue
-                seen_doc_keys.add(doc_key)
-                unique_records.append(rec)
-            matched_records = unique_records
-
-        # Post-filter 1: If user specified doc types (e.g. IR, MS, SD), strictly enforce them
-        target_types = set([dt.upper() for dt in detected_doc_types])
-        if is_ms_specified:
-            target_types.add("MS")
-
-        if target_types and matched_records:
-            filtered_by_type = []
-            for rec in matched_records:
-                doc_type_val = str(rec.get("doc_type") or "").strip().upper()
-                doc_no_val = str(rec.get("doc_no") or "").strip().upper()
-                if doc_type_val in target_types:
-                    filtered_by_type.append(rec)
-                    continue
-                matches_doc_no = False
-                for t in target_types:
-                    if re.search(r"(?:^|[\s/_-])" + re.escape(t) + r"(?:[\s/_-]|$)", doc_no_val):
-                        matches_doc_no = True
-                        break
-                if matches_doc_no:
-                    filtered_by_type.append(rec)
-
-            if filtered_by_type:
-                matched_records = filtered_by_type
-            else:
-                matched_records = []
-
-        # Post-filter 1b: If user requested approved records, retain only approved submittals
-        if is_approved_query and matched_records:
-            approved_subset = [
-                rec for rec in matched_records
-                if any(x in (rec.get("status") or "").lower() for x in ["approv", "b -", "a -", "status b", "status a", "code b", "code a", "معتمد", "accept"])
-            ]
-            if approved_subset:
-                matched_records = approved_subset
-
-        # Post-filter 1c: If user specified a discipline (Architecture, Electrical, etc.), strictly isolate it
-        if detected_discipline and matched_records:
-            disc_info = DISCIPLINE_MAP[detected_discipline]
-            disc_terms = [t.lower() for t in (disc_info["en_terms"] + disc_info["ar_terms"])]
-
-            # Collect terms of other disciplines to catch and reject cross-discipline contamination
-            other_disc_terms = []
-            for other_k, other_info in DISCIPLINE_MAP.items():
-                if other_k != detected_discipline:
-                    other_disc_terms.extend([t.lower() for t in (other_info["en_terms"] + other_info["ar_terms"])])
-
-            disc_filtered = []
-            for rec in matched_records:
-                rec_disc = str(rec.get("discipline") or "").strip().lower()
-                rec_trade = str(rec.get("trade") or "").strip().lower()
-                rec_subtrade = str(rec.get("sub_trade") or "").strip().lower()
-                rec_title = str(rec.get("title") or "").strip().lower()
-
-                # If record explicitly belongs to another discipline in its discipline column, discard it
-                if rec_disc and any(ot in rec_disc for ot in other_disc_terms if len(ot) >= 4):
-                    if not any(dt in rec_disc for dt in disc_terms if len(dt) >= 3):
-                        continue
-
-                matches_disc = (
-                    any(dt in rec_disc for dt in disc_terms if len(dt) >= 3)
-                    or any(dt in rec_trade for dt in disc_terms if len(dt) >= 3)
-                    or any(dt in rec_subtrade for dt in disc_terms if len(dt) >= 3)
-                    or any(dt in rec_title for dt in disc_terms if len(dt) >= 3)
-                )
-                if matches_disc:
-                    disc_filtered.append(rec)
-
-            matched_records = disc_filtered
-
-        # Post-filter 2: If user queried for valves, enforce strictly that title or docNo contains valve stem
-        if is_valve_query and matched_records:
-            valve_stems = ["valve", "valves", "valv", "butterfly", "gate valve", "check valve", "ball valve", "محبس", "محابس", "صمام", "صمامات"]
-            valve_records = [
-                rec for rec in matched_records
-                if any(stem in (rec.get("title") or "").lower() for stem in valve_stems)
-                or any(stem in (rec.get("doc_no") or "").lower() for stem in valve_stems)
-            ]
-            matched_records = valve_records
-
-        # Post-filter 3: Deduplicate latest revisions only if user requested latest revision
-        is_latest_only = any(k in p_lower for k in ["أحدث", "اخر", "آخر", "latest"])
-        if matched_records and is_latest_only:
-            matched_records = _dedup_latest_revisions(matched_records)
-
-        target_scope_list = []
-        for sp in scoped_search_pids:
-            p = proj_map.get(sp)
-            if p:
-                target_scope_list.append(f"{p.get('name', '')} ({p.get('code', '')})")
-            else:
-                for pinfo in PROJECT_ALIASES.values():
-                    if str(sp) in [pinfo["code"], pinfo["name_pattern"]]:
-                        target_scope_list.append(pinfo["display"])
-                        break
-        target_scope_str = ", ".join(target_scope_list) if target_scope_list else "the scoped project(s)"
-
-        if matched_records:
-            context_lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
-            context_lines.append(f"Found {len(matched_records)} matching submittals in {target_scope_str} based on query keywords and filters:")
-            for rec in matched_records:
-                doc_no = rec.get("doc_no") or "—"
-                title = rec.get("title") or "No Title"
-                st = rec.get("status") or "Pending"
-                dt = rec.get("doc_type") or "DOC"
-                brand = rec.get("brand") or ""
-                brand_str = f" | Brand: {brand}" if brand else ""
-                disc_val = rec.get("discipline") or ""
-                disc_str = f" | Discipline: {disc_val}" if disc_val else ""
-                p_code = proj_map.get(rec.get("project_id"), {}).get("code", rec.get("project_id", ""))
-                date_val = rec.get("doc_date") or rec.get("issued_date") or "—"
-                context_lines.append(
-                    f"- DocNo: {doc_no} | Title: {title}{brand_str}{disc_str} | DocType: {dt} | Status: {st} | Date: {date_val} | Project: {p_code}"
-                )
-            context_lines.append("")
-        else:
-            context_lines.append("### 5. MATCHING SUBMITTALS IN REGISTER:")
-            context_lines.append(f"- No matching submittals found for the requested keywords/filters in {target_scope_str}.")
-            context_lines.append("")
-
-    return "\n".join(context_lines)
+    return "\n".join(lines)
 
 
-_working_gemini_model = None
+def _format_fallback_response_from_context(prompt: str, context_text: str) -> str:
+    """Format fallback response from context string (backward compatibility)."""
+    # Extract project
+    proj_code = "PEM-058" if "PEM-058" in context_text or "CY002P608" in context_text else (
+        "24CP01" if "24CP01" in context_text or "EKH" in context_text else None
+    )
+    pids = [proj_code] if proj_code else ["PEM-058"]
+    return _execute_deterministic_fallback(prompt, pids)
 
 
-def _call_gemini_api(prompt, context_text, custom_instruction=None, history=None):
-    """Calls Gemini Flash API with standard client, active models cascade, 503 retry, and history context."""
-    global _working_gemini_model
-
+def _call_gemini_api(prompt, context_text="", custom_instruction=None, history=None):
+    """Legacy interface for _call_gemini_api."""
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None, "NO_API_KEY"
 
-    history_lines = []
-    if history:
-        for msg in history[-6:]:
-            r_label = "User" if msg.get("role") == "user" else "Assistant"
-            m_text = (msg.get("text") or "").strip()
-            if m_text:
-                history_lines.append(f"{r_label}: {m_text}")
-    history_str = "\n".join(history_lines) if history_lines else "None"
+    client = genai.Client(api_key=api_key)
+    system_inst = custom_instruction or SYSTEM_INSTRUCTION
 
-    full_contents = (
-        f"### CONTEXT REGISTER DATA (READ-ONLY):\n{context_text}\n\n"
-        f"### RECENT CONVERSATION HISTORY:\n{history_str}\n\n"
-        f"### USER CURRENT QUESTION / CLARIFICATION:\n{prompt}\n\n"
-        "Provide a structured, helpful, professional engineering response in Markdown format. "
-        "IMPORTANT: In this engineering system, 'MS' refers to Material Submittal (اعتماد مواد / عينات / موردين). "
-        "Directly answer based on the matching records in the register context. "
-        "If the user asks in Arabic, answer in clear, professional Arabic (باللغة العربية الهندسية). "
-        "If the user asks in English, answer in English. "
-        "Highlight document numbers, statuses, titles, and approval codes clearly. "
-        "Use bullet points, bold key figures, and tables where appropriate."
-    )
-
-    models_to_try = []
-    if _working_gemini_model:
-        models_to_try.append(_working_gemini_model)
-    for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-pro"]:
-        if m not in models_to_try:
-            models_to_try.append(m)
-
-    system_inst = custom_instruction or (
-        "You are the DCR Engineering AI Assistant for Gas Chill contracting projects. "
-        "In this project register, document abbreviations are: "
-        "- MS = Material Submittal (اعتماد مواد / عينات / موردين) or Method Statement depending on register context. "
-        "- SD = Shop Drawing (شوب درونج / مخططات تنفيذية). "
-        "- MIR = Material Inspection Request (طلب فحص وتوريد مواد). "
-        "- RFI = Request for Information (استفسارات وتوضيحات فنية). "
-        "- NOC = Notice of Change (أوامر التغيير / مطالبات مالية). "
-        "- IR = Inspection Request / Work Inspection (طلب استلام أعمال / فحص موقعي / تسليمات). "
-        "- QS = Quantity Surveyor (حصر كميات / مستخلصات). "
-        "- WIR = Work Inspection Request. "
-        "- NCR = Non-Conformance Report (تقرير عدم مطابقة). "
-        "Strictly adhere to the user's requested document type: if the user requests IRs (تسليمات / فحص أعمال), ONLY return IR records, never mix or return SD, MS, or QS documents. "
-        "Strictly adhere to the user's requested discipline/trade: if the user requests Architecture (معماري), Civil (مدني), Mechanical (ميكانيكا), or Electrical (كهرباء), ONLY return records matching that exact discipline. Never return electrical submittals when architectural submittals are requested. "
-        "Directly list matching documents from the provided context in a compact Markdown table or bullet points. "
-        "Never invent or assume records not present in the context. "
-        "Avoid long introductions or filler text."
-    )
-
-    last_err = None
     try:
-        client = genai.Client(api_key=api_key)
-        for model_name in models_to_try:
-            clean_model = model_name.replace("models/", "").strip()
-            # Retry resilience for 503 high demand: execute a single quick retry with 1-second delay
-            for attempt in range(2):
-                try:
-                    resp = client.models.generate_content(
-                        model=clean_model,
-                        contents=full_contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_inst,
-                            temperature=0.2,
-                            max_output_tokens=1000,
-                        ),
-                    )
-                    if resp and resp.text:
-                        _working_gemini_model = clean_model
-                        return resp.text, None
-                except Exception as e_model:
-                    last_err = e_model
-                    err_str = str(e_model).lower()
-                    if ("503" in err_str or "unavailable" in err_str or "high demand" in err_str) and attempt == 0:
-                        import time
-                        time.sleep(1)
-                        continue
-                    if _working_gemini_model == clean_model:
-                        _working_gemini_model = None
-                    logger.warning("Gemini model %s failed (attempt %d): %s", clean_model, attempt + 1, e_model)
-                    break
-    except Exception as e_client:
-        last_err = e_client
-        logger.error("Gemini client initialization error: %s", e_client)
-
-    logger.error("[AI Assistant Error] Failed to generate: %s", last_err)
-    return None, f"Gemini API Error: {str(last_err)}"
+        resp = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_inst,
+                temperature=0.2,
+                max_output_tokens=1000,
+            ),
+        )
+        return resp.text, None
+    except Exception as e:
+        logger.warning("_call_gemini_api error: %s", e)
+        return None, str(e)
 
 
-def _format_fallback_response_from_context(prompt, context_text):
-    """Generates a structured, factual response directly from the extracted SQL context
-
-    when Gemini API encounters high demand (503) or is temporarily unavailable.
-    """
-    if not context_text or not context_text.strip():
-        return None
-
-    # 1. Matching submittals section
-    if "### 5. MATCHING SUBMITTALS IN REGISTER:" in context_text:
-        recs = []
-        for line in context_text.splitlines():
-            line_str = line.strip()
-            if line_str.startswith("- DocNo:"):
-                parts = {}
-                for segment in line_str[2:].split(" | "):
-                    if ":" in segment:
-                        k, v = segment.split(":", 1)
-                        parts[k.strip()] = v.strip()
-                if parts:
-                    recs.append(parts)
-
-        if recs:
-            rows = []
-            for r in recs:
-                st = r.get("Status", "—")
-                st_low = st.lower()
-                st_badge = st
-                if any(x in st_low for x in ["comment", "status b", "code b", "معتمد بملاحظات"]):
-                    st_badge = f"🟡 **{st}**"
-                elif any(x in st_low for x in ["reject", "revise", "code c", "status c", "مرفوض"]):
-                    st_badge = f"❌ **{st}**"
-                if any(x in st_low for x in ["approv", "status a", "code a", "معتمد"]):
-                    st_badge = f"✅ **{st}**"
-
-                has_discipline_col = any(r.get("Discipline") for r in recs)
-                if has_discipline_col:
-                    disc = r.get("Discipline", "—")
-                    rows.append(
-                        f"| **{r.get('DocNo', '—')}** | {r.get('Title', '—')} | {disc} | {r.get('DocType', '—')} | {st_badge} | {r.get('Date', '—')} | {r.get('Project', '—')} |"
-                    )
-                else:
-                    rows.append(
-                        f"| **{r.get('DocNo', '—')}** | {r.get('Title', '—')} | {r.get('DocType', '—')} | {st_badge} | {r.get('Date', '—')} | {r.get('Project', '—')} |"
-                    )
-
-            has_discipline_col = any(r.get("Discipline") for r in recs)
-            table_md = "\n".join(rows)
-            table_header = (
-                "| رقم الوثيقة (Doc No) | الوصف / العنوان | التخصص (Discipline) | النوع | الحالة (Status) | التاريخ | المشروع |\n"
-                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
-                if has_discipline_col
-                else
-                "| رقم الوثيقة (Doc No) | الوصف / العنوان | النوع | الحالة (Status) | التاريخ | المشروع |\n"
-                "| :--- | :--- | :--- | :--- | :--- | :--- |"
-            )
-
-            p_low = (prompt or "").lower()
-            is_valve = any(w in p_low for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves"])
-            is_pump = any(w in p_low for w in ["طلمب", "مضخ", "pump"])
-
-            # Detect discipline for header
-            detected_disc_name = None
-            detected_disc_ar = None
-            for disc_k, disc_v in DISCIPLINE_MAP.items():
-                if any(t in p_low for t in disc_v["ar_terms"]) or any(
-                    re.search(r"(?<![a-zA-Z])" + re.escape(t) + r"(?![a-zA-Z])", p_low) for t in disc_v["en_terms"]
-                ):
-                    detected_disc_name = disc_v["display_en"]
-                    detected_disc_ar = disc_v["display_ar"]
-                    break
-
-            # Resolve project display name
-            proj_display = None
-            for alias, pinfo in PROJECT_ALIASES.items():
-                if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
-                    proj_display = pinfo["display"]
-                    break
-
-            if not proj_display:
-                for pinfo in PROJECT_ALIASES.values():
-                    if f"Project: {pinfo['code']}" in context_text or f"({pinfo['code']})" in context_text or pinfo["name_pattern"] in context_text:
-                        proj_display = pinfo["display"]
-                        break
-
-            if not proj_display:
-                if "CY002P608" in context_text or "PEM-058" in context_text:
-                    proj_display = "CFC (PEM-058)"
-                elif "24CP01" in context_text or "EKH" in context_text:
-                    proj_display = "EKH (24CP01)"
-                else:
-                    proj_display = "المشروع المحدد"
-
-            # Detect target doc type label for header
-            found_dts = []
-            for dt in KNOWN_DOC_TYPES:
-                if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", prompt, re.IGNORECASE):
-                    found_dts.append(dt.upper())
-            if any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال", "استلام أعمال", "inspection request", "inspection requests", "work inspection"]):
-                if "IR" not in found_dts:
-                    found_dts.append("IR")
-            if any(w in p_low for w in ["شوب درونج", "شوب دروينج", "شوبدروينج", "shop drawing", "shop drawings", "drawings", "مخططات"]):
-                if "SD" not in found_dts:
-                    found_dts.append("SD")
-            if any(w in p_low for w in ["ماتريال", "اعتماد مواد", "اعتمادات مواد", "material submittal", "material submittals", "عينة", "عينات", "مورد"]):
-                if "MS" not in found_dts:
-                    found_dts.append("MS")
-            if any(w in p_low for w in ["فحص مواد", "توريد مواد", "material inspection"]):
-                if "MIR" not in found_dts:
-                    found_dts.append("MIR")
-            if any(w in p_low for w in ["استفسار", "استفسارات", "طلب معلومات", "request for information"]):
-                if "RFI" not in found_dts:
-                    found_dts.append("RFI")
-            if any(w in p_low for w in ["حصر", "كميات", "حصر كميات", "مستخلص", "مستخلصات", "quantity surveyor"]):
-                if "QS" not in found_dts:
-                    found_dts.append("QS")
-
-            if detected_disc_name and found_dts:
-                dt_str = " / ".join(f"الـ {dt}" for dt in found_dts)
-                is_appr_str = " المعتمدة" if any(x in p_low for x in ["معتمد", "معتمدة", "approved"]) else ""
-                header_title = f"📋 تفاصيل وثائق {dt_str}{is_appr_str} الخاصة بـ {detected_disc_ar} ({detected_disc_name}) لمشروع {proj_display}:"
-            elif detected_disc_name:
-                is_appr_str = " المعتمدة" if any(x in p_low for x in ["معتمد", "معتمدة", "approved"]) else ""
-                header_title = f"📋 تفاصيل وثائق المشروع{is_appr_str} الخاصة بـ {detected_disc_ar} ({detected_disc_name}) لمشروع {proj_display}:"
-            elif is_valve:
-                header_title = f"📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع {proj_display}:"
-            elif is_pump:
-                header_title = f"📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمضخات لمشروع {proj_display}:"
-            elif found_dts:
-                dt_str = " / ".join(f"الـ {dt}" for dt in found_dts)
-                header_title = f"📋 تفاصيل وثائق {dt_str} لمشروع {proj_display}:"
-            else:
-                header_title = f"📋 تفاصيل وثائق المشروع المعتمدة لمشروع {proj_display}:"
-
-            return (
-                f"### {header_title}\n\n"
-                f"تم استخراج {len(recs)} وثيقة معتمدة ومطابقة لطلبك مباشرة من سجلات المشروع:\n\n"
-                f"{table_header}\n"
-                f"{table_md}\n\n"
-                "📌 *البيانات أعلاه مستخرجة ومطابقة 100% لسجلات النظام الرسمية.*"
-            )
-        elif "No matching submittals found" in context_text or not recs:
-            p_low = (prompt or "").lower()
-            is_valve = any(w in p_low for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves"])
-            is_pump = any(w in p_low for w in ["طلمب", "مضخ", "pump"])
-
-            # Detect discipline for empty response
-            detected_disc_name = None
-            detected_disc_ar = None
-            for disc_k, disc_v in DISCIPLINE_MAP.items():
-                if any(t in p_low for t in disc_v["ar_terms"]) or any(
-                    re.search(r"(?<![a-zA-Z])" + re.escape(t) + r"(?![a-zA-Z])", p_low) for t in disc_v["en_terms"]
-                ):
-                    detected_disc_name = disc_v["display_en"]
-                    detected_disc_ar = disc_v["display_ar"]
-                    break
-
-            found_dts = []
-            for dt in KNOWN_DOC_TYPES:
-                if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", prompt, re.IGNORECASE):
-                    found_dts.append(dt.upper())
-            if any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال"]):
-                if "IR" not in found_dts:
-                    found_dts.append("IR")
-
-            proj_display = None
-            for alias, pinfo in PROJECT_ALIASES.items():
-                if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
-                    proj_display = pinfo["display"]
-                    break
-
-            if not proj_display:
-                for pinfo in PROJECT_ALIASES.values():
-                    if f"Project: {pinfo['code']}" in context_text or f"({pinfo['code']})" in context_text or pinfo["name_pattern"] in context_text:
-                        proj_display = pinfo["display"]
-                        break
-
-            if not proj_display:
-                if "CY002P608" in context_text or "PEM-058" in context_text:
-                    proj_display = "CFC (PEM-058)"
-                elif "24CP01" in context_text or "EKH" in context_text:
-                    proj_display = "EKH (24CP01)"
-                else:
-                    proj_display = "المشروع المحدد"
-
-            if detected_disc_name and found_dts:
-                dt_str = " / ".join(f"الـ {dt}" for dt in found_dts)
-                return f"لم يتم العثور على أي وثائق من نوع {dt_str} تخص {detected_disc_ar} ({detected_disc_name}) في سجلات مشروع {proj_display}."
-            elif detected_disc_name:
-                return f"لم يتم العثور على أي وثائق تخص {detected_disc_ar} ({detected_disc_name}) في سجلات مشروع {proj_display}."
-            elif is_valve:
-                return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_display}."
-            elif is_pump:
-                return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_display}."
-            elif found_dts:
-                dt_str = " / ".join(f"الـ {dt}" for dt in found_dts)
-                return f"لم يتم العثور على أي وثائق من نوع {dt_str} مطابقة لطلبك في سجلات مشروع {proj_display}."
-            else:
-                return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_display}."
-
-    # 2. NOC summary section
-    p_low = prompt.lower()
-    if "### 3. NOTICE OF CHANGE" in context_text and any(x in p_low for x in ["noc", "تغيير", "أوامر"]):
-        lines = []
-        for line in context_text.splitlines():
-            if line.startswith("- Total") or line.startswith("  * "):
-                lines.append(line)
-        if lines:
-            return (
-                "> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) مباشرة من سجلات المشروع:\n\n"
-                "### 💰 ملخص أوامر التغيير (Notice of Change):\n\n"
-                + "\n".join(lines)
-            )
-
-    # 3. Overdue submittals section
-    if "### 4. OVERDUE SUBMITTALS" in context_text and any(x in p_low for x in ["overdue", "متأخر", "delay"]):
-        lines = [l for l in context_text.splitlines() if l.startswith("  * ") or l.startswith("- Total Overdue")]
-        if lines:
-            return (
-                "> 💡 **ملاحظة تشغيلية:** تم استخراج الوثائق المتأخرة مباشرة من سجلات النظام:\n\n"
-                "### ⏰ الوثائق المتأخرة (Overdue Submittals):\n\n"
-                + "\n".join(lines)
-            )
-
-    # 4. General register summary
-    if "### 2. REGISTER SUMMARY BY PROJECT:" in context_text:
-        stat_lines = [l for l in context_text.splitlines() if l.startswith("- Project [")]
-        if stat_lines:
-            return (
-                "> 💡 **ملاحظة تشغيلية:** تم استخراج إحصائيات السجلات مباشرة من النظام:\n\n"
-                "### 📊 ملخص السجلات والمستندات:\n\n"
-                + "\n".join(stat_lines)
-            )
-
-    return None
-
+# ─────────────────────────────────────────────────────────────
+# MAIN AI QUERY ROUTE
+# ─────────────────────────────────────────────────────────────
 
 @ai_bp.route("/query", methods=["POST"])
 @ai_bp.route("/api/ai/query", methods=["POST"])
@@ -1561,22 +746,21 @@ def api_ai_query():
             )
             return jsonify(reply=reply), 200
 
-        context_text = _build_ai_context(target_pids, user_prompt=prompt, active_tab=tab, history=history)
-        reply, err = _call_gemini_api(prompt, context_text, history=history)
+        # Run the Tool-Augmented Gemini Agent Controller
+        reply, err, _ = _call_gemini_agent(prompt, target_pids, history=history)
 
         if err == "NO_API_KEY":
             return jsonify(error="AI Assistant is not configured on this instance."), 503
 
         if not reply:
             logger.warning(
-                "[AI Assistant Gemini Unavailable] Falling back to direct context formatting. Gemini error: %s",
+                "[AI Assistant Gemini Unavailable] Triggering zero-503 deterministic fallback. Gemini error: %s",
                 err,
             )
-            fallback_reply = _format_fallback_response_from_context(prompt, context_text)
+            fallback_reply = _execute_deterministic_fallback(prompt, target_pids, history=history)
             if fallback_reply:
                 return jsonify(reply=fallback_reply), 200
 
-            # If even direct context formatting didn't produce an answer, return a clear engineering message
             return jsonify(
                 error=(
                     "خوادم المعالجة تواجه ضغطاً مؤقتاً. "

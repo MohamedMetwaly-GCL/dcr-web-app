@@ -123,6 +123,11 @@ CREATE TABLE IF NOT EXISTS records (
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_records_proj_dt ON records(project_id, dt_id);
+CREATE INDEX IF NOT EXISTS idx_records_docno ON records ((data->>'docNo'));
+CREATE INDEX IF NOT EXISTS idx_records_status ON records ((data->>'status'));
+CREATE INDEX IF NOT EXISTS idx_records_discipline ON records ((data->>'discipline'));
+CREATE INDEX IF NOT EXISTS idx_records_issued_date ON records ((data->>'issuedDate'));
+CREATE INDEX IF NOT EXISTS idx_records_data_gin ON records USING GIN (data);
 CREATE TABLE IF NOT EXISTS pr_items (
     id          TEXT PRIMARY KEY,
     record_id   TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
