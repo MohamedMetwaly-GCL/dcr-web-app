@@ -58,8 +58,8 @@ DISCIPLINE_SYNONYMS = {
 }
 
 EQUIPMENT_KEYWORDS = {
-    "valve": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محبس", "محابس", "صمام", "صمامات"],
-    "valves": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "محبس", "محابس", "صمام", "صمامات"],
+    "valve": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "zcv", "محبس", "محابس", "صمام", "صمامات"],
+    "valves": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "zcv", "محبس", "محابس", "صمام", "صمامات"],
     "pump": ["pump", "pumps", "طلمبة", "طلمبات", "مضخة", "مضخات"],
     "pumps": ["pump", "pumps", "طلمبة", "طلمبات", "مضخة", "مضخات"],
     "chiller": ["chiller", "chillers", "cooling", "hvac", "تكييف", "مبرد", "مبردات"],
@@ -73,6 +73,47 @@ EQUIPMENT_KEYWORDS = {
 }
 
 KEYWORD_SYNONYMS = EQUIPMENT_KEYWORDS
+
+
+def _normalize_arabic(text: str) -> str:
+    """Normalizes Arabic letters and strips diacritics/tashkeel."""
+    if not text:
+        return ""
+    t = str(text).strip().lower()
+    t = re.sub(r"[إأآا]", "ا", t)
+    t = re.sub(r"ة", "ه", t)
+    t = re.sub(r"ى", "ي", t)
+    t = re.sub(r"[\u064B-\u0652]", "", t)
+    return t
+
+
+def _expand_keyword_synonyms(keyword_str: str) -> list:
+    """Normalizes Arabic/English keywords, strips Arabic prefixes, and expands to synonyms."""
+    if not keyword_str:
+        return []
+    kw_raw = str(keyword_str).strip().lower()
+    kw_norm = _normalize_arabic(kw_raw)
+
+    candidate_stems = {kw_raw, kw_norm}
+    for prefix in ("وال", "فال", "بال", "كال", "لل", "ال", "و", "ف", "ب", "ل"):
+        if kw_norm.startswith(prefix) and len(kw_norm) > len(prefix) + 2:
+            candidate_stems.add(kw_norm[len(prefix):])
+        if kw_raw.startswith(prefix) and len(kw_raw) > len(prefix) + 2:
+            candidate_stems.add(kw_raw[len(prefix):])
+
+    for ek, eterms in EQUIPMENT_KEYWORDS.items():
+        norm_eterms = {_normalize_arabic(t) for t in eterms}
+        norm_eterms.update(eterms)
+        if any(stem in norm_eterms or stem in eterms for stem in candidate_stems):
+            return eterms
+        for stem in candidate_stems:
+            if len(stem) >= 3 and any(stem in net or net in stem for net in norm_eterms):
+                return eterms
+        if ek in kw_raw or any(ek in stem for stem in candidate_stems):
+            return eterms
+
+    return [kw_raw]
+
 
 
 def _safe_float(val):
@@ -503,12 +544,7 @@ def search_submittals(
 
     # 5. Keyword Condition (with Equipment Stems)
     if keyword:
-        kw_clean = str(keyword).strip().lower()
-        synonyms = [kw_clean]
-        for ek, eterms in EQUIPMENT_KEYWORDS.items():
-            if kw_clean in eterms or ek in kw_clean:
-                synonyms = eterms
-                break
+        synonyms = _expand_keyword_synonyms(keyword)
 
         kw_patterns = [f"%{term}%" for term in synonyms]
         sub_clauses = []
@@ -657,44 +693,12 @@ def search_submittals(
                 code_val = r_pid
         r["project_code"] = code_val
 
-    # Cross-document type fallback: if specific doc_type returned 0 records,
-    # find whether matching equipment/material exists under other document types (e.g. NOC, IR, SD)
-    related_other_types = []
-    if not records and doc_type and (keyword or discipline):
-        try:
-            alt_res = search_submittals(
-                allowed_project_ids=allowed_project_ids,
-                project_code=project_code,
-                doc_type=None,
-                discipline=discipline,
-                trade=trade,
-                keyword=keyword,
-                status=status,
-                latest_revision_only=latest_revision_only,
-                limit=limit,
-            )
-            related_other_types = [
-                r for r in alt_res.get("records", [])
-                if (r.get("doc_type") or "").upper() != str(doc_type).upper()
-            ]
-        except Exception as e:
-            logger.warning("Error searching related other types: %s", e)
-            related_other_types = []
-
-    res_payload = {
+    return {
         "project_display_name": project_display,
         "project_scope": [project_display],
         "count": len(records),
         "records": records,
     }
-    if related_other_types:
-        res_payload["related_other_types"] = related_other_types
-        res_payload["message"] = (
-            f"No {doc_type} submittals found for '{keyword or discipline}', "
-            f"but found {len(related_other_types)} related records under other document types."
-        )
-
-    return res_payload
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1021,7 +1025,7 @@ def get_noc_financials(
         "approved_count": len(approved_items),
         "pending_count": len(pending_items),
         "rejected_count": len(rejected_items),
-        "by_project": list(by_project_map.values()),
+        "by_project": [p for p in by_project_map.values() if p.get("total_count", 0) > 0],
         "items": all_items[:50],
     }
 

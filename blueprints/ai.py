@@ -46,9 +46,11 @@ SYSTEM_INSTRUCTION = (
     "disciplines (Architecture, Electrical, Mechanical, Civil, Structural), or document types, always call search_submittals.\n"
     "2. When the user asks about KPIs, overall project totals, or register summary, call get_project_summary.\n"
     "3. When the user asks about costs, variations, or NOC totals, call get_noc_financials. "
-    "CRITICAL RULE FOR MULTI-PROJECT NOC QUERIES: If the query spans multiple projects (or all projects), "
+    "CRITICAL RULES FOR NOC QUERIES: If the query spans multiple projects (or all projects), "
     "you MUST display a structured Markdown table breaking down metrics for EACH project individually (from the 'by_project' list in tool result) "
     "with columns: | Project | Total NOCs | Submitted Cost (EGP) | Approved Cost (EGP) | Approved Orders | Pending Orders | BEFORE stating the Grand Total.\n"
+    "- In the per-project table, ONLY include projects that have at least 1 NOC (total_count > 0). Do NOT show projects with 0 NOCs.\n"
+    "- Do NOT output individual NOC item listings or 'Approved NOC Items' at the bottom of the summary unless the user explicitly requests an itemized list of individual NOCs. Keep the summary focused on project-level financial metrics.\n"
     "4. When the user asks about delayed or overdue submittals, call get_overdue_submittals.\n"
     "5. When the user asks about revisions or approval history of a specific document number, call get_document_history.\n"
     "6. When presenting records, format them in a clean Markdown table with columns: "
@@ -63,10 +65,8 @@ SYSTEM_INSTRUCTION = (
     "9. CRITICAL FOR GLOBAL QUERIES: If the user asks about documents, totals, KPIs, or costs across all projects or registers "
     "(e.g. 'across the project registers', 'all projects', 'كل المشاريع', 'إجمالي المشاريع', or asks for overall summaries without naming a project), "
     "you MUST pass project_code=None (or omit project_code). DO NOT carry over or recall a project code from previous conversation turns.\n"
-    "10. CROSS-REFERENCING WHEN ZERO RESULTS: If searching for specific equipment or material (e.g. valves / محابس) under a specific document type (e.g. MS) "
-    "yields 0 records, inspect 'related_other_types' in the search_submittals result. If related approved records exist under other types (such as NOC or IR), "
-    "you MUST inform the user clearly: explain that no MS records exist, but show the related approved documents in a Markdown table. "
-    "NEVER claim that no records exist at all if related records are present in other registers!\n"
+    "10. STRICT DOCUMENT TYPE ENFORCEMENT: When the user specifies a document type (e.g. 'MS', 'SD', 'IR', 'NOC'), you MUST strictly search for that document type only (doc_type='MS'). If 0 records are found for that document type, report that no matching records of that document type were found. NEVER substitute or return records from other document types (such as NOC or IR) when a specific document type was requested. "
+    "Conversely, if the user does NOT specify a document type (e.g., 'شوفلي المحابس المعتمدة في مشروع CFC' or 'What approved valves are in CFC?'), omit doc_type (doc_type=None) so the tool searches across ALL registers and returns matching records from all document types.\n"
     "11. BILINGUAL ACCURACY & BIDIRECTIONAL (BiDi) FORMATTING: If the user writes in Arabic, respond in professional Arabic engineering language. "
     "If in English, respond in English. When responding in Arabic, always format document numbers, project codes, and English acronyms "
     "in backticks (e.g. `PEM-058`, `MS-CY002P608-00019`, `Valves`) so bidirectional text displays in correct natural word order.\n"
@@ -95,7 +95,7 @@ search_submittals_declaration = types.FunctionDeclaration(
             ),
             "doc_type": types.Schema(
                 type=types.Type.STRING,
-                description="Document type code: 'MS' (Material Submittal), 'SD' (Shop Drawing), 'IR' (Work/Inspection Request), 'MIR' (Material Inspection Request), 'RFI' (Request for Information), 'QS' (Quantity Surveying), 'NOC' (Notice of Change).",
+                description="Document type code: 'MS' (Material Submittal), 'SD' (Shop Drawing), 'IR' (Work/Inspection Request), 'MIR' (Material Inspection Request), 'RFI' (Request for Information), 'QS' (Quantity Surveying), 'NOC' (Notice of Change). Pass None or omit if user did not specify a document type to search across all registers.",
             ),
             "discipline": types.Schema(
                 type=types.Type.STRING,
@@ -107,7 +107,7 @@ search_submittals_declaration = types.FunctionDeclaration(
             ),
             "keyword": types.Schema(
                 type=types.Type.STRING,
-                description="Equipment, material, or keyword to search for, e.g. 'valve', 'pump', 'duct', 'chiller', 'pipe', 'cable', 'transformer', 'switchgear'.",
+                description="Equipment, material, or keyword to search for (e.g. 'valve', 'pump', 'duct', 'chiller', 'pipe', 'cable', 'transformer', 'switchgear'). Always translate Arabic equipment terms to English keywords (e.g. 'محابس'/'المحابس' -> 'valve', 'طلمبات'/'مضخات' -> 'pump', 'كابلات' -> 'cable').",
             ),
             "status": types.Schema(
                 type=types.Type.STRING,
@@ -538,11 +538,27 @@ def _execute_deterministic_fallback(
             detected_disc = disc_k.capitalize()
             break
 
-    # 4. Keyword Detection
+    # 4. Keyword Detection (with Arabic prefix stripping and normalization)
     detected_keyword = None
+    p_norm = ai_tools._normalize_arabic(p_low)
     for kw_key, syns in ai_tools.EQUIPMENT_KEYWORDS.items():
-        if any(s in p_low for s in syns):
+        norm_syns = {ai_tools._normalize_arabic(s) for s in syns}
+        norm_syns.update(syns)
+        if any(s in p_low or s in p_norm for s in norm_syns):
             detected_keyword = kw_key
+            break
+        matched_kw = False
+        for token in re.findall(r"\w+", p_norm):
+            for pfx in ("وال", "فال", "بال", "كال", "لل", "ال", "و", "ف", "ب", "ل"):
+                if token.startswith(pfx) and len(token) > len(pfx) + 2:
+                    stem = token[len(pfx):]
+                    if stem in norm_syns:
+                        detected_keyword = kw_key
+                        matched_kw = True
+                        break
+            if matched_kw:
+                break
+        if detected_keyword:
             break
 
     # 5. Status Detection
@@ -569,11 +585,13 @@ def _execute_deterministic_fallback(
         proj_title = fin.get("project_display_name") or (fin.get("project_scope")[0] if fin.get("project_scope") else None) or "All Projects"
         by_project = fin.get("by_project") or []
 
-        # Build per-project table rows if multiple projects are present or global query
+        # Build per-project table rows if multiple projects are present or global query (exclude 0-count projects)
         by_proj_rows = []
         for p in by_project:
-            p_name = p.get("project_name") or p.get("project_code")
             p_cnt = p.get("total_count", 0)
+            if p_cnt <= 0:
+                continue
+            p_name = p.get("project_name") or p.get("project_code")
             p_sub = p.get("total_submitted_cost", 0.0)
             p_app = p.get("total_approved_cost", 0.0)
             p_app_cnt = p.get("approved_count", 0)
@@ -581,17 +599,6 @@ def _execute_deterministic_fallback(
             by_proj_rows.append(
                 f"| **{p_name}** | {p_cnt} | {p_sub:,.2f} EGP | {p_app:,.2f} EGP | {p_app_cnt} | {p_pend_cnt} |"
             )
-
-        items_str = ""
-        if fin.get("items"):
-            app_items = [it for it in fin["items"] if "approv" in str(it.get("status", "")).lower() or "part c" in str(it.get("status", "")).lower()]
-            if app_items:
-                if is_english:
-                    item_rows = [f"- **`{it.get('doc_no')}`** (`{it.get('project_code')}`): {it.get('subject', '—')} | Approved: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
-                    items_str = "\n\n**Approved NOC Items:**\n" + "\n".join(item_rows)
-                else:
-                    item_rows = [f"- **`{it.get('doc_no')}`** (`{it.get('project_code')}`): {it.get('subject', '—')} | القيمة المعتمدة: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
-                    items_str = "\n\n**تفاصيل الأوامر المعتمدة:**\n" + "\n".join(item_rows)
 
         if is_english:
             project_breakdown = ""
@@ -614,7 +621,6 @@ def _execute_deterministic_fallback(
                 f"- **Approved Orders:** {fin.get('approved_count', 0)}\n"
                 f"- **Under Review / Pending Orders:** {fin.get('pending_count', 0)}\n"
                 f"- **Rejected / Cancelled Orders:** {fin.get('rejected_count', 0)}"
-                + items_str
             )
         else:
             project_breakdown = ""
@@ -637,7 +643,6 @@ def _execute_deterministic_fallback(
                 f"- **الأوامر المعتمدة:** {fin.get('approved_count', 0)}\n"
                 f"- **الأوامر قيد المراجعة:** {fin.get('pending_count', 0)}\n"
                 f"- **الأوامر المرفوضة:** {fin.get('rejected_count', 0)}"
-                + items_str
             )
 
     # ── CASE 2: Overdue Submittals Query ──────────────────────
@@ -730,21 +735,6 @@ def _execute_deterministic_fallback(
     )
     records = search_res.get("records", [])
 
-    # If 0 records found for a specific doc type, check if equipment exists under other types (e.g. NOC or IR)
-    alt_records = search_res.get("related_other_types") or []
-    if not records and detected_keyword and detected_dt and not alt_records:
-        try:
-            alt_res = ai_tools.search_submittals(
-                allowed_project_ids=allowed_project_ids,
-                project_code=matched_proj_code,
-                doc_type=None,
-                keyword=detected_keyword,
-                limit=10,
-            )
-            alt_records = [r for r in alt_res.get("records", []) if (r.get("doc_type") or "").upper() != detected_dt]
-        except Exception:
-            alt_records = []
-
     # Format header description
     dt_label = f"الـ {detected_dt}" if detected_dt else "المشروع"
     disc_label = f" الخاصة بـ {detected_disc}" if detected_disc else ""
@@ -752,33 +742,6 @@ def _execute_deterministic_fallback(
     appr_label = " المعتمدة" if detected_status == "approved" else ""
 
     if not records:
-        if alt_records:
-            alt_rows = []
-            for r in alt_records:
-                st_clean = r.get("status") or "Pending"
-                st_badge = f"✅ **{st_clean}**" if "approv" in st_clean.lower() or "status a" in st_clean.lower() or "status b" in st_clean.lower() else st_clean
-                alt_rows.append(
-                    f"| `{r.get('doc_no')}` | {r.get('title', '—')} | `{r.get('doc_type', '—')}` | {st_badge} | {r.get('doc_date', '—')} | `{r.get('project_code', '')}` |"
-                )
-            if is_english:
-                return (
-                    f"No **{detected_dt}** submittals were found for `{detected_keyword or 'requested items'}` in project {proj_title}.\n\n"
-                    f"💡 **However, found {len(alt_records)} approved/related records under other document types:**\n\n"
-                    "| Document No | Title / Description | Type | Status | Date | Project |\n"
-                    "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
-                    + "\n".join(alt_rows)
-                    + "\n\n📌 *All records retrieved directly from verified project register database.*"
-                )
-            else:
-                return (
-                    f"لم يتم العثور على أي اعتمادات من نوع الـ **{detected_dt}** تخص `{detected_keyword or 'العناصر المطلوبة'}` في سجلات مشروع {proj_title}.\n\n"
-                    f"💡 **ولكن تم العثور على {len(alt_records)} وثيقة معتمدة ومطابقة تحت أنواع مستندات أخرى في نفس المشروع:**\n\n"
-                    "| رقم الوثيقة | الوصف / العنوان | النوع | الحالة | التاريخ | المشروع |\n"
-                    "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
-                    + "\n".join(alt_rows)
-                    + "\n\n📌 *البيانات أعلاه مستخرجة ومطابقة 100% لسجلات النظام الرسمية.*"
-                )
-
         if is_english:
             if detected_keyword == "valve":
                 return f"No approved submittals for valves were found in project {proj_title}."
