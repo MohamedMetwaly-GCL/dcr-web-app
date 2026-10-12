@@ -284,7 +284,7 @@ def _call_gemini_agent(prompt: str, allowed_project_ids: list, history: list = N
         max_output_tokens=1500,
     )
 
-    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-pro"]
+    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
     last_err = None
 
     for model_name in models_to_try:
@@ -330,9 +330,10 @@ def _call_gemini_agent(prompt: str, allowed_project_ids: list, history: list = N
                 )
 
             # Step C: Send tool execution results back to model to synthesize final Markdown
+            # In the Google GenAI SDK, function responses MUST be supplied with role='tool'
             model_turn = candidates[0].content
-            user_tool_turn = types.Content(role="user", parts=func_response_parts)
-            follow_up_contents = list(contents) + [model_turn, user_tool_turn]
+            tool_turn = types.Content(role="tool", parts=func_response_parts)
+            follow_up_contents = list(contents) + [model_turn, tool_turn]
 
             follow_up_resp = client.models.generate_content(
                 model=clean_model,
@@ -700,7 +701,7 @@ def _call_gemini_api(prompt, context_text="", custom_instruction=None, history=N
 
     try:
         resp = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,

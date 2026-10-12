@@ -241,7 +241,12 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIn("14 محبس معتمد", reply)
             self.assertEqual(len(tool_results), 1)
             self.assertEqual(tool_results[0]["name"], "search_submittals")
-        print("PASS: Multi-turn Agent tool calling and response synthesis verified.")
+            # Verify that Gemini tool response was sent with role='tool' (not 'user')
+            call2_kwargs = client_inst.models.generate_content.call_args_list[1].kwargs
+            follow_up_contents = call2_kwargs.get("contents", [])
+            tool_turns = [c for c in follow_up_contents if getattr(c, "role", "") == "tool"]
+            self.assertEqual(len(tool_turns), 1, "Function response turn MUST have role='tool'")
+        print("PASS: Multi-turn Agent tool calling and response synthesis verified with role='tool'.")
 
     def test_12_successful_query_returns_reply(self):
         """End-to-end endpoint call with mocked Agent returns markdown reply."""

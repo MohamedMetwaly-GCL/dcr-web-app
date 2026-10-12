@@ -424,19 +424,35 @@ def search_submittals(
         if disc_patterns:
             sub_clauses = []
             disc_params = []
-            for field in ("r.data->>'discipline'", "r.data->>'trade'", "r.data->>'subTrade'", "r.data->>'title'"):
+            for field in (
+                "COALESCE(r.data->>'discipline', r.data->>'Discipline', '')",
+                "COALESCE(r.data->>'trade', r.data->>'Trade', '')",
+                "COALESCE(r.data->>'subTrade', r.data->>'sub_trade', r.data->>'SubTrade', '')",
+                "r.data->>'title'",
+            ):
                 field_or = " OR ".join([f"{field} ILIKE %s"] * len(disc_patterns))
                 sub_clauses.append(f"({field_or})")
                 disc_params.extend(disc_patterns)
             where_clauses.append(f"({' OR '.join(sub_clauses)})")
             params.extend(disc_params)
 
+            # Strict isolation: if a specific discipline was requested, ensure conflicting disciplines in discipline/trade columns are strictly excluded!
+            conflicting_disciplines = []
+            for ok, oterms in DISCIPLINE_SYNONYMS.items():
+                if ok != detected_disc_key:
+                    conflicting_disciplines.extend([t for t in oterms if len(t) >= 4])
+            if conflicting_disciplines:
+                disc_col_expr = "COALESCE(r.data->>'discipline', r.data->>'Discipline', r.data->>'trade', r.data->>'Trade', '')"
+                not_or = " AND ".join([f"{disc_col_expr} NOT ILIKE %s"] * len(conflicting_disciplines))
+                where_clauses.append(f"({not_or})")
+                params.extend([f"%{t}%" for t in conflicting_disciplines])
+
     # 4. Trade Condition
     if trade:
         tr_val = f"%{str(trade).strip()}%"
         where_clauses.append("""(
-            r.data->>'trade' ILIKE %s
-            OR r.data->>'subTrade' ILIKE %s
+            COALESCE(r.data->>'trade', r.data->>'Trade', '') ILIKE %s
+            OR COALESCE(r.data->>'subTrade', r.data->>'sub_trade', '') ILIKE %s
             OR r.data->>'title' ILIKE %s
         )""")
         params.extend([tr_val, tr_val, tr_val])
@@ -471,7 +487,7 @@ def search_submittals(
         elif "pend" in st_clean:
             patterns = ["%Pending%", "%Under Review%", "%Submitted%", "%قيد المراجعة%"]
         if patterns:
-            expr = "COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '')"
+            expr = "COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', r.data->>'partDStatus', '')"
             st_or = " OR ".join([f"{expr} ILIKE %s"] * len(patterns))
             where_clauses.append(f"({st_or})")
             params.extend(patterns)
@@ -515,12 +531,12 @@ def search_submittals(
             ) AS doc_type,
             COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
             COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
-            COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
-            COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS doc_date,
+            COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
+            COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'IssuedDate', r.data->>'partAIssueDate', '') AS doc_date,
             COALESCE(r.data->>'brand', '') AS brand,
-            COALESCE(r.data->>'discipline', '') AS discipline,
-            COALESCE(r.data->>'trade', '') AS trade,
-            COALESCE(r.data->>'subTrade', '') AS sub_trade
+            COALESCE(r.data->>'discipline', r.data->>'Discipline', '') AS discipline,
+            COALESCE(r.data->>'trade', r.data->>'Trade', '') AS trade,
+            COALESCE(r.data->>'subTrade', r.data->>'sub_trade', r.data->>'SubTrade', '') AS sub_trade
         FROM records r
         WHERE {' AND '.join(where_clauses)}
         ORDER BY {', '.join(order_clauses)}
@@ -551,8 +567,12 @@ def search_submittals(
         filtered = []
         for r in rows:
             rec_disc = str(r.get("discipline") or "").strip().lower()
+            rec_trade = str(r.get("trade") or "").strip().lower()
             if rec_disc and any(ct in rec_disc for ct in conflicting_terms):
                 if not any(dt in rec_disc for dt in disc_terms):
+                    continue
+            if rec_trade and any(ct in rec_trade for ct in conflicting_terms):
+                if not any(dt in rec_trade for dt in disc_terms):
                     continue
             filtered.append(r)
         rows = filtered
@@ -929,18 +949,18 @@ def get_overdue_submittals(
                     r.data,
                     COALESCE(r.data->>'docNo', r.data->>'nocNo', '—') as "docNo",
                     COALESCE(r.data->>'title', r.data->>'nocSubject', '') as title,
-                    COALESCE(r.data->>'discipline', '') as discipline,
-                    COALESCE(r.data->>'issuedDate', r.data->>'partAIssueDate', '') as "issuedDate",
-                    COALESCE(r.data->>'expectedReply', r.data->>'expectedReplyDate', '') as "expected_reply"
+                    COALESCE(r.data->>'discipline', r.data->>'Discipline', '') as discipline,
+                    COALESCE(r.data->>'issuedDate', r.data->>'IssuedDate', r.data->>'partAIssueDate', '') as "issuedDate",
+                    COALESCE(r.data->>'expectedReply', r.data->>'expectedReplyDate', r.data->>'ExpectedReply', '') as "expected_reply"
                 FROM records r
                 LEFT JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id OR p.name = r.project_id)
                 LEFT JOIN doc_types dt ON (dt.id = r.dt_id AND (dt.project_id = r.project_id OR {dt_p_clause}))
                 WHERE {p_clause}
                   AND (
-                      COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Pend%'
-                      OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Under Review%'
-                      OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Submitted%'
-                      OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') = ''
+                      COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%Pend%'
+                      OR COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%Under Review%'
+                      OR COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%Submitted%'
+                      OR COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') = ''
                       OR r.data->>'status' IS NULL
                   )
             """, dt_p_params + p_params)
@@ -1068,11 +1088,11 @@ def get_document_history(
             "record_id": r.get("id"),
             "doc_no": doc_no,
             "rev_num": rev_num,
-            "status": str(d.get("status") or d.get("partBStatus") or d.get("partDStatus") or "Pending"),
-            "issued_date": str(d.get("issuedDate") or d.get("partAIssueDate") or ""),
-            "reply_date": str(d.get("actualReplyDate") or d.get("actualReply") or ""),
+            "status": str(d.get("status") or d.get("Status") or d.get("partBStatus") or d.get("partDStatus") or "Pending"),
+            "issued_date": str(d.get("issuedDate") or d.get("IssuedDate") or d.get("partAIssueDate") or ""),
+            "reply_date": str(d.get("actualReplyDate") or d.get("actualReply") or d.get("ActualReply") or ""),
             "title": str(d.get("title") or d.get("nocSubject") or ""),
-            "discipline": str(d.get("discipline") or ""),
+            "discipline": str(d.get("discipline") or d.get("Discipline") or ""),
             "project_code": p_code,
         })
 
