@@ -1940,7 +1940,7 @@ function _renderSimpleMarkdown(md) {
   });
 
   // Inline code: `code`
-  txt = txt.replace(/`([^`]+)`/g, '<code>$1</code>');
+  txt = txt.replace(/`([^`]+)`/g, '<code dir="auto">$1</code>');
 
   // Bold: **text**
   txt = txt.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -1973,15 +1973,15 @@ function _renderSimpleMarkdown(md) {
       }
       if (line.startsWith('&gt; ') || line.startsWith('> ')) {
         const qContent = line.replace(/^(&gt;|>)\s*/, '');
-        out.push('<blockquote class="ai-blockquote">' + qContent + '</blockquote>');
+        out.push('<blockquote class="ai-blockquote" dir="auto">' + qContent + '</blockquote>');
       } else if (line.startsWith('### ')) {
-        out.push('<h4>' + line.slice(4) + '</h4>');
+        out.push('<h4 dir="auto">' + line.slice(4) + '</h4>');
       } else if (line.startsWith('## ')) {
-        out.push('<h3>' + line.slice(3) + '</h3>');
+        out.push('<h3 dir="auto">' + line.slice(3) + '</h3>');
       } else if (line.startsWith('- ') || line.startsWith('* ')) {
-        out.push('<li>' + line.slice(2) + '</li>');
+        out.push('<li dir="auto">' + line.slice(2) + '</li>');
       } else if (line.length > 0) {
-        out.push('<p>' + line + '</p>');
+        out.push('<p dir="auto">' + line + '</p>');
       }
     }
   }
@@ -2001,11 +2001,11 @@ function _buildHtmlTable(rows) {
   if (!rows || !rows.length) return '';
   let html = '<table>';
   html += '<thead><tr>';
-  rows[0].forEach(h => { html += '<th>' + h + '</th>'; });
+  rows[0].forEach(h => { html += '<th dir="auto">' + h + '</th>'; });
   html += '</tr></thead><tbody>';
   for (let r = 1; r < rows.length; r++) {
     html += '<tr>';
-    rows[r].forEach(cell => { html += '<td>' + cell + '</td>'; });
+    rows[r].forEach(cell => { html += '<td dir="auto">' + cell + '</td>'; });
     html += '</tr>';
   }
   html += '</tbody></table>';
@@ -2192,8 +2192,11 @@ async function sendAiPrompt(promptText) {
       body: JSON.stringify({
         prompt: text,
         project_id: pid || null,
-        tab: activeTab || null,
-        history: (_aiAssistantState.messages || []).slice(0, -1).slice(-6).map(m => ({ role: m.role, text: m.text }))
+        history: (_aiAssistantState.messages || [])
+          .slice(0, -1)
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .slice(-8)
+          .map(m => ({ role: m.role === 'assistant' ? 'model' : m.role, text: m.text }))
       }),
       signal: controller.signal
     });

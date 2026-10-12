@@ -31,10 +31,22 @@ PROJECT_ALIASES = {
     "pem-058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
     "pem058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
     "058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+    "سي اف سي": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+    "كايرو فيستيفال": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
     "ekh": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
     "24cp01": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
+    "اي كيه اتش": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
+    "إي كيه إتش": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
     "assiut": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
+    "pem-045": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
+    "045": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
+    "أسيوط": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
+    "اسيوط": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
     "suez": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
+    "pem-044": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
+    "044": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
+    "السويس": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
+    "سويس": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
 }
 
 DISCIPLINE_SYNONYMS = {
@@ -216,18 +228,50 @@ def _resolve_project_aliases(cursor_or_project, requested_project=None, allowed_
             valid_aliases.add("24CP01")
             valid_aliases.add("EKH")
 
+    has_assiut_permission = (
+        "PEM-045" in clean_allowed_upper
+        or "ASSIUT" in clean_allowed_upper
+        or any("045" in p for p in clean_allowed)
+        or any("ASSIUT" in p.upper() for p in clean_allowed)
+    )
+    if has_assiut_permission:
+        if not req_clean or req_clean in ("all", "*") or (
+            matched_alias_info and matched_alias_info["code"] == "PEM-045"
+        ) or any(k in req_clean for k in ["assiut", "pem-045", "045", "أسيوط", "اسيوط"]):
+            valid_aliases.add("PEM-045")
+            valid_aliases.add("Assiut")
+
+    has_suez_permission = (
+        "PEM-044" in clean_allowed_upper
+        or "SUEZ" in clean_allowed_upper
+        or any("044" in p for p in clean_allowed)
+        or any("SUEZ" in p.upper() for p in clean_allowed)
+    )
+    if has_suez_permission:
+        if not req_clean or req_clean in ("all", "*") or (
+            matched_alias_info and matched_alias_info["code"] == "PEM-044"
+        ) or any(k in req_clean for k in ["suez", "pem-044", "044", "السويس", "سويس"]):
+            valid_aliases.add("PEM-044")
+            valid_aliases.add("Suez")
+
     # Fallback: if no DB rows returned (e.g. offline/mock tests)
     if not valid_aliases:
         if not req_clean or req_clean in ("all", "*"):
             valid_aliases.update(clean_allowed)
         elif any(req_clean == a.lower() for a in clean_allowed):
             valid_aliases.add(req_clean)
-            if req_clean in ("pem-058", "cfc", "pem058", "058"):
+            if req_clean in ("pem-058", "cfc", "pem058", "058", "سي اف سي", "كايرو فيستيفال"):
                 valid_aliases.add("CFC DCP PH-2A")
                 valid_aliases.add("PEM-058")
-            elif req_clean in ("24cp01", "ekh"):
+            elif req_clean in ("24cp01", "ekh", "اي كيه اتش", "إي كيه إتش"):
                 valid_aliases.add("24CP01")
                 valid_aliases.add("EKH")
+            elif req_clean in ("pem-045", "assiut", "045", "أسيوط", "اسيوط"):
+                valid_aliases.add("PEM-045")
+                valid_aliases.add("Assiut")
+            elif req_clean in ("pem-044", "suez", "044", "السويس", "سويس"):
+                valid_aliases.add("PEM-044")
+                valid_aliases.add("Suez")
 
     return list(valid_aliases)
 
@@ -469,7 +513,17 @@ def search_submittals(
         kw_patterns = [f"%{term}%" for term in synonyms]
         sub_clauses = []
         kw_p_list = []
-        for field in ("r.data->>'title'", "r.data->>'docNo'", "r.data->>'description'", "r.data->>'brand'", "r.data->>'itemRef'"):
+        for field in (
+            "r.data->>'title'",
+            "r.data->>'subject'",
+            "r.data->>'nocSubject'",
+            "r.data->>'docNo'",
+            "r.data->>'description'",
+            "r.data->>'materialDescription'",
+            "r.data->>'workDescription'",
+            "r.data->>'brand'",
+            "r.data->>'itemRef'",
+        ):
             field_or = " OR ".join([f"{field} ILIKE %s"] * len(kw_patterns))
             sub_clauses.append(f"({field_or})")
             kw_p_list.extend(kw_patterns)
@@ -801,7 +855,13 @@ def get_noc_financials(
             SELECT r.project_id, COALESCE(p.code, r.project_id) as proj_code, COALESCE(p.name, r.project_id) as proj_name, r.data
             FROM records r
             LEFT JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id OR p.name = r.project_id)
-            WHERE (UPPER(r.dt_id) = 'NOC' OR r.data->>'docNo' ILIKE 'NOC-%' OR r.data->>'docNo' ILIKE '%-NOC-%')
+            WHERE (
+                UPPER(r.dt_id) = 'NOC' 
+                OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = 'NOC' OR UPPER(name) ILIKE '%%CHANGE%%')
+                OR r.data->>'docNo' ILIKE 'NOC-%%' 
+                OR r.data->>'docNo' ILIKE '%%-NOC-%%'
+                OR r.data->>'nocNo' ILIKE '%%NOC%%'
+            )
               AND {p_clause}
             ORDER BY r.created_at DESC
         """, p_params)
@@ -822,8 +882,8 @@ def get_noc_financials(
         d = row.get("data") or {}
         doc_no = d.get("docNo") or d.get("nocNo") or "NOC"
         subject = d.get("title") or d.get("nocSubject") or d.get("nocDescription") or "No Subject"
-        sub_cost = _safe_float(d.get("submittedCost"))
-        app_cost = _safe_float(d.get("finalApprovedCost"))
+        sub_cost = _safe_float(d.get("submittedCost") or d.get("submitted_cost") or d.get("submittedCostEgp") or d.get("cost"))
+        app_cost = _safe_float(d.get("finalApprovedCost") or d.get("approvedCost") or d.get("approved_cost") or d.get("approvedCostEgp"))
         vo_no = str(d.get("voNo") or "").strip()
         st_val = str(d.get("partDStatus") or d.get("partBStatus") or d.get("status") or "").strip()
         st_low = st_val.lower()

@@ -42,18 +42,29 @@ SYSTEM_INSTRUCTION = (
     "- 'QS': Quantity Surveyor (حصر كميات ومستخلصات).\n"
     "- 'NOC': Notice of Change (أوامر التغيير / مطالبات مالية).\n\n"
     "Guidelines:\n"
-    "1. When the user asks about specific submittals, materials, equipment (valves, pumps, etc.), "
-    "disciplines (Architecture, Electrical, Mechanical), or document types, always call search_submittals.\n"
+    "1. When the user asks about specific submittals, materials, equipment (valves, pumps, chillers, cables, pipes, etc.), "
+    "disciplines (Architecture, Electrical, Mechanical, Civil, Structural), or document types, always call search_submittals.\n"
     "2. When the user asks about KPIs, overall project totals, or register summary, call get_project_summary.\n"
     "3. When the user asks about costs, variations, or NOC totals, call get_noc_financials.\n"
     "4. When the user asks about delayed or overdue submittals, call get_overdue_submittals.\n"
     "5. When the user asks about revisions or approval history of a specific document number, call get_document_history.\n"
     "6. When presenting records, format them in a clean Markdown table with columns: "
     "| Document No | Title / Description | Type | Status | Date | Project |.\n"
-    "7. If the user writes in Arabic, respond in clear, professional Arabic (لغة هندسية احترافية). "
-    "If in English, respond in English.\n"
-    "8. Never fabricate document numbers or approval statuses. Only report data returned by the tools.\n"
-    "9. CRITICAL FOR GLOBAL QUERIES: If the user asks about documents, totals, KPIs, or costs across all projects or registers (e.g. 'across the project registers', 'all projects', 'كل المشاريع', or asks for overall summaries without naming a project), you MUST pass project_code=None (or omit project_code). DO NOT carry over or recall a project code from previous conversation turns when answering a general or global question."
+    "7. MULTI-PROJECT QUERIES & SWITCHING: The user can freely query different projects in the same chat session. "
+    "If the user asks about a specific project (e.g. CFC, PEM-058, EKH, 24CP01, Assiut, PEM-045, Suez, PEM-044), "
+    "immediately switch to that project. Never carry over or force a previous project when a new project is specified.\n"
+    "8. CONVERSATIONAL MEMORY & FOLLOW-UP QUERIES: If the user asks a follow-up question continuing the previous topic "
+    "without specifying a new project (e.g., 'وماذا عن المضخات؟', 'من اعتمدها؟', 'وريني تفاصيلها', 'and what about pumps?', "
+    "'who approved it?'), retain the project, document type, and discipline context from the previous turn.\n"
+    "9. CRITICAL FOR GLOBAL QUERIES: If the user asks about documents, totals, KPIs, or costs across all projects or registers "
+    "(e.g. 'across the project registers', 'all projects', 'كل المشاريع', 'إجمالي المشاريع', or asks for overall summaries without naming a project), "
+    "you MUST pass project_code=None (or omit project_code). DO NOT carry over or recall a project code from previous conversation turns.\n"
+    "10. CROSS-REFERENCING WHEN ZERO RESULTS: If searching for specific equipment or material (e.g. valves) under a specific document type (e.g. MS) "
+    "yields 0 records, verify if the equipment exists under related types (such as NOC or IR) and provide actionable engineering context.\n"
+    "11. BILINGUAL ACCURACY & BIDIRECTIONAL (BiDi) FORMATTING: If the user writes in Arabic, respond in professional Arabic engineering language. "
+    "If in English, respond in English. When responding in Arabic, always format document numbers, project codes, and English acronyms "
+    "in backticks (e.g. `PEM-058`, `MS-CY002P608-00019`, `Valves`) so bidirectional text displays in correct natural word order.\n"
+    "12. Never fabricate document numbers or approval statuses. Only report data returned by the tools."
 )
 
 
@@ -222,13 +233,84 @@ def is_global_prompt(prompt: str) -> bool:
         "المشاريع كلها", "بين المشاريع", "لكل المشاريع", "across projects",
         "all register", "overall", "global", "total approved cost for notice of change",
         "status breakdown of documents", "عبر المشاريع", "في جميع", "في كل", "لكافة المشاريع",
-        "notice of change (nocs)", "approved nocs total", "overdue submittals"
+        "notice of change (nocs)", "approved nocs total", "overdue submittals",
+        "إجمالي المشاريع", "كافة المشاريع", "كل السجلات", "جميع السجلات",
+        "total approved cost", "total cost of nocs", "overall status"
     ]
     return any(indicator in p for indicator in global_indicators)
 
 
+def is_follow_up_prompt(prompt: str) -> bool:
+    """Detects whether a prompt is an explicit continuation or follow-up question."""
+    if not prompt:
+        return False
+    p = str(prompt).lower().strip()
+    follow_up_patterns = [
+        "وماذا عن", "طب و", "ماذا عن", "ونفس المشروع", "المشروع نفسه", "نفسه",
+        "فيه", "منها", "عنها", "تفاصيلها", "تفاصيله", "من اعتمد", "من اعتمده", "تاريخه",
+        "ماذا بالنسبة", "طب وبالنسبة", "طب وفي", "طب في", "طب والمشروع", "والمعتمد",
+        "what about", "how about", "who approved", "details of", "and what about",
+        "same project", "for it", "for them", "of them", "its revisions", "what regarding"
+    ]
+    if any(pat in p for pat in follow_up_patterns):
+        return True
+    words = p.split()
+    if len(words) <= 4 and any(w in p for w in ["و", "طب", "and", "about", "also", "أيضا", "ايضا"]):
+        return True
+    return False
+
+
+def _build_gemini_contents(prompt: str, history: list = None) -> list:
+    """Builds a strictly alternating list of types.Content turns for Google GenAI.
+    Rules:
+    1. Must begin with a 'user' turn. Any leading 'assistant'/'model' messages are dropped.
+    2. Must strictly alternate: user -> model -> user -> model.
+    3. Consecutive turns with the same role are merged into a single turn.
+    4. The current prompt is appended as the final 'user' turn.
+    """
+    import json
+    raw_turns = []
+    if history:
+        for msg in history[-10:]:
+            role = "user" if msg.get("role") == "user" else "model"
+            text = (msg.get("text") or "").strip()
+            if text:
+                raw_turns.append({"role": role, "text": text})
+
+    # Drop any leading model/assistant turns (e.g. welcome message)
+    first_user_idx = -1
+    for i, t in enumerate(raw_turns):
+        if t["role"] == "user":
+            first_user_idx = i
+            break
+
+    valid_turns = raw_turns[first_user_idx:] if first_user_idx != -1 else []
+
+    # Merge consecutive turns of the same role
+    sanitized = []
+    for t in valid_turns:
+        if not sanitized:
+            sanitized.append(dict(t))
+        elif sanitized[-1]["role"] == t["role"]:
+            sanitized[-1]["text"] += "\n" + t["text"]
+        else:
+            sanitized.append(dict(t))
+
+    clean_prompt = (prompt or "").strip()
+    if sanitized and sanitized[-1]["role"] == "user":
+        sanitized[-1]["text"] += "\n" + clean_prompt
+    else:
+        sanitized.append({"role": "user", "text": clean_prompt})
+
+    contents = []
+    for t in sanitized:
+        contents.append(types.Content(role=t["role"], parts=[types.Part.from_text(text=t["text"])]))
+    return contents
+
+
 def execute_tool_call(fn_name: str, fn_args: dict, allowed_project_ids: list) -> dict:
     """Executes a tool with forced backend RBAC injection."""
+    import json
     func = getattr(ai_tools, fn_name, None) or TOOL_REGISTRY.get(fn_name)
     if not func:
         logger.error("Unknown tool called: %s", fn_name)
@@ -239,7 +321,9 @@ def execute_tool_call(fn_name: str, fn_args: dict, allowed_project_ids: list) ->
     safe_args["allowed_project_ids"] = allowed_project_ids
 
     try:
-        return func(**safe_args)
+        raw_res = func(**safe_args)
+        # Ensure 100% JSON-serializable for google-genai
+        return json.loads(json.dumps(raw_res, default=str))
     except Exception as e:
         logger.exception("Error executing tool %s: %s", fn_name, e)
         return {"error": str(e)}
@@ -249,7 +333,13 @@ def execute_tool_call(fn_name: str, fn_args: dict, allowed_project_ids: list) ->
 # AGENT CONTROLLER LOOP (Gemini Native Tool Calling)
 # ─────────────────────────────────────────────────────────────
 
-def _call_gemini_agent(prompt: str, allowed_project_ids: list, history: list = None, custom_instruction: str = None):
+def _call_gemini_agent(
+    prompt: str,
+    allowed_project_ids: list,
+    history: list = None,
+    custom_instruction: str = None,
+    active_project_id: str = None,
+):
     """Executes the native Gemini Tool Calling Agent loop."""
     # If _call_gemini_api was mocked in test suites, return its mocked response
     if hasattr(_call_gemini_api, "mock_calls") or hasattr(_call_gemini_api, "return_value"):
@@ -265,18 +355,15 @@ def _call_gemini_agent(prompt: str, allowed_project_ids: list, history: list = N
 
     client = genai.Client(api_key=api_key)
     system_inst = custom_instruction or SYSTEM_INSTRUCTION
+    if active_project_id and str(active_project_id).strip().upper() not in ("ALL", ""):
+        system_inst += (
+            f"\n\nContext Hint: The user is currently browsing the system on project page: '{active_project_id}'. "
+            "If their question is project-specific but does not mention a project name, default to this project. "
+            "However, if they ask about another project or ask globally across projects, switch immediately."
+        )
 
-    # Format history turns for Gemini
-    contents = []
-    if history:
-        for msg in history[-6:]:
-            role = "user" if msg.get("role") == "user" else "model"
-            text = (msg.get("text") or "").strip()
-            if text:
-                contents.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
-
-    # Append current user prompt
-    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
+    # Format sanitized history turns for Gemini (strict alternation, starts with user)
+    contents = _build_gemini_contents(prompt, history)
 
     config = types.GenerateContentConfig(
         system_instruction=system_inst,
@@ -355,19 +442,27 @@ def _call_gemini_agent(prompt: str, allowed_project_ids: list, history: list = N
 # ZERO-503 DETERMINISTIC FALLBACK (Pure Python Resilient Generator)
 # ─────────────────────────────────────────────────────────────
 
-def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, history: list = None) -> str:
+def _execute_deterministic_fallback(
+    prompt: str,
+    allowed_project_ids: list,
+    history: list = None,
+    active_project_id: str = None,
+) -> str:
     """Provides an instant, zero-503 Python response if Gemini is unavailable."""
     p_low = (prompt or "").lower()
     global_query = is_global_prompt(prompt)
+    is_follow_up = is_follow_up_prompt(prompt)
 
-    # Detect Project (never recall from history if query is global)
+    # 1. Project Detection
     matched_proj_code = None
     if not global_query:
+        # Check current prompt first (immediate project switching)
         for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
             if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
                 matched_proj_code = pinfo["code"]
                 break
 
+        # If not explicitly named, recall project from history
         if not matched_proj_code and history:
             for msg in reversed(history):
                 if msg.get("role") == "user":
@@ -381,7 +476,17 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
                     if matched_proj_code:
                         break
 
-    # Detect Document Type
+        # If still not found and an active project was supplied, use it
+        if not matched_proj_code and active_project_id and str(active_project_id).strip().upper() not in ("ALL", ""):
+            act_clean = str(active_project_id).strip().lower()
+            for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
+                if alias == act_clean or alias in act_clean:
+                    matched_proj_code = pinfo["code"]
+                    break
+            if not matched_proj_code:
+                matched_proj_code = str(active_project_id).strip()
+
+    # 2. Document Type Detection
     detected_dt = None
     known_dts = ["MS", "SD", "IR", "MIR", "RFI", "QS", "NOC", "WIR"]
     for dt in known_dts:
@@ -402,31 +507,52 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
         elif any(w in p_low for w in ["تغيير", "أمر تغيير", "مطالبة"]):
             detected_dt = "NOC"
 
-    # Detect Discipline
+    # Follow-up doc type inheritance
+    if is_follow_up and not detected_dt and history:
+        for msg in reversed(history):
+            if msg.get("role") == "user":
+                prev_text = (msg.get("text") or "").lower()
+                for dt in known_dts:
+                    if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", prev_text, re.IGNORECASE):
+                        detected_dt = dt.upper()
+                        break
+                if detected_dt:
+                    break
+
+    # 3. Discipline Detection
     detected_disc = None
     for disc_k, disc_v in ai_tools.DISCIPLINE_SYNONYMS.items():
         if any(t in p_low for t in disc_v):
             detected_disc = disc_k.capitalize()
             break
 
-    # Detect Keyword
+    # 4. Keyword Detection
     detected_keyword = None
     for kw_key, syns in ai_tools.EQUIPMENT_KEYWORDS.items():
         if any(s in p_low for s in syns):
             detected_keyword = kw_key
             break
 
-    # Detect Status
+    # 5. Status Detection
     detected_status = None
     if any(w in p_low for w in ["معتمد", "معتمدة", "approved"]):
         detected_status = "approved"
     elif any(w in p_low for w in ["مرفوض", "مرفوضة", "rejected", "revise"]):
         detected_status = "rejected"
 
+    # Follow-up status inheritance
+    if is_follow_up and not detected_status and history:
+        for msg in reversed(history):
+            if msg.get("role") == "user":
+                prev_text = (msg.get("text") or "").lower()
+                if any(w in prev_text for w in ["معتمد", "معتمدة", "approved"]):
+                    detected_status = "approved"
+                    break
+
     is_english = not bool(re.search(r"[\u0600-\u06FF]", prompt))
 
-    # 1. NOC Financial Query
-    if detected_dt == "NOC" or any(w in p_low for w in ["noc", "change", "تكلفة", "cost", "مالي", "أوامر تغيير"]):
+    # ── CASE 1: NOC Financial Query ──────────────────────────
+    if detected_dt == "NOC" or any(w in p_low for w in ["noc", "change", "تكلفة", "cost", "مالي", "أوامر تغيير", "مطالبات"]):
         fin = ai_tools.get_noc_financials(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
         proj_title = fin.get("project_display_name") or (fin.get("project_scope")[0] if fin.get("project_scope") else None) or "All Projects"
         if is_english:
@@ -434,7 +560,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
             if fin.get("items"):
                 app_items = [it for it in fin["items"] if "approv" in str(it.get("status", "")).lower() or "part c" in str(it.get("status", "")).lower()]
                 if app_items:
-                    item_rows = [f"- **{it.get('doc_no')}**: {it.get('subject', '—')} | Approved: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
+                    item_rows = [f"- **`{it.get('doc_no')}`**: {it.get('subject', '—')} | Approved: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
                     items_str = "\n\n**Approved NOC Items:**\n" + "\n".join(item_rows)
             return (
                 f"> 💡 **Operational Summary:** Notice of Change (NOC) metrics retrieved directly from register records:\n\n"
@@ -452,7 +578,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
             if fin.get("items"):
                 app_items = [it for it in fin["items"] if "approv" in str(it.get("status", "")).lower() or "part c" in str(it.get("status", "")).lower()]
                 if app_items:
-                    item_rows = [f"- **{it.get('doc_no')}**: {it.get('subject', '—')} | القيمة المعتمدة: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
+                    item_rows = [f"- **`{it.get('doc_no')}`**: {it.get('subject', '—')} | القيمة المعتمدة: {it.get('approved_cost', 0):,.2f} EGP" for it in app_items[:15]]
                     items_str = "\n\n**تفاصيل الأوامر المعتمدة:**\n" + "\n".join(item_rows)
             return (
                 f"> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) مباشرة من سجلات النظام:\n\n"
@@ -466,7 +592,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
                 + items_str
             )
 
-    # 2. Overdue Submittals Query
+    # ── CASE 2: Overdue Submittals Query ──────────────────────
     if any(w in p_low for w in ["overdue", "متأخر", "متأخرات", "تأخير", "delay"]):
         ov = ai_tools.get_overdue_submittals(
             allowed_project_ids=allowed_project_ids,
@@ -485,7 +611,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
         table_rows = []
         for r in records:
             table_rows.append(
-                f"| `{r.get('docNo')}` | {r.get('title', '—')} | {r.get('dt_code', '—')} | ⚠️ متأخر {r.get('days_overdue')} يوم | {r.get('expected_reply') or r.get('issuedDate') or '—'} | {r.get('proj_code', '')} |"
+                f"| `{r.get('docNo')}` | {r.get('title', '—')} | `{r.get('dt_code', '—')}` | ⚠️ متأخر {r.get('days_overdue')} يوم | {r.get('expected_reply') or r.get('issuedDate') or '—'} | `{r.get('proj_code', '')}` |"
             )
 
         if is_english:
@@ -505,7 +631,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
             + "\n".join(table_rows)
         )
 
-    # 3. KPI / Project Summary Query
+    # ── CASE 3: KPI / Project Summary Query ───────────────────
     if any(w in p_low for w in ["kpi", "تقرير", "ملخص", "summary", "إجمالي", "موقف", "breakdown", "overview", "status breakdown"]) or (global_query and not detected_dt and not detected_keyword):
         summary = ai_tools.get_project_summary(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
         proj_title = summary.get("project_display_name") or (summary.get("project_scope")[0] if summary.get("project_scope") else None) or "All Projects"
@@ -537,7 +663,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
             + f"\n\n**الإجمالي العام:** {summary.get('grand_total_documents', 0)} وثيقة بنسبة اعتماد كلية **{summary.get('overall_approval_pct', 0)}%**."
         )
 
-    # 4. Standard / Keyword / Submittals Query
+    # ── CASE 4: Standard / Keyword / Submittals Query ─────────
     search_res = ai_tools.search_submittals(
         allowed_project_ids=allowed_project_ids,
         project_code=matched_proj_code,
@@ -556,6 +682,21 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
     )
     records = search_res.get("records", [])
 
+    # If 0 records found for a specific doc type, check if equipment exists under other types (e.g. NOC or IR)
+    alt_records = []
+    if not records and detected_keyword and detected_dt:
+        try:
+            alt_res = ai_tools.search_submittals(
+                allowed_project_ids=allowed_project_ids,
+                project_code=matched_proj_code,
+                doc_type=None,
+                keyword=detected_keyword,
+                limit=5,
+            )
+            alt_records = [r for r in alt_res.get("records", []) if (r.get("doc_type") or "").upper() != detected_dt]
+        except Exception:
+            alt_records = []
+
     # Format header description
     dt_label = f"الـ {detected_dt}" if detected_dt else "المشروع"
     disc_label = f" الخاصة بـ {detected_disc}" if detected_disc else ""
@@ -563,33 +704,51 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
     appr_label = " المعتمدة" if detected_status == "approved" else ""
 
     if not records:
+        alt_note = ""
+        if alt_records:
+            first_alt = alt_records[0]
+            if is_english:
+                alt_note = f"\n\n💡 *Note: However, found related `{first_alt.get('doc_type')}` record: `{first_alt.get('doc_no')}` ({first_alt.get('title')}).*"
+            else:
+                alt_note = f"\n\n💡 *ملاحظة هندسية: ولكن تم العثور على وثيقة مرتبطة من نوع (`{first_alt.get('doc_type')}`): `{first_alt.get('doc_no')}` ({first_alt.get('title')}).*"
+
         if is_english:
             if detected_keyword == "valve":
-                return f"No approved submittals for valves were found in project {proj_title}."
+                return f"No approved submittals for valves were found in project {proj_title}." + alt_note
             if detected_keyword == "pump":
-                return f"No approved submittals for pumps were found in project {proj_title}."
+                return f"No approved submittals for pumps were found in project {proj_title}." + alt_note
             if detected_disc and detected_dt:
-                return f"No {detected_dt} submittals for {detected_disc} were found in project {proj_title}."
+                return f"No {detected_dt} submittals for {detected_disc} were found in project {proj_title}." + alt_note
             if detected_dt:
-                return f"No matching {detected_dt} submittals were found in project {proj_title}."
-            return f"No matching documents were found in project {proj_title}."
+                return f"No matching {detected_dt} submittals were found in project {proj_title}." + alt_note
+            return f"No matching documents were found in project {proj_title}." + alt_note
 
         if detected_keyword == "valve":
-            return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_title}." + alt_note
         if detected_keyword == "pump":
-            return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_title}." + alt_note
         if detected_disc and detected_dt:
-            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} تخص الأعمال {detected_disc} في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} تخص الأعمال {detected_disc} في سجلات مشروع {proj_title}." + alt_note
         if detected_dt:
-            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} مطابقة لطلبك في سجلات مشروع {proj_title}."
-        return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} مطابقة لطلبك في سجلات مشروع {proj_title}." + alt_note
+        return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_title}." + alt_note
 
     table_rows = []
     for r in records:
         st_clean = r.get("status") or "Pending"
         st_badge = f"✅ **{st_clean}**" if "approv" in st_clean.lower() or "status a" in st_clean.lower() or "status b" in st_clean.lower() else st_clean
         table_rows.append(
-            f"| `{r.get('doc_no')}` | {r.get('title', '—')} | {r.get('doc_type', '—')} | {st_badge} | {r.get('doc_date', '—')} | {r.get('project_code', '')} |"
+            f"| `{r.get('doc_no')}` | {r.get('title', '—')} | `{r.get('doc_type', '—')}` | {st_badge} | {r.get('doc_date', '—')} | `{r.get('project_code', '')}` |"
+        )
+
+    if is_english:
+        return (
+            f"### 📋 Submittal Records for {proj_title}:\n\n"
+            f"Found **{len(records)}** matching records directly in project registers:\n\n"
+            "| Document No | Title / Description | Type | Status | Date | Project |\n"
+            "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
+            + "\n".join(table_rows)
+            + "\n\n📌 *All records retrieved directly from verified project register database.*"
         )
 
     return (
@@ -806,20 +965,26 @@ def api_ai_query():
         tab = data.get("tab")
         history = data.get("history") or []
 
-        # RBAC Enforcement
-        target_pids = []
-        if is_global_prompt(prompt):
-            target_pids = get_allowed_project_ids(u)
-        elif project_id and str(project_id).strip().upper() not in ("ALL", ""):
+        # RBAC Enforcement: check requested project permission first
+        active_pid = None
+        if project_id and str(project_id).strip().upper() not in ("ALL", ""):
             pid = str(project_id).strip()
             if not can_view_project(pid, u):
                 return jsonify(error="Forbidden"), 403
-            target_pids = [pid]
-        else:
-            target_pids = get_allowed_project_ids(u)
+            active_pid = pid
 
-        if not target_pids:
+        try:
+            user_allowed = get_allowed_project_ids(u)
+        except Exception:
+            user_allowed = []
+
+        if not user_allowed and active_pid:
+            user_allowed = [active_pid]
+
+        if not user_allowed:
             return jsonify(reply="You do not have access to any projects in the system."), 200
+
+        target_pids = user_allowed
 
         # Short-circuit for simple greetings/generic conversation
         p_clean = re.sub(r"[^\w\s]", "", prompt).strip().lower()
@@ -840,8 +1005,13 @@ def api_ai_query():
             )
             return jsonify(reply=reply), 200
 
-        # Run the Tool-Augmented Gemini Agent Controller
-        reply, err, _ = _call_gemini_agent(prompt, target_pids, history=history)
+        # Run the Tool-Augmented Gemini Agent Controller with full authorized scope
+        reply, err, _ = _call_gemini_agent(
+            prompt,
+            target_pids,
+            history=history,
+            active_project_id=active_pid,
+        )
 
         if err == "NO_API_KEY":
             return jsonify(error="AI Assistant is not configured on this instance."), 503
@@ -851,7 +1021,12 @@ def api_ai_query():
                 "[AI Assistant Gemini Unavailable] Triggering zero-503 deterministic fallback. Gemini error: %s",
                 err,
             )
-            fallback_reply = _execute_deterministic_fallback(prompt, target_pids, history=history)
+            fallback_reply = _execute_deterministic_fallback(
+                prompt,
+                target_pids,
+                history=history,
+                active_project_id=active_pid,
+            )
             if fallback_reply:
                 return jsonify(reply=fallback_reply), 200
 

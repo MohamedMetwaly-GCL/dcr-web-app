@@ -48,6 +48,8 @@ from blueprints.ai import (
     _call_gemini_agent,
     _execute_deterministic_fallback,
     _dedup_latest_revisions,
+    _build_gemini_contents,
+    is_follow_up_prompt,
 )
 
 
@@ -648,6 +650,94 @@ class TestAiAssistantValidation(unittest.TestCase):
             mock_sum.assert_called_once()
             self.assertIsNone(mock_sum.call_args.kwargs.get("project_code"))
         print("PASS: Global query strictly suppresses previous project context from history.")
+
+    def test_33_gemini_contents_sanitization_starts_with_user(self):
+        """Gemini content turns must drop leading welcome message and begin with user role."""
+        raw_history = [
+            {"role": "assistant", "text": "Hello! I am your DCR Engineering AI Assistant."},
+            {"role": "user", "text": "Show me CFC valves"},
+            {"role": "assistant", "text": "Found 14 valves"},
+        ]
+        contents = _build_gemini_contents(prompt="What about pumps?", history=raw_history)
+        self.assertGreaterEqual(len(contents), 2)
+        # Verify first turn is strictly user
+        self.assertEqual(contents[0].role, "user")
+        self.assertEqual(contents[0].parts[0].text, "Show me CFC valves")
+        # Verify alternating turns
+        self.assertEqual(contents[1].role, "model")
+        self.assertEqual(contents[2].role, "user")
+        self.assertEqual(contents[2].parts[0].text, "What about pumps?")
+        print("PASS: Gemini contents strictly alternate and drop leading welcome message.")
+
+    def test_34_multi_project_switching_same_chat(self):
+        """User can switch projects in subsequent turns within the same chat without bleed."""
+        history = [
+            {"role": "user", "text": "شوفلي معتمد MS محابس في CFC"},
+            {"role": "assistant", "text": "تم العثور على 14 محبس معتمد في CFC"}
+        ]
+        # Turn 2: Switch to EKH
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": ["EKH (24CP01)"], "count": 1, "records": []}) as mock_search:
+            res_ekh = _execute_deterministic_fallback(
+                prompt="طب في مشروع EKH وريني المحابس المعتمدة",
+                allowed_project_ids=["PEM-058", "24CP01", "PEM-045"],
+                history=history
+            )
+            self.assertEqual(mock_search.call_args.kwargs.get("project_code"), "24CP01")
+
+        # Turn 3: Switch to Assiut
+        history.extend([
+            {"role": "user", "text": "طب في مشروع EKH وريني المحابس المعتمدة"},
+            {"role": "assistant", "text": "تم العثور على محابس في EKH"}
+        ])
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": ["Assiut (PEM-045)"], "count": 1, "records": []}) as mock_search2:
+            res_assiut = _execute_deterministic_fallback(
+                prompt="طب وماذا عن مشروع أسيوط؟",
+                allowed_project_ids=["PEM-058", "24CP01", "PEM-045"],
+                history=history
+            )
+            self.assertEqual(mock_search2.call_args.kwargs.get("project_code"), "PEM-045")
+        print("PASS: Multi-project switching works seamlessly across turns in the same chat.")
+
+    def test_35_conversational_follow_up_inherits_scope_and_type(self):
+        """Follow-up questions like 'وماذا عن المضخات؟' inherit project and document type context."""
+        history = [
+            {"role": "user", "text": "شوفلي معتمد MS محابس في CFC"},
+            {"role": "assistant", "text": "تم العثور على 14 محبس معتمد في CFC"}
+        ]
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": ["CFC (PEM-058)"], "count": 2, "records": [{"doc_no": "MS-02", "title": "Chilled Water Pump", "doc_type": "MS", "status": "Approved", "doc_date": "2026-05-01", "project_code": "PEM-058"}]}) as mock_search:
+            res = _execute_deterministic_fallback(
+                prompt="وماذا عن المضخات؟",
+                allowed_project_ids=["PEM-058"],
+                history=history
+            )
+            mock_search.assert_called_once()
+            # Inherited project CFC and doc_type MS, with new keyword pump
+            self.assertEqual(mock_search.call_args.kwargs.get("project_code"), "PEM-058")
+            self.assertEqual(mock_search.call_args.kwargs.get("doc_type"), "MS")
+            self.assertEqual(mock_search.call_args.kwargs.get("keyword"), "pump")
+            self.assertEqual(mock_search.call_args.kwargs.get("status"), "approved")
+        print("PASS: Conversational follow-up question inherits project scope, document type, and approval status.")
+
+    def test_36_bilingual_response_language_accuracy(self):
+        """English prompts return English headers; Arabic prompts return Arabic headers."""
+        mock_rec = [{"doc_no": "MS-01", "title": "Valves", "doc_type": "MS", "status": "Approved", "doc_date": "2026-05-01", "project_code": "PEM-058"}]
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": ["CFC (PEM-058)"], "count": 1, "records": mock_rec}):
+            # English Prompt
+            en_res = _execute_deterministic_fallback(
+                prompt="Show me approved MS valves in CFC",
+                allowed_project_ids=["PEM-058"]
+            )
+            self.assertIn("Submittal Records for CFC (PEM-058)", en_res)
+            self.assertIn("Document No", en_res)
+
+            # Arabic Prompt
+            ar_res = _execute_deterministic_fallback(
+                prompt="شوفلي معتمد MS محابس في CFC",
+                allowed_project_ids=["PEM-058"]
+            )
+            self.assertIn("تفاصيل وثائق", ar_res)
+            self.assertIn("رقم الوثيقة", ar_res)
+        print("PASS: Bilingual response accurately distinguishes and renders English and Arabic.")
 
 
 if __name__ == "__main__":
