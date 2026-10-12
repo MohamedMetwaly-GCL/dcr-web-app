@@ -866,6 +866,50 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertNotIn("NOC-00007 REV01", reply)
         print("PASS: Strict doc_type enforcement and multi-doctype unspecified searches verified.")
 
+    def test_28_psycopg2_query_interpolation_and_valve_records(self):
+        """Verify all SQL queries interpolate correctly under psycopg2 and 14 MS valve entries are retrieved."""
+        mock_projects = [{"id": "CFC DCP PH-2A", "name": "CFC District Cooling", "code": "PEM-058", "data": {}}]
+        valves_14 = [
+            {"id": f"r{i}", "project_id": "CFC DCP PH-2A", "doc_type": "MS", "doc_no": f"MS-CY002P608-000{i:02d} REV00", "title": f"Valves Item {i}", "status": "B - Approved As Noted", "doc_date": "2026-05-01"}
+            for i in range(1, 15)
+        ]
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                # Crucial assertion: Ensure query string interpolates with params without ValueError
+                try:
+                    dummy_params = tuple(['val'] * len(params))
+                    _ = sql % dummy_params
+                except ValueError as ve:
+                    self.fail(f"SQL failed psycopg2 % format interpolation: {ve}")
+
+                if "FROM records r" in sql:
+                    return valves_14
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            res = ai_tools.search_submittals(
+                allowed_project_ids=["PEM-058", "CFC DCP PH-2A"],
+                project_code="CFC",
+                doc_type="MS",
+                keyword="المحابس",
+                status="approved",
+                latest_revision_only=False
+            )
+            self.assertEqual(res["count"], 14)
+            self.assertEqual(len(res["records"]), 14)
+
+            # Test fallback response with 14 records
+            reply = _execute_deterministic_fallback(
+                prompt="شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC",
+                allowed_project_ids=["PEM-058", "CFC DCP PH-2A"]
+            )
+            self.assertIn("14", reply)
+            self.assertIn("MS-CY002P608-00001 REV00", reply)
+            self.assertIn("MS-CY002P608-00014 REV00", reply)
+        print("PASS: psycopg2 % interpolation and 14 MS valve entries verified without query errors.")
+
 
 if __name__ == "__main__":
     unittest.main()

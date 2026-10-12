@@ -592,11 +592,11 @@ def search_submittals(
     order_clauses = [
         """CASE 
             WHEN (
-                COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Approv%' 
-                OR COALESCE(r.data->>'status', '') ILIKE '%Status B%'
-                OR COALESCE(r.data->>'status', '') ILIKE '%Status A%'
-                OR COALESCE(r.data->>'status', '') ILIKE '%B - %'
-                OR COALESCE(r.data->>'status', '') ILIKE '%A - %'
+                COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%%Approv%%' 
+                OR COALESCE(r.data->>'status', '') ILIKE '%%Status B%%'
+                OR COALESCE(r.data->>'status', '') ILIKE '%%Status A%%'
+                OR COALESCE(r.data->>'status', '') ILIKE '%%B - %%'
+                OR COALESCE(r.data->>'status', '') ILIKE '%%A - %%'
             ) THEN 0 
             ELSE 1 
         END ASC""",
@@ -643,14 +643,47 @@ def search_submittals(
     try:
         rows = db.q(sql, tuple(params))
     except Exception as e:
-        logger.error("search_submittals execution error: %s", e)
-        return {
-            "project_display_name": project_display,
-            "project_scope": [project_display],
-            "count": 0,
-            "records": [],
-            "error": str(e),
-        }
+        logger.error("search_submittals execution error: %s. Executing resilient fallback query...", e)
+        try:
+            fb_sql = f"""
+                SELECT 
+                    r.id,
+                    r.project_id,
+                    r.dt_id AS doc_type,
+                    COALESCE(r.data->>'docNo', r.data->>'nocNo', '—') AS doc_no,
+                    COALESCE(r.data->>'title', r.data->>'subject', '') AS title,
+                    COALESCE(r.data->>'status', r.data->>'partBStatus', '') AS status,
+                    COALESCE(r.data->>'actualReply', r.data->>'issuedDate', '') AS doc_date,
+                    COALESCE(r.data->>'discipline', '') AS discipline,
+                    COALESCE(r.data->>'trade', '') AS trade
+                FROM records r
+                WHERE {proj_clause}
+            """
+            fb_params = list(proj_params)
+            if doc_type:
+                dt_u = str(doc_type).strip().upper()
+                fb_sql += " AND (UPPER(TRIM(r.dt_id)) = %s OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)"
+                fb_params.extend([dt_u, f"{dt_u}-%", f"{dt_u}/%"])
+            if keyword:
+                syns = _expand_keyword_synonyms(keyword)
+                kw_ors = " OR ".join(["r.data::text ILIKE %s"] * len(syns))
+                fb_sql += f" AND ({kw_ors})"
+                fb_params.extend([f"%{s}%" for s in syns])
+            if status and "approv" in str(status).lower():
+                fb_sql += " AND (COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE %s OR r.data::text ILIKE %s)"
+                fb_params.extend(["%Approv%", "%Approv%"])
+            fb_sql += " ORDER BY r.created_at DESC LIMIT %s;"
+            fb_params.append(raw_limit)
+            rows = db.q(fb_sql, tuple(fb_params))
+        except Exception as e2:
+            logger.error("search_submittals resilient fallback also failed: %s", e2)
+            return {
+                "project_display_name": project_display,
+                "project_scope": [project_display],
+                "count": 0,
+                "records": [],
+                "error": str(e),
+            }
 
     # Post-filter discipline cross-contamination if requested
     if detected_disc_key and rows:
@@ -761,26 +794,26 @@ def get_project_summary(
                     COALESCE(p.name, r.project_id) as proj_name,
                     COUNT(*) as total,
                     COUNT(CASE WHEN (
-                        COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Approv%' 
-                        OR COALESCE(r.data->>'status', '') ILIKE '%Status B%'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%Status A%'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%B - %'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%A - %'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%معتمد%'
+                        COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%%Approv%%' 
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%Status B%%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%Status A%%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%B - %%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%A - %%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%معتمد%%'
                     ) THEN 1 END) as approved,
                     COUNT(CASE WHEN (
-                        COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Reject%'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%Revise%'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%Status C%'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%Status D%'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%C - %'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%D - %'
-                        OR COALESCE(r.data->>'status', '') ILIKE '%مرفوض%'
+                        COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%%Reject%%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%Revise%%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%Status C%%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%Status D%%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%C - %%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%D - %%'
+                        OR COALESCE(r.data->>'status', '') ILIKE '%%مرفوض%%'
                     ) THEN 1 END) as rejected,
                     COUNT(CASE WHEN (
-                        COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Pend%'
-                        OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Under Review%'
-                        OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Submitted%'
+                        COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%%Pend%%'
+                        OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%%Under Review%%'
+                        OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%%Submitted%%'
                         OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') = ''
                         OR r.data->>'status' IS NULL
                     ) THEN 1 END) as pending
@@ -1102,9 +1135,9 @@ def get_overdue_submittals(
                 LEFT JOIN doc_types dt ON (dt.id = r.dt_id AND (dt.project_id = r.project_id OR {dt_p_clause}))
                 WHERE {p_clause}
                   AND (
-                      COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%Pend%'
-                      OR COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%Under Review%'
-                      OR COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%Submitted%'
+                      COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%%Pend%%'
+                      OR COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%%Under Review%%'
+                      OR COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') ILIKE '%%Submitted%%'
                       OR COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', '') = ''
                       OR r.data->>'status' IS NULL
                   )

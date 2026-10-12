@@ -717,6 +717,7 @@ def _execute_deterministic_fallback(
         )
 
     # ── CASE 4: Standard / Keyword / Submittals Query ─────────
+    is_latest_req = any(w in p_low for w in ["احدث", "أحدث", "اخر اصدار", "آخر إصدار", "latest", "last rev"])
     search_res = ai_tools.search_submittals(
         allowed_project_ids=allowed_project_ids,
         project_code=matched_proj_code,
@@ -724,7 +725,7 @@ def _execute_deterministic_fallback(
         discipline=detected_disc,
         keyword=detected_keyword,
         status=detected_status,
-        latest_revision_only=True,
+        latest_revision_only=is_latest_req,
         limit=50,
     )
 
