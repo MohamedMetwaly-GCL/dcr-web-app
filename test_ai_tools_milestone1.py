@@ -257,7 +257,7 @@ class TestAiToolsMilestone1(unittest.TestCase):
         print("PASS: get_noc_financials for PEM-058 correctly queries 'CFC DCP PH-2A' and returns financial values.")
 
     def test_08_array_binding_and_project_display_name(self):
-        """Verify search_submittals uses r.project_id = ANY(%s) with flat Python list and returns clean display name."""
+        """Verify search_submittals uses scalar IN clause with scalar parameters and returns clean display name."""
         mock_valves = [
             {
                 "id": "v1",
@@ -295,15 +295,13 @@ class TestAiToolsMilestone1(unittest.TestCase):
             record_queries = [sql for sql in captured_sql if "FROM records r" in sql]
             self.assertTrue(len(record_queries) > 0)
             rec_sql = record_queries[0]
-            self.assertIn("r.project_id = ANY(%s)", rec_sql)
+            self.assertTrue("r.project_id IN" in rec_sql or "UPPER(r.project_id) IN" in rec_sql)
 
             # Find corresponding params
             rec_idx = captured_sql.index(rec_sql)
             rec_params = captured_params[rec_idx]
-            array_param = rec_params[0]
-            self.assertIsInstance(array_param, list)
-            self.assertIn("CFC DCP PH-2A", array_param)
-            self.assertIn("PEM-058", array_param)
+            self.assertIn("CFC DCP PH-2A", rec_params)
+            self.assertIn("PEM-058", rec_params)
 
             self.assertEqual(res["project_display_name"], "PEM-058")
             self.assertEqual(res["count"], 1)
@@ -316,7 +314,7 @@ class TestAiToolsMilestone1(unittest.TestCase):
                 doc_type="MS"
             )
             self.assertEqual(res_global["project_display_name"], "All Projects")
-        print("PASS: search_submittals correctly binds array and returns project_display_name.")
+        print("PASS: search_submittals correctly binds scalar IN clause and returns project_display_name.")
 
 
 if __name__ == "__main__":

@@ -232,6 +232,29 @@ def _resolve_project_aliases(cursor_or_project, requested_project=None, allowed_
     return list(valid_aliases)
 
 
+def _build_project_in_clause(column_name: str, valid_aliases: list):
+    """Builds a robust, driver-agnostic IN clause with scalar %s placeholders.
+    Returns (clause_str, params_tuple).
+    Example:
+        (" (r.project_id IN (%s, %s) OR UPPER(r.project_id) IN (%s, %s)) ", ('PEM-058', 'CFC', 'PEM-058', 'CFC'))
+    """
+    clean = []
+    seen = set()
+    for a in (valid_aliases or []):
+        s = str(a or "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            clean.append(s)
+
+    if not clean:
+        return "1=0", ()
+
+    placeholders = ", ".join(["%s"] * len(clean))
+    clause = f"({column_name} IN ({placeholders}) OR UPPER({column_name}) IN ({placeholders}))"
+    params = tuple(clean + [x.upper() for x in clean])
+    return clause, params
+
+
 def _resolve_target_projects(allowed_project_ids, project_code=None):
     """Resolves accessible projects based on user permission and optional project filter."""
     if not allowed_project_ids:
@@ -241,12 +264,14 @@ def _resolve_target_projects(allowed_project_ids, project_code=None):
     if not clean_allowed:
         return []
 
+    p_clause, p_params = _build_project_in_clause("id", clean_allowed)
+    c_clause, c_params = _build_project_in_clause("code", clean_allowed)
     try:
-        projs = db.q("""
+        projs = db.q(f"""
             SELECT id, name, code, data FROM projects 
-            WHERE id = ANY(%s) OR code = ANY(%s)
+            WHERE {p_clause} OR {c_clause}
             ORDER BY code
-        """, (clean_allowed, clean_allowed))
+        """, p_params + c_params)
     except Exception as e:
         logger.error("Error fetching projects for target resolution: %s", e)
         projs = []
@@ -364,19 +389,25 @@ def search_submittals(
     target_projs = _resolve_target_projects(allowed_project_ids, project_code)
     proj_map = {p["id"]: p for p in target_projs}
 
-    where_clauses = ["r.project_id = ANY(%s)"]
-    params = [valid_aliases]
+    proj_clause, proj_params = _build_project_in_clause("r.project_id", valid_aliases)
+    where_clauses = [proj_clause]
+    params = list(proj_params)
 
     # 2. Document Type Condition
     if doc_type:
         dt_clean = str(doc_type).strip().upper()
         dt_prefixes = [f"{dt_clean}-%", f"{dt_clean}/%", f"%-{dt_clean}-%", f"%/{dt_clean}/%"]
-        where_clauses.append("""(
+        dt_p_clause, dt_p_params = _build_project_in_clause("project_id", valid_aliases)
+        dt_docno_or = " OR ".join(["r.data->>'docNo' ILIKE %s"] * len(dt_prefixes))
+        where_clauses.append(f"""(
             UPPER(r.dt_id) = %s 
-            OR r.data->>'docNo' ILIKE ANY(%s)
-            OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = %s AND (project_id = r.project_id OR project_id = ANY(%s)))
+            OR ({dt_docno_or})
+            OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = %s AND (project_id = r.project_id OR {dt_p_clause}))
         )""")
-        params.extend([dt_clean, dt_prefixes, dt_clean, valid_aliases])
+        params.append(dt_clean)
+        params.extend(dt_prefixes)
+        params.append(dt_clean)
+        params.extend(dt_p_params)
 
     # 3. Discipline Condition
     detected_disc_key = None
@@ -391,23 +422,24 @@ def search_submittals(
 
         disc_patterns = [f"%{t}%" for t in disc_terms if len(t) >= 3]
         if disc_patterns:
-            where_clauses.append("""(
-                r.data->>'discipline' ILIKE ANY(%s)
-                OR r.data->>'trade' ILIKE ANY(%s)
-                OR r.data->>'subTrade' ILIKE ANY(%s)
-                OR r.data->>'title' ILIKE ANY(%s)
-            )""")
-            params.extend([disc_patterns, disc_patterns, disc_patterns, disc_patterns])
+            sub_clauses = []
+            disc_params = []
+            for field in ("r.data->>'discipline'", "r.data->>'trade'", "r.data->>'subTrade'", "r.data->>'title'"):
+                field_or = " OR ".join([f"{field} ILIKE %s"] * len(disc_patterns))
+                sub_clauses.append(f"({field_or})")
+                disc_params.extend(disc_patterns)
+            where_clauses.append(f"({' OR '.join(sub_clauses)})")
+            params.extend(disc_params)
 
     # 4. Trade Condition
     if trade:
-        tr_pattern = [f"%{str(trade).strip()}%"]
+        tr_val = f"%{str(trade).strip()}%"
         where_clauses.append("""(
-            r.data->>'trade' ILIKE ANY(%s)
-            OR r.data->>'subTrade' ILIKE ANY(%s)
-            OR r.data->>'title' ILIKE ANY(%s)
+            r.data->>'trade' ILIKE %s
+            OR r.data->>'subTrade' ILIKE %s
+            OR r.data->>'title' ILIKE %s
         )""")
-        params.extend([tr_pattern, tr_pattern, tr_pattern])
+        params.extend([tr_val, tr_val, tr_val])
 
     # 5. Keyword Condition (with Equipment Stems)
     if keyword:
@@ -419,33 +451,30 @@ def search_submittals(
                 break
 
         kw_patterns = [f"%{term}%" for term in synonyms]
-        where_clauses.append("""(
-            r.data->>'title' ILIKE ANY(%s)
-            OR r.data->>'docNo' ILIKE ANY(%s)
-            OR r.data->>'description' ILIKE ANY(%s)
-            OR r.data->>'brand' ILIKE ANY(%s)
-            OR r.data->>'itemRef' ILIKE ANY(%s)
-        )""")
-        params.extend([kw_patterns, kw_patterns, kw_patterns, kw_patterns, kw_patterns])
+        sub_clauses = []
+        kw_p_list = []
+        for field in ("r.data->>'title'", "r.data->>'docNo'", "r.data->>'description'", "r.data->>'brand'", "r.data->>'itemRef'"):
+            field_or = " OR ".join([f"{field} ILIKE %s"] * len(kw_patterns))
+            sub_clauses.append(f"({field_or})")
+            kw_p_list.extend(kw_patterns)
+        where_clauses.append(f"({' OR '.join(sub_clauses)})")
+        params.extend(kw_p_list)
 
     # 6. Status Condition
     if status:
         st_clean = str(status).strip().lower()
+        patterns = []
         if "approv" in st_clean:
-            where_clauses.append("""(
-                COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE ANY(%s)
-            )""")
-            params.append(["%Approv%", "Status B%", "Status A%", "B - %", "A - %", "%معتمد%"])
+            patterns = ["%Approv%", "Status B%", "Status A%", "B - %", "A - %", "%معتمد%"]
         elif "reject" in st_clean or "revise" in st_clean:
-            where_clauses.append("""(
-                COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE ANY(%s)
-            )""")
-            params.append(["%Reject%", "%Revise%", "Status C%", "Status D%", "C - %", "D - %", "%مرفوض%"])
+            patterns = ["%Reject%", "%Revise%", "Status C%", "Status D%", "C - %", "D - %", "%مرفوض%"]
         elif "pend" in st_clean:
-            where_clauses.append("""(
-                COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') ILIKE ANY(%s)
-            )""")
-            params.append(["%Pending%", "%Under Review%", "%Submitted%", "%قيد المراجعة%"])
+            patterns = ["%Pending%", "%Under Review%", "%Submitted%", "%قيد المراجعة%"]
+        if patterns:
+            expr = "COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '')"
+            st_or = " OR ".join([f"{expr} ILIKE %s"] * len(patterns))
+            where_clauses.append(f"({st_or})")
+            params.extend(patterns)
 
     # Ordering: Approved first, then recent
     order_clauses = [
@@ -608,7 +637,8 @@ def get_project_summary(
             stats = []
     else:
         try:
-            rows = db.q("""
+            p_clause, p_params = _build_project_in_clause("r.project_id", valid_aliases)
+            rows = db.q(f"""
                 SELECT 
                     r.project_id,
                     COALESCE(p.code, r.project_id) as proj_code,
@@ -640,9 +670,9 @@ def get_project_summary(
                     ) THEN 1 END) as pending
                 FROM records r
                 LEFT JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id OR p.name = r.project_id)
-                WHERE r.project_id = ANY(%s)
+                WHERE {p_clause}
                 GROUP BY r.project_id, p.code, p.name
-            """, (valid_aliases,))
+            """, p_params)
 
             proj_dict = {}
             for row in rows:
@@ -746,14 +776,15 @@ def get_noc_financials(
         }
 
     try:
-        rows = db.q("""
+        p_clause, p_params = _build_project_in_clause("r.project_id", valid_aliases)
+        rows = db.q(f"""
             SELECT r.project_id, COALESCE(p.code, r.project_id) as proj_code, COALESCE(p.name, r.project_id) as proj_name, r.data
             FROM records r
             LEFT JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id OR p.name = r.project_id)
             WHERE (UPPER(r.dt_id) = 'NOC' OR r.data->>'docNo' ILIKE 'NOC-%' OR r.data->>'docNo' ILIKE '%-NOC-%')
-              AND r.project_id = ANY(%s)
+              AND {p_clause}
             ORDER BY r.created_at DESC
-        """, (valid_aliases,))
+        """, p_params)
     except Exception as e:
         logger.error("get_noc_financials error: %s", e)
         rows = []
@@ -887,7 +918,9 @@ def get_overdue_submittals(
             overdue_recs = []
     else:
         try:
-            rows = db.q("""
+            dt_p_clause, dt_p_params = _build_project_in_clause("dt.project_id", valid_aliases)
+            p_clause, p_params = _build_project_in_clause("r.project_id", valid_aliases)
+            rows = db.q(f"""
                 SELECT 
                     r.project_id,
                     COALESCE(p.code, r.project_id) as proj_code,
@@ -901,8 +934,8 @@ def get_overdue_submittals(
                     COALESCE(r.data->>'expectedReply', r.data->>'expectedReplyDate', '') as "expected_reply"
                 FROM records r
                 LEFT JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id OR p.name = r.project_id)
-                LEFT JOIN doc_types dt ON (dt.id = r.dt_id AND (dt.project_id = r.project_id OR dt.project_id = ANY(%s)))
-                WHERE r.project_id = ANY(%s)
+                LEFT JOIN doc_types dt ON (dt.id = r.dt_id AND (dt.project_id = r.project_id OR {dt_p_clause}))
+                WHERE {p_clause}
                   AND (
                       COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Pend%'
                       OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%Under Review%'
@@ -910,7 +943,7 @@ def get_overdue_submittals(
                       OR COALESCE(r.data->>'status', r.data->>'partBStatus', '') = ''
                       OR r.data->>'status' IS NULL
                   )
-            """, (valid_aliases, valid_aliases))
+            """, dt_p_params + p_params)
 
             from datetime import date, datetime
             today = date.today()
@@ -1006,14 +1039,15 @@ def get_document_history(
     search_pattern = f"%{base_no}%"
 
     try:
-        rows = db.q("""
+        p_clause, p_params = _build_project_in_clause("r.project_id", valid_aliases)
+        rows = db.q(f"""
             SELECT r.id, r.project_id, r.dt_id, r.data, r.created_at, COALESCE(p.code, r.project_id) as proj_code
             FROM records r
             LEFT JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id OR p.name = r.project_id)
-            WHERE r.project_id = ANY(%s)
+            WHERE {p_clause}
               AND (r.data->>'docNo' ILIKE %s)
             ORDER BY r.created_at ASC
-        """, (valid_aliases, search_pattern))
+        """, p_params + (search_pattern,))
     except Exception as e:
         logger.error("get_document_history query error: %s", e)
         rows = []

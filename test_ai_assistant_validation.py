@@ -628,6 +628,22 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertEqual(len(res["records"]), 0)
         print("PASS: RBAC strictly blocks unauthorized projects.")
 
+    def test_32_global_query_does_not_bleed_project_from_history(self):
+        """Global queries across registers strictly do not inherit prior project from history."""
+        history = [
+            {"role": "user", "text": "شوفلي معتمد MS محابس في CFC"},
+            {"role": "assistant", "text": "تم العثور على 14 محبس معتمد في CFC"}
+        ]
+        with patch.object(ai_tools, "get_project_summary", return_value={"project_scope": ["All Projects"], "total_projects": 2, "projects": [], "grand_total_documents": 100}) as mock_sum:
+            res = _execute_deterministic_fallback(
+                prompt="Provide a complete status breakdown of documents across the project registers",
+                allowed_project_ids=["PEM-058", "24CP01"],
+                history=history
+            )
+            mock_sum.assert_called_once()
+            self.assertIsNone(mock_sum.call_args.kwargs.get("project_code"))
+        print("PASS: Global query strictly suppresses previous project context from history.")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -52,7 +52,8 @@ SYSTEM_INSTRUCTION = (
     "| Document No | Title / Description | Type | Status | Date | Project |.\n"
     "7. If the user writes in Arabic, respond in clear, professional Arabic (لغة هندسية احترافية). "
     "If in English, respond in English.\n"
-    "8. Never fabricate document numbers or approval statuses. Only report data returned by the tools."
+    "8. Never fabricate document numbers or approval statuses. Only report data returned by the tools.\n"
+    "9. CRITICAL FOR GLOBAL QUERIES: If the user asks about documents, totals, KPIs, or costs across all projects or registers (e.g. 'across the project registers', 'all projects', 'كل المشاريع', or asks for overall summaries without naming a project), you MUST pass project_code=None (or omit project_code). DO NOT carry over or recall a project code from previous conversation turns when answering a general or global question."
 )
 
 
@@ -73,7 +74,7 @@ search_submittals_declaration = types.FunctionDeclaration(
         properties={
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH', 'Assiut', 'Suez'). Omit or pass 'ALL' for all accessible projects.",
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Pass None or omit if user asks across all projects or registers. NEVER recall a project code from prior turns for global questions.",
             ),
             "doc_type": types.Schema(
                 type=types.Type.STRING,
@@ -118,7 +119,7 @@ get_project_summary_declaration = types.FunctionDeclaration(
         properties={
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Omit to summarize all accessible projects.",
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Pass None or omit to summarize across all accessible projects or registers. Do not carry over prior project codes for global summaries.",
             ),
         },
     ),
@@ -135,7 +136,7 @@ get_noc_financials_declaration = types.FunctionDeclaration(
         properties={
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Omit for all accessible projects.",
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Pass None or omit for all accessible projects. Do not bleed prior project codes for global questions.",
             ),
         },
     ),
@@ -152,7 +153,7 @@ get_overdue_submittals_declaration = types.FunctionDeclaration(
         properties={
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias (e.g. 'PEM-058', 'CFC'). Omit for all accessible projects.",
+                description="Project code or alias (e.g. 'PEM-058', 'CFC'). Pass None or omit for all accessible projects.",
             ),
             "doc_type": types.Schema(
                 type=types.Type.STRING,
@@ -185,7 +186,7 @@ get_document_history_declaration = types.FunctionDeclaration(
             ),
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias if known.",
+                description="Optional project code or alias if explicitly known.",
             ),
         },
         required=["doc_no_pattern"],
@@ -209,6 +210,20 @@ TOOL_REGISTRY = {
     "get_overdue_submittals": ai_tools.get_overdue_submittals,
     "get_document_history": ai_tools.get_document_history,
 }
+
+
+def is_global_prompt(prompt: str) -> bool:
+    """Detects whether a prompt asks for information across all projects or registers."""
+    if not prompt:
+        return False
+    p = str(prompt).lower()
+    global_indicators = [
+        "across", "registers", "all projects", "كل المشاريع", "جميع المشاريع",
+        "المشاريع كلها", "بين المشاريع", "لكل المشاريع", "across projects",
+        "all register", "overall", "global", "total approved cost for notice of change",
+        "status breakdown of documents", "عبر المشاريع", "في جميع", "في كل", "لكافة المشاريع"
+    ]
+    return any(indicator in p for indicator in global_indicators)
 
 
 def execute_tool_call(fn_name: str, fn_args: dict, allowed_project_ids: list) -> dict:
@@ -305,6 +320,9 @@ def _call_gemini_agent(prompt: str, allowed_project_ids: list, history: list = N
             for fc in function_calls:
                 fn_name = getattr(fc, "name", "")
                 fn_args = dict(getattr(fc, "args", {}) or {})
+                # Context-bleed guard: Strip bled project_code on global queries
+                if is_global_prompt(prompt):
+                    fn_args["project_code"] = None
                 result = execute_tool_call(fn_name, fn_args, allowed_project_ids)
                 tool_results.append({"name": fn_name, "args": fn_args, "result": result})
                 func_response_parts.append(
@@ -338,24 +356,28 @@ def _call_gemini_agent(prompt: str, allowed_project_ids: list, history: list = N
 def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, history: list = None) -> str:
     """Provides an instant, zero-503 Python response if Gemini is unavailable."""
     p_low = (prompt or "").lower()
+    global_query = is_global_prompt(prompt)
 
-    # Detect Project
+    # Detect Project (never recall from history if query is global)
     matched_proj_code = None
-    for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
-        if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
-            matched_proj_code = pinfo["code"]
-            break
+    if not global_query:
+        for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
+            if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
+                matched_proj_code = pinfo["code"]
+                break
 
-    if not matched_proj_code and history:
-        for msg in reversed(history):
-            if msg.get("role") == "user":
-                prev_text = (msg.get("text") or "").lower()
-                for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
-                    if re.search(r"\b" + re.escape(alias) + r"\b", prev_text) or alias in prev_text:
-                        matched_proj_code = pinfo["code"]
+        if not matched_proj_code and history:
+            for msg in reversed(history):
+                if msg.get("role") == "user":
+                    prev_text = (msg.get("text") or "").lower()
+                    if is_global_prompt(prev_text):
+                        continue
+                    for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
+                        if re.search(r"\b" + re.escape(alias) + r"\b", prev_text) or alias in prev_text:
+                            matched_proj_code = pinfo["code"]
+                            break
+                    if matched_proj_code:
                         break
-                if matched_proj_code:
-                    break
 
     # Detect Document Type
     detected_dt = None
@@ -443,7 +465,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
         )
 
     # 3. KPI / Project Summary Query
-    if any(w in p_low for w in ["kpi", "تقرير", "ملخص", "summary", "إجمالي", "موقف"]):
+    if any(w in p_low for w in ["kpi", "تقرير", "ملخص", "summary", "إجمالي", "موقف", "breakdown", "overview", "status breakdown"]) or (global_query and not detected_dt and not detected_keyword):
         summary = ai_tools.get_project_summary(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
         proj_title = summary.get("project_display_name") or (summary.get("project_scope")[0] if summary.get("project_scope") else None) or "All Projects"
         stat_lines = []
@@ -539,7 +561,8 @@ def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history
     p_low = (user_prompt or "").lower()
     
     # 1. Projects
-    projs = db.q("SELECT id, name, code FROM projects WHERE id = ANY(%s) ORDER BY code", (list(target_project_ids),))
+    projs_clause, projs_params = ai_tools._build_project_in_clause("id", list(target_project_ids))
+    projs = db.q(f"SELECT id, name, code FROM projects WHERE {projs_clause} ORDER BY code", projs_params)
     lines = ["### 1. PROJECTS ACCESSIBLE & IDENTIFIED:"]
     for p in projs:
         lines.append(f"- Code: {p.get('code')} | Name: {p.get('name')} | ID: {p.get('id')}")
@@ -556,7 +579,8 @@ def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history
     # 3. NOC
     if "noc" in p_low or "cost" in p_low or "مالي" in p_low or active_tab == "NOC":
         lines.append("### 3. NOTICE OF CHANGE (NOC) FINANCIAL & APPROVAL SUMMARY:")
-        nocs = db.q("SELECT r.project_id, r.data FROM records r WHERE UPPER(r.dt_id) = 'NOC' AND r.project_id = ANY(%s)", (list(target_project_ids),))
+        noc_clause, noc_params = ai_tools._build_project_in_clause("r.project_id", list(target_project_ids))
+        nocs = db.q(f"SELECT r.project_id, r.data FROM records r WHERE UPPER(r.dt_id) = 'NOC' AND {noc_clause}", noc_params)
         total_sub = 0.0
         total_app = 0.0
         for n in nocs:
@@ -718,7 +742,9 @@ def api_ai_query():
 
         # RBAC Enforcement
         target_pids = []
-        if project_id and str(project_id).strip().upper() not in ("ALL", ""):
+        if is_global_prompt(prompt):
+            target_pids = get_allowed_project_ids(u)
+        elif project_id and str(project_id).strip().upper() not in ("ALL", ""):
             pid = str(project_id).strip()
             if not can_view_project(pid, u):
                 return jsonify(error="Forbidden"), 403
