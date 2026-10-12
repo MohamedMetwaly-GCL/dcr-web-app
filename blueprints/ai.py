@@ -402,7 +402,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
     # 1. NOC Financial Query
     if detected_dt == "NOC" or any(w in p_low for w in ["noc", "change", "تكلفة", "cost", "مالي", "أوامر تغيير"]):
         fin = ai_tools.get_noc_financials(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
-        proj_title = ", ".join(fin.get("project_scope", [])) or "المشاريع المتاحة"
+        proj_title = fin.get("project_display_name") or (fin.get("project_scope")[0] if fin.get("project_scope") else None) or "All Projects"
         return (
             f"> 💡 **ملاحظة تشغيلية:** تم استخراج ملخص أوامر التغيير (NOC) مباشرة من سجلات النظام:\n\n"
             f"### 💰 ملخص أوامر التغيير (Notice of Change) لمشروع {proj_title}:\n\n"
@@ -423,7 +423,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
             discipline=detected_disc,
             limit=25,
         )
-        proj_title = ", ".join(ov.get("project_scope", [])) or "المشاريع المتاحة"
+        proj_title = ov.get("project_display_name") or (ov.get("project_scope")[0] if ov.get("project_scope") else None) or "All Projects"
         records = ov.get("records", [])
         if not records:
             return f"لا توجد أي وثائق متأخرة تجاوزت فترة الرد التعاقدية في نطاق مشروع {proj_title}."
@@ -445,7 +445,7 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
     # 3. KPI / Project Summary Query
     if any(w in p_low for w in ["kpi", "تقرير", "ملخص", "summary", "إجمالي", "موقف"]):
         summary = ai_tools.get_project_summary(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
-        proj_title = ", ".join(summary.get("project_scope", [])) or "المشاريع المتاحة"
+        proj_title = summary.get("project_display_name") or (summary.get("project_scope")[0] if summary.get("project_scope") else None) or "All Projects"
         stat_lines = []
         for p in summary.get("projects", []):
             stat_lines.append(
@@ -472,8 +472,10 @@ def _execute_deterministic_fallback(prompt: str, allowed_project_ids: list, hist
         limit=50,
     )
 
-    proj_title = ", ".join(search_res.get("project_scope", [])) or (
-        "CFC (PEM-058)" if matched_proj_code == "PEM-058" else "المشروع المحدد"
+    proj_title = search_res.get("project_display_name") or (
+        search_res.get("project_scope")[0] if search_res.get("project_scope") else None
+    ) or (
+        "CFC (PEM-058)" if matched_proj_code == "PEM-058" else "All Projects"
     )
     records = search_res.get("records", [])
 

@@ -256,7 +256,70 @@ class TestAiToolsMilestone1(unittest.TestCase):
             self.assertEqual(res["total_approved_cost"], 120000.0)
         print("PASS: get_noc_financials for PEM-058 correctly queries 'CFC DCP PH-2A' and returns financial values.")
 
+    def test_08_array_binding_and_project_display_name(self):
+        """Verify search_submittals uses r.project_id = ANY(%s) with flat Python list and returns clean display name."""
+        mock_valves = [
+            {
+                "id": "v1",
+                "project_id": "CFC DCP PH-2A",
+                "doc_type": "MS",
+                "doc_no": "MS-CY002P608-00019 REV01",
+                "title": "Duty Valves for HVAC Piping",
+                "status": "B - Approved As Noted",
+                "discipline": "Mechanical",
+            }
+        ]
+        with patch("db.q") as mock_q:
+            captured_sql = []
+            captured_params = []
+
+            def q_side_effect(sql, params=()):
+                captured_sql.append(sql)
+                captured_params.append(params)
+                if "FROM records r" in sql:
+                    return mock_valves
+                if "FROM projects" in sql:
+                    return self.mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            # 1. Explicit project requested
+            res = search_submittals(
+                allowed_project_ids=["PEM-058"],
+                project_code="PEM-058",
+                doc_type="MS",
+                keyword="valve"
+            )
+
+            # Find the query to records
+            record_queries = [sql for sql in captured_sql if "FROM records r" in sql]
+            self.assertTrue(len(record_queries) > 0)
+            rec_sql = record_queries[0]
+            self.assertIn("r.project_id = ANY(%s)", rec_sql)
+
+            # Find corresponding params
+            rec_idx = captured_sql.index(rec_sql)
+            rec_params = captured_params[rec_idx]
+            array_param = rec_params[0]
+            self.assertIsInstance(array_param, list)
+            self.assertIn("CFC DCP PH-2A", array_param)
+            self.assertIn("PEM-058", array_param)
+
+            self.assertEqual(res["project_display_name"], "PEM-058")
+            self.assertEqual(res["count"], 1)
+            self.assertEqual(res["records"][0]["doc_no"], "MS-CY002P608-00019 REV01")
+
+            # 2. Global query across all projects
+            res_global = search_submittals(
+                allowed_project_ids=["PEM-058"],
+                project_code=None,
+                doc_type="MS"
+            )
+            self.assertEqual(res_global["project_display_name"], "All Projects")
+        print("PASS: search_submittals correctly binds array and returns project_display_name.")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
