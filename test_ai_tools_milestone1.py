@@ -7,6 +7,7 @@ from blueprints.ai_tools import (
     get_noc_financials,
     get_overdue_submittals,
     get_document_history,
+    _resolve_project_aliases,
 )
 
 
@@ -219,6 +220,43 @@ class TestAiToolsMilestone1(unittest.TestCase):
             self.assertEqual(hist["revisions"][1]["rev_num"], 1)
         print("PASS: get_document_history compiles chronological revisions.")
 
+    def test_07_cfc_alias_resolution_translates_to_cfc_dcp_ph2a(self):
+        """Verify project alias resolver translates 'PEM-058' to include 'CFC DCP PH-2A' and returns financials."""
+        aliases = _resolve_project_aliases(None, "PEM-058", ["PEM-058"])
+        self.assertIn("CFC DCP PH-2A", aliases)
+        self.assertIn("PEM-058", aliases)
+
+        cfc_records = [
+            {
+                "project_id": "CFC DCP PH-2A",
+                "proj_code": "PEM-058",
+                "data": {
+                    "docNo": "NOC-CY002P608-001",
+                    "submittedCost": "150000.00",
+                    "finalApprovedCost": "120000.00",
+                    "partDStatus": "Approved",
+                }
+            }
+        ]
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM records r" in sql:
+                    params_flat = str(params)
+                    self.assertIn("CFC DCP PH-2A", params_flat)
+                    return cfc_records
+                if "FROM projects" in sql:
+                    return self.mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            res = get_noc_financials(allowed_project_ids=["PEM-058"], project_code="PEM-058")
+            self.assertEqual(res["total_count"], 1)
+            self.assertGreater(res["total_submitted_cost"], 0)
+            self.assertGreater(res["total_approved_cost"], 0)
+            self.assertEqual(res["total_approved_cost"], 120000.0)
+        print("PASS: get_noc_financials for PEM-058 correctly queries 'CFC DCP PH-2A' and returns financial values.")
+
 
 if __name__ == "__main__":
     unittest.main()
+
