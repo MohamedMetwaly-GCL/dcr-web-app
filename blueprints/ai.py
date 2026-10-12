@@ -123,6 +123,16 @@ KEYWORD_MAP = {
     "بدروم": ["basement", "b1", "b2", "بيزمنت", "بدروم"],
     "سطح": ["roof", "سطح", "السطح"],
     "السطح": ["roof", "سطح", "السطح"],
+    "معماري": ["architecture", "architectural", "arch", "معماري", "معمارية"],
+    "معمارية": ["architecture", "architectural", "arch", "معماري", "معمارية"],
+    "عمارة": ["architecture", "architectural", "arch", "عمارة"],
+    "كهرباء": ["electrical", "electric", "elec", "كهرباء"],
+    "كهربائي": ["electrical", "electric", "elec", "كهربائي"],
+    "ميكانيكا": ["mechanical", "mech", "ميكانيكا"],
+    "ميكانيكي": ["mechanical", "mech", "ميكانيكي"],
+    "مدني": ["civil", "مدني"],
+    "إنشائي": ["structural", "structure", "إنشائي", "انشائي"],
+    "انشائي": ["structural", "structure", "إنشائي", "انشائي"],
 }
 
 ENGLISH_KEYWORD_MAP = {
@@ -159,6 +169,47 @@ ENGLISH_KEYWORD_MAP = {
     "ground": ["ground", "gf", "أرضي", "ارضي"],
     "basement": ["basement", "بدروم", "بيزمنت"],
     "roof": ["roof", "سطح"],
+    "architecture": ["architecture", "architectural", "arch", "معماري"],
+    "architectural": ["architecture", "architectural", "arch", "معماري"],
+    "arch": ["architecture", "architectural", "arch", "معماري"],
+    "electrical": ["electrical", "electric", "elec", "كهرباء"],
+    "electric": ["electrical", "electric", "elec", "كهرباء"],
+    "mechanical": ["mechanical", "mech", "ميكانيكا"],
+    "civil": ["civil", "مدني"],
+    "structural": ["structural", "structure", "إنشائي"],
+}
+
+DISCIPLINE_MAP = {
+    "architecture": {
+        "en_terms": ["architecture", "architectural", "arch"],
+        "ar_terms": ["معماري", "معمارية", "عمارة", "أعمال معمارية"],
+        "display_en": "Architecture",
+        "display_ar": "الأعمال المعمارية",
+    },
+    "electrical": {
+        "en_terms": ["electrical", "electric", "elect", "elec"],
+        "ar_terms": ["كهرباء", "كهربائي", "أعمال كهربائية", "كهروميكانيك"],
+        "display_en": "Electrical",
+        "display_ar": "الأعمال الكهربائية",
+    },
+    "mechanical": {
+        "en_terms": ["mechanical", "mech"],
+        "ar_terms": ["ميكانيكا", "ميكانيكي", "أعمال ميكانيكية"],
+        "display_en": "Mechanical",
+        "display_ar": "الأعمال الميكانيكية",
+    },
+    "civil": {
+        "en_terms": ["civil"],
+        "ar_terms": ["مدني", "أعمال مدنية"],
+        "display_en": "Civil",
+        "display_ar": "الأعمال المدنية",
+    },
+    "structural": {
+        "en_terms": ["structural", "structure", "struct"],
+        "ar_terms": ["إنشائي", "انشائي", "أعمال إنشائية", "خرسانة", "خرسانات"],
+        "display_en": "Structural",
+        "display_ar": "الأعمال الإنشائية",
+    },
 }
 
 KNOWN_DOC_TYPES = ["MS", "SD", "MIR", "RFI", "IR", "NOC", "PR", "NCR", "ITP", "PQ", "WIR", "MAR", "MOM", "QS", "EI", "WN", "NCN", "LTR"]
@@ -301,6 +352,15 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
     if active_tab and active_tab.upper() in KNOWN_DOC_TYPES and not detected_doc_types:
         detected_doc_types.append(active_tab.upper())
 
+    # Detect Discipline / Trade from current prompt (e.g. Architecture / معماري, Electrical / كهرباء, etc.)
+    detected_discipline = None
+    for disc_k, disc_v in DISCIPLINE_MAP.items():
+        if any(t in p_lower for t in disc_v["ar_terms"]) or any(
+            re.search(r"(?<![a-zA-Z])" + re.escape(t) + r"(?![a-zA-Z])", p_lower) for t in disc_v["en_terms"]
+        ):
+            detected_discipline = disc_k
+            break
+
     # Detect if query is specifically targeting valves
     is_valve_query = any(w in p_lower for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves", "butterfly"])
 
@@ -311,6 +371,14 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
     if is_valve_query:
         search_terms = list(VALVE_TERMS)
     else:
+        if detected_discipline:
+            for t in DISCIPLINE_MAP[detected_discipline]["en_terms"]:
+                if t not in search_terms:
+                    search_terms.append(t)
+            for t in DISCIPLINE_MAP[detected_discipline]["ar_terms"]:
+                if t not in search_terms:
+                    search_terms.append(t)
+
         for ar_kw, en_terms in KEYWORD_MAP.items():
             if ar_kw in p_lower:
                 terms_list = en_terms if isinstance(en_terms, list) else [en_terms]
@@ -450,11 +518,26 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     if detected_doc_types:
                         break
 
+        # 4. Recover Discipline from History if current prompt has none
+        if not detected_discipline:
+            for msg in reversed(history):
+                if msg.get("role") == "user":
+                    prev_text = (msg.get("text") or "").lower()
+                    for disc_k, disc_v in DISCIPLINE_MAP.items():
+                        if any(t in prev_text for t in disc_v["ar_terms"]) or any(
+                            re.search(r"(?<![a-zA-Z])" + re.escape(t) + r"(?![a-zA-Z])", prev_text) for t in disc_v["en_terms"]
+                        ):
+                            detected_discipline = disc_k
+                            break
+                    if detected_discipline:
+                        break
+
     # Determine query intent to slim down context payload
     has_submittal_keyword = (
         any(ar_kw in p_lower for ar_kw in KEYWORD_MAP)
         or any(re.search(r"\b" + re.escape(en_k) + r"\b", p_lower) for en_k in ENGLISH_KEYWORD_MAP)
         or has_inherited_equipment
+        or (detected_discipline is not None)
     )
     has_submittal_doctype = any(dt in detected_doc_types for dt in ["MS", "SD", "MIR", "RFI", "IR", "PR", "NCR", "ITP", "PQ", "WIR", "MAR"])
 
@@ -682,6 +765,32 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 OR r.data->>'subject' ILIKE ANY(%s)
             )""")
             params.extend([VALVE_SQL_PATTERNS] * 5)
+        elif detected_discipline:
+            disc_info = DISCIPLINE_MAP[detected_discipline]
+            disc_sql_terms = [f"%{t}%" for t in (disc_info["en_terms"] + [disc_info["ar_terms"][0]]) if len(t) >= 3]
+            where_clauses.append("""(
+                r.data->>'discipline' ILIKE ANY(%s)
+                OR r.data->>'trade' ILIKE ANY(%s)
+                OR r.data->>'subTrade' ILIKE ANY(%s)
+                OR r.data->>'title' ILIKE ANY(%s)
+                OR r.data->>'description' ILIKE ANY(%s)
+                OR r.data->>'subject' ILIKE ANY(%s)
+            )""")
+            params.extend([disc_sql_terms] * 6)
+
+            non_disc_terms = [s for s in search_terms if s.lower() not in [t.lower() for t in (disc_info["en_terms"] + disc_info["ar_terms"])]]
+            if non_disc_terms:
+                kw_patterns = [f"%{term}%" for term in non_disc_terms[:10]]
+                where_clauses.append("""(
+                    r.data->>'title' ILIKE ANY(%s) 
+                    OR r.data->>'docNo' ILIKE ANY(%s) 
+                    OR r.data->>'itemRef' ILIKE ANY(%s) 
+                    OR r.data->>'subject' ILIKE ANY(%s) 
+                    OR r.data->>'description' ILIKE ANY(%s) 
+                    OR r.data->>'remarks' ILIKE ANY(%s)
+                    OR r.data->>'floor' ILIKE ANY(%s)
+                )""")
+                params.extend([kw_patterns] * 7)
         elif search_terms:
             kw_patterns = [f"%{term}%" for term in search_terms[:15]]
             where_clauses.append("""(
@@ -692,8 +801,11 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 OR r.data->>'description' ILIKE ANY(%s) 
                 OR r.data->>'remarks' ILIKE ANY(%s)
                 OR r.data->>'floor' ILIKE ANY(%s)
+                OR r.data->>'discipline' ILIKE ANY(%s)
+                OR r.data->>'trade' ILIKE ANY(%s)
+                OR r.data->>'subTrade' ILIKE ANY(%s)
             )""")
-            params.extend([kw_patterns] * 7)
+            params.extend([kw_patterns] * 10)
 
         if is_approved_query:
             where_clauses.append("""(
@@ -752,7 +864,8 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS doc_date,
                 COALESCE(r.data->>'brand', '') AS brand,
                 COALESCE(r.data->>'discipline', '') AS discipline,
-                COALESCE(r.data->>'trade', '') AS trade
+                COALESCE(r.data->>'trade', '') AS trade,
+                COALESCE(r.data->>'subTrade', '') AS sub_trade
             FROM records r
             WHERE {where_sql}
             ORDER BY {order_sql}
@@ -835,7 +948,8 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS doc_date,
                     COALESCE(r.data->>'brand', '') AS brand,
                     COALESCE(r.data->>'discipline', '') AS discipline,
-                    COALESCE(r.data->>'trade', '') AS trade
+                    COALESCE(r.data->>'trade', '') AS trade,
+                    COALESCE(r.data->>'subTrade', '') AS sub_trade
                 FROM records r
                 WHERE {' AND '.join(fb_proj_clauses)}
                 {dt_condition}
@@ -845,6 +959,9 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     OR r.data->>'itemRef' ILIKE ANY(%s)
                     OR r.data->>'description' ILIKE ANY(%s)
                     OR r.data->>'floor' ILIKE ANY(%s)
+                    OR r.data->>'discipline' ILIKE ANY(%s)
+                    OR r.data->>'trade' ILIKE ANY(%s)
+                    OR r.data->>'subTrade' ILIKE ANY(%s)
                 )
                 ORDER BY 
                     CASE 
@@ -860,7 +977,7 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             """
             fb_order_params = ["%Approv%", "Status B%", "B - %", "A - %"]
             try:
-                matched_records = db.q(direct_fallback_sql, (*fb_proj_params, *dt_fb_params, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, fallback_kw_patterns, *fb_order_params))
+                matched_records = db.q(direct_fallback_sql, (*fb_proj_params, *dt_fb_params, *([fallback_kw_patterns] * 8), *fb_order_params))
             except Exception as e_direct:
                 logger.warning("Error running direct fallback record search in AI context: %s", e_direct)
 
@@ -881,8 +998,8 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = ANY(%s) AND project_id = r.project_id)
                 )""")
                 relaxed_params.extend([dt_upper, dt_patterns, dt_upper])
-            relaxed_where_clauses.append("(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s) OR r.data->>'floor' ILIKE ANY(%s))")
-            relaxed_params.append(kw_patterns)
+            relaxed_where_clauses.append("(r.data->>'title' ILIKE ANY(%s) OR r.data->>'docNo' ILIKE ANY(%s) OR r.data->>'itemRef' ILIKE ANY(%s) OR r.data->>'subject' ILIKE ANY(%s) OR r.data->>'description' ILIKE ANY(%s) OR r.data->>'remarks' ILIKE ANY(%s) OR r.data->>'floor' ILIKE ANY(%s) OR r.data->>'discipline' ILIKE ANY(%s) OR r.data->>'trade' ILIKE ANY(%s) OR r.data->>'subTrade' ILIKE ANY(%s))")
+            relaxed_params.extend([kw_patterns] * 10)
             relaxed_sql = f"""
                 SELECT 
                     r.id,
@@ -907,7 +1024,8 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                     COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'partAIssueDate', '') AS doc_date,
                     COALESCE(r.data->>'brand', '') AS brand,
                     COALESCE(r.data->>'discipline', '') AS discipline,
-                    COALESCE(r.data->>'trade', '') AS trade
+                    COALESCE(r.data->>'trade', '') AS trade,
+                    COALESCE(r.data->>'subTrade', '') AS sub_trade
                 FROM records r
                 WHERE {" AND ".join(relaxed_where_clauses)}
                 ORDER BY {order_sql}
@@ -967,6 +1085,40 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
             if approved_subset:
                 matched_records = approved_subset
 
+        # Post-filter 1c: If user specified a discipline (Architecture, Electrical, etc.), strictly isolate it
+        if detected_discipline and matched_records:
+            disc_info = DISCIPLINE_MAP[detected_discipline]
+            disc_terms = [t.lower() for t in (disc_info["en_terms"] + disc_info["ar_terms"])]
+
+            # Collect terms of other disciplines to catch and reject cross-discipline contamination
+            other_disc_terms = []
+            for other_k, other_info in DISCIPLINE_MAP.items():
+                if other_k != detected_discipline:
+                    other_disc_terms.extend([t.lower() for t in (other_info["en_terms"] + other_info["ar_terms"])])
+
+            disc_filtered = []
+            for rec in matched_records:
+                rec_disc = str(rec.get("discipline") or "").strip().lower()
+                rec_trade = str(rec.get("trade") or "").strip().lower()
+                rec_subtrade = str(rec.get("sub_trade") or "").strip().lower()
+                rec_title = str(rec.get("title") or "").strip().lower()
+
+                # If record explicitly belongs to another discipline in its discipline column, discard it
+                if rec_disc and any(ot in rec_disc for ot in other_disc_terms if len(ot) >= 4):
+                    if not any(dt in rec_disc for dt in disc_terms if len(dt) >= 3):
+                        continue
+
+                matches_disc = (
+                    any(dt in rec_disc for dt in disc_terms if len(dt) >= 3)
+                    or any(dt in rec_trade for dt in disc_terms if len(dt) >= 3)
+                    or any(dt in rec_subtrade for dt in disc_terms if len(dt) >= 3)
+                    or any(dt in rec_title for dt in disc_terms if len(dt) >= 3)
+                )
+                if matches_disc:
+                    disc_filtered.append(rec)
+
+            matched_records = disc_filtered
+
         # Post-filter 2: If user queried for valves, enforce strictly that title or docNo contains valve stem
         if is_valve_query and matched_records:
             valve_stems = ["valve", "valves", "valv", "butterfly", "gate valve", "check valve", "ball valve", "محبس", "محابس", "صمام", "صمامات"]
@@ -1004,10 +1156,12 @@ def _build_ai_context(target_pids, user_prompt="", active_tab=None, history=None
                 dt = rec.get("doc_type") or "DOC"
                 brand = rec.get("brand") or ""
                 brand_str = f" | Brand: {brand}" if brand else ""
+                disc_val = rec.get("discipline") or ""
+                disc_str = f" | Discipline: {disc_val}" if disc_val else ""
                 p_code = proj_map.get(rec.get("project_id"), {}).get("code", rec.get("project_id", ""))
                 date_val = rec.get("doc_date") or rec.get("issued_date") or "—"
                 context_lines.append(
-                    f"- DocNo: {doc_no} | Title: {title}{brand_str} | DocType: {dt} | Status: {st} | Date: {date_val} | Project: {p_code}"
+                    f"- DocNo: {doc_no} | Title: {title}{brand_str}{disc_str} | DocType: {dt} | Status: {st} | Date: {date_val} | Project: {p_code}"
                 )
             context_lines.append("")
         else:
@@ -1071,6 +1225,7 @@ def _call_gemini_api(prompt, context_text, custom_instruction=None, history=None
         "- WIR = Work Inspection Request. "
         "- NCR = Non-Conformance Report (تقرير عدم مطابقة). "
         "Strictly adhere to the user's requested document type: if the user requests IRs (تسليمات / فحص أعمال), ONLY return IR records, never mix or return SD, MS, or QS documents. "
+        "Strictly adhere to the user's requested discipline/trade: if the user requests Architecture (معماري), Civil (مدني), Mechanical (ميكانيكا), or Electrical (كهرباء), ONLY return records matching that exact discipline. Never return electrical submittals when architectural submittals are requested. "
         "Directly list matching documents from the provided context in a compact Markdown table or bullet points. "
         "Never invent or assume records not present in the context. "
         "Avoid long introductions or filler text."
@@ -1147,18 +1302,45 @@ def _format_fallback_response_from_context(prompt, context_text):
                     st_badge = f"🟡 **{st}**"
                 elif any(x in st_low for x in ["reject", "revise", "code c", "status c", "مرفوض"]):
                     st_badge = f"❌ **{st}**"
-                elif any(x in st_low for x in ["approv", "status a", "code a", "معتمد"]):
+                if any(x in st_low for x in ["approv", "status a", "code a", "معتمد"]):
                     st_badge = f"✅ **{st}**"
 
-                rows.append(
-                    f"| **{r.get('DocNo', '—')}** | {r.get('Title', '—')} | {r.get('DocType', '—')} | {st_badge} | {r.get('Date', '—')} | {r.get('Project', '—')} |"
-                )
+                has_discipline_col = any(r.get("Discipline") for r in recs)
+                if has_discipline_col:
+                    disc = r.get("Discipline", "—")
+                    rows.append(
+                        f"| **{r.get('DocNo', '—')}** | {r.get('Title', '—')} | {disc} | {r.get('DocType', '—')} | {st_badge} | {r.get('Date', '—')} | {r.get('Project', '—')} |"
+                    )
+                else:
+                    rows.append(
+                        f"| **{r.get('DocNo', '—')}** | {r.get('Title', '—')} | {r.get('DocType', '—')} | {st_badge} | {r.get('Date', '—')} | {r.get('Project', '—')} |"
+                    )
 
+            has_discipline_col = any(r.get("Discipline") for r in recs)
             table_md = "\n".join(rows)
+            table_header = (
+                "| رقم الوثيقة (Doc No) | الوصف / العنوان | التخصص (Discipline) | النوع | الحالة (Status) | التاريخ | المشروع |\n"
+                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+                if has_discipline_col
+                else
+                "| رقم الوثيقة (Doc No) | الوصف / العنوان | النوع | الحالة (Status) | التاريخ | المشروع |\n"
+                "| :--- | :--- | :--- | :--- | :--- | :--- |"
+            )
 
             p_low = (prompt or "").lower()
             is_valve = any(w in p_low for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves"])
             is_pump = any(w in p_low for w in ["طلمب", "مضخ", "pump"])
+
+            # Detect discipline for header
+            detected_disc_name = None
+            detected_disc_ar = None
+            for disc_k, disc_v in DISCIPLINE_MAP.items():
+                if any(t in p_low for t in disc_v["ar_terms"]) or any(
+                    re.search(r"(?<![a-zA-Z])" + re.escape(t) + r"(?![a-zA-Z])", p_low) for t in disc_v["en_terms"]
+                ):
+                    detected_disc_name = disc_v["display_en"]
+                    detected_disc_ar = disc_v["display_ar"]
+                    break
 
             # Resolve project display name
             proj_display = None
@@ -1205,7 +1387,14 @@ def _format_fallback_response_from_context(prompt, context_text):
                 if "QS" not in found_dts:
                     found_dts.append("QS")
 
-            if is_valve:
+            if detected_disc_name and found_dts:
+                dt_str = " / ".join(f"الـ {dt}" for dt in found_dts)
+                is_appr_str = " المعتمدة" if any(x in p_low for x in ["معتمد", "معتمدة", "approved"]) else ""
+                header_title = f"📋 تفاصيل وثائق {dt_str}{is_appr_str} الخاصة بـ {detected_disc_ar} ({detected_disc_name}) لمشروع {proj_display}:"
+            elif detected_disc_name:
+                is_appr_str = " المعتمدة" if any(x in p_low for x in ["معتمد", "معتمدة", "approved"]) else ""
+                header_title = f"📋 تفاصيل وثائق المشروع{is_appr_str} الخاصة بـ {detected_disc_ar} ({detected_disc_name}) لمشروع {proj_display}:"
+            elif is_valve:
                 header_title = f"📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمحابس لمشروع {proj_display}:"
             elif is_pump:
                 header_title = f"📋 تفاصيل وثائق الـ MS المعتمدة الخاصة بالمضخات لمشروع {proj_display}:"
@@ -1218,8 +1407,7 @@ def _format_fallback_response_from_context(prompt, context_text):
             return (
                 f"### {header_title}\n\n"
                 f"تم استخراج {len(recs)} وثيقة معتمدة ومطابقة لطلبك مباشرة من سجلات المشروع:\n\n"
-                "| رقم الوثيقة (Doc No) | الوصف / العنوان | النوع | الحالة (Status) | التاريخ | المشروع |\n"
-                "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+                f"{table_header}\n"
                 f"{table_md}\n\n"
                 "📌 *البيانات أعلاه مستخرجة ومطابقة 100% لسجلات النظام الرسمية.*"
             )
@@ -1227,6 +1415,17 @@ def _format_fallback_response_from_context(prompt, context_text):
             p_low = (prompt or "").lower()
             is_valve = any(w in p_low for w in ["محبس", "محابس", "صمام", "صمامات", "فالف", "فالفات", "valve", "valves"])
             is_pump = any(w in p_low for w in ["طلمب", "مضخ", "pump"])
+
+            # Detect discipline for empty response
+            detected_disc_name = None
+            detected_disc_ar = None
+            for disc_k, disc_v in DISCIPLINE_MAP.items():
+                if any(t in p_low for t in disc_v["ar_terms"]) or any(
+                    re.search(r"(?<![a-zA-Z])" + re.escape(t) + r"(?![a-zA-Z])", p_low) for t in disc_v["en_terms"]
+                ):
+                    detected_disc_name = disc_v["display_en"]
+                    detected_disc_ar = disc_v["display_ar"]
+                    break
 
             found_dts = []
             for dt in KNOWN_DOC_TYPES:
@@ -1256,7 +1455,12 @@ def _format_fallback_response_from_context(prompt, context_text):
                 else:
                     proj_display = "المشروع المحدد"
 
-            if is_valve:
+            if detected_disc_name and found_dts:
+                dt_str = " / ".join(f"الـ {dt}" for dt in found_dts)
+                return f"لم يتم العثور على أي وثائق من نوع {dt_str} تخص {detected_disc_ar} ({detected_disc_name}) في سجلات مشروع {proj_display}."
+            elif detected_disc_name:
+                return f"لم يتم العثور على أي وثائق تخص {detected_disc_ar} ({detected_disc_name}) في سجلات مشروع {proj_display}."
+            elif is_valve:
                 return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_display}."
             elif is_pump:
                 return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_display}."

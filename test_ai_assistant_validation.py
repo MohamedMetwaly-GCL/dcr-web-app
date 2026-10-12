@@ -742,6 +742,112 @@ class TestAiAssistantValidation(unittest.TestCase):
         self.assertIn("EKH (24CP01)", reply)
         print("PASS: Zero IR records returns specific clean message.")
 
+    def test_30_discipline_detection_and_strict_discipline_exclusion(self):
+        """Verify querying Architecture IRs strictly retrieves architecture and excludes electrical records."""
+        from blueprints.ai import _build_ai_context, _format_fallback_response_from_context
+        mock_projects = [{"id": "PEM-058", "name": "CFC District Cooling Plant Phase 2", "code": "PEM-058"}]
+        mixed_ir_records = [
+            {
+                "id": "r100",
+                "project_id": "PEM-058",
+                "doc_type": "IR",
+                "doc_no": "IR-CY002P608-00100 REV01",
+                "title": "Hollow Block Wall Installation",
+                "status": "B - Approved As Noted",
+                "discipline": "Architecture",
+                "trade": "Architecture",
+                "sub_trade": "Block Work"
+            },
+            {
+                "id": "r103",
+                "project_id": "PEM-058",
+                "doc_type": "IR",
+                "doc_no": "IR-CY002P608-00103 REV00",
+                "title": "Block Work Installation",
+                "status": "A - Approved",
+                "discipline": "Architecture",
+                "trade": "Architecture",
+                "sub_trade": "Block Work"
+            },
+            {
+                "id": "r46",
+                "project_id": "PEM-058",
+                "doc_type": "IR",
+                "doc_no": "IR-CY002P608-00046 REV00",
+                "title": "Installation of Structured Cabling",
+                "status": "B - Approved As Noted",
+                "discipline": "Electrical",
+                "trade": "Electrical",
+                "sub_trade": "Low Current"
+            },
+            {
+                "id": "r48",
+                "project_id": "PEM-058",
+                "doc_type": "IR",
+                "doc_no": "IR-CY002P608-00048 REV00",
+                "title": "Lighting System Installation",
+                "status": "A - Approved",
+                "discipline": "Electrical",
+                "trade": "Electrical",
+                "sub_trade": "Lighting"
+            },
+        ]
+        with patch("db.q") as mock_q:
+            captured_queries = []
+            def q_side_effect(sql, params=()):
+                captured_queries.append((sql, params))
+                if "FROM records r" in sql:
+                    return mixed_ir_records
+                if "FROM projects" in sql:
+                    return mock_projects
+                return []
+            mock_q.side_effect = q_side_effect
+
+            prompt = "عايز كل IRs المعماري المعتمدة في مشروع CFC"
+            ctx = _build_ai_context(["PEM-058"], user_prompt=prompt)
+
+            # Check SQL query was constructed with discipline conditions
+            records_queries = [q for q in captured_queries if "FROM records r" in q[0]]
+            self.assertTrue(len(records_queries) > 0)
+            sql_text, sql_params = records_queries[0]
+            self.assertIn("r.data->>'discipline'", sql_text)
+
+            # Context must contain Architecture records and strictly exclude Electrical records
+            self.assertIn("Found 2 matching submittals", ctx)
+            self.assertIn("IR-CY002P608-00100 REV01", ctx)
+            self.assertIn("IR-CY002P608-00103 REV00", ctx)
+            self.assertNotIn("IR-CY002P608-00046 REV00", ctx)
+            self.assertNotIn("IR-CY002P608-00048 REV00", ctx)
+            self.assertNotIn("Structured Cabling", ctx)
+            self.assertNotIn("Lighting System", ctx)
+
+            # Test direct fallback formatting reflects Architecture discipline
+            reply = _format_fallback_response_from_context(prompt, ctx)
+            self.assertIsNotNone(reply)
+            self.assertIn("الأعمال المعمارية (Architecture)", reply)
+            self.assertIn("الـ IR", reply)
+            self.assertIn("CFC (PEM-058)", reply)
+            self.assertIn("IR-CY002P608-00100 REV01", reply)
+            self.assertNotIn("IR-CY002P608-00046 REV00", reply)
+        print("PASS: Architecture IR query strictly isolates architecture records and excludes electrical submittals.")
+
+    def test_31_zero_discipline_records_returns_clean_discipline_message(self):
+        """Verify zero matches for specific discipline returns tailored message."""
+        from blueprints.ai import _format_fallback_response_from_context
+        ctx_text = (
+            "### 5. MATCHING SUBMITTALS IN REGISTER:\n"
+            "- No matching submittals found for the requested keywords/filters in CFC (PEM-058).\n"
+        )
+        prompt = "عايز كل IRs المعماري المعتمدة في مشروع CFC"
+        reply = _format_fallback_response_from_context(prompt, ctx_text)
+
+        self.assertIsNotNone(reply)
+        self.assertIn("الأعمال المعمارية (Architecture)", reply)
+        self.assertIn("الـ IR", reply)
+        self.assertIn("CFC (PEM-058)", reply)
+        self.assertIn("لم يتم العثور على أي وثائق", reply)
+        print("PASS: Zero matches for architecture IRs returns tailored discipline message.")
+
 
 if __name__ == "__main__":
     unittest.main()
