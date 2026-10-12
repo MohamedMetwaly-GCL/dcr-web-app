@@ -711,6 +711,29 @@ body.dark .spotlight-drive-link {
   background: rgba(2, 132, 199, 0.12);
 }
 
+.spotlight-item-date, .result-date {
+  font-size: 11px;
+  color: var(--sl-proj-text, #64748b);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-weight: 500;
+  line-height: 1.2;
+}
+body.dark .spotlight-item-date, body.dark .result-date,
+.dark-theme .spotlight-item-date, .dark-theme .result-date {
+  color: #94a3b8;
+}
+.spotlight-item-date i.fa-calendar-alt, .result-date i.fa-calendar-alt {
+  display: inline-block;
+  font-style: normal;
+}
+.spotlight-item-date i.fa-calendar-alt::before, .result-date i.fa-calendar-alt::before {
+  content: "📅";
+  font-size: 10px;
+}
+
 .spotlight-empty-state {
   text-align: center;
   padding: 32px 16px;
@@ -1122,6 +1145,9 @@ function renderSpotlightResults() {
     const status = r.status || '';
     const stBadge = getSpotlightStatusBadge(status);
     const driveLink = r.drive_link ? ('<a class="spotlight-drive-link" href="' + _slEsc(r.drive_link) + '" target="_blank" onclick="event.stopPropagation()" title="Open attached Drive link">🔗</a>') : '';
+    const rawDate = String(r.doc_date || r.issued_date || '').trim();
+    const docDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
+    const dateHtml = docDate ? ('<div class="result-date spotlight-item-date text-muted" style="font-size: 0.85em;" title="Submission Date"><i class="fas fa-calendar-alt"></i> ' + _slEsc(docDate) + '</div>') : '';
 
     const item = document.createElement('div');
     item.className = 'spotlight-item ' + (isHl ? 'highlighted' : '');
@@ -1142,6 +1168,7 @@ function renderSpotlightResults() {
       '</div>' +
     '</div>' +
     '<div class="spotlight-item-meta">' +
+      dateHtml +
       driveLink +
     '</div>';
 

@@ -181,6 +181,7 @@ def api_search_global():
             COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
             COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
             COALESCE(r.data->>'driveLink', r.data->>'fileLocation', '') AS drive_link,
+            COALESCE(r.data->>'issuedDate', r.data->>'partAIssueDate', r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'date', '') AS doc_date,
             r.created_at,
             COUNT(*) OVER() AS total_count
         FROM records r
@@ -210,7 +211,9 @@ def api_search_global():
             "doc_no": row.get("doc_no") or "",
             "title": row.get("title") or "",
             "status": row.get("status") or "",
-            "drive_link": row.get("drive_link") or ""
+            "drive_link": row.get("drive_link") or "",
+            "doc_date": row.get("doc_date") or "",
+            "issued_date": row.get("doc_date") or ""
         })
 
     return jsonify(

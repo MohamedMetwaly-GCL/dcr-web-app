@@ -260,6 +260,8 @@ class TestGlobalSearch(unittest.TestCase):
             self.assertIn("spotlight-reset-filters", dash_html, "Dashboard must render reset filters button")
             self.assertNotIn("if(event.target===this) closeGlobalSearch()", dash_html, "Backdrop click must not close modal")
             self.assertIn("window.open(targetUrl, '_blank')", dash_html, "Record click must open in new tab without closing search")
+            self.assertIn("result-date", dash_html, "Dashboard must include result-date styling / rendering logic")
+            self.assertIn("fa-calendar-alt", dash_html, "Dashboard must include calendar icon rendering logic")
 
             # 2. Register rendering
             proj = {"id": "PEM-058", "name": "CFC DCP PH-2A", "code": "PEM-058"}
@@ -268,7 +270,53 @@ class TestGlobalSearch(unittest.TestCase):
             self.assertIn("id=\"spotlight-modal\"", reg_html, "Register must render spotlight-modal overlay")
             self.assertIn("pendingHighlightId", reg_html, "Register must include highlight handling logic")
             self.assertIn("spotlight-project-filter", reg_html, "Register must render project filter select")
-            print("PASS: Frontend markup, filters, and script behaviors verified in both Dashboard and Register views.")
+            self.assertIn("result-date", reg_html, "Register must include result-date styling / rendering logic")
+            self.assertIn("fa-calendar-alt", reg_html, "Register must include calendar icon rendering logic")
+            print("PASS: Frontend markup, filters, date rendering, and script behaviors verified in both Dashboard and Register views.")
+
+    # -------------------------------------------------------------------------
+    # 10. Submission Date (Issued Date) in Global Search Results
+    # -------------------------------------------------------------------------
+    @patch("blueprints.records.current_user")
+    @patch("blueprints.records.db.get_projects")
+    @patch("blueprints.records.db.q")
+    def test_submission_date_included_in_api_response(self, mock_db_q, mock_get_projs, mock_user):
+        """Verify issuedDate / doc_date is retrieved and included in the JSON response payload."""
+        mock_user.return_value = {"username": "admin", "role": "admin"}
+        mock_get_projs.return_value = [{"id": "P1", "code": "PEM-058"}]
+        mock_db_q.return_value = [
+            {
+                "id": "rec_001",
+                "project_id": "P1",
+                "project_code": "PEM-058",
+                "project_name": "CFC Phase 2",
+                "dt_id": "MS",
+                "doc_no": "MS-001",
+                "title": "Valves",
+                "status": "Approved",
+                "drive_link": "",
+                "doc_date": "2024-08-15",
+                "total_count": 1
+            }
+        ]
+
+        resp = self.client.get("/api/records/search/global?q=valves")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data.get("total_found"), 1)
+        results = data.get("results")
+        self.assertEqual(len(results), 1)
+        self.assertIn("doc_date", results[0])
+        self.assertEqual(results[0]["doc_date"], "2024-08-15")
+        self.assertIn("issued_date", results[0])
+        self.assertEqual(results[0]["issued_date"], "2024-08-15")
+
+        # Verify SQL query requested doc_date
+        sql_query = mock_db_q.call_args[0][0]
+        self.assertIn("doc_date", sql_query)
+        self.assertIn("r.data->>'issuedDate'", sql_query)
+        print("PASS: Submission date (doc_date / issued_date) is retrieved and included in API response.")
+
 
 if __name__ == "__main__":
     unittest.main()
