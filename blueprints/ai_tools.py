@@ -117,6 +117,53 @@ PROJECT_ALIASES = {
     "شرم الشيخ": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
 }
 
+_DOC_TYPES_CACHE = {"ts": 0.0, "types": []}
+
+def get_registered_doc_types() -> list:
+    """Dynamically fetches all registered document types from DB across all projects with cache."""
+    import time
+    now = time.time()
+    if _DOC_TYPES_CACHE["types"] and (now - _DOC_TYPES_CACHE["ts"] < 300):
+        return _DOC_TYPES_CACHE["types"]
+    try:
+        rows = db.q("SELECT DISTINCT UPPER(TRIM(code)) AS code, TRIM(name) AS name FROM doc_types WHERE code IS NOT NULL AND code != ''")
+        if rows:
+            _DOC_TYPES_CACHE["types"] = rows
+            _DOC_TYPES_CACHE["ts"] = now
+            return rows
+    except Exception:
+        pass
+    # Fallback to default doc types in db module
+    try:
+        defaults = [{"code": code, "name": name} for code, name, _ in getattr(db, "DEFAULT_DOC_TYPES", [])]
+        if defaults:
+            return defaults
+    except Exception:
+        pass
+    return [
+        {"code": "MS", "name": "Material Submittal"},
+        {"code": "SD", "name": "Shop Drawing"},
+        {"code": "IR", "name": "Inspection Request"},
+        {"code": "MIR", "name": "Material Inspection Request"},
+        {"code": "PR", "name": "Requisition"},
+        {"code": "RFI", "name": "Request for Information"},
+        {"code": "QS", "name": "Quantity Surveyor"},
+        {"code": "NOC", "name": "Notice of Change"},
+        {"code": "LTR", "name": "Letters"},
+        {"code": "DS", "name": "Document Submittal"},
+        {"code": "WN", "name": "Work Notification"},
+        {"code": "NCN", "name": "Non-Conformance Notice"},
+        {"code": "EI", "name": "Engineer's Instruction"},
+        {"code": "NCR", "name": "Non-Conformance Report"},
+        {"code": "MOM", "name": "Minutes of Meetings"},
+        {"code": "IOM", "name": "Internal Office Memo"},
+        {"code": "ABD", "name": "As Built Drawing"},
+        {"code": "CVI", "name": "Confirmation of Verbal Instruction"},
+        {"code": "PCQ", "name": "Potential Change Questionnaire"},
+        {"code": "SI", "name": "Site Instructions"},
+        {"code": "SVP", "name": "Safety Violation with Penalty"},
+    ]
+
 DISCIPLINE_SYNONYMS = {
     "architecture": ["architecture", "architectural", "arch", "معماري", "معمارية", "عمارة", "أعمال معمارية"],
     "electrical": ["electrical", "electric", "elect", "elec", "كهرباء", "كهربائي", "أعمال كهربائية", "كهروميكانيك"],

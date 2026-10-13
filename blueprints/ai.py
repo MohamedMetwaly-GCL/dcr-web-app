@@ -337,19 +337,30 @@ def _extract_inquiry_intent_from_text(text: str) -> dict:
 
     is_same_project = bool(any(w in p_low for w in ["في نفس المشروع", "بنفس المشروع", "نفس المشروع", "same project", "in the same project"]))
 
-    # 2. Document Type Detection
+    # 2. Document Type Detection (Dynamically resolved from registered doc types across all projects)
     dt = None
-    known_dts = ["MS", "SD", "IR", "MIR", "PR", "RFI", "QS", "NOC", "WIR", "DS", "WN", "NCN", "EI", "LTR"]
-    for kdt in known_dts:
+    registered_dts = ai_tools.get_registered_doc_types()
+    # Sort by code length descending so longer codes (e.g. MIR, NOC) match before shorter prefixes (e.g. IR)
+    sorted_dts = sorted(registered_dts, key=lambda d: len(d.get("code") or ""), reverse=True)
+    for d in sorted_dts:
+        kdt = (d.get("code") or "").strip()
+        if not kdt:
+            continue
         if re.search(r"(?<![a-zA-Z])" + re.escape(kdt) + r"(?:s|z)?(?![a-zA-Z])", text, re.IGNORECASE):
             dt = kdt.upper()
             break
+        # Also check English or Arabic register name from DB
+        dname = (d.get("name") or "").strip().lower()
+        if dname and len(dname) >= 4 and dname in p_low:
+            dt = kdt.upper()
+            break
+
     if not dt:
         if any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال"]):
             dt = "IR"
         elif any(w in p_low for w in ["شوب درونج", "شوب دروينج", "مخططات"]):
             dt = "SD"
-        elif any(w in p_low for w in ["ماتريال", "اعتماد مواد", "اعتمادات"]):
+        elif any(w in p_low for w in ["ماتريال", "اعتماد مواد", "اعتمادات", "اعتماد خامات"]):
             dt = "MS"
         elif any(w in p_low for w in [
             "طلب شراء", "طلب الشراء", "طلبات شراء", "طلبات الشراء",
@@ -367,6 +378,20 @@ def _extract_inquiry_intent_from_text(text: str) -> dict:
             dt = "QS"
         elif any(w in p_low for w in ["تغيير", "أمر تغيير", "امر تغيير", "مطالبة", "مطالبات"]):
             dt = "NOC"
+        elif any(w in p_low for w in ["خطاب", "خطابات", "مراسلة", "مراسلات", "جواب", "جوابات"]):
+            dt = "LTR"
+        elif any(w in p_low for w in ["عدم مطابقة", "مخالفة"]):
+            dt = "NCR"
+        elif any(w in p_low for w in ["محضر اجتماع", "محاضر اجتماعات"]):
+            dt = "MOM"
+        elif any(w in p_low for w in ["تعليمات شفهية", "أوامر شفهية"]):
+            dt = "CVI"
+        elif any(w in p_low for w in ["تعليمات موقع"]):
+            dt = "SI"
+        elif any(w in p_low for w in ["تعليمات مهندس"]):
+            dt = "EI"
+        elif any(w in p_low for w in ["ازبلت", "از بيلت", "as built"]):
+            dt = "ABD"
 
     # 3. Keyword Detection (with Arabic prefix stripping and normalization)
     kw = None
@@ -542,6 +567,16 @@ def _call_gemini_agent(
 
     client = genai.Client(api_key=api_key)
     system_inst = custom_instruction or SYSTEM_INSTRUCTION
+
+    # Dynamically inject registered registers from DB so Gemini always knows all available registers across all projects
+    try:
+        reg_types = ai_tools.get_registered_doc_types()
+        if reg_types:
+            dt_list_str = ", ".join([f"{d['code']} ({d['name']})" for d in reg_types if d.get('code')])
+            system_inst += f"\n\nDynamic System Registers: Registers configured in this system across projects include:\n{dt_list_str}."
+    except Exception:
+        pass
+
     if active_project_id and str(active_project_id).strip().upper() not in ("ALL", ""):
         system_inst += (
             f"\n\nContext Hint: The user is currently browsing the system on project page: '{active_project_id}'. "

@@ -1249,8 +1249,49 @@ class TestAiAssistantValidation(unittest.TestCase):
 
         print("PASS: PR intent extraction and conversational fallback correctly inherit project and format PR records.")
 
+    def test_44_dynamic_doc_type_discovery_across_projects(self):
+        """Verifies that all document types across all projects are dynamically discovered without manual addition."""
+        from blueprints.ai import _extract_inquiry_intent_from_text
+        ai_tools._DOC_TYPES_CACHE["types"] = []
+        ai_tools._DOC_TYPES_CACHE["ts"] = 0.0
+
+        mock_db_types = [
+            {"code": "MS", "name": "Material Submittal"},
+            {"code": "SD", "name": "Shop Drawing"},
+            {"code": "IR", "name": "Inspection Request"},
+            {"code": "PR", "name": "Requisition"},
+            {"code": "NCR", "name": "Non-Conformance Report"},
+            {"code": "MOM", "name": "Minutes of Meetings"},
+            {"code": "CUSTOM_REG", "name": "Custom Engineering Register"},
+        ]
+
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "SELECT DISTINCT UPPER(TRIM(code))" in sql:
+                    return mock_db_types
+                return []
+            mock_q.side_effect = q_side_effect
+
+            # 1. Verify dynamic doc types retrieval
+            dts = ai_tools.get_registered_doc_types()
+            codes = [d["code"] for d in dts]
+            self.assertIn("CUSTOM_REG", codes)
+            self.assertIn("NCR", codes)
+            self.assertIn("PR", codes)
+
+            # 2. Verify AI recognizes newly registered custom doc type dynamically
+            parsed = _extract_inquiry_intent_from_text("شوفلي كل مستندات الـ CUSTOM_REG في مشروع CFC")
+            self.assertEqual(parsed.get("doc_type"), "CUSTOM_REG")
+
+            # 3. Verify AI recognizes standard registered types dynamically
+            parsed_ncr = _extract_inquiry_intent_from_text("ما موقف تقارير عدم المطابقة NCR؟")
+            self.assertEqual(parsed_ncr.get("doc_type"), "NCR")
+
+        print("PASS: Dynamic document type discovery reads all registers across all projects automatically.")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
