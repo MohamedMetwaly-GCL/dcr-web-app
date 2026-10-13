@@ -27,26 +27,94 @@ import db
 logger = logging.getLogger(__name__)
 
 PROJECT_ALIASES = {
+    # 1. CFC District Cooling Plant Phase 2 (PEM-058)
     "cfc": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
     "pem-058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
     "pem058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
     "058": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
     "سي اف سي": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
     "كايرو فيستيفال": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+    "تبريد cfc": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+    "district cooling": {"code": "PEM-058", "name_pattern": "CFC", "display": "CFC (PEM-058)", "doc_prefix": "%CY002P608%"},
+
+    # 2. EKH New Building Office (24CP01)
     "ekh": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
     "24cp01": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
     "اي كيه اتش": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
     "إي كيه إتش": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
-    "assiut": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
-    "pem-045": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
-    "045": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
-    "أسيوط": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
-    "اسيوط": {"code": "PEM-045", "name_pattern": "Assiut", "display": "Assiut (PEM-045)", "doc_prefix": "%PEM-045%"},
-    "suez": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
-    "pem-044": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
-    "044": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
-    "السويس": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
-    "سويس": {"code": "PEM-044", "name_pattern": "Suez", "display": "Suez (PEM-044)", "doc_prefix": "%PEM-044%"},
+    "كويت القابضة": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
+    "الكويت القابضة": {"code": "24CP01", "name_pattern": "EKH", "display": "EKH (24CP01)", "doc_prefix": "%24CP01%"},
+
+    # 3. Eastmain Generic (PEM-065 & PEM-066)
+    "eastmain": {"code": "Eastmain", "codes": ["PEM-065", "PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain (PEM-065 / PEM-066)", "doc_prefix": "%PEM-06%"},
+    "east main": {"code": "Eastmain", "codes": ["PEM-065", "PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain (PEM-065 / PEM-066)", "doc_prefix": "%PEM-06%"},
+    "ايست مين": {"code": "Eastmain", "codes": ["PEM-065", "PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain (PEM-065 / PEM-066)", "doc_prefix": "%PEM-06%"},
+    "إيست مين": {"code": "Eastmain", "codes": ["PEM-065", "PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain (PEM-065 / PEM-066)", "doc_prefix": "%PEM-06%"},
+    "ايستمين": {"code": "Eastmain", "codes": ["PEM-065", "PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain (PEM-065 / PEM-066)", "doc_prefix": "%PEM-06%"},
+
+    # 4. Eastmain MEP Buildings B06 & B10 (PEM-065)
+    "pem-065": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "pem065": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "065": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "eastmain b06 & b10": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "eastmain b06 and b10": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "eastmain b06": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "eastmain b10": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "b06 & b10": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "b06": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "b10": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "ايست مين b06": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+    "ايست مين b10": {"code": "PEM-065", "codes": ["PEM-065"], "name_pattern": "Eastmain", "display": "Eastmain B06 & B10 (PEM-065)", "doc_prefix": "%PEM-065%"},
+
+    # 5. Eastmain - MEP Building B08 (PEM-066)
+    "pem-066": {"code": "PEM-066", "codes": ["PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain B08 (PEM-066)", "doc_prefix": "%PEM-066%"},
+    "pem066": {"code": "PEM-066", "codes": ["PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain B08 (PEM-066)", "doc_prefix": "%PEM-066%"},
+    "066": {"code": "PEM-066", "codes": ["PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain B08 (PEM-066)", "doc_prefix": "%PEM-066%"},
+    "eastmain b08": {"code": "PEM-066", "codes": ["PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain B08 (PEM-066)", "doc_prefix": "%PEM-066%"},
+    "east main b08": {"code": "PEM-066", "codes": ["PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain B08 (PEM-066)", "doc_prefix": "%PEM-066%"},
+    "b08": {"code": "PEM-066", "codes": ["PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain B08 (PEM-066)", "doc_prefix": "%PEM-066%"},
+    "ايست مين b08": {"code": "PEM-066", "codes": ["PEM-066"], "name_pattern": "Eastmain", "display": "Eastmain B08 (PEM-066)", "doc_prefix": "%PEM-066%"},
+
+    # 6. Suez Steel Admin Building (PEM-064 / PEM-044)
+    "suez": {"code": "PEM-064", "codes": ["PEM-064", "PEM-044"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "pem-064": {"code": "PEM-064", "codes": ["PEM-064"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "pem064": {"code": "PEM-064", "codes": ["PEM-064"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "064": {"code": "PEM-064", "codes": ["PEM-064"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "pem-044": {"code": "PEM-064", "codes": ["PEM-064", "PEM-044"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "044": {"code": "PEM-064", "codes": ["PEM-064", "PEM-044"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "السويس": {"code": "PEM-064", "codes": ["PEM-064", "PEM-044"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "سويس": {"code": "PEM-064", "codes": ["PEM-064", "PEM-044"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "حديد السويس": {"code": "PEM-064", "codes": ["PEM-064", "PEM-044"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+    "suez steel": {"code": "PEM-064", "codes": ["PEM-064", "PEM-044"], "name_pattern": "Suez", "display": "Suez (PEM-064)", "doc_prefix": "%PEM-064%"},
+
+    # 7. Assiut Hydrocracking Complex - ANOPC (PEM-067 / PEM-045)
+    "anopc": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "ANOPC Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "assiut": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "pem-067": {"code": "PEM-067", "codes": ["PEM-067"], "name_pattern": "Assiut", "display": "Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "pem067": {"code": "PEM-067", "codes": ["PEM-067"], "name_pattern": "Assiut", "display": "Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "067": {"code": "PEM-067", "codes": ["PEM-067"], "name_pattern": "Assiut", "display": "Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "pem-045": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "045": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "أسيوط": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "اسيوط": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "أنوبك": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "ANOPC Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "انوبك": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "ANOPC Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+    "مجمع اسيوط": {"code": "PEM-067", "codes": ["PEM-067", "PEM-045"], "name_pattern": "Assiut", "display": "ANOPC Assiut (PEM-067)", "doc_prefix": "%PEM-067%"},
+
+    # 8. Four Season Lift Station (PEM-068)
+    "four season": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "four seasons": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "fourseason": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "fourseasons": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "pem-068": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "pem068": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "068": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "فور سيزون": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "فورسيزون": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "فور سيزونز": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "فورسيزونز": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "محطة الرفع": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
+    "شرم الشيخ": {"code": "PEM-068", "codes": ["PEM-068"], "name_pattern": "Four Season", "display": "Four Season (PEM-068)", "doc_prefix": "%PEM-068%"},
 }
 
 DISCIPLINE_SYNONYMS = {
@@ -179,7 +247,7 @@ def _resolve_project_aliases(cursor_or_project, requested_project=None, allowed_
     req_clean = str(req_proj or "").strip().lower()
     matched_alias_info = None
     if req_clean and req_clean not in ("all", "*"):
-        for alias_k, alias_v in PROJECT_ALIASES.items():
+        for alias_k, alias_v in sorted(PROJECT_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
             if alias_k == req_clean or alias_k in req_clean or req_clean in alias_k:
                 matched_alias_info = alias_v
                 break
@@ -202,15 +270,15 @@ def _resolve_project_aliases(cursor_or_project, requested_project=None, allowed_
         )
 
         # Check via alias mapping if user's permissions allow this project
+        target_codes = matched_alias_info.get("codes", [matched_alias_info["code"]]) if matched_alias_info else []
+        target_codes_upper = {c.upper() for c in target_codes}
         if not is_allowed and matched_alias_info:
-            if (
-                matched_alias_info["code"] in clean_allowed_set
-                or matched_alias_info["code"].upper() in clean_allowed_upper
-            ):
+            if any(c in clean_allowed_set or c.upper() in clean_allowed_upper for c in target_codes):
                 if (
-                    row_code == matched_alias_info["code"]
+                    row_code in target_codes
+                    or row_code.upper() in target_codes_upper
                     or matched_alias_info["name_pattern"].lower() in row_name.lower()
-                    or matched_alias_info["code"] in row_id
+                    or any(c in row_id for c in target_codes)
                 ):
                     is_allowed = True
 
@@ -227,8 +295,10 @@ def _resolve_project_aliases(cursor_or_project, requested_project=None, allowed_
                 )
                 if not matches_request and matched_alias_info:
                     matches_request = (
-                        row_code == matched_alias_info["code"]
+                        row_code in target_codes
+                        or row_code.upper() in target_codes_upper
                         or matched_alias_info["name_pattern"].lower() in row_name.lower()
+                        or any(c.lower() in row_code.lower() for c in target_codes)
                     )
                 if not matches_request:
                     continue
@@ -240,79 +310,82 @@ def _resolve_project_aliases(cursor_or_project, requested_project=None, allowed_
             if row_name:
                 valid_aliases.add(row_name)
 
-    # Known alias expansion for CFC / EKH if permitted
-    has_cfc_permission = (
-        "PEM-058" in clean_allowed_upper
-        or "CFC" in clean_allowed_upper
-        or any("058" in p for p in clean_allowed)
-        or any("CFC" in p.upper() for p in clean_allowed)
-    )
-    if has_cfc_permission:
-        # If user asked for CFC or no project specified (ALL projects)
-        if not req_clean or req_clean in ("all", "*") or (
-            matched_alias_info and matched_alias_info["code"] == "PEM-058"
-        ) or any(k in req_clean for k in ["cfc", "pem-058", "058", "cooling"]):
-            valid_aliases.add("PEM-058")
-            valid_aliases.add("CFC DCP PH-2A")
-            valid_aliases.add("CFC")
+    # Known alias expansion for all 7 system projects if permitted
+    KNOWN_PROJECT_EXPANSIONS = [
+        {
+            "codes": ["PEM-058"],
+            "aliases": ["PEM-058", "CFC DCP PH-2A", "CFC", "كايرو فيستيفال", "سي اف سي"],
+            "match_keys": ["cfc", "pem-058", "058", "cooling", "كايرو فيستيفال", "سي اف سي"],
+        },
+        {
+            "codes": ["24CP01"],
+            "aliases": ["24CP01", "EKH", "EKH New Building Office", "اي كيه اتش", "إي كيه إتش", "كويت القابضة"],
+            "match_keys": ["ekh", "24cp01", "اي كيه اتش", "إي كيه إتش", "كويت القابضة", "الكويت القابضة"],
+        },
+        {
+            "codes": ["PEM-064", "PEM-044"],
+            "aliases": ["PEM-064", "PEM-044", "Suez", "Suez Steel Admin Building", "السويس", "سويس", "حديد السويس"],
+            "match_keys": ["suez", "pem-064", "pem-044", "064", "044", "السويس", "سويس", "حديد السويس", "suez steel"],
+        },
+        {
+            "codes": ["PEM-065"],
+            "aliases": ["PEM-065", "Eastmain MEP Buildings B06 & B10", "Eastmain B06", "Eastmain B10", "ايست مين b06"],
+            "match_keys": ["pem-065", "065", "eastmain b06", "eastmain b10", "b06", "b10", "eastmain b06 & b10", "eastmain b06 and b10", "ايست مين b06", "ايست مين b10"],
+        },
+        {
+            "codes": ["PEM-066"],
+            "aliases": ["PEM-066", "Eastmain - MEP Building B08", "Eastmain B08", "ايست مين b08"],
+            "match_keys": ["pem-066", "066", "eastmain b08", "b08", "east main b08", "ايست مين b08"],
+        },
+        {
+            "codes": ["PEM-067", "PEM-045"],
+            "aliases": ["PEM-067", "PEM-045", "Assiut", "ANOPC", "Assiut Hydrocracking Complex - ANOPC", "أسيوط", "اسيوط", "أنوبك"],
+            "match_keys": ["assiut", "anopc", "pem-067", "pem-045", "067", "045", "أسيوط", "اسيوط", "أنوبك", "انوبك"],
+        },
+        {
+            "codes": ["PEM-068"],
+            "aliases": ["PEM-068", "Four Season", "Four Season Lift Station", "Four Seasons", "فور سيزون", "محطة الرفع"],
+            "match_keys": ["four season", "four seasons", "fourseason", "fourseasons", "pem-068", "068", "فور سيزون", "فورسيزون", "فور سيزونز", "محطة الرفع", "شرم الشيخ"],
+        },
+    ]
 
-    has_ekh_permission = (
-        "24CP01" in clean_allowed_upper
-        or "EKH" in clean_allowed_upper
-        or any("24CP01" in p.upper() for p in clean_allowed)
-        or any("EKH" in p.upper() for p in clean_allowed)
-    )
-    if has_ekh_permission:
-        if not req_clean or req_clean in ("all", "*") or (
-            matched_alias_info and matched_alias_info["code"] == "24CP01"
-        ) or any(k in req_clean for k in ["ekh", "24cp01"]):
-            valid_aliases.add("24CP01")
-            valid_aliases.add("EKH")
+    target_codes = matched_alias_info.get("codes", [matched_alias_info["code"]]) if matched_alias_info else []
+    is_generic_eastmain = req_clean in ("eastmain", "east main", "ايست مين", "إيست مين", "ايستمين")
 
-    has_assiut_permission = (
-        "PEM-045" in clean_allowed_upper
-        or "ASSIUT" in clean_allowed_upper
-        or any("045" in p for p in clean_allowed)
-        or any("ASSIUT" in p.upper() for p in clean_allowed)
-    )
-    if has_assiut_permission:
-        if not req_clean or req_clean in ("all", "*") or (
-            matched_alias_info and matched_alias_info["code"] == "PEM-045"
-        ) or any(k in req_clean for k in ["assiut", "pem-045", "045", "أسيوط", "اسيوط"]):
-            valid_aliases.add("PEM-045")
-            valid_aliases.add("Assiut")
-
-    has_suez_permission = (
-        "PEM-044" in clean_allowed_upper
-        or "SUEZ" in clean_allowed_upper
-        or any("044" in p for p in clean_allowed)
-        or any("SUEZ" in p.upper() for p in clean_allowed)
-    )
-    if has_suez_permission:
-        if not req_clean or req_clean in ("all", "*") or (
-            matched_alias_info and matched_alias_info["code"] == "PEM-044"
-        ) or any(k in req_clean for k in ["suez", "pem-044", "044", "السويس", "سويس"]):
-            valid_aliases.add("PEM-044")
-            valid_aliases.add("Suez")
+    for exp in KNOWN_PROJECT_EXPANSIONS:
+        has_perm = any(
+            c in clean_allowed_upper or any(c in p.upper() for p in clean_allowed)
+            for c in exp["codes"]
+        )
+        if has_perm:
+            matches_this = (
+                not req_clean
+                or req_clean in ("all", "*")
+                or any(k in req_clean for k in exp["match_keys"])
+                or (matched_alias_info and any(c in target_codes for c in exp["codes"]))
+                or (is_generic_eastmain and any(c in ("PEM-065", "PEM-066") for c in exp["codes"]))
+            )
+            if matches_this:
+                valid_aliases.update(exp["aliases"])
 
     # Fallback: if no DB rows returned (e.g. offline/mock tests)
     if not valid_aliases:
         if not req_clean or req_clean in ("all", "*"):
             valid_aliases.update(clean_allowed)
-        elif any(req_clean == a.lower() for a in clean_allowed):
-            valid_aliases.add(req_clean)
-            if req_clean in ("pem-058", "cfc", "pem058", "058", "سي اف سي", "كايرو فيستيفال"):
-                valid_aliases.add("CFC DCP PH-2A")
-                valid_aliases.add("PEM-058")
-            elif req_clean in ("24cp01", "ekh", "اي كيه اتش", "إي كيه إتش"):
-                valid_aliases.add("24CP01")
-                valid_aliases.add("EKH")
-            elif req_clean in ("pem-045", "assiut", "045", "أسيوط", "اسيوط"):
-                valid_aliases.add("PEM-045")
-                valid_aliases.add("Assiut")
-            elif req_clean in ("pem-044", "suez", "044", "السويس", "سويس"):
-                valid_aliases.add("PEM-044")
-                valid_aliases.add("Suez")
+        else:
+            for exp in KNOWN_PROJECT_EXPANSIONS:
+                has_perm = any(
+                    c in clean_allowed_upper or any(c in p.upper() for p in clean_allowed)
+                    for c in exp["codes"]
+                )
+                if has_perm and (
+                    any(k in req_clean for k in exp["match_keys"])
+                    or (matched_alias_info and any(c in target_codes for c in exp["codes"]))
+                    or (is_generic_eastmain and any(c in ("PEM-065", "PEM-066") for c in exp["codes"]))
+                ):
+                    valid_aliases.update(exp["aliases"])
+            if any(req_clean == a.lower() for a in clean_allowed):
+                valid_aliases.add(req_clean)
 
     return list(valid_aliases)
 
@@ -369,11 +442,13 @@ def _resolve_target_projects(allowed_project_ids, project_code=None):
         return projs
 
     p_clean = str(project_code).strip().lower()
+    p_norm = _normalize_arabic(p_clean)
 
-    # Check PROJECT_ALIASES
+    # Check PROJECT_ALIASES (sorted by length descending)
     matched_alias = None
-    for alias_key, alias_info in PROJECT_ALIASES.items():
-        if alias_key in p_clean or p_clean in alias_key:
+    for alias_key, alias_info in sorted(PROJECT_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
+        alias_norm = _normalize_arabic(alias_key)
+        if alias_key in p_clean or p_clean in alias_key or alias_norm in p_norm or p_norm in alias_norm:
             matched_alias = alias_info
             break
 
@@ -384,9 +459,9 @@ def _resolve_target_projects(allowed_project_ids, project_code=None):
         p_id = str(p.get("id") or "").lower()
 
         if matched_alias:
-            alias_code = matched_alias["code"].lower()
+            alias_codes = [c.lower() for c in matched_alias.get("codes", [matched_alias["code"]])]
             alias_name = matched_alias["name_pattern"].lower()
-            if p_code == alias_code or alias_name in p_name or alias_code in p_id:
+            if p_code in alias_codes or alias_name in p_name or any(c in p_id for c in alias_codes):
                 matched.append(p)
                 continue
 

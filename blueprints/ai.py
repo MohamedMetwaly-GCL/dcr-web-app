@@ -56,15 +56,24 @@ SYSTEM_INSTRUCTION = (
     "6. When presenting records, format them in a clean Markdown table with columns: "
     "| Document No | Title / Description | Type | Status | Date | Project |.\n"
     "7. MULTI-PROJECT QUERIES & SWITCHING: The user can freely query different projects in the same chat session. "
-    "If the user asks about a specific project (e.g. CFC, PEM-058, EKH, 24CP01, Assiut, PEM-045, Suez, PEM-044), "
-    "immediately switch to that project. Never carry over or force a previous project when a new project is specified.\n"
+    "Projects in the system include:\n"
+    "- '24CP01': EKH New Building Office (Egypt Kuwait Holding - EKH / اي كيه اتش)\n"
+    "- 'PEM-058': CFC District Cooling Plant Phase 2 (AFREB / CFC / سي اف سي / كايرو فيستيفال)\n"
+    "- 'PEM-064': Suez Steel Admin Building (Suez Steel Co. / Suez / السويس / حديد السويس)\n"
+    "- 'PEM-065': Eastmain MEP Buildings B06 & B10 (MOBCO Real Estate / Eastmain / Eastmain B06 / Eastmain B10 / ايست مين)\n"
+    "- 'PEM-066': Eastmain - MEP Building B08 (MOBCO Real Estate / Eastmain B08 / ايست مين B08)\n"
+    "- 'PEM-067': Assiut Hydrocracking Complex - ANOPC (Assiut / ANOPC / أسيوط / أنوبك)\n"
+    "- 'PEM-068': Four Season Lift Station (Four Season / Four Seasons / فور سيزون / محطة الرفع)\n"
+    "When the user asks about 'Eastmain' generically without specifying a building, search across Eastmain projects (project_code='Eastmain' or 'PEM-065'). If they specify 'B08', use project_code='PEM-066'. If they specify 'B06' or 'B10', use project_code='PEM-065'.\n"
+    "If the user asks about a specific project, immediately switch to that project. Never carry over or force a previous project when a new project is specified.\n"
     "8. CONVERSATIONAL MEMORY, ELLIPSIS & PROJECT SWITCHING (CRITICAL):\n"
     "   - CONVERSATIONAL ELLIPSIS (FOLLOW-UP WITH PROJECT SWITCH): When the user asks a follow-up question that specifies a new project "
-    "using a continuation or comparative phrase (e.g. 'وبالنسبة لمشروع CFC', 'وماذا عن CFC', 'طب وفي مشروع CFC', 'what about CFC project?', 'and for CFC?'), "
+    "using a continuation or comparative phrase (e.g. 'وبالنسبة لمشروع CFC', 'وماذا عن CFC', 'طب وفي مشروع CFC', 'what about CFC project?', 'and for CFC?', 'طب ومشروع Eastmain', 'وفي مشروع Eastmain B08'), "
     "the user is asking the SAME question for the newly specified project! You MUST retain the previous turn's query intent: the equipment/keyword (e.g. 'valve'), "
     "the document type (e.g. 'MS'), discipline, and approval status (e.g. 'approved'), and apply them directly to the new project! "
     "For example: if the previous query was 'ايه MS الخاص بالمحابس المعتمد في مشروع EKH', and the user follows up with 'وبالنسبة لمشروع CFC', "
-    "you MUST immediately call search_submittals(project_code='PEM-058', doc_type='MS', keyword='valve', status='approved').\n"
+    "you MUST immediately call search_submittals(project_code='PEM-058', doc_type='MS', keyword='valve', status='approved'). "
+    "And if they follow up with 'طيب ومشروع Eastmain', you MUST call search_submittals(project_code='Eastmain', doc_type='MS', keyword='valve', status='approved').\n"
     "   - FOLLOW-UP WITH EQUIPMENT / TOPIC SWITCH: When the user asks about different equipment or document type without specifying a project "
     "(e.g. 'وماذا عن المضخات؟', 'طب والـ SD؟', 'and what about pumps?'), retain the project and approval status from the previous turn, and update the keyword or doc_type.\n"
     "   - ISOLATED PROJECT MENTION WITH NO ACTIVE TOPIC: If the user mentions ONLY a project name (e.g. 'مشروع CFC' or 'CFC') and there is NO active inquiry "
@@ -99,7 +108,7 @@ search_submittals_declaration = types.FunctionDeclaration(
         properties={
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Pass None or omit if user asks across all projects or registers. NEVER recall a project code from prior turns for global questions.",
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH', 'PEM-064', 'Suez', 'PEM-065', 'PEM-066', 'Eastmain', 'Eastmain B08', 'PEM-067', 'ANOPC', 'PEM-068', 'Four Season'). Pass None or omit if user asks across all projects or registers. NEVER recall a project code from prior turns for global questions.",
             ),
             "doc_type": types.Schema(
                 type=types.Type.STRING,
@@ -144,7 +153,7 @@ get_project_summary_declaration = types.FunctionDeclaration(
         properties={
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Pass None or omit to summarize across all accessible projects or registers. Do not carry over prior project codes for global summaries.",
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH', 'PEM-064', 'Suez', 'PEM-065', 'PEM-066', 'Eastmain', 'PEM-067', 'ANOPC', 'PEM-068', 'Four Season'). Pass None or omit to summarize across all accessible projects or registers. Do not carry over prior project codes for global summaries.",
             ),
         },
     ),
@@ -162,7 +171,7 @@ get_noc_financials_declaration = types.FunctionDeclaration(
         properties={
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH'). Pass None or omit for all accessible projects. Do not bleed prior project codes for global questions.",
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH', 'PEM-064', 'Suez', 'PEM-065', 'PEM-066', 'Eastmain', 'PEM-067', 'ANOPC', 'PEM-068', 'Four Season'). Pass None or omit for all accessible projects. Do not bleed prior project codes for global questions.",
             ),
         },
     ),
@@ -179,7 +188,7 @@ get_overdue_submittals_declaration = types.FunctionDeclaration(
         properties={
             "project_code": types.Schema(
                 type=types.Type.STRING,
-                description="Project code or alias (e.g. 'PEM-058', 'CFC'). Pass None or omit for all accessible projects.",
+                description="Project code or alias (e.g. 'PEM-058', 'CFC', '24CP01', 'EKH', 'PEM-064', 'PEM-065', 'PEM-066', 'Eastmain', 'PEM-067', 'PEM-068'). Pass None or omit for all accessible projects.",
             ),
             "doc_type": types.Schema(
                 type=types.Type.STRING,
@@ -278,8 +287,9 @@ def is_follow_up_prompt(prompt: str) -> bool:
         return True
     words = p.split()
     if len(words) <= 5:
-        for alias in ai_tools.PROJECT_ALIASES.keys():
-            if re.search(r"\b" + re.escape(alias) + r"\b", p) or alias in p:
+        for alias in sorted(ai_tools.PROJECT_ALIASES.keys(), key=lambda x: len(x), reverse=True):
+            alias_norm = ai_tools._normalize_arabic(alias)
+            if re.search(r"\b" + re.escape(alias) + r"\b", p) or alias in p or alias_norm in p_norm:
                 return True
     return False
 
@@ -293,10 +303,33 @@ def _extract_inquiry_intent_from_text(text: str) -> dict:
 
     # 1. Project Detection
     proj_code = None
-    for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
-        if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
+    for alias, pinfo in sorted(ai_tools.PROJECT_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
+        alias_norm = ai_tools._normalize_arabic(alias)
+        if (
+            re.search(r"\b" + re.escape(alias) + r"\b", p_low)
+            or alias in p_low
+            or alias_norm in p_norm
+            or re.search(r"\b" + re.escape(alias_norm) + r"\b", p_norm)
+        ):
             proj_code = pinfo["code"]
             break
+
+    # Dynamic DB fallback project check if not matched by static alias
+    if not proj_code:
+        try:
+            db_projs = db.get_projects()
+        except Exception:
+            db_projs = []
+        for dp in db_projs:
+            d_code = str(dp.get("code") or "").strip().lower()
+            d_name = str(dp.get("name") or "").strip().lower()
+            d_norm = ai_tools._normalize_arabic(d_name)
+            if d_code and (d_code in p_low or re.search(r"\b" + re.escape(d_code) + r"\b", p_low)):
+                proj_code = dp.get("code")
+                break
+            if d_name and (d_name in p_low or p_low in d_name or d_norm in p_norm):
+                proj_code = dp.get("code")
+                break
 
     # 2. Document Type Detection
     dt = None
@@ -548,7 +581,12 @@ def _call_gemini_agent(
                 # Context-bleed guard: Strip bled project_code on global queries
                 if is_global_prompt(prompt):
                     fn_args["project_code"] = None
-                elif is_follow_up_prompt(prompt) and fn_name == "search_submittals":
+                else:
+                    # Project switch guard: If current user prompt explicitly specifies a project, ensure fn_args uses current project
+                    curr_parsed_proj = _extract_inquiry_intent_from_text(prompt).get("project_code")
+                    if curr_parsed_proj:
+                        fn_args["project_code"] = curr_parsed_proj
+                if is_follow_up_prompt(prompt) and fn_name == "search_submittals":
                     # Ellipsis guard: if user switched project or followed up, inherit topic from history
                     prev_inq = _get_last_inquiry_from_history(history)
                     if prev_inq:
@@ -624,17 +662,39 @@ def _execute_deterministic_fallback(
     prev_inquiry = _get_last_inquiry_from_history(history) if history else {}
 
     # 1. Project Detection
+    explicit_proj_match = re.search(r"(?:مشروع|المشروع|project)\s+([^\s?.,!]+)", prompt, re.IGNORECASE)
+    has_explicit_project = bool(curr_parsed.get("project_code") or explicit_proj_match)
+
     matched_proj_code = None
     if not global_query:
         if curr_parsed.get("project_code"):
             matched_proj_code = curr_parsed["project_code"]
+        elif has_explicit_project:
+            # User explicitly mentioned a project in this turn!
+            # Do NOT inherit prior turn's project code (which caused Eastmain -> CFC bleed)
+            extracted_cand = explicit_proj_match.group(1).strip() if explicit_proj_match else ""
+            matched_proj_code = extracted_cand
         elif prev_inquiry.get("project_code"):
+            # Only inherit prior project if user did NOT mention any project at all
             matched_proj_code = prev_inquiry["project_code"]
+
+        # If the matched project has alias codes and one of those codes is specifically in allowed_project_ids, prefer that code
+        if matched_proj_code and allowed_project_ids:
+            allowed_upper = [str(x).upper() for x in allowed_project_ids]
+            for pinfo in ai_tools.PROJECT_ALIASES.values():
+                p_codes = pinfo.get("codes", [pinfo["code"]])
+                if (pinfo.get("code") == matched_proj_code or matched_proj_code in p_codes):
+                    if matched_proj_code not in allowed_project_ids and matched_proj_code.upper() not in allowed_upper:
+                        for c in p_codes:
+                            if c in allowed_project_ids or c.upper() in allowed_upper:
+                                matched_proj_code = c
+                                break
+                    break
 
         # If still not found and an active project was supplied, use it
         if not matched_proj_code and active_project_id and str(active_project_id).strip().upper() not in ("ALL", ""):
             act_clean = str(active_project_id).strip().lower()
-            for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
+            for alias, pinfo in sorted(ai_tools.PROJECT_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
                 if alias == act_clean or alias in act_clean:
                     matched_proj_code = pinfo["code"]
                     break
@@ -816,8 +876,10 @@ def _execute_deterministic_fallback(
     # ── CASE 4: Standard / Keyword / Submittals Query ─────────
     proj_title = "All Projects"
     if matched_proj_code:
-        for pinfo in ai_tools.PROJECT_ALIASES.values():
-            if pinfo["code"] == matched_proj_code:
+        for pinfo in sorted(ai_tools.PROJECT_ALIASES.values(), key=lambda x: len(x.get("display", "")), reverse=True):
+            if pinfo["code"] == matched_proj_code or (
+                isinstance(pinfo.get("codes"), list) and matched_proj_code in pinfo["codes"]
+            ):
                 proj_title = pinfo["display"]
                 break
         if proj_title == "All Projects":
@@ -1064,9 +1126,15 @@ def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history
 def _format_fallback_response_from_context(prompt: str, context_text: str) -> str:
     """Format fallback response from context string (backward compatibility)."""
     # Extract project
-    proj_code = "PEM-058" if "PEM-058" in context_text or "CY002P608" in context_text else (
-        "24CP01" if "24CP01" in context_text or "EKH" in context_text else None
-    )
+    proj_code = None
+    for alias, pinfo in sorted(ai_tools.PROJECT_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
+        if pinfo["code"] in context_text:
+            proj_code = pinfo["code"]
+            break
+    if not proj_code:
+        proj_code = "PEM-058" if "PEM-058" in context_text or "CY002P608" in context_text else (
+            "24CP01" if "24CP01" in context_text or "EKH" in context_text else None
+        )
     pids = [proj_code] if proj_code else ["PEM-058"]
     return _execute_deterministic_fallback(prompt, pids)
 

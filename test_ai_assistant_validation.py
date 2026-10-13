@@ -951,6 +951,82 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIn("اعتمادات المواد (MS)", reply)
         print("PASS: Isolated project mention without history properly prompts user for clarification.")
 
+    def test_36_eastmain_generic_resolves_and_prevents_cfc_bleed(self):
+        """Turn 3: 'طيب ومشروع Eastmain' must query Eastmain and NEVER bleed to previous project (CFC)."""
+        history = [
+            {"role": "user", "text": "شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC"},
+            {"role": "assistant", "text": "تم العثور على 14 محبس معتمد في CFC"},
+            {"role": "user", "text": "طيب وفي مشروع EKH"},
+            {"role": "assistant", "text": "تم العثور على المحابس المعتمدة في EKH"}
+        ]
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": ["Eastmain (PEM-065 / PEM-066)"], "count": 2, "records": [{"doc_no": "MS-EM-01", "title": "Butterfly Valve", "doc_type": "MS", "status": "Approved", "doc_date": "2026-06-01", "project_code": "PEM-065"}]}) as mock_search:
+            reply = _execute_deterministic_fallback(
+                prompt="طيب ومشروع Eastmain",
+                allowed_project_ids=["PEM-058", "24CP01", "PEM-065", "PEM-066"],
+                history=history
+            )
+            mock_search.assert_called_once()
+            called_proj = mock_search.call_args.kwargs.get("project_code")
+            # Must NOT be CFC (PEM-058) or EKH (24CP01)!
+            self.assertNotEqual(called_proj, "PEM-058")
+            self.assertNotEqual(called_proj, "24CP01")
+            self.assertIn(called_proj, ("Eastmain", "PEM-065"))
+            self.assertEqual(mock_search.call_args.kwargs.get("doc_type"), "MS")
+            self.assertEqual(mock_search.call_args.kwargs.get("keyword"), "valve")
+            self.assertEqual(mock_search.call_args.kwargs.get("status"), "approved")
+        print("PASS: Eastmain generic resolves accurately and prevents CFC context bleed.")
+
+    def test_37_eastmain_b08_resolves_specifically(self):
+        """'وفي مشروع Eastmain B08' must specifically resolve to PEM-066."""
+        history = [
+            {"role": "user", "text": "شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC"},
+            {"role": "assistant", "text": "تم العثور على 14 محبس معتمد في CFC"}
+        ]
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": ["Eastmain B08 (PEM-066)"], "count": 1, "records": [{"doc_no": "MS-B08-01", "title": "Gate Valve", "doc_type": "MS", "status": "Approved", "doc_date": "2026-06-01", "project_code": "PEM-066"}]}) as mock_search:
+            reply = _execute_deterministic_fallback(
+                prompt="وفي مشروع Eastmain B08",
+                allowed_project_ids=["PEM-058", "PEM-065", "PEM-066"],
+                history=history
+            )
+            mock_search.assert_called_once()
+            self.assertEqual(mock_search.call_args.kwargs.get("project_code"), "PEM-066")
+            self.assertEqual(mock_search.call_args.kwargs.get("doc_type"), "MS")
+            self.assertEqual(mock_search.call_args.kwargs.get("keyword"), "valve")
+        print("PASS: Eastmain B08 specifically resolves to PEM-066.")
+
+    def test_38_suez_four_season_anopc_resolutions(self):
+        """Validates all other system projects resolve accurately without bleed."""
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": [], "count": 0, "records": []}) as mock_search:
+            # Suez Steel PEM-064
+            _execute_deterministic_fallback("وفي مشروع Suez وريني المحابس", allowed_project_ids=["PEM-064"])
+            self.assertEqual(mock_search.call_args.kwargs.get("project_code"), "PEM-064")
+
+            # Four Season PEM-068
+            _execute_deterministic_fallback("وفي مشروع Four Season وريني المحابس", allowed_project_ids=["PEM-068"])
+            self.assertEqual(mock_search.call_args.kwargs.get("project_code"), "PEM-068")
+
+            # ANOPC Assiut PEM-067
+            _execute_deterministic_fallback("وفي مشروع ANOPC وريني المحابس", allowed_project_ids=["PEM-067"])
+            self.assertEqual(mock_search.call_args.kwargs.get("project_code"), "PEM-067")
+        print("PASS: Suez, Four Season, and ANOPC project resolutions verified.")
+
+    def test_39_explicit_unknown_project_never_bleeds_to_history(self):
+        """If user explicitly asks about a project name that does not exist, NEVER bleed to previous project."""
+        history = [
+            {"role": "user", "text": "شوفلي MS المعتمد الخاص بالمحابس في مشروع CFC"},
+            {"role": "assistant", "text": "تم العثور على 14 محبس معتمد في CFC"}
+        ]
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": [], "count": 0, "records": []}) as mock_search:
+            reply = _execute_deterministic_fallback(
+                prompt="وفي مشروع نيو_كايرو_الجديد",
+                allowed_project_ids=["PEM-058"],
+                history=history
+            )
+            called_proj = mock_search.call_args.kwargs.get("project_code")
+            self.assertNotEqual(called_proj, "PEM-058")
+            self.assertEqual(called_proj, "نيو_كايرو_الجديد")
+        print("PASS: Explicit project mentions never bleed to history.")
+
 
 if __name__ == "__main__":
     unittest.main()
