@@ -58,10 +58,18 @@ SYSTEM_INSTRUCTION = (
     "7. MULTI-PROJECT QUERIES & SWITCHING: The user can freely query different projects in the same chat session. "
     "If the user asks about a specific project (e.g. CFC, PEM-058, EKH, 24CP01, Assiut, PEM-045, Suez, PEM-044), "
     "immediately switch to that project. Never carry over or force a previous project when a new project is specified.\n"
-    "8. CONVERSATIONAL MEMORY & FOLLOW-UP QUERIES: If the user asks a follow-up question continuing the previous topic "
-    "without specifying a new project (e.g., 'وماذا عن المضخات؟', 'من اعتمدها؟', 'وريني تفاصيلها', 'and what about pumps?', "
-    "'who approved it?'), retain the project, document type, and discipline context from the previous turn. "
-    "However, if the user switches projects (e.g. asks about EKH after CFC), do NOT restrict the new project to the previous document type unless explicitly requested.\n"
+    "8. CONVERSATIONAL MEMORY, ELLIPSIS & PROJECT SWITCHING (CRITICAL):\n"
+    "   - CONVERSATIONAL ELLIPSIS (FOLLOW-UP WITH PROJECT SWITCH): When the user asks a follow-up question that specifies a new project "
+    "using a continuation or comparative phrase (e.g. 'وبالنسبة لمشروع CFC', 'وماذا عن CFC', 'طب وفي مشروع CFC', 'what about CFC project?', 'and for CFC?'), "
+    "the user is asking the SAME question for the newly specified project! You MUST retain the previous turn's query intent: the equipment/keyword (e.g. 'valve'), "
+    "the document type (e.g. 'MS'), discipline, and approval status (e.g. 'approved'), and apply them directly to the new project! "
+    "For example: if the previous query was 'ايه MS الخاص بالمحابس المعتمد في مشروع EKH', and the user follows up with 'وبالنسبة لمشروع CFC', "
+    "you MUST immediately call search_submittals(project_code='PEM-058', doc_type='MS', keyword='valve', status='approved').\n"
+    "   - FOLLOW-UP WITH EQUIPMENT / TOPIC SWITCH: When the user asks about different equipment or document type without specifying a project "
+    "(e.g. 'وماذا عن المضخات؟', 'طب والـ SD؟', 'and what about pumps?'), retain the project and approval status from the previous turn, and update the keyword or doc_type.\n"
+    "   - ISOLATED PROJECT MENTION WITH NO ACTIVE TOPIC: If the user mentions ONLY a project name (e.g. 'مشروع CFC' or 'CFC') and there is NO active inquiry "
+    "(no keyword, no specific doc_type, no NOC, no overdue, no summary) in the conversation history to continue, DO NOT execute a blind search returning random documents. "
+    "Instead, ask the user politely and specifically what information they need for this project (Material Submittals, Shop Drawings, NOC financials, Overdue submittals, or General KPI Summary).\n"
     "9. CRITICAL FOR GLOBAL QUERIES: If the user asks about documents, totals, KPIs, or costs across all projects or registers "
     "(e.g. 'across the project registers', 'all projects', 'كل المشاريع', 'إجمالي المشاريع', or asks for overall summaries without naming a project), "
     "you MUST pass project_code=None (or omit project_code). DO NOT carry over or recall a project code from previous conversation turns.\n"
@@ -252,19 +260,141 @@ def is_follow_up_prompt(prompt: str) -> bool:
     if not prompt:
         return False
     p = str(prompt).lower().strip()
+    p_norm = ai_tools._normalize_arabic(p)
     follow_up_patterns = [
-        "وماذا عن", "طب و", "ماذا عن", "ونفس المشروع", "المشروع نفسه", "نفسه",
-        "فيه", "منها", "عنها", "تفاصيلها", "تفاصيله", "من اعتمد", "من اعتمده", "تاريخه",
-        "ماذا بالنسبة", "طب وبالنسبة", "طب وفي", "طب في", "طب والمشروع", "والمعتمد",
-        "what about", "how about", "who approved", "details of", "and what about",
+        "وبالنسبة", "بالنسبة", "ماذا بالنسبة", "وماذا بالنسبة", "طب وبالنسبة", "طب بالنسبه",
+        "وماذا عن", "ماذا عن", "وعن", "عن مشروع",
+        "طب و", "طب وفي", "طب في", "طب والمشروع", "طب مشروع",
+        "وفي مشروع", "في مشروع", "ومشروع",
+        "ونفس المشروع", "المشروع نفسه", "نفسه", "نفسها",
+        "فيه", "فيها", "منها", "عنها", "عنه", "تفاصيلها", "تفاصيله", "من اعتمد", "من اعتمده", "من اعتمدها",
+        "تاريخه", "تاريخها", "والمعتمد", "المعتمد منها", "المعتمدة منها",
+        "what about", "how about", "who approved", "details of", "and what about", "and for", "and in",
         "same project", "for it", "for them", "of them", "its revisions", "what regarding"
     ]
-    if any(pat in p for pat in follow_up_patterns):
+    if any(pat in p or pat in p_norm for pat in follow_up_patterns):
+        return True
+    if p.startswith(("و ", "طب ", "and ", "so ", "also ")):
         return True
     words = p.split()
-    if len(words) <= 4 and any(w in p for w in ["و", "طب", "and", "about", "also", "أيضا", "ايضا"]):
-        return True
+    if len(words) <= 5:
+        for alias in ai_tools.PROJECT_ALIASES.keys():
+            if re.search(r"\b" + re.escape(alias) + r"\b", p) or alias in p:
+                return True
     return False
+
+
+def _extract_inquiry_intent_from_text(text: str) -> dict:
+    """Extracts project_code, doc_type, keyword, discipline, status, and high-level intent from user text."""
+    if not text:
+        return {}
+    p_low = str(text).lower().strip()
+    p_norm = ai_tools._normalize_arabic(p_low)
+
+    # 1. Project Detection
+    proj_code = None
+    for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
+        if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
+            proj_code = pinfo["code"]
+            break
+
+    # 2. Document Type Detection
+    dt = None
+    known_dts = ["MS", "SD", "IR", "MIR", "RFI", "QS", "NOC", "WIR"]
+    for kdt in known_dts:
+        if re.search(r"(?<![a-zA-Z])" + re.escape(kdt) + r"(?:s|z)?(?![a-zA-Z])", text, re.IGNORECASE):
+            dt = kdt.upper()
+            break
+    if not dt:
+        if any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال"]):
+            dt = "IR"
+        elif any(w in p_low for w in ["شوب درونج", "شوب دروينج", "مخططات"]):
+            dt = "SD"
+        elif any(w in p_low for w in ["ماتريال", "اعتماد مواد", "اعتمادات"]):
+            dt = "MS"
+        elif any(w in p_low for w in ["فحص مواد", "توريد"]):
+            dt = "MIR"
+        elif any(w in p_low for w in ["حصر", "كميات", "مستخلص"]):
+            dt = "QS"
+        elif any(w in p_low for w in ["تغيير", "أمر تغيير", "امر تغيير", "مطالبة", "مطالبات"]):
+            dt = "NOC"
+
+    # 3. Keyword Detection (with Arabic prefix stripping and normalization)
+    kw = None
+    for kw_key, syns in ai_tools.EQUIPMENT_KEYWORDS.items():
+        norm_syns = {ai_tools._normalize_arabic(s) for s in syns}
+        norm_syns.update(syns)
+        if any(s in p_low or s in p_norm for s in norm_syns):
+            kw = kw_key
+            break
+        matched_kw = False
+        for token in re.findall(r"\w+", p_norm):
+            for pfx in ("وال", "فال", "بال", "كال", "لل", "ال", "و", "ف", "ب", "ل"):
+                if token.startswith(pfx) and len(token) > len(pfx) + 2:
+                    stem = token[len(pfx):]
+                    if stem in norm_syns:
+                        kw = kw_key
+                        matched_kw = True
+                        break
+            if matched_kw:
+                break
+        if kw:
+            break
+
+    # 4. Discipline Detection
+    disc = None
+    for disc_k, disc_v in ai_tools.DISCIPLINE_SYNONYMS.items():
+        if any(t in p_low for t in disc_v):
+            disc = disc_k.capitalize()
+            break
+
+    # 5. Status Detection
+    status = None
+    if any(w in p_low for w in ["معتمد", "معتمدة", "approved"]):
+        status = "approved"
+    elif any(w in p_low for w in ["مرفوض", "مرفوضة", "rejected", "revise"]):
+        status = "rejected"
+    elif any(w in p_low for w in ["قيد المراجعة", "معلق", "pending", "under review"]):
+        status = "pending"
+
+    # 6. Intent (NOC, Overdue, Summary)
+    is_noc = bool(dt == "NOC" or any(w in p_low for w in ["noc", "change", "تكلفة", "cost", "مالي", "أوامر تغيير", "أمر تغيير", "مطالبات", "مطالبة"]))
+    is_overdue = bool(any(w in p_low for w in ["overdue", "متأخر", "متأخرات", "تأخير", "delay"]))
+    is_summary = bool(any(w in p_low for w in ["summary", "ملخص", "إحصائيات", "احصائيات", "نسب اعتماد", "نسبة اعتماد", "kpi"]))
+
+    return {
+        "project_code": proj_code,
+        "doc_type": dt,
+        "keyword": kw,
+        "discipline": disc,
+        "status": status,
+        "is_noc": is_noc,
+        "is_overdue": is_overdue,
+        "is_summary": is_summary,
+        "raw_text": text,
+    }
+
+
+def _get_last_inquiry_from_history(history: list) -> dict:
+    """Finds the most recent user inquiry in history that contains an actionable engineering topic."""
+    if not history:
+        return {}
+    for msg in reversed(history):
+        if msg.get("role") in ("user", "human"):
+            txt = msg.get("text") or ""
+            if is_global_prompt(txt):
+                continue
+            parsed = _extract_inquiry_intent_from_text(txt)
+            if (
+                parsed.get("is_noc")
+                or parsed.get("is_overdue")
+                or parsed.get("is_summary")
+                or parsed.get("keyword")
+                or parsed.get("doc_type")
+                or parsed.get("discipline")
+            ):
+                return parsed
+    return {}
 
 
 def _build_gemini_contents(prompt: str, history: list = None) -> list:
@@ -418,6 +548,36 @@ def _call_gemini_agent(
                 # Context-bleed guard: Strip bled project_code on global queries
                 if is_global_prompt(prompt):
                     fn_args["project_code"] = None
+                elif is_follow_up_prompt(prompt) and fn_name == "search_submittals":
+                    # Ellipsis guard: if user switched project or followed up, inherit topic from history
+                    prev_inq = _get_last_inquiry_from_history(history)
+                    if prev_inq:
+                        if not fn_args.get("keyword") and prev_inq.get("keyword"):
+                            fn_args["keyword"] = prev_inq["keyword"]
+                        if not fn_args.get("doc_type") and prev_inq.get("doc_type"):
+                            fn_args["doc_type"] = prev_inq["doc_type"]
+                        if not fn_args.get("status") and prev_inq.get("status"):
+                            fn_args["status"] = prev_inq["status"]
+                        if not fn_args.get("discipline") and prev_inq.get("discipline"):
+                            fn_args["discipline"] = prev_inq["discipline"]
+
+                # Clarification guard: If search_submittals is called without any filters and no prior topic exists
+                is_explicit_all = any(w in (prompt or "").lower() for w in ["كل المستندات", "جميع المستندات", "كل السجلات", "جميع السجلات", "كل الوثائق", "جميع الوثائق", "all documents", "all submittals", "show all"])
+                if fn_name == "search_submittals" and not fn_args.get("keyword") and not fn_args.get("doc_type") and not fn_args.get("discipline") and not is_explicit_all:
+                    prev_inq = _get_last_inquiry_from_history(history)
+                    if not prev_inq:
+                        p_disp = fn_args.get("project_code") or "the project"
+                        result = {
+                            "project_display_name": p_disp,
+                            "clarification_needed": True,
+                            "message": f"User only specified project {p_disp} without any equipment keyword or document type. Please ask the user politely what specific information they need for this project (Material Submittals, Shop Drawings, NOC financials, Overdue submittals, or General KPI Summary)."
+                        }
+                        tool_results.append({"name": fn_name, "args": fn_args, "result": result})
+                        func_response_parts.append(
+                            types.Part.from_function_response(name=fn_name, response={"result": result})
+                        )
+                        continue
+
                 result = execute_tool_call(fn_name, fn_args, allowed_project_ids)
                 tool_results.append({"name": fn_name, "args": fn_args, "result": result})
                 func_response_parts.append(
@@ -460,28 +620,16 @@ def _execute_deterministic_fallback(
     global_query = is_global_prompt(prompt)
     is_follow_up = is_follow_up_prompt(prompt)
 
+    curr_parsed = _extract_inquiry_intent_from_text(prompt)
+    prev_inquiry = _get_last_inquiry_from_history(history) if history else {}
+
     # 1. Project Detection
     matched_proj_code = None
     if not global_query:
-        # Check current prompt first (immediate project switching)
-        for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
-            if re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low:
-                matched_proj_code = pinfo["code"]
-                break
-
-        # If not explicitly named, recall project from history
-        if not matched_proj_code and history:
-            for msg in reversed(history):
-                if msg.get("role") == "user":
-                    prev_text = (msg.get("text") or "").lower()
-                    if is_global_prompt(prev_text):
-                        continue
-                    for alias, pinfo in ai_tools.PROJECT_ALIASES.items():
-                        if re.search(r"\b" + re.escape(alias) + r"\b", prev_text) or alias in prev_text:
-                            matched_proj_code = pinfo["code"]
-                            break
-                    if matched_proj_code:
-                        break
+        if curr_parsed.get("project_code"):
+            matched_proj_code = curr_parsed["project_code"]
+        elif prev_inquiry.get("project_code"):
+            matched_proj_code = prev_inquiry["project_code"]
 
         # If still not found and an active project was supplied, use it
         if not matched_proj_code and active_project_id and str(active_project_id).strip().upper() not in ("ALL", ""):
@@ -493,89 +641,38 @@ def _execute_deterministic_fallback(
             if not matched_proj_code:
                 matched_proj_code = str(active_project_id).strip()
 
-    # 2. Document Type Detection
-    detected_dt = None
-    known_dts = ["MS", "SD", "IR", "MIR", "RFI", "QS", "NOC", "WIR"]
-    for dt in known_dts:
-        if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", prompt, re.IGNORECASE):
-            detected_dt = dt.upper()
-            break
-    if not detected_dt:
-        if any(w in p_low for w in ["تسليمات", "تسليم", "استلامات", "استلام", "طلب استلام", "طلبات استلام", "فحص أعمال"]):
-            detected_dt = "IR"
-        elif any(w in p_low for w in ["شوب درونج", "شوب دروينج", "مخططات"]):
-            detected_dt = "SD"
-        elif any(w in p_low for w in ["ماتريال", "اعتماد مواد", "اعتمادات"]):
-            detected_dt = "MS"
-        elif any(w in p_low for w in ["فحص مواد", "توريد"]):
-            detected_dt = "MIR"
-        elif any(w in p_low for w in ["حصر", "كميات", "مستخلص"]):
-            detected_dt = "QS"
-        elif any(w in p_low for w in ["تغيير", "أمر تغيير", "مطالبة"]):
-            detected_dt = "NOC"
+    # 2. Document Type Detection (with follow-up inheritance)
+    detected_dt = curr_parsed.get("doc_type")
+    if is_follow_up and not detected_dt and prev_inquiry:
+        detected_dt = prev_inquiry.get("doc_type")
 
-    # Follow-up doc type inheritance: only inherit if not explicitly naming a project in the current prompt
-    explicit_project_in_prompt = bool(matched_proj_code and any(
-        re.search(r"\b" + re.escape(alias) + r"\b", p_low) or alias in p_low
-        for alias in ai_tools.PROJECT_ALIASES.keys()
-    ))
+    # 3. Discipline Detection (with follow-up inheritance)
+    detected_disc = curr_parsed.get("discipline")
+    if is_follow_up and not detected_disc and prev_inquiry:
+        detected_disc = prev_inquiry.get("discipline")
 
-    if is_follow_up and not detected_dt and history and not explicit_project_in_prompt:
-        for msg in reversed(history):
-            if msg.get("role") == "user":
-                prev_text = (msg.get("text") or "").lower()
-                for dt in known_dts:
-                    if re.search(r"(?<![a-zA-Z])" + re.escape(dt) + r"(?:s|z)?(?![a-zA-Z])", prev_text, re.IGNORECASE):
-                        detected_dt = dt.upper()
-                        break
-                if detected_dt:
-                    break
+    # 4. Keyword Detection (with follow-up inheritance)
+    detected_keyword = curr_parsed.get("keyword")
+    if is_follow_up and not detected_keyword and prev_inquiry:
+        detected_keyword = prev_inquiry.get("keyword")
 
-    # 3. Discipline Detection
-    detected_disc = None
-    for disc_k, disc_v in ai_tools.DISCIPLINE_SYNONYMS.items():
-        if any(t in p_low for t in disc_v):
-            detected_disc = disc_k.capitalize()
-            break
+    # 5. Status Detection (with follow-up inheritance)
+    detected_status = curr_parsed.get("status")
+    if is_follow_up and not detected_status and prev_inquiry:
+        detected_status = prev_inquiry.get("status")
 
-    # 4. Keyword Detection (with Arabic prefix stripping and normalization)
-    detected_keyword = None
-    p_norm = ai_tools._normalize_arabic(p_low)
-    for kw_key, syns in ai_tools.EQUIPMENT_KEYWORDS.items():
-        norm_syns = {ai_tools._normalize_arabic(s) for s in syns}
-        norm_syns.update(syns)
-        if any(s in p_low or s in p_norm for s in norm_syns):
-            detected_keyword = kw_key
-            break
-        matched_kw = False
-        for token in re.findall(r"\w+", p_norm):
-            for pfx in ("وال", "فال", "بال", "كال", "لل", "ال", "و", "ف", "ب", "ل"):
-                if token.startswith(pfx) and len(token) > len(pfx) + 2:
-                    stem = token[len(pfx):]
-                    if stem in norm_syns:
-                        detected_keyword = kw_key
-                        matched_kw = True
-                        break
-            if matched_kw:
-                break
-        if detected_keyword:
-            break
+    # 6. Intent Inheritance (NOC, Overdue, Summary)
+    is_noc_req = curr_parsed.get("is_noc")
+    if is_follow_up and not is_noc_req and not detected_keyword and not detected_dt and prev_inquiry.get("is_noc"):
+        is_noc_req = True
 
-    # 5. Status Detection
-    detected_status = None
-    if any(w in p_low for w in ["معتمد", "معتمدة", "approved"]):
-        detected_status = "approved"
-    elif any(w in p_low for w in ["مرفوض", "مرفوضة", "rejected", "revise"]):
-        detected_status = "rejected"
+    is_overdue_req = curr_parsed.get("is_overdue")
+    if is_follow_up and not is_overdue_req and not detected_keyword and not detected_dt and prev_inquiry.get("is_overdue"):
+        is_overdue_req = True
 
-    # Follow-up status inheritance
-    if is_follow_up and not detected_status and history:
-        for msg in reversed(history):
-            if msg.get("role") == "user":
-                prev_text = (msg.get("text") or "").lower()
-                if any(w in prev_text for w in ["معتمد", "معتمدة", "approved"]):
-                    detected_status = "approved"
-                    break
+    is_summary_req = curr_parsed.get("is_summary")
+    if is_follow_up and not is_summary_req and not detected_keyword and not detected_dt and prev_inquiry.get("is_summary"):
+        is_summary_req = True
 
     is_english = not bool(re.search(r"[\u0600-\u06FF]", prompt))
 
@@ -717,6 +814,37 @@ def _execute_deterministic_fallback(
         )
 
     # ── CASE 4: Standard / Keyword / Submittals Query ─────────
+    proj_title = "All Projects"
+    if matched_proj_code:
+        for pinfo in ai_tools.PROJECT_ALIASES.values():
+            if pinfo["code"] == matched_proj_code:
+                proj_title = pinfo["display"]
+                break
+        if proj_title == "All Projects":
+            proj_title = matched_proj_code
+
+    is_explicit_all_docs = any(w in p_low for w in ["كل المستندات", "جميع المستندات", "كل السجلات", "جميع السجلات", "كل الوثائق", "جميع الوثائق", "all documents", "all submittals", "show all"])
+    if matched_proj_code and not detected_dt and not detected_keyword and not detected_disc and not is_explicit_all_docs:
+        # User only specified a project without any topic and without any inherited inquiry
+        if is_english:
+            return (
+                f"Hello! 👋 Regarding project **{proj_title}**:\n\n"
+                "What would you like to inquire about for this project? You can ask about:\n"
+                "- 📋 **Material Submittals (MS)** or **Shop Drawings (SD)** (e.g. valves, pumps, chillers, cables, etc.).\n"
+                "- 💰 **Notice of Change (NOC)** and Variation Orders financial summary.\n"
+                "- ⏰ **Overdue Submittals** exceeding contractual reply SLAs.\n"
+                "- 📊 **Overall Project Register & Approval KPIs**."
+            )
+        return (
+            f"أهلاً بك يا باشمهندس! 👋 بخصوص مشروع **{proj_title}**:\n\n"
+            "ما الذي تود الاستعلام عنه تحديداً في المشروع؟ يمكنك سؤالي عن:\n"
+            "- 📋 **اعتمادات المواد (MS)** أو **الشوب درونج (SD)** (مع إمكانية تحديد نوع المعدة مثل المحابس، المضخات، التكييف، الكابلات).\n"
+            "- 💰 **ملخص وتكاليف أوامر التغيير والمطالبات (NOC)**.\n"
+            "- ⏰ **الوثائق المتأخرة عن مواعيد الرد التعاقدية (Overdue Submittals)**.\n"
+            "- 📊 **الملخص العام لإحصائيات ونسب اعتماد وثائق المشروع**.\n\n"
+            "تفضل بتحديد المطلوب وسأقوم بالبحث في السجلات فوراً!"
+        )
+
     is_latest_req = any(w in p_low for w in ["احدث", "أحدث", "اخر اصدار", "آخر إصدار", "latest", "last rev"])
     search_res = ai_tools.search_submittals(
         allowed_project_ids=allowed_project_ids,
@@ -731,9 +859,7 @@ def _execute_deterministic_fallback(
 
     proj_title = search_res.get("project_display_name") or (
         search_res.get("project_scope")[0] if search_res.get("project_scope") else None
-    ) or (
-        "CFC (PEM-058)" if matched_proj_code == "PEM-058" else "All Projects"
-    )
+    ) or proj_title
     records = search_res.get("records", [])
 
     # Format header description

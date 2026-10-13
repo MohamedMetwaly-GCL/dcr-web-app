@@ -910,7 +910,49 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertIn("MS-CY002P608-00014 REV00", reply)
         print("PASS: psycopg2 % interpolation and 14 MS valve entries verified without query errors.")
 
+    def test_29_conversational_ellipsis_project_switch_inherits_topic(self):
+        """When user asks 'ايه MS الخاص بالمحابس المعتمد في مشروع EKH' then follows up with 'وبالنسبة لمشروع CFC',
+        the query switches project to CFC and inherits MS, valve, and approved status."""
+        history = [
+            {"role": "user", "text": "ايه MS الخاص بالمحابس المعتمد في مشروع EKH"},
+            {"role": "assistant", "text": "تم العثور على 5 محابس معتمدة في مشروع EKH"}
+        ]
+        mock_cfc_valves = [
+            {"id": "r1", "project_id": "CFC DCP PH-2A", "doc_type": "MS", "doc_no": "MS-CY002P608-00019 REV01", "title": "Manual Butterfly Valve", "status": "B - Approved As Noted", "doc_date": "2026-05-01", "project_code": "PEM-058"}
+        ]
+        with patch.object(ai_tools, "search_submittals", return_value={"project_scope": ["CFC (PEM-058)"], "count": 1, "records": mock_cfc_valves}) as mock_search:
+            reply = _execute_deterministic_fallback(
+                prompt="وبالنسبة لمشروع CFC",
+                allowed_project_ids=["PEM-058", "24CP01"],
+                history=history
+            )
+            mock_search.assert_called_once()
+            # Verified that CFC is the project, and MS + valve + approved are inherited from Turn 1!
+            self.assertEqual(mock_search.call_args.kwargs.get("project_code"), "PEM-058")
+            self.assertEqual(mock_search.call_args.kwargs.get("doc_type"), "MS")
+            self.assertEqual(mock_search.call_args.kwargs.get("keyword"), "valve")
+            self.assertEqual(mock_search.call_args.kwargs.get("status"), "approved")
+            self.assertIn("MS-CY002P608-00019 REV01", reply)
+        print("PASS: Conversational ellipsis correctly switches project while inheriting doc_type, keyword, and status.")
+
+    def test_30_isolated_project_mention_without_history_requests_clarification(self):
+        """When user mentions only a project (e.g. 'وبالنسبة لمشروع CFC') without any topic and without history,
+        the system requests clarification instead of dumping random unrelated records."""
+        with patch.object(ai_tools, "search_submittals") as mock_search:
+            reply = _execute_deterministic_fallback(
+                prompt="وبالنسبة لمشروع CFC",
+                allowed_project_ids=["PEM-058", "24CP01"],
+                history=[]
+            )
+            # search_submittals MUST NOT be called blindly!
+            mock_search.assert_not_called()
+            # Must ask what they need in project CFC
+            self.assertIn("ما الذي تود الاستعلام عنه تحديداً في المشروع؟", reply)
+            self.assertIn("اعتمادات المواد (MS)", reply)
+        print("PASS: Isolated project mention without history properly prompts user for clarification.")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
