@@ -399,6 +399,7 @@ class TestAiAssistantValidation(unittest.TestCase):
             # Only the valve record should be returned
             titles = [r["title"] for r in res["records"]]
             self.assertIn("Manual Butterfly Valve", titles)
+            self.assertNotIn("UPVC Pipes & Fittings", titles)
         print("PASS: Valve stemming isolates valves without keyword pollution.")
 
     def test_20_search_submittals_revision_deduplication(self):
@@ -1026,6 +1027,82 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertNotEqual(called_proj, "PEM-058")
             self.assertEqual(called_proj, "نيو_كايرو_الجديد")
         print("PASS: Explicit project mentions never bleed to history.")
+
+    def test_40_search_submittals_strict_valve_filtering_excludes_false_positives(self):
+        """Verifies that queries for valves strictly exclude unrelated submittals
+        (Disconnects, Marble Stairs, EWH, Aerosol/Generator, Duct smoke tests)
+        while cleanly returning actual valve inspection requests and material submittals.
+        """
+        mock_projects = [
+            {"id": "PEM-058", "name": "CFC Ph2", "code": "PEM-058", "data": {}},
+            {"id": "24CP01", "name": "EKH Hospital", "code": "24CP01", "data": {}},
+            {"id": "PEM-065", "name": "Eastmain B06", "code": "PEM-065", "data": {}},
+        ]
+        all_records = [
+            # EKH records
+            {"id": "ekh1", "project_id": "24CP01", "doc_type": "IR", "doc_no": "24CP01-IR-SCAS-652 REV00", "title": "Disconnects (3rd Fix)", "discipline": "Electrical", "trade": "SCAS", "status": "Approved"},
+            {"id": "ekh2", "project_id": "24CP01", "doc_type": "IR", "doc_no": "743", "title": "Marble Stairs Final Fix", "discipline": "Civil", "trade": "Finishes", "status": "Approved"},
+            {"id": "ekh3", "project_id": "24CP01", "doc_type": "IR", "doc_no": "411", "title": "EWH installation", "discipline": "Mechanical", "trade": "Plumbing", "status": "Approved"},
+            {"id": "ekh4", "project_id": "24CP01", "doc_type": "IR", "doc_no": "24CP01-IR-MEP-010 REV00", "title": "Installation of Gate Valves and Check Valves", "discipline": "Mechanical", "trade": "Plumbing", "status": "Approved"},
+            {"id": "ekh5", "project_id": "24CP01", "doc_type": "IR", "doc_no": "24CP01-IR-MEP-011 REV00", "title": "PRV and Balancing Valves Inspection", "discipline": "Mechanical", "trade": "Plumbing", "status": "Approved"},
+
+            # CFC records
+            {"id": "cfc1", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00437 REV00", "title": "Aerosol System First and Second Fix, Generator and Panel Installation - Aersol-09 (IT Room)", "discipline": "Mechanical", "trade": "Fire Fighting", "status": "Approved"},
+            {"id": "cfc2", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00200 REV00", "title": "Installation of Zone Control Valves (ZCV)", "discipline": "Mechanical", "trade": "Fire Fighting", "status": "Approved"},
+
+            # Eastmain records
+            {"id": "em1", "project_id": "PEM-065", "doc_type": "IR", "doc_no": "IR-EASTMAIN-HV-027 REV00", "title": "Smoke test for Galvanized Duct for building 06 1st floor", "discipline": "Mechanical", "trade": "HVAC", "status": "Approved"},
+            {"id": "em2", "project_id": "PEM-065", "doc_type": "IR", "doc_no": "IR-EASTMAIN-PL-015 REV00", "title": "Water supply valves and PRV installation", "discipline": "Mechanical", "trade": "Plumbing", "status": "Approved"},
+        ]
+
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    for pid in ["24CP01", "PEM-058", "PEM-065"]:
+                        if pid in params:
+                            return [r for r in all_records if r["project_id"] == pid]
+                    return all_records
+                return []
+            mock_q.side_effect = q_side_effect
+
+            # 1. Test EKH valve search
+            res_ekh = ai_tools.search_submittals(
+                allowed_project_ids=["24CP01", "PEM-058", "PEM-065"],
+                project_code="EKH",
+                keyword="محابس"
+            )
+            ekh_doc_nos = [r["doc_no"] for r in res_ekh["records"]]
+            # True valves must be included
+            self.assertIn("24CP01-IR-MEP-010 REV00", ekh_doc_nos)
+            self.assertIn("24CP01-IR-MEP-011 REV00", ekh_doc_nos)
+            # False positives must be strictly excluded
+            self.assertNotIn("24CP01-IR-SCAS-652 REV00", ekh_doc_nos)
+            self.assertNotIn("743", ekh_doc_nos)
+            self.assertNotIn("411", ekh_doc_nos)
+
+            # 2. Test CFC valve search
+            res_cfc = ai_tools.search_submittals(
+                allowed_project_ids=["24CP01", "PEM-058", "PEM-065"],
+                project_code="CFC",
+                keyword="valve"
+            )
+            cfc_doc_nos = [r["doc_no"] for r in res_cfc["records"]]
+            self.assertIn("IR-CY002P608-00200 REV00", cfc_doc_nos)
+            self.assertNotIn("IR-CY002P608-00437 REV00", cfc_doc_nos)
+
+            # 3. Test Eastmain B06 valve search
+            res_em = ai_tools.search_submittals(
+                allowed_project_ids=["24CP01", "PEM-058", "PEM-065"],
+                project_code="PEM-065",
+                keyword="محابس"
+            )
+            em_doc_nos = [r["doc_no"] for r in res_em["records"]]
+            self.assertIn("IR-EASTMAIN-PL-015 REV00", em_doc_nos)
+            self.assertNotIn("IR-EASTMAIN-HV-027 REV00", em_doc_nos)
+
+        print("PASS: Valve search strictly includes genuine valve submittals and eliminates all false positives.")
 
 
 if __name__ == "__main__":

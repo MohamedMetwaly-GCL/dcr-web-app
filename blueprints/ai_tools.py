@@ -126,8 +126,16 @@ DISCIPLINE_SYNONYMS = {
 }
 
 EQUIPMENT_KEYWORDS = {
-    "valve": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "zcv", "محبس", "محابس", "صمام", "صمامات"],
-    "valves": ["valve", "valves", "valv", "butterfly", "gate valve", "ball valve", "check valve", "zcv", "محبس", "محابس", "صمام", "صمامات"],
+    "valve": [
+        "valve", "valves", "butterfly", "gate valve", "ball valve", "check valve",
+        "globe valve", "prv", "zcv", "zone control valve", "control valve",
+        "محبس", "محابس", "صمام", "صمامات", "سكينة", "عدم رجوع"
+    ],
+    "valves": [
+        "valve", "valves", "butterfly", "gate valve", "ball valve", "check valve",
+        "globe valve", "prv", "zcv", "zone control valve", "control valve",
+        "محبس", "محابس", "صمام", "صمامات", "سكينة", "عدم رجوع"
+    ],
     "pump": ["pump", "pumps", "طلمبة", "طلمبات", "مضخة", "مضخات"],
     "pumps": ["pump", "pumps", "طلمبة", "طلمبات", "مضخة", "مضخات"],
     "chiller": ["chiller", "chillers", "cooling", "hvac", "تكييف", "مبرد", "مبردات"],
@@ -141,6 +149,56 @@ EQUIPMENT_KEYWORDS = {
 }
 
 KEYWORD_SYNONYMS = EQUIPMENT_KEYWORDS
+
+EQUIPMENT_DISCIPLINE_CONFLICTS = {
+    "valve": ["arch", "معمار", "civil", "مدن", "struct", "انشائ", "إنشائ"],
+    "valves": ["arch", "معمار", "civil", "مدن", "struct", "انشائ", "إنشائ"],
+    "pump": ["arch", "معمار", "civil", "مدن", "struct", "انشائ", "إنشائ"],
+    "pumps": ["arch", "معمار", "civil", "مدن", "struct", "انشائ", "إنشائ"],
+    "chiller": ["arch", "معمار", "civil", "مدن", "struct", "انشائ", "إنشائ"],
+    "fan": ["civil", "مدن", "struct", "انشائ", "إنشائ", "arch", "معمار"],
+    "cable": ["civil", "مدن", "struct", "انشائ", "إنشائ", "arch", "معمار"],
+    "panel": ["civil", "مدن", "struct", "انشائ", "إنشائ", "arch", "معمار"],
+    "generator": ["civil", "مدن", "struct", "انشائ", "إنشائ", "arch", "معمار"],
+    "transformer": ["civil", "مدن", "struct", "انشائ", "إنشائ", "arch", "معمار"],
+    "duct": ["civil", "مدن", "struct", "انشائ", "إنشائ", "arch", "معمار"],
+    "pipe": ["arch", "معمار"],
+}
+
+EQUIPMENT_FAMILY_MAP = {
+    "valve": "mechanical_fluid",
+    "valves": "mechanical_fluid",
+    "pump": "mechanical_fluid",
+    "pumps": "mechanical_fluid",
+    "chiller": "hvac_cooling",
+    "duct": "hvac_air",
+    "fan": "hvac_air",
+    "pipe": "piping",
+    "cable": "electrical",
+    "panel": "electrical",
+    "generator": "electrical",
+    "transformer": "electrical",
+}
+
+UNRELATED_TRADE_PATTERNS = {
+    "mechanical_fluid": [
+        "duct", "diffuser", "damper", "grille", "smoke test",
+        "marble", "stairs", "disconnect", "generator", "panel", "transformer",
+        "aerosol", "ewh", "water heater", "lighting", "light fixture",
+        "conduit", "cable tray", "painting", "plaster", "blockwork", "concrete",
+        "صاج", "دكت", "رخام", "درج", "سلالم", "لوحة", "لوحات", "مولد", "محول",
+        "دهانات", "محارة", "بياض", "سخان", "سخانات"
+    ],
+    "hvac_air": [
+        "marble", "stairs", "disconnect", "generator", "panel", "transformer",
+        "aerosol", "ewh", "lighting", "painting", "plaster", "blockwork", "concrete",
+        "رخام", "درج", "سلالم", "لوحة", "مولد", "دهانات", "محارة"
+    ],
+    "electrical": [
+        "duct", "diffuser", "damper", "grille", "marble", "stairs", "plaster",
+        "painting", "blockwork", "concrete", "صاج", "دكت", "رخام", "درج", "سلالم"
+    ],
+}
 
 
 def _normalize_arabic(text: str) -> str:
@@ -181,6 +239,74 @@ def _expand_keyword_synonyms(keyword_str: str) -> list:
             return eterms
 
     return [kw_raw]
+
+
+def _is_record_relevant_to_keyword(record: dict, keyword: str, synonyms: list) -> bool:
+    """Validates that a returned record genuinely pertains to the requested equipment keyword,
+    strictly eliminating false positives from unrelated trades, Google Drive file URLs, or metadata hashes."""
+    if not keyword or not synonyms:
+        return True
+
+    kw_norm = _normalize_arabic(str(keyword).strip().lower())
+
+    # Identify equipment category
+    matched_eq_key = None
+    for ek, syns in EQUIPMENT_KEYWORDS.items():
+        norm_syns = {_normalize_arabic(s) for s in syns}
+        norm_syns.update(syns)
+        if kw_norm in norm_syns or any(s in kw_norm for s in norm_syns):
+            matched_eq_key = ek
+            break
+
+    # 1. Check conflicting disciplines if keyword maps to an equipment category
+    if matched_eq_key:
+        conf_terms = EQUIPMENT_DISCIPLINE_CONFLICTS.get(matched_eq_key, [])
+        rec_disc = _normalize_arabic(str(record.get("discipline") or "").lower())
+        if rec_disc and any(ct in rec_disc for ct in conf_terms):
+            return False
+
+    # 2. Extract fields
+    title = str(record.get("title") or "")
+    doc_no = str(record.get("doc_no") or "")
+    brand = str(record.get("brand") or "")
+    trade = str(record.get("trade") or "")
+    sub_trade = str(record.get("sub_trade") or "")
+    desc = str(record.get("description") or "")
+    doc_type = str(record.get("doc_type") or "").upper()
+
+    primary_text = f"{title} {doc_no} {brand} {trade} {sub_trade}".lower()
+    primary_norm = _normalize_arabic(primary_text)
+    secondary_text = desc.lower()
+    secondary_norm = _normalize_arabic(secondary_text)
+
+    def _term_matches(term, text, text_norm):
+        t_clean = term.strip().lower()
+        t_norm = _normalize_arabic(t_clean)
+        if len(t_clean) <= 3 and t_clean.isascii() and t_clean.isalpha():
+            pattern = r"(?<![a-zA-Z0-9])" + re.escape(t_clean) + r"(?![a-zA-Z0-9])"
+            return bool(re.search(pattern, text))
+        return t_clean in text or t_norm in text_norm
+
+    # Direct match in primary fields
+    has_primary_match = any(_term_matches(syn, primary_text, primary_norm) for syn in synonyms)
+    if has_primary_match:
+        return True
+
+    # If document is an IR / WIR (Inspection Request), the title describes the inspected work.
+    # If the title or trade mentions an incompatible equipment/work, discard it.
+    if matched_eq_key:
+        family = EQUIPMENT_FAMILY_MAP.get(matched_eq_key)
+        unrelated_patterns = UNRELATED_TRADE_PATTERNS.get(family, [])
+        if any(p in primary_text or p in primary_norm for p in unrelated_patterns):
+            return False
+
+    if doc_type in ("IR", "WIR"):
+        # For IRs, title is required to relate to equipment if primary text had no match
+        return False
+
+    # For MS / SD / other submittals, match in description / materialDescription
+    return any(_term_matches(syn, secondary_text, secondary_norm) for syn in synonyms)
+
 
 
 
@@ -634,7 +760,7 @@ def search_submittals(
             "r.data->>'workDescription'",
             "r.data->>'brand'",
             "r.data->>'itemRef'",
-            "r.data::text",
+            "r.data->>'itemDescription'",
         ):
             field_or = " OR ".join([f"{field} ILIKE %s"] * len(kw_patterns))
             sub_clauses.append(f"({field_or})")
@@ -707,7 +833,8 @@ def search_submittals(
             COALESCE(r.data->>'brand', '') AS brand,
             COALESCE(r.data->>'discipline', r.data->>'Discipline', '') AS discipline,
             COALESCE(r.data->>'trade', r.data->>'Trade', '') AS trade,
-            COALESCE(r.data->>'subTrade', r.data->>'sub_trade', r.data->>'SubTrade', '') AS sub_trade
+            COALESCE(r.data->>'subTrade', r.data->>'sub_trade', r.data->>'SubTrade', '') AS sub_trade,
+            COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', r.data->>'itemRef', '') AS description
         FROM records r
         WHERE {' AND '.join(where_clauses)}
         ORDER BY {', '.join(order_clauses)}
@@ -730,7 +857,8 @@ def search_submittals(
                     COALESCE(r.data->>'status', r.data->>'partBStatus', '') AS status,
                     COALESCE(r.data->>'actualReply', r.data->>'issuedDate', '') AS doc_date,
                     COALESCE(r.data->>'discipline', '') AS discipline,
-                    COALESCE(r.data->>'trade', '') AS trade
+                    COALESCE(r.data->>'trade', '') AS trade,
+                    COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', '') AS description
                 FROM records r
                 WHERE {proj_clause}
             """
@@ -741,12 +869,13 @@ def search_submittals(
                 fb_params.extend([dt_u, f"{dt_u}-%", f"{dt_u}/%"])
             if keyword:
                 syns = _expand_keyword_synonyms(keyword)
-                kw_ors = " OR ".join(["r.data::text ILIKE %s"] * len(syns))
+                kw_field = "COALESCE(r.data->>'title', r.data->>'subject', r.data->>'docNo', r.data->>'workDescription', r.data->>'materialDescription', '')"
+                kw_ors = " OR ".join([f"{kw_field} ILIKE %s"] * len(syns))
                 fb_sql += f" AND ({kw_ors})"
                 fb_params.extend([f"%{s}%" for s in syns])
             if status and "approv" in str(status).lower():
-                fb_sql += " AND (COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE %s OR r.data::text ILIKE %s)"
-                fb_params.extend(["%Approv%", "%Approv%"])
+                fb_sql += " AND (COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE %s)"
+                fb_params.append("%Approv%")
             fb_sql += " ORDER BY r.created_at DESC LIMIT %s;"
             fb_params.append(raw_limit)
             rows = db.q(fb_sql, tuple(fb_params))
@@ -759,6 +888,11 @@ def search_submittals(
                 "records": [],
                 "error": str(e),
             }
+
+    # Post-filter keyword false positives & cross-trade contamination
+    if keyword and rows:
+        synonyms = _expand_keyword_synonyms(keyword)
+        rows = [r for r in rows if _is_record_relevant_to_keyword(r, keyword, synonyms)]
 
     # Post-filter discipline cross-contamination if requested
     if detected_disc_key and rows:
