@@ -1145,6 +1145,110 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertEqual(doc_nos, expected_order)
         print("PASS: Submittals are strictly sorted in natural ascending order by Document Number.")
 
+    def test_42_search_submittals_pr_doctype_and_items(self):
+        """Verifies that PR search strictly isolates PR records, excludes DS/IR, and sorts naturally."""
+        mock_projects = [{"id": "PEM-058", "name": "CFC Ph2", "code": "PEM-058", "data": {}}]
+        mock_records = [
+            {"id": "pr1", "project_id": "PEM-058", "doc_type": "PR", "doc_no": "PR-042 REV00", "title": "Gate Valve 125mm - 6\", Butterfly Valve 200mm", "status": "Pending PO", "description": ""},
+            {"id": "pr2", "project_id": "PEM-058", "doc_type": "PR", "doc_no": "PR-042 REV01", "title": "Butterfly Valve 300mm - 12\" WITH CHAIN WHEEL", "status": "Pending PO", "description": ""},
+            {"id": "ds1", "project_id": "PEM-058", "doc_type": "DS", "doc_no": "DS-CY002P608-00134 REV00", "title": "Inspection Test Plan for Firefighting Valves", "status": "Approved As Noted", "description": ""},
+            {"id": "ir1", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00038 REV00", "title": "Fire Fighting Piping Installation + Zone Valve", "status": "Approved As Noted", "description": ""},
+        ]
+        mock_pr_items = {
+            "pr1": [{"item_name": "Gate Valve 125mm", "status": "Pending PO"}],
+            "pr2": [{"item_name": "Butterfly Valve 300mm", "status": "Pending PO"}],
+        }
+
+        with patch("db.q") as mock_q, patch("db.get_pr_items_for_records") as mock_items:
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    # Filter by doc_type if requested
+                    if "UPPER(r.dt_id) = %s" in sql or "doc_types WHERE (UPPER(code) = 'PR'" in sql:
+                        return [r for r in mock_records if r["doc_type"] == "PR"]
+                    return mock_records
+                return []
+            mock_q.side_effect = q_side_effect
+            mock_items.return_value = mock_pr_items
+
+            # 1. Search all revisions of PR for valves
+            res_all = ai_tools.search_submittals(
+                allowed_project_ids=["PEM-058"],
+                project_code="CFC",
+                doc_type="PR",
+                keyword="valve",
+                latest_revision_only=False,
+            )
+            doc_nos_all = [r["doc_no"] for r in res_all["records"]]
+            doc_types_all = [r["doc_type"] for r in res_all["records"]]
+
+            self.assertEqual(len(doc_nos_all), 2)
+            self.assertEqual(doc_nos_all, ["PR-042 REV00", "PR-042 REV01"])
+            self.assertTrue(all(dt == "PR" for dt in doc_types_all))
+            self.assertNotIn("DS-CY002P608-00134 REV00", doc_nos_all)
+            self.assertNotIn("IR-CY002P608-00038 REV00", doc_nos_all)
+
+            # 2. Search latest revision only
+            res_latest = ai_tools.search_submittals(
+                allowed_project_ids=["PEM-058"],
+                project_code="CFC",
+                doc_type="PR",
+                keyword="valve",
+                latest_revision_only=True,
+            )
+            doc_nos_latest = [r["doc_no"] for r in res_latest["records"]]
+            self.assertEqual(doc_nos_latest, ["PR-042 REV01"])
+
+        print("PASS: PR search strictly isolates PR records, excludes DS/IR, and enriches line items.")
+
+    def test_43_pr_intent_extraction_and_fallback_workflow(self):
+        """Verifies Arabic PR prompt extraction and deterministic fallback response."""
+        from blueprints.ai import _extract_inquiry_intent_from_text, _execute_deterministic_fallback
+
+        # 1. Intent extraction
+        parsed = _extract_inquiry_intent_from_text("شوفلي كل PRs الخاصة بالمحابس في نفس المشروع")
+        self.assertEqual(parsed.get("doc_type"), "PR")
+        self.assertEqual(parsed.get("keyword"), "valve")
+        self.assertTrue(parsed.get("is_same_project"))
+
+        # 2. Intent extraction with Arabic terms
+        parsed_ar = _extract_inquiry_intent_from_text("طلبات الشراء الخاصة بالمضخات")
+        self.assertEqual(parsed_ar.get("doc_type"), "PR")
+        self.assertEqual(parsed_ar.get("keyword"), "pump")
+
+        # 3. Deterministic fallback with history inheritance
+        history = [
+            {"role": "user", "text": "ايه MS المعتمد الخاص بالمحابس في مشروع CFC"},
+            {"role": "model", "text": "تم استخراج 14 وثيقة معتمدة..."},
+        ]
+        mock_projects = [{"id": "PEM-058", "name": "CFC Ph2", "code": "PEM-058", "data": {}}]
+        mock_pr_records = [
+            {"id": "pr1", "project_id": "PEM-058", "doc_type": "PR", "doc_no": "PR-042 REV01", "title": "Butterfly Valve 300mm", "status": "Pending PO", "description": ""},
+        ]
+
+        with patch("db.q") as mock_q, patch("db.get_pr_items_for_records") as mock_items:
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    return mock_pr_records
+                return []
+            mock_q.side_effect = q_side_effect
+            mock_items.return_value = {}
+
+            reply = _execute_deterministic_fallback(
+                prompt="شوفلي كل PRs الخاصة بالمحابس في نفس المشروع",
+                allowed_project_ids=["PEM-058"],
+                history=history,
+            )
+            self.assertIn("طلبات الشراء (PR)", reply)
+            self.assertIn("PEM-058", reply)
+            self.assertIn("PR-042 REV01", reply)
+            self.assertNotIn("DS-CY002P608", reply)
+
+        print("PASS: PR intent extraction and conversational fallback correctly inherit project and format PR records.")
+
 
 if __name__ == "__main__":
     unittest.main()

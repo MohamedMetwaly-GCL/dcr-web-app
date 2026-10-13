@@ -294,7 +294,7 @@ def _is_record_relevant_to_keyword(record: dict, keyword: str, synonyms: list) -
 
     # If document is an IR / WIR (Inspection Request), the title describes the inspected work.
     # If the title or trade mentions an incompatible equipment/work, discard it.
-    if matched_eq_key:
+    if matched_eq_key and doc_type != "PR":
         family = EQUIPMENT_FAMILY_MAP.get(matched_eq_key)
         unrelated_patterns = UNRELATED_TRADE_PATTERNS.get(family, [])
         if any(p in primary_text or p in primary_norm for p in unrelated_patterns):
@@ -684,16 +684,27 @@ def search_submittals(
         dt_clean = str(doc_type).strip().upper()
         dt_prefixes = [f"{dt_clean}-%", f"{dt_clean}/%", f"%-{dt_clean}-%", f"%/{dt_clean}/%"]
         dt_p_clause, dt_p_params = _build_project_in_clause("project_id", valid_aliases)
-        dt_docno_or = " OR ".join(["r.data->>'docNo' ILIKE %s"] * len(dt_prefixes))
-        where_clauses.append(f"""(
-            UPPER(r.dt_id) = %s 
-            OR ({dt_docno_or})
-            OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = %s AND (project_id = r.project_id OR {dt_p_clause}))
-        )""")
-        params.append(dt_clean)
-        params.extend(dt_prefixes)
-        params.append(dt_clean)
-        params.extend(dt_p_params)
+        dt_docno_or = " OR ".join(["COALESCE(r.data->>'docNo', r.data->>'prNo', r.data->>'prNumber', '') ILIKE %s"] * len(dt_prefixes))
+        if dt_clean == "PR":
+            dt_subquery = f"SELECT id FROM doc_types WHERE (UPPER(code) = 'PR' OR UPPER(name) LIKE '%%REQUISITION%%' OR UPPER(name) LIKE '%%PURCHASE%%') AND (project_id = r.project_id OR {dt_p_clause})"
+            where_clauses.append(f"""(
+                UPPER(r.dt_id) = %s 
+                OR ({dt_docno_or})
+                OR r.dt_id IN ({dt_subquery})
+            )""")
+            params.append(dt_clean)
+            params.extend(dt_prefixes)
+            params.extend(dt_p_params)
+        else:
+            where_clauses.append(f"""(
+                UPPER(r.dt_id) = %s 
+                OR ({dt_docno_or})
+                OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = %s AND (project_id = r.project_id OR {dt_p_clause}))
+            )""")
+            params.append(dt_clean)
+            params.extend(dt_prefixes)
+            params.append(dt_clean)
+            params.extend(dt_p_params)
 
     # 3. Discipline Condition
     detected_disc_key = None
@@ -750,21 +761,35 @@ def search_submittals(
         kw_patterns = [f"%{term}%" for term in synonyms]
         sub_clauses = []
         kw_p_list = []
-        for field in (
+        kw_fields = [
             "r.data->>'title'",
             "r.data->>'subject'",
             "r.data->>'nocSubject'",
             "r.data->>'docNo'",
+            "r.data->>'prNo'",
+            "r.data->>'prNumber'",
             "r.data->>'description'",
             "r.data->>'materialDescription'",
             "r.data->>'workDescription'",
             "r.data->>'brand'",
             "r.data->>'itemRef'",
             "r.data->>'itemDescription'",
-        ):
+            "r.data->>'prDetails'",
+            "r.data->>'pr_details'",
+            "r.data->>'msRef'",
+            "r.data->>'remarks'",
+        ]
+        for field in kw_fields:
             field_or = " OR ".join([f"{field} ILIKE %s"] * len(kw_patterns))
             sub_clauses.append(f"({field_or})")
             kw_p_list.extend(kw_patterns)
+
+        # Check items in pr_items table (linking record_id = r.id)
+        pr_item_ors = " OR ".join(["(pi.item_name ILIKE %s OR pi.remarks ILIKE %s)"] * len(kw_patterns))
+        sub_clauses.append(f"EXISTS (SELECT 1 FROM pr_items pi WHERE pi.record_id = r.id AND ({pr_item_ors}))")
+        for p in kw_patterns:
+            kw_p_list.extend([p, p])
+
         where_clauses.append(f"({' OR '.join(sub_clauses)})")
         params.extend(kw_p_list)
 
@@ -801,7 +826,7 @@ def search_submittals(
             ) THEN 0 
             ELSE 1 
         END ASC""",
-        "COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '') ASC",
+        "COALESCE(r.data->>'docNo', r.data->>'prNo', r.data->>'prNumber', r.data->>'nocNo', r.data->>'letterRef', '') ASC",
         "r.created_at ASC NULLS LAST",
         "r.id ASC",
     ]
@@ -815,27 +840,33 @@ def search_submittals(
             r.project_id,
             COALESCE(
                 NULLIF(CASE 
+                    WHEN r.data->>'docNo' ILIKE 'PR-%%' OR r.data->>'docNo' ILIKE 'PR/%%' OR r.data->>'docNo' ILIKE '%%-PR-%%' OR r.data->>'prNo' ILIKE 'PR-%%' OR r.data->>'prNumber' ILIKE 'PR-%%' THEN 'PR'
                     WHEN r.data->>'docNo' ILIKE 'MS-%%' OR r.data->>'docNo' ILIKE 'MS/%%' OR r.data->>'docNo' ILIKE '%%-MS-%%' THEN 'MS'
                     WHEN r.data->>'docNo' ILIKE 'IR-%%' OR r.data->>'docNo' ILIKE 'IR/%%' OR r.data->>'docNo' ILIKE '%%-IR-%%' THEN 'IR'
                     WHEN r.data->>'docNo' ILIKE 'SD-%%' OR r.data->>'docNo' ILIKE 'SD/%%' OR r.data->>'docNo' ILIKE '%%-SD-%%' THEN 'SD'
                     WHEN r.data->>'docNo' ILIKE 'MIR-%%' OR r.data->>'docNo' ILIKE 'MIR/%%' OR r.data->>'docNo' ILIKE '%%-MIR-%%' THEN 'MIR'
+                    WHEN r.data->>'docNo' ILIKE 'DS-%%' OR r.data->>'docNo' ILIKE 'DS/%%' OR r.data->>'docNo' ILIKE '%%-DS-%%' THEN 'DS'
+                    WHEN r.data->>'docNo' ILIKE 'WN-%%' OR r.data->>'docNo' ILIKE 'WN/%%' OR r.data->>'docNo' ILIKE '%%-WN-%%' THEN 'WN'
+                    WHEN r.data->>'docNo' ILIKE 'NCN-%%' OR r.data->>'docNo' ILIKE 'NCN/%%' OR r.data->>'docNo' ILIKE '%%-NCN-%%' THEN 'NCN'
+                    WHEN r.data->>'docNo' ILIKE 'EI-%%' OR r.data->>'docNo' ILIKE 'EI/%%' OR r.data->>'docNo' ILIKE '%%-EI-%%' THEN 'EI'
                     WHEN r.data->>'docNo' ILIKE 'RFI-%%' OR r.data->>'docNo' ILIKE 'RFI/%%' OR r.data->>'docNo' ILIKE '%%-RFI-%%' THEN 'RFI'
                     WHEN r.data->>'docNo' ILIKE 'QS-%%' OR r.data->>'docNo' ILIKE 'QS/%%' OR r.data->>'docNo' ILIKE '%%-QS-%%' THEN 'QS'
                     WHEN r.data->>'docNo' ILIKE 'NOC-%%' OR r.data->>'docNo' ILIKE 'NOC/%%' OR r.data->>'docNo' ILIKE '%%-NOC-%%' THEN 'NOC'
+                    WHEN r.data->>'docNo' ILIKE 'LTR-%%' OR r.data->>'docNo' ILIKE 'LTR/%%' OR r.data->>'docNo' ILIKE '%%-LTR-%%' THEN 'LTR'
                 END, ''),
                 (SELECT code FROM doc_types dt WHERE dt.id = r.dt_id LIMIT 1),
                 NULLIF(r.dt_id, ''),
                 'DOC'
             ) AS doc_type,
-            COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
-            COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
+            COALESCE(r.data->>'docNo', r.data->>'prNo', r.data->>'prNumber', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
+            COALESCE(r.data->>'title', r.data->>'prDetails', r.data->>'pr_details', r.data->>'nocSubject', r.data->>'subject', '') AS title,
             COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
             COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'IssuedDate', r.data->>'partAIssueDate', '') AS doc_date,
             COALESCE(r.data->>'brand', '') AS brand,
             COALESCE(r.data->>'discipline', r.data->>'Discipline', '') AS discipline,
             COALESCE(r.data->>'trade', r.data->>'Trade', '') AS trade,
             COALESCE(r.data->>'subTrade', r.data->>'sub_trade', r.data->>'SubTrade', '') AS sub_trade,
-            COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', r.data->>'itemRef', '') AS description
+            COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', r.data->>'prDetails', r.data->>'msRef', r.data->>'itemRef', '') AS description
         FROM records r
         WHERE {' AND '.join(where_clauses)}
         ORDER BY {', '.join(order_clauses)}
@@ -852,25 +883,35 @@ def search_submittals(
                 SELECT 
                     r.id,
                     r.project_id,
-                    r.dt_id AS doc_type,
-                    COALESCE(r.data->>'docNo', r.data->>'nocNo', '—') AS doc_no,
-                    COALESCE(r.data->>'title', r.data->>'subject', '') AS title,
+                    COALESCE(
+                        NULLIF(CASE 
+                            WHEN r.data->>'docNo' ILIKE 'PR-%%' OR r.data->>'prNo' ILIKE 'PR-%%' THEN 'PR'
+                            WHEN r.data->>'docNo' ILIKE 'MS-%%' THEN 'MS'
+                            WHEN r.data->>'docNo' ILIKE 'IR-%%' THEN 'IR'
+                            WHEN r.data->>'docNo' ILIKE 'SD-%%' THEN 'SD'
+                            WHEN r.data->>'docNo' ILIKE 'MIR-%%' THEN 'MIR'
+                        END, ''),
+                        r.dt_id,
+                        'DOC'
+                    ) AS doc_type,
+                    COALESCE(r.data->>'docNo', r.data->>'prNo', r.data->>'prNumber', r.data->>'nocNo', '—') AS doc_no,
+                    COALESCE(r.data->>'title', r.data->>'prDetails', r.data->>'subject', '') AS title,
                     COALESCE(r.data->>'status', r.data->>'partBStatus', '') AS status,
                     COALESCE(r.data->>'actualReply', r.data->>'issuedDate', '') AS doc_date,
                     COALESCE(r.data->>'discipline', '') AS discipline,
                     COALESCE(r.data->>'trade', '') AS trade,
-                    COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', '') AS description
+                    COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', r.data->>'prDetails', '') AS description
                 FROM records r
                 WHERE {proj_clause}
             """
             fb_params = list(proj_params)
             if doc_type:
                 dt_u = str(doc_type).strip().upper()
-                fb_sql += " AND (UPPER(TRIM(r.dt_id)) = %s OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s)"
-                fb_params.extend([dt_u, f"{dt_u}-%", f"{dt_u}/%"])
+                fb_sql += " AND (UPPER(TRIM(r.dt_id)) = %s OR r.data->>'docNo' ILIKE %s OR r.data->>'docNo' ILIKE %s OR r.data->>'prNo' ILIKE %s)"
+                fb_params.extend([dt_u, f"{dt_u}-%", f"{dt_u}/%", f"{dt_u}-%"])
             if keyword:
                 syns = _expand_keyword_synonyms(keyword)
-                kw_field = "COALESCE(r.data->>'title', r.data->>'subject', r.data->>'docNo', r.data->>'workDescription', r.data->>'materialDescription', '')"
+                kw_field = "COALESCE(r.data->>'title', r.data->>'prDetails', r.data->>'subject', r.data->>'docNo', r.data->>'prNo', r.data->>'workDescription', r.data->>'materialDescription', r.data->>'msRef', '')"
                 kw_ors = " OR ".join([f"{kw_field} ILIKE %s"] * len(syns))
                 fb_sql += f" AND ({kw_ors})"
                 fb_params.extend([f"%{s}%" for s in syns])
@@ -889,6 +930,41 @@ def search_submittals(
                 "records": [],
                 "error": str(e),
             }
+
+    # Enrich PR records with item details and status from pr_items if available
+    pr_row_ids = [
+        r["id"] for r in rows 
+        if str(r.get("doc_type") or "").upper() == "PR" 
+        or str(r.get("doc_no") or "").upper().startswith("PR")
+        or str(r.get("dt_id") or "").upper() == "PR"
+    ]
+    if pr_row_ids:
+        try:
+            pr_items_map = db.get_pr_items_for_records(pr_row_ids)
+        except Exception:
+            pr_items_map = {}
+        for r in rows:
+            if r.get("id") in pr_items_map:
+                items = pr_items_map[r["id"]]
+                if items:
+                    item_names = [it.get("item_name") for it in items if it.get("item_name")]
+                    if item_names:
+                        preview_str = ", ".join(item_names[:4])
+                        if len(item_names) > 4:
+                            preview_str += f" (+{len(item_names)-4} items)"
+                        if not r.get("title") or r["title"] in ("—", ""):
+                            r["title"] = preview_str
+                        else:
+                            r["description"] = f"{r.get('description', '')} | Items: {preview_str}".strip(" |")
+                    # If status is empty, resolve from item statuses
+                    if not r.get("status") or r["status"] in ("—", ""):
+                        it_statuses = [it.get("status") for it in items if it.get("status")]
+                        if any("pending" in str(s).lower() for s in it_statuses):
+                            r["status"] = "Pending PO"
+                        elif it_statuses:
+                            r["status"] = it_statuses[0]
+                        else:
+                            r["status"] = "Pending PO"
 
     # Post-filter keyword false positives & cross-trade contamination
     if keyword and rows:

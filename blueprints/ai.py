@@ -34,15 +34,18 @@ SYSTEM_INSTRUCTION = (
     "using the provided tools: search_submittals, get_project_summary, get_noc_financials, "
     "get_overdue_submittals, and get_document_history.\n\n"
     "Document types in the register include:\n"
+    "- 'PR': Purchase Requisition / Procurement Tracking (طلبات الشراء / أوامر الشراء والتوريد ومتابعة المشتريات).\n"
     "- 'MS': Material Submittal (اعتماد مواد / عينات / موردين) or Method Statement.\n"
     "- 'SD': Shop Drawing (مخططات تنفيذية / شوب درونج).\n"
     "- 'IR' / 'WIR': Inspection Request (طلبات استلام أعمال / فحص موقعي / تسليمات).\n"
     "- 'MIR': Material Inspection Request (طلب فحص وتوريد مواد ومهمات بالموقع).\n"
+    "- 'DS': Design Submittal (اعتمادات التصميم والتنفيذ).\n"
     "- 'RFI': Request for Information (استفسارات وتوضيحات فنية).\n"
     "- 'QS': Quantity Surveyor (حصر كميات ومستخلصات).\n"
-    "- 'NOC': Notice of Change (أوامر التغيير / مطالبات مالية).\n\n"
+    "- 'NOC': Notice of Change (أوامر التغيير / مطالبات مالية).\n"
+    "- 'LTR': Letters & Correspondence (الخطابات والمراسلات الرسمية).\n\n"
     "Guidelines:\n"
-    "1. When the user asks about specific submittals, materials, equipment (valves, pumps, chillers, cables, pipes, etc.), "
+    "1. When the user asks about specific submittals, materials, PRs/procurement, equipment (valves, pumps, chillers, cables, pipes, etc.), "
     "disciplines (Architecture, Electrical, Mechanical, Civil, Structural), or document types, always call search_submittals.\n"
     "2. When the user asks about KPIs, overall project totals, or register summary, call get_project_summary.\n"
     "3. When the user asks about costs, variations, or NOC totals, call get_noc_financials. "
@@ -76,18 +79,18 @@ SYSTEM_INSTRUCTION = (
     "you MUST immediately call search_submittals(project_code='PEM-058', doc_type='MS', keyword='valve', status='approved'). "
     "And if they follow up with 'طيب ومشروع Eastmain', you MUST call search_submittals(project_code='Eastmain', doc_type='MS', keyword='valve', status='approved').\n"
     "   - FOLLOW-UP WITH EQUIPMENT / TOPIC SWITCH: When the user asks about different equipment or document type without specifying a project "
-    "(e.g. 'وماذا عن المضخات؟', 'طب والـ SD؟', 'and what about pumps?'), retain the project and approval status from the previous turn, and update the keyword or doc_type.\n"
+    "(e.g. 'وماذا عن المضخات؟', 'طب والـ SD؟', 'طب و PRs المحابس؟', 'and what about pumps?'), retain the project and approval status from the previous turn, and update the keyword or doc_type.\n"
     "   - ISOLATED PROJECT MENTION WITH NO ACTIVE TOPIC: If the user mentions ONLY a project name (e.g. 'مشروع CFC' or 'CFC') and there is NO active inquiry "
     "(no keyword, no specific doc_type, no NOC, no overdue, no summary) in the conversation history to continue, DO NOT execute a blind search returning random documents. "
-    "Instead, ask the user politely and specifically what information they need for this project (Material Submittals, Shop Drawings, NOC financials, Overdue submittals, or General KPI Summary).\n"
+    "Instead, ask the user politely and specifically what information they need for this project (Material Submittals, Purchase Requisitions, Shop Drawings, NOC financials, Overdue submittals, or General KPI Summary).\n"
     "9. CRITICAL FOR GLOBAL QUERIES: If the user asks about documents, totals, KPIs, or costs across all projects or registers "
     "(e.g. 'across the project registers', 'all projects', 'كل المشاريع', 'إجمالي المشاريع', or asks for overall summaries without naming a project), "
     "you MUST pass project_code=None (or omit project_code). DO NOT carry over or recall a project code from previous conversation turns.\n"
-    "10. STRICT DOCUMENT TYPE ENFORCEMENT: When the user specifies a document type (e.g. 'MS', 'SD', 'IR', 'NOC'), you MUST strictly search for that document type only (doc_type='MS'). If 0 records are found for that document type, report that no matching records of that document type were found. NEVER substitute or return records from other document types (such as NOC or IR) when a specific document type was requested. "
+    "10. STRICT DOCUMENT TYPE ENFORCEMENT: When the user specifies a document type (e.g. 'PR', 'MS', 'SD', 'IR', 'NOC'), you MUST strictly search for that document type only (doc_type='PR'). If 0 records are found for that document type, report that no matching records of that document type were found. NEVER substitute or return records from other document types (such as NOC, IR, or DS) when a specific document type was requested. "
     "Conversely, if the user does NOT specify a document type (e.g., 'شوفلي المحابس المعتمدة في مشروع CFC' or 'What approved valves are in CFC?'), omit doc_type (doc_type=None) so the tool searches across ALL registers and returns matching records from all document types.\n"
     "11. BILINGUAL ACCURACY & BIDIRECTIONAL (BiDi) FORMATTING: If the user writes in Arabic, respond in professional Arabic engineering language. "
     "If in English, respond in English. When responding in Arabic, always format document numbers, project codes, and English acronyms "
-    "in backticks (e.g. `PEM-058`, `MS-CY002P608-00019`, `Valves`) so bidirectional text displays in correct natural word order.\n"
+    "in backticks (e.g. `PEM-058`, `MS-CY002P608-00019`, `PR-042 REV01`, `Valves`) so bidirectional text displays in correct natural word order.\n"
     "12. Never fabricate document numbers or approval statuses. Only report data returned by the tools."
 )
 
@@ -100,7 +103,7 @@ SYSTEM_INSTRUCTION = (
 search_submittals_declaration = types.FunctionDeclaration(
     name="search_submittals",
     description=(
-        "Searches engineering submittals and document registers (MS, SD, IR, MIR, RFI, QS, NOC) "
+        "Searches engineering submittals and document registers (PR, MS, SD, IR, MIR, RFI, QS, NOC) "
         "by project, document type, discipline, sub-trade, equipment/material keywords, and approval status. "
         "Returns matching document records with doc number, title, status, date, and project code."
     ),
@@ -113,7 +116,7 @@ search_submittals_declaration = types.FunctionDeclaration(
             ),
             "doc_type": types.Schema(
                 type=types.Type.STRING,
-                description="Document type code: 'MS' (Material Submittal), 'SD' (Shop Drawing), 'IR' (Work/Inspection Request), 'MIR' (Material Inspection Request), 'RFI' (Request for Information), 'QS' (Quantity Surveying), 'NOC' (Notice of Change). Pass None or omit if user did not specify a document type to search across all registers.",
+                description="Document type code: 'PR' (Purchase Requisition / Procurement Tracking), 'MS' (Material Submittal), 'SD' (Shop Drawing), 'IR' (Work/Inspection Request), 'MIR' (Material Inspection Request), 'RFI' (Request for Information), 'QS' (Quantity Surveying), 'NOC' (Notice of Change). Pass None or omit if user did not specify a document type to search across all registers.",
             ),
             "discipline": types.Schema(
                 type=types.Type.STRING,
@@ -276,11 +279,11 @@ def is_follow_up_prompt(prompt: str) -> bool:
         "وماذا عن", "ماذا عن", "وعن", "عن مشروع",
         "طب و", "طب وفي", "طب في", "طب والمشروع", "طب مشروع",
         "وفي مشروع", "في مشروع", "ومشروع",
-        "ونفس المشروع", "المشروع نفسه", "نفسه", "نفسها",
+        "في نفس المشروع", "بنفس المشروع", "نفس المشروع", "في نفس", "ونفس المشروع", "المشروع نفسه", "نفسه", "نفسها",
         "فيه", "فيها", "منها", "عنها", "عنه", "تفاصيلها", "تفاصيله", "من اعتمد", "من اعتمده", "من اعتمدها",
         "تاريخه", "تاريخها", "والمعتمد", "المعتمد منها", "المعتمدة منها",
         "what about", "how about", "who approved", "details of", "and what about", "and for", "and in",
-        "same project", "for it", "for them", "of them", "its revisions", "what regarding"
+        "same project", "in the same project", "for it", "for them", "of them", "its revisions", "what regarding"
     ]
     if any(pat in p or pat in p_norm for pat in follow_up_patterns):
         return True
@@ -332,9 +335,11 @@ def _extract_inquiry_intent_from_text(text: str) -> dict:
                 proj_code = dp.get("code")
                 break
 
+    is_same_project = bool(any(w in p_low for w in ["في نفس المشروع", "بنفس المشروع", "نفس المشروع", "same project", "in the same project"]))
+
     # 2. Document Type Detection
     dt = None
-    known_dts = ["MS", "SD", "IR", "MIR", "RFI", "QS", "NOC", "WIR"]
+    known_dts = ["MS", "SD", "IR", "MIR", "PR", "RFI", "QS", "NOC", "WIR", "DS", "WN", "NCN", "EI", "LTR"]
     for kdt in known_dts:
         if re.search(r"(?<![a-zA-Z])" + re.escape(kdt) + r"(?:s|z)?(?![a-zA-Z])", text, re.IGNORECASE):
             dt = kdt.upper()
@@ -346,7 +351,17 @@ def _extract_inquiry_intent_from_text(text: str) -> dict:
             dt = "SD"
         elif any(w in p_low for w in ["ماتريال", "اعتماد مواد", "اعتمادات"]):
             dt = "MS"
-        elif any(w in p_low for w in ["فحص مواد", "توريد"]):
+        elif any(w in p_low for w in [
+            "طلب شراء", "طلب الشراء", "طلبات شراء", "طلبات الشراء",
+            "امر شراء", "أمر شراء", "امر الشراء", "أمر الشراء",
+            "اوامر شراء", "أوامر شراء", "اوامر الشراء", "أوامر الشراء",
+            "مشتريات", "المشتريات",
+            "امر توريد", "أمر توريد", "امر التوريد", "أمر التوريد",
+            "اوامر توريد", "أوامر توريد", "اوامر التوريد", "أوامر التوريد",
+            "بي ار", "pr"
+        ]):
+            dt = "PR"
+        elif any(w in p_low for w in ["فحص مواد", "فحص توريد", "محضر توريد"]):
             dt = "MIR"
         elif any(w in p_low for w in ["حصر", "كميات", "مستخلص"]):
             dt = "QS"
@@ -405,6 +420,7 @@ def _extract_inquiry_intent_from_text(text: str) -> dict:
         "is_noc": is_noc,
         "is_overdue": is_overdue,
         "is_summary": is_summary,
+        "is_same_project": is_same_project,
         "raw_text": text,
     }
 
@@ -583,10 +599,22 @@ def _call_gemini_agent(
                 if is_global_prompt(prompt):
                     fn_args["project_code"] = None
                 else:
+                    curr_intent = _extract_inquiry_intent_from_text(prompt)
                     # Project switch guard: If current user prompt explicitly specifies a project, ensure fn_args uses current project
-                    curr_parsed_proj = _extract_inquiry_intent_from_text(prompt).get("project_code")
+                    curr_parsed_proj = curr_intent.get("project_code")
                     if curr_parsed_proj:
                         fn_args["project_code"] = curr_parsed_proj
+                    elif curr_intent.get("is_same_project"):
+                        prev_inq = _get_last_inquiry_from_history(history)
+                        if prev_inq and prev_inq.get("project_code"):
+                            fn_args["project_code"] = prev_inq["project_code"]
+                        elif active_project_id and str(active_project_id).strip().upper() not in ("ALL", ""):
+                            fn_args["project_code"] = active_project_id
+
+                    # Strict doc_type enforcement: if user explicitly specified doc_type (e.g. PR), enforce it
+                    if curr_intent.get("doc_type") and fn_name == "search_submittals":
+                        fn_args["doc_type"] = curr_intent["doc_type"]
+
                 if is_follow_up_prompt(prompt) and fn_name == "search_submittals":
                     # Ellipsis guard: if user switched project or followed up, inherit topic from history
                     prev_inq = _get_last_inquiry_from_history(history)
@@ -595,7 +623,10 @@ def _call_gemini_agent(
                             fn_args["keyword"] = prev_inq["keyword"]
                         if not fn_args.get("doc_type") and prev_inq.get("doc_type"):
                             fn_args["doc_type"] = prev_inq["doc_type"]
-                        if not fn_args.get("status") and prev_inq.get("status"):
+                        # Status inheritance guard: do not inherit status if user requested 'all' (كل/all) or if doc_type changed
+                        is_all_req = any(w in (prompt or "").lower() for w in ["كل ", "جميع ", "all "])
+                        dt_changed = bool(fn_args.get("doc_type") and prev_inq.get("doc_type") and fn_args["doc_type"] != prev_inq["doc_type"])
+                        if not is_all_req and not dt_changed and not fn_args.get("status") and prev_inq.get("status"):
                             fn_args["status"] = prev_inq["status"]
                         if not fn_args.get("discipline") and prev_inq.get("discipline"):
                             fn_args["discipline"] = prev_inq["discipline"]
@@ -670,7 +701,9 @@ def _execute_deterministic_fallback(
     if not global_query:
         if curr_parsed.get("project_code"):
             matched_proj_code = curr_parsed["project_code"]
-        elif has_explicit_project:
+        elif curr_parsed.get("is_same_project") and prev_inquiry.get("project_code"):
+            matched_proj_code = prev_inquiry["project_code"]
+        elif has_explicit_project and not curr_parsed.get("is_same_project"):
             # User explicitly mentioned a project in this turn!
             # Do NOT inherit prior turn's project code (which caused Eastmain -> CFC bleed)
             extracted_cand = explicit_proj_match.group(1).strip() if explicit_proj_match else ""
@@ -720,7 +753,10 @@ def _execute_deterministic_fallback(
     # 5. Status Detection (with follow-up inheritance)
     detected_status = curr_parsed.get("status")
     if is_follow_up and not detected_status and prev_inquiry:
-        detected_status = prev_inquiry.get("status")
+        is_all_requested = any(w in p_low for w in ["كل ", "جميع ", "all "])
+        doc_type_switched = bool(detected_dt and prev_inquiry.get("doc_type") and detected_dt != prev_inquiry.get("doc_type"))
+        if not is_all_requested and not doc_type_switched:
+            detected_status = prev_inquiry.get("status")
 
     # 6. Intent Inheritance (NOC, Overdue, Summary)
     is_noc_req = curr_parsed.get("is_noc")
@@ -926,13 +962,15 @@ def _execute_deterministic_fallback(
     records = search_res.get("records", [])
 
     # Format header description
-    dt_label = f"الـ {detected_dt}" if detected_dt else "المشروع"
+    dt_label = "طلبات الشراء (PR)" if detected_dt == "PR" else (f"الـ {detected_dt}" if detected_dt else "المشروع")
     disc_label = f" الخاصة بـ {detected_disc}" if detected_disc else ""
     kw_label = f" الخاصة بـ {detected_keyword}" if detected_keyword else ""
     appr_label = " المعتمدة" if detected_status == "approved" else ""
 
     if not records:
         if is_english:
+            if detected_keyword == "valve" and detected_dt == "PR":
+                return f"No Purchase Requisitions (PR) for valves were found in project {proj_title}."
             if detected_keyword == "valve":
                 return f"No approved submittals for valves were found in project {proj_title}."
             if detected_keyword == "pump":
@@ -943,6 +981,8 @@ def _execute_deterministic_fallback(
                 return f"No matching {detected_dt} submittals were found in project {proj_title}."
             return f"No matching documents were found in project {proj_title}."
 
+        if detected_keyword == "valve" and detected_dt == "PR":
+            return f"لم يتم العثور على أي طلبات شراء (PR) تخص المحابس (Valves) في سجلات مشروع {proj_title}."
         if detected_keyword == "valve":
             return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_title}."
         if detected_keyword == "pump":
@@ -955,11 +995,13 @@ def _execute_deterministic_fallback(
 
     table_rows = []
     for r in records:
-        st_clean = r.get("status") or "Pending"
-        st_badge = f"✅ **{st_clean}**" if "approv" in st_clean.lower() or "status a" in st_clean.lower() or "status b" in st_clean.lower() else st_clean
+        st_clean = r.get("status") or ("Pending PO" if str(r.get("doc_type") or "").upper() == "PR" else "Pending")
+        st_badge = f"✅ **{st_clean}**" if any(a in st_clean.lower() for a in ["approv", "status a", "status b", "ordered", "delivered", "completed"]) else st_clean
         table_rows.append(
             f"| `{r.get('doc_no')}` | {r.get('title', '—')} | `{r.get('doc_type', '—')}` | {st_badge} | {r.get('doc_date', '—')} | `{r.get('project_code', '')}` |"
         )
+
+    status_word = "معتمدة و" if detected_status == "approved" else ""
 
     if is_english:
         return (
@@ -973,7 +1015,7 @@ def _execute_deterministic_fallback(
 
     return (
         f"### 📋 تفاصيل وثائق {dt_label}{disc_label}{kw_label}{appr_label} لمشروع {proj_title}:\n\n"
-        f"تم استخراج {len(records)} وثيقة معتمدة ومطابقة لطلبك مباشرة من سجلات المشروع:\n\n"
+        f"تم استخراج {len(records)} وثيقة {status_word}مطابقة لطلبك مباشرة من سجلات المشروع:\n\n"
         "| رقم الوثيقة | الوصف / العنوان | النوع | الحالة | التاريخ | المشروع |\n"
         "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
         + "\n".join(table_rows)
