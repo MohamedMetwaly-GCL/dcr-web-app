@@ -137,6 +137,9 @@ class TestAiAssistantValidation(unittest.TestCase):
         self.assertIn('Overdue Submittals', AI_DRAWER_COMPONENT)
         self.assertIn('Approved NOCs Total', AI_DRAWER_COMPONENT)
         self.assertIn('Status Summary', AI_DRAWER_COMPONENT)
+        self.assertIn('id="ai-fab-btn"', AI_DRAWER_COMPONENT)
+        self.assertIn('id="ai-expand-btn"', AI_DRAWER_COMPONENT)
+        self.assertIn('ai-drawer-resizer', AI_DRAWER_COMPONENT)
 
         user = {"username": "admin", "role": "admin"}
         with app.test_request_context("/"):
@@ -1103,6 +1106,44 @@ class TestAiAssistantValidation(unittest.TestCase):
             self.assertNotIn("IR-EASTMAIN-HV-027 REV00", em_doc_nos)
 
         print("PASS: Valve search strictly includes genuine valve submittals and eliminates all false positives.")
+
+    def test_41_search_submittals_natural_ascending_doc_no_sort(self):
+        """Verifies that submittals are returned in strict natural ascending order by Document Number."""
+        mock_projects = [{"id": "PEM-058", "name": "CFC Ph2", "code": "PEM-058", "data": {}}]
+        unsorted_records = [
+            {"id": "r1", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00530 REV00", "title": "Mockup for Valve Insulation", "status": "Approved"},
+            {"id": "r2", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00499 REV00", "title": "Motorized Valve Installation", "status": "Approved"},
+            {"id": "r3", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00418 REV00", "title": "Condenser Duty Valve Installation", "status": "Approved"},
+            {"id": "r4", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00467 REV00", "title": "Mock-up Chain for Valve", "status": "Approved"},
+            {"id": "r5", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00419 REV00", "title": "Torque for Butterfly Valves", "status": "Approved"},
+            {"id": "r6", "project_id": "PEM-058", "doc_type": "IR", "doc_no": "IR-CY002P608-00019 REV00", "title": "Butterfly Valves Installation", "status": "Approved"},
+        ]
+
+        with patch("db.q") as mock_q:
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    return unsorted_records
+                return []
+            mock_q.side_effect = q_side_effect
+
+            res = ai_tools.search_submittals(
+                allowed_project_ids=["PEM-058"],
+                project_code="CFC",
+                keyword="valve"
+            )
+            doc_nos = [r["doc_no"] for r in res["records"]]
+            expected_order = [
+                "IR-CY002P608-00019 REV00",
+                "IR-CY002P608-00418 REV00",
+                "IR-CY002P608-00419 REV00",
+                "IR-CY002P608-00467 REV00",
+                "IR-CY002P608-00499 REV00",
+                "IR-CY002P608-00530 REV00",
+            ]
+            self.assertEqual(doc_nos, expected_order)
+        print("PASS: Submittals are strictly sorted in natural ascending order by Document Number.")
 
 
 if __name__ == "__main__":

@@ -801,8 +801,9 @@ def search_submittals(
             ) THEN 0 
             ELSE 1 
         END ASC""",
-        "r.created_at DESC NULLS LAST",
-        "r.id DESC",
+        "COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'letterRef', '') ASC",
+        "r.created_at ASC NULLS LAST",
+        "r.id ASC",
     ]
 
     fetch_limit = min(max(limit, 1), 100)
@@ -918,6 +919,17 @@ def search_submittals(
     # Latest revision deduplication
     if latest_revision_only and rows:
         rows = _dedup_latest_revisions(rows)
+
+    def _natural_doc_sort_key(rec):
+        doc_no = str(rec.get("doc_no") or "").strip()
+        tokens = re.split(r'(\d+)', doc_no)
+        return [int(t) if t.isdigit() else t.lower() for t in tokens]
+
+    # Natural ascending sort by Document Number (per user request: الترتيب التصاعدي برقم الوثيقة)
+    rows.sort(key=lambda r: (
+        0 if any(app in str(r.get('status') or '').lower() for app in ['approv', 'status a', 'status b', 'code a', 'code b', 'معتمد']) else 1,
+        _natural_doc_sort_key(r)
+    ))
 
     records = rows[:fetch_limit]
 
