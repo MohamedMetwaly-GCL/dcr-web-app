@@ -779,6 +779,8 @@ def _clean_project_ids(project_ids):
     seen = set()
     cleaned = []
     for pid in project_ids:
+        if isinstance(pid, dict):
+            pid = pid.get("project_id") or pid.get("id") or pid.get("code") or pid.get("name")
         val = str(pid or "").strip()
         if not val or val in seen:
             continue
@@ -808,7 +810,7 @@ def get_projects(project_ids=None):
     if not ids:
         return []
     ph = ",".join(["%s"] * len(ids))
-    return q(f"SELECT * FROM projects WHERE id IN ({ph}) {order_sql}", ids)
+    return q(f"SELECT * FROM projects WHERE (id IN ({ph}) OR code IN ({ph}) OR name IN ({ph})) {order_sql}", ids + ids + ids)
 
 
 def reorder_projects(order):
@@ -829,7 +831,11 @@ def get_projects_for_user(username, role=None):
     user_role = str(role or "").strip().lower()
     if user_role in ("superadmin", "admin"):
         return get_projects()
-    return get_projects(get_user_projects(username))
+    user_projs = get_user_projects(username)
+    pids = [p["project_id"] for p in user_projs if p.get("project_id")]
+    if not pids:
+        return []
+    return get_projects(pids)
 
 def get_project(pid):
     r = q("SELECT * FROM projects WHERE id=%s", (pid,), one=True)

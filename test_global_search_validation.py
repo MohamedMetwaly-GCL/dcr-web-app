@@ -23,6 +23,8 @@ from unittest.mock import patch, MagicMock
 from flask import Flask, jsonify
 
 from blueprints.records import records_bp
+from blueprints.projects import projects_bp
+import db
 import html_render
 
 class TestGlobalSearch(unittest.TestCase):
@@ -31,6 +33,7 @@ class TestGlobalSearch(unittest.TestCase):
         self.app = Flask(__name__)
         self.app.secret_key = "test-secret-key-global-search"
         self.app.register_blueprint(records_bp)
+        self.app.register_blueprint(projects_bp)
         self.client = self.app.test_client()
 
     # -------------------------------------------------------------------------
@@ -316,6 +319,119 @@ class TestGlobalSearch(unittest.TestCase):
         self.assertIn("doc_date", sql_query)
         self.assertIn("r.data->>'issuedDate'", sql_query)
         print("PASS: Submission date (doc_date / issued_date) is retrieved and included in API response.")
+
+    # -------------------------------------------------------------------------
+    # 11. Database Project Resolution Across ID, Code, and Name
+    # -------------------------------------------------------------------------
+    @patch("db.q")
+    def test_db_get_projects_resolution_across_id_code_name(self, mock_q):
+        # Simulate user assigned to "24CP01" (code) and "PEM-058" (code/id)
+        mock_q.side_effect = [
+            # 1. get_user_projects query
+            [{"project_id": "24CP01", "is_dc": False}, {"project_id": "PEM-058", "is_dc": False}],
+            # 2. get_projects query
+            [
+                {"id": "PM002", "code": "24CP01", "name": "EKH New Building Office", "data": {}},
+                {"id": "PEM-058", "code": "PEM-058", "name": "CFC Phase 2", "data": {}}
+            ]
+        ]
+        projs = db.get_projects_for_user("site_eng", "viewer")
+        self.assertEqual(len(projs), 2)
+        call_args = mock_q.call_args_list[1]
+        sql_text = call_args[0][0]
+        params = call_args[0][1]
+        self.assertIn("id IN (%s,%s) OR code IN (%s,%s) OR name IN (%s,%s)", sql_text)
+        self.assertEqual(params, ["24CP01", "PEM-058", "24CP01", "PEM-058", "24CP01", "PEM-058"])
+        print("PASS: db.get_projects_for_user and get_projects resolve across id, code, and name.")
+
+    # -------------------------------------------------------------------------
+    # 12. Non-Admin RBAC Global Search Project Filter Dropdown & Search Filtering
+    # -------------------------------------------------------------------------
+    @patch("blueprints.records.current_user")
+    @patch("blueprints.projects.current_user")
+    @patch("blueprints.records.db.get_user_projects")
+    @patch("blueprints.projects.db.get_projects_for_user")
+    @patch("blueprints.records.db.get_projects")
+    @patch("blueprints.records.db.q")
+    @patch("html_render.can_edit")
+    @patch("html_render.db.get_doc_types")
+    @patch("html_render.db.get_logo")
+    @patch("html_render.db.get_projects_for_user")
+    def test_non_admin_project_dropdown_and_filter(
+        self, mock_html_projs, mock_logo, mock_dts, mock_can_edit,
+        mock_db_q, mock_rec_get_projs, mock_proj_projs_for_user,
+        mock_get_user_projs, mock_proj_user, mock_rec_user
+    ):
+        non_admin_user = {"username": "site_eng", "role": "viewer"}
+        mock_rec_user.return_value = non_admin_user
+        mock_proj_user.return_value = non_admin_user
+        mock_can_edit.return_value = False
+        mock_dts.return_value = []
+        mock_logo.return_value = None
+
+        assigned_projects = [
+            {"id": "PM002", "code": "24CP01", "name": "EKH New Building Office", "data": {}},
+            {"id": "PEM-058", "code": "PEM-058", "name": "CFC District Cooling Plant Phase 2", "data": {}}
+        ]
+        mock_proj_projs_for_user.return_value = assigned_projects
+        mock_html_projs.return_value = assigned_projects
+        mock_get_user_projs.return_value = [
+            {"project_id": "24CP01", "is_dc": False},
+            {"project_id": "PEM-058", "is_dc": False}
+        ]
+        mock_rec_get_projs.return_value = assigned_projects
+
+        # 1. Verify /api/projects payload contains both assigned projects for non-admin user
+        resp = self.client.get("/api/projects")
+        self.assertEqual(resp.status_code, 200)
+        projs_data = resp.get_json()
+        self.assertEqual(len(projs_data), 2)
+        project_codes = [p["code"] for p in projs_data]
+        project_ids = [p["id"] for p in projs_data]
+        self.assertIn("24CP01", project_codes)
+        self.assertIn("PEM-058", project_codes)
+        self.assertIn("PM002", project_ids)
+        self.assertIn("PEM-058", project_ids)
+
+        # 2. Verify HTML injection in both Dashboard and Register views
+        with self.app.test_request_context():
+            dash_html = html_render.render_dashboard(non_admin_user)
+            self.assertIn("window._ACCESSIBLE_PROJECTS =", dash_html)
+            self.assertIn("24CP01", dash_html)
+            self.assertIn("PEM-058", dash_html)
+
+            reg_html = html_render.render_register(non_admin_user, assigned_projects[0])
+            self.assertIn("window._ACCESSIBLE_PROJECTS =", reg_html)
+            self.assertIn("24CP01", reg_html)
+            self.assertIn("PEM-058", reg_html)
+
+        # 3. Verify Global Search with project_id filter correctly filters for that user
+        mock_db_q.return_value = [{
+            "id": 101,
+            "project_id": "PM002",
+            "project_code": "24CP01",
+            "project_name": "EKH New Building Office",
+            "dt_id": "MS",
+            "doc_no": "24CP01-MS-001",
+            "title": "Valves Submittal",
+            "status": "Approved",
+            "drive_link": "",
+            "doc_date": "2024-05-10",
+            "total_count": 1
+        }]
+
+        search_resp = self.client.get("/api/records/search/global?q=valves&project_id=24CP01")
+        self.assertEqual(search_resp.status_code, 200)
+        search_data = search_resp.get_json()
+        self.assertEqual(search_data["user_scope"], "filtered")
+        self.assertEqual(search_data["total_found"], 1)
+        self.assertEqual(search_data["results"][0]["doc_no"], "24CP01-MS-001")
+
+        # Verify SQL query applied filter
+        sql_query, sql_params = mock_db_q.call_args[0]
+        self.assertIn("(p.id = %s OR p.code = %s)", sql_query)
+        self.assertIn("24CP01", sql_params)
+        print("PASS: Non-admin user receives assigned projects in /api/projects, HTML scripts, and search filters accurately.")
 
 
 if __name__ == "__main__":

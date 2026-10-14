@@ -58,7 +58,25 @@ def get_allowed_project_ids(user=None):
         return []
     if u["role"] in ("superadmin", "admin"):
         return [p["id"] for p in db.get_projects()]
-    return [p["project_id"] for p in db.get_user_projects(u["username"])]
+    user_projs = db.get_user_projects(u["username"])
+    assigned_raw = [p["project_id"] for p in user_projs if p.get("project_id")]
+    if not assigned_raw:
+        return []
+    matched_projs = db.get_projects(assigned_raw)
+    if matched_projs:
+        resolved = []
+        seen = set()
+        for p in matched_projs:
+            pid = p.get("id")
+            if pid and pid not in seen:
+                seen.add(pid)
+                resolved.append(pid)
+        for a in assigned_raw:
+            if a not in seen and not any(a == p.get("code") or a == p.get("name") for p in matched_projs):
+                seen.add(a)
+                resolved.append(a)
+        return resolved
+    return assigned_raw
 
 
 def has_project_access(username, project_id, role=None):
@@ -68,7 +86,22 @@ def has_project_access(username, project_id, role=None):
     user_role = str(role or "").strip().lower()
     if user_role in ("superadmin", "admin"):
         return True
-    return project_id in [p["project_id"] for p in db.get_user_projects(username)]
+    user_projects = db.get_user_projects(username)
+    assigned_raw = [p["project_id"] for p in user_projects if p.get("project_id")]
+    if not assigned_raw:
+        return False
+    target = str(project_id).strip().upper()
+    if any(str(a).strip().upper() == target for a in assigned_raw):
+        return True
+    matched_projs = db.get_projects(assigned_raw)
+    for p in matched_projs:
+        if str(p.get("id", "")).strip().upper() == target:
+            return True
+        if str(p.get("code", "")).strip().upper() == target:
+            return True
+        if str(p.get("name", "")).strip().upper() == target:
+            return True
+    return False
 
 
 def can_view_project(project_id, user=None):
@@ -100,5 +133,5 @@ def can_edit(project_id):
     if u["role"] in ("superadmin", "admin"):
         return True
     if u["role"] == "editor":
-        return project_id in [p["project_id"] for p in db.get_user_projects(u["username"])]
+        return has_project_access(u["username"], project_id, u.get("role"))
     return False

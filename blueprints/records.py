@@ -98,6 +98,8 @@ def api_search_global():
                 allowed_scope.add(p["id"])
             if p.get("code"):
                 allowed_scope.add(p["code"])
+            if p.get("name"):
+                allowed_scope.add(p["name"])
         allowed_list = list(allowed_scope)
         user_scope = "all"
     else:
@@ -113,6 +115,8 @@ def api_search_global():
                 allowed_scope.add(p["id"])
             if p.get("code"):
                 allowed_scope.add(p["code"])
+            if p.get("name"):
+                allowed_scope.add(p["name"])
         allowed_list = list(allowed_scope)
         user_scope = "filtered"
 

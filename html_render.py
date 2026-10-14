@@ -883,10 +883,14 @@ async function updateSpotlightContext() {
   if (!badgeEl || !textEl) return;
 
   if (!_spotlightState.cachedWhoami) {
-    try {
-      _spotlightState.cachedWhoami = await apiFetch('/api/whoami');
-    } catch(e) {
-      _spotlightState.cachedWhoami = null;
+    if (typeof _WHOAMI !== 'undefined' && _WHOAMI) {
+      _spotlightState.cachedWhoami = _WHOAMI;
+    } else {
+      try {
+        _spotlightState.cachedWhoami = await apiFetch('/api/whoami');
+      } catch(e) {
+        _spotlightState.cachedWhoami = null;
+      }
     }
   }
 
@@ -905,22 +909,27 @@ async function updateSpotlightContext() {
         ? ('Searching in your ' + pCount + ' assigned project' + (pCount === 1 ? '' : 's'))
         : 'No projects assigned (Results restricted)';
     }
+  }
 
-    if (projSelect && projSelect.options.length <= 1) {
-      try {
-        const projs = await apiFetch('/api/projects');
-        if (Array.isArray(projs)) {
-          projSelect.innerHTML = '<option value="ALL">All Projects</option>';
-          projs.forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p.id || p.code;
-            opt.textContent = (p.code ? p.code + ' - ' : '') + (p.name || p.id);
-            projSelect.appendChild(opt);
-          });
-        }
-      } catch(err) {
-        console.warn('Could not populate spotlight projects dropdown:', err);
+  if (projSelect && projSelect.options.length <= 1) {
+    try {
+      let projs = (typeof _ACCESSIBLE_PROJECTS !== 'undefined' && Array.isArray(_ACCESSIBLE_PROJECTS) && _ACCESSIBLE_PROJECTS.length > 0)
+        ? _ACCESSIBLE_PROJECTS
+        : null;
+      if (!projs) {
+        projs = await apiFetch('/api/projects');
       }
+      if (Array.isArray(projs) && projs.length > 0) {
+        projSelect.innerHTML = '<option value="ALL">All Projects</option>';
+        projs.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id || p.code;
+          opt.textContent = (p.code ? p.code + ' - ' : '') + (p.name || p.id);
+          projSelect.appendChild(opt);
+        });
+      }
+    } catch(err) {
+      console.warn('Could not populate spotlight projects dropdown:', err);
     }
   }
 }
@@ -1293,6 +1302,7 @@ function _initSpotlightListeners() {
       });
     }
   });
+  updateSpotlightContext();
 }
 
 // Expose globally on window
@@ -3643,6 +3653,11 @@ def render_dashboard(u):
     btns, uname, rlbl, rbg = _user_info_html(u)
     role = u["role"] if u else "guest"
     audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
+    try:
+        accessible_projs = db.get_projects_for_user(u["username"], u.get("role")) if u else []
+    except Exception:
+        accessible_projs = []
+    projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
 
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -4326,6 +4341,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 {SHARED_JS}
 <script>
 const ROLE='{role}';
+window._ACCESSIBLE_PROJECTS = {projs_json};
 let STATS=[],OVERDUE_DATA=[],EXEC_DATA=null;
 let PR_ANALYTICS=null;
 let pChart,sChart,tChart,aChart,qChart,arChart,prTradeChart;
@@ -5501,6 +5517,11 @@ def render_register(u, proj):
     btns, _, rlbl, rbg = _user_info_html(u)
     sc_json  = json.dumps(STATUS_COLORS)
     custom_sc_json = json.dumps(proj.get("status_colors", {}))
+    try:
+        accessible_projs = db.get_projects_for_user(u["username"], u.get("role")) if u else []
+    except Exception:
+        accessible_projs = []
+    projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
 
     dts       = db.get_doc_types(pid)
     logo_l    = db.get_logo(pid,"logo_left")
@@ -6326,6 +6347,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 
 {SHARED_JS}
 <script>
+window._ACCESSIBLE_PROJECTS = {projs_json};
 const PID='{pid}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
 const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
