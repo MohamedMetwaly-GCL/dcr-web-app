@@ -1387,8 +1387,8 @@ AI_DRAWER_COMPONENT = r"""
 /* AI Floating Action Button (FAB) */
 .ai-fab-btn {
   position: fixed !important;
-  bottom: 24px !important;
-  right: 24px !important;
+  bottom: 36px !important;
+  right: 20px !important;
   z-index: 10040 !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -5699,7 +5699,12 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 .mlcell{{white-space:pre-line!important;word-break:break-word}}
 #bulkbar{{display:none;background:#1a3a5c;color:#fff;padding:5px 14px;align-items:center;gap:10px;font-size:12px;flex-shrink:0}}
 #bulkbar.show{{display:flex}}
-#sbar{{background:var(--pr);color:rgba(255,255,255,.75);padding:2px 12px;font-size:10px;display:flex;gap:12px;flex-wrap:wrap;flex-shrink:0}}
+#sbar{{background:var(--pr);color:rgba(255,255,255,.75);padding:4px 14px;font-size:11px;min-height:26px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;box-sizing:border-box}}
+#sbar-left{{display:flex;align-items:center;gap:12px;flex:1 1 0;justify-content:flex-start;min-width:0}}
+#sbar-center{{font-size:11.5px;color:#94a3b8;white-space:nowrap;letter-spacing:0.3px;text-align:center;flex:0 0 auto}}
+#sbar-center strong{{color:#f8fafc;font-weight:600}}
+#sbar-right{{display:flex;align-items:center;gap:10px;flex:1 1 0;justify-content:flex-end;min-width:0}}
+@media(max-width:768px){{#sbar-center{{display:none}}}}
 .rz{{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:1}}
 .rz:hover,.rz.rzg{{background:var(--ac)}}
 .ms-con{{border:1px solid var(--bd);border-radius:var(--rd);min-height:34px;padding:3px;
@@ -5979,8 +5984,9 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   /* MISC */
   #ltr-quickbar {{ flex-direction: row !important; padding: 2px 6px !important; gap: 3px !important; }}
   #ltr-quickbar .tool-btn {{ min-height: 19px !important; font-size: 7.5px !important; padding: 1px 4px !important; flex: 1 1 0 !important; }}
-  #tblwrap {{ min-height: 50vh; height: calc(100vh - 120px) !important; }}
+  #tblwrap {{ min-height: 50vh; height: calc(100vh - 85px) !important; }}
   #sbar {{ padding: 1px 8px !important; font-size: 8px !important; line-height: 1.1 !important; }}
+  #sbar-center {{ display: none !important; }}
 }}
 </style></head><body>
 
@@ -6060,10 +6066,17 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 </div>
 
 <div id="sbar">
-  <span id="s-total">Total: 0</span>
-  <span id="s-show">Showing: 0</span>
-  <span id="s-ov">Overdue: 0</span>
-  <span style="margin-left:auto" id="s-clock"></span>
+  <div id="sbar-left">
+    <span id="s-total">Total: 0</span>
+    <span id="s-show">Showing: 0</span>
+    <span id="s-ov">Overdue: 0</span>
+  </div>
+  <div id="sbar-center">
+    Designed &amp; Developed by <strong style="color:#f8fafc;">Mohamed Metwaly</strong> &mdash; Document Control Department
+  </div>
+  <div id="sbar-right">
+    <span id="s-clock"></span>
+  </div>
 </div>
 
 <!-- ADD/EDIT RECORD -->
@@ -9784,7 +9797,6 @@ async function saveProjectSettings() {{
 }}
 </script>
 {ABOUT_MODAL_HTML}
-{GLOBAL_FOOTER_HTML}
 {SPOTLIGHT_MODAL_COMPONENT}
 {AI_DRAWER_COMPONENT}
 </body></html>"""
