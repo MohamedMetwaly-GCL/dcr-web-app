@@ -1,9 +1,16 @@
 """test_dashboard_kpi_hierarchy.py - Validation test suite for:
 1. Status-bearing submittals KPI aggregation (Total == Approved + Pending + Rejected).
 2. Elimination of untracked non-status records from Submittals KPI.
-3. Dashboard HTML visual hierarchy reordering (Toolbar FIRST, Projects Grid SECOND, Submittals KPI Summary THIRD).
-4. Submittal completion percentage based on status-bearing items.
-5. Invalidation / recalculation of stale dashboard cache rows.
+3. Dashboard HTML visual hierarchy reordering:
+   - 1. Top Control & Navigation Bar
+   - 2. PROJECTS Grid
+   - 3. SUBMITTALS KPI SUMMARY
+   - 4. DOCUMENTS BY PROJECT & STATUS DISTRIBUTION
+   - 5. OPERATIONAL BREAKDOWN
+   - 6. PR ANALYTICS
+   - 7. LETTERS OVERVIEW
+4. Donut Chart overdue double-counting prevention (Pending (On Time) + Overdue == Pending).
+5. Elimination of 'Unspecified' in PR Analytics (graceful fallback to trade, subTrade, discipline, 'General / Multi-Discipline').
 """
 import unittest
 from unittest.mock import MagicMock, patch
@@ -133,32 +140,96 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
 
     def test_dashboard_html_reordered_hierarchy(self):
         """Verify HTML layout order:
-        1. Toolbar (.psel-bar) FIRST
-        2. Projects Grid (.overview-projects-panel) SECOND
-        3. Submittals KPI Summary (Submittals KPI Summary + .kpi-grid) THIRD
-        4. First card label is 'Total Submittals'
-        5. Overdue card has subtitle 'FROM PENDING'
+        1. Top Control & Navigation Bar (.psel-bar)
+        2. PROJECTS Grid (.overview-projects-panel)
+        3. SUBMITTALS KPI SUMMARY (Submittals KPI Summary + .kpi-grid)
+        4. DOCUMENTS BY PROJECT & STATUS DISTRIBUTION (.charts-grid)
+        5. OPERATIONAL BREAKDOWN (Operational Breakdown)
+        6. PR ANALYTICS (.overview-pr-panel)
+        7. LETTERS OVERVIEW (Letters Overview)
         """
         html = html_render.render_dashboard(
             {"id": 1, "username": "admin", "role": "admin"}
         )
 
-        # 1. Check positions
+        # 1. Check positions strictly in sequence
         psel_pos = html.find('class="psel-bar"')
         tab_overview_pos = html.find('id="tab-overview"')
         projects_grid_pos = html.find('class="panel overview-projects-panel"')
         kpi_summary_pos = html.find('Submittals KPI Summary')
+        charts_pos = html.find('class="charts-grid"')
+        op_breakdown_pos = html.find('Operational Breakdown')
         pr_panel_pos = html.find('class="panel overview-pr-panel"')
+        ltr_panel_pos = html.find('Letters Overview')
 
         self.assertTrue(psel_pos > 0, "Toolbar .psel-bar should be present")
         self.assertTrue(tab_overview_pos > psel_pos, "Toolbar should be FIRST, above the tabs")
         self.assertTrue(projects_grid_pos > tab_overview_pos, "Projects Grid should be inside Overview tab")
         self.assertTrue(kpi_summary_pos > projects_grid_pos, "Submittals KPI Summary should be directly below Projects Grid")
-        self.assertTrue(pr_panel_pos > kpi_summary_pos, "PR Analytics should be below Submittals KPI Summary")
+        self.assertTrue(charts_pos > kpi_summary_pos, "Charts Grid must be directly below Submittals KPI Summary")
+        self.assertTrue(op_breakdown_pos > charts_pos, "Operational Breakdown must be below Charts Grid")
+        self.assertTrue(pr_panel_pos > op_breakdown_pos, "PR Analytics must be below Operational Breakdown")
+        self.assertTrue(ltr_panel_pos > pr_panel_pos, "Letters Overview must be below PR Analytics")
 
-        # 2. Check labels
+        # 2. Check labels & features
         self.assertIn("Total Submittals", html, "First KPI card must be labeled Total Submittals")
         self.assertIn("FROM PENDING", html, "Overdue KPI card must contain FROM PENDING subtitle")
+        self.assertIn("Most Active Disciplines / Trades", html, "PR Analytics header must be Most Active Disciplines / Trades")
+        self.assertIn("Pending (On Time)", html, "Donut chart must contain Pending (On Time) slice")
+
+    def test_pr_analytics_unspecified_elimination(self):
+        """Verify that get_pr_analytics_summary falls back through trade -> subTrade -> discipline -> General / Multi-Discipline
+        and strictly eliminates 'Unspecified'."""
+        mock_projects = [{"id": "P01", "name": "CFC Project", "code": "PEM-058"}]
+        mock_pr_rows = [
+            # 1. Has trade
+            {"id": "r1", "project_id": "P01", "data": {"trade": "HVAC", "docNo": "PR-01"}},
+            # 2. Has subTrade
+            {"id": "r2", "project_id": "P01", "data": {"subTrade": "Plumbing", "docNo": "PR-02"}},
+            # 3. Has discipline
+            {"id": "r3", "project_id": "P01", "data": {"discipline": "Electrical", "docNo": "PR-03"}},
+            # 4. Has discipline with whitespace
+            {"id": "r4", "project_id": "P01", "data": {"discipline": "  Civil  ", "docNo": "PR-04"}},
+            # 5. Has no trade/discipline info at all
+            {"id": "r5", "project_id": "P01", "data": {"docNo": "PR-05"}},
+            # 6. Has literal 'Unspecified'
+            {"id": "r6", "project_id": "P01", "data": {"discipline": "Unspecified", "docNo": "PR-06"}},
+        ]
+
+        with patch("db.get_projects", return_value=mock_projects), \
+             patch("db.q") as mock_q, \
+             patch("db.exe"):
+            
+            def q_side_effect(sql, params=None, one=False):
+                sql_s = str(sql).strip().upper()
+                if "FROM DASHBOARD_CACHE" in sql_s:
+                    return None
+                if "FROM RECORDS R" in sql_s:
+                    return mock_pr_rows
+                return []
+
+            mock_q.side_effect = q_side_effect
+
+            summary = db.get_pr_analytics_summary(pid="P01")
+            self.assertEqual(summary["total_pr_records"], 6)
+
+            top_trades = summary["top_trades"]
+            trade_names = [t["trade"] for t in top_trades]
+
+            # Verify 'Unspecified' is 100% eliminated
+            self.assertNotIn("Unspecified", trade_names)
+            self.assertNotEqual(summary["top_trade_name"], "Unspecified")
+
+            # Verify expected trade/discipline categories
+            self.assertIn("HVAC", trade_names)
+            self.assertIn("Plumbing", trade_names)
+            self.assertIn("Electrical", trade_names)
+            self.assertIn("Civil", trade_names)
+            self.assertIn("General / Multi-Discipline", trade_names)
+
+            # Rows 5 and 6 should be mapped to General / Multi-Discipline (count = 2)
+            gen_count = [t["pr_count"] for t in top_trades if t["trade"] == "General / Multi-Discipline"][0]
+            self.assertEqual(gen_count, 2)
 
 if __name__ == "__main__":
     unittest.main()

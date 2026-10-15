@@ -2088,7 +2088,12 @@ def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
         cache_key = "_PR_ANALYTICS_"
     cached = q("SELECT cache_data FROM dashboard_cache WHERE project_id=%s", (cache_key,), one=True)
     if cached:
-        return cached["cache_data"]
+        cdata = cached.get("cache_data")
+        # Invalidate cache if it contains legacy 'Unspecified'
+        if isinstance(cdata, dict) and cdata.get("top_trade_name") != "Unspecified":
+            top_trades = cdata.get("top_trades", [])
+            if not any(t.get("trade") == "Unspecified" for t in top_trades):
+                return cdata
 
     projects = get_projects(project_ids)
     project_map = {p["id"]: p for p in projects}
@@ -2150,7 +2155,17 @@ def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
         row_pid = row["project_id"]
         project_counts[row_pid] = project_counts.get(row_pid, 0) + 1
         data = row["data"] if isinstance(row["data"], dict) else {}
-        trade = str(data.get("discipline") or "").strip() or "Unspecified"
+        trade = (
+            str(data.get("trade") or "").strip() or
+            str(data.get("Trade") or "").strip() or
+            str(data.get("subTrade") or "").strip() or
+            str(data.get("sub_trade") or "").strip() or
+            str(data.get("SubTrade") or "").strip() or
+            str(data.get("discipline") or "").strip() or
+            str(data.get("Discipline") or "").strip()
+        )
+        if not trade or trade.lower() in ("unspecified", "none", "—", "-"):
+            trade = "General / Multi-Discipline"
         trade_counts[trade] = trade_counts.get(trade, 0) + 1
 
     top_projects = []

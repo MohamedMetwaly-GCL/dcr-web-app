@@ -4105,13 +4105,13 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
     <!-- TAB: OVERVIEW -->
     <div id="tab-overview" class="tab-pane active">
       <div class="overview-stack">
-        <!-- 1. PROJECTS Grid SECOND -->
+        <!-- 1. PROJECTS Grid -->
         <div class="panel overview-projects-panel">
           <div class="panel-title">Projects</div>
           <div class="pgrid" id="pgrid"></div>
         </div>
 
-        <!-- 2. KPI Summary Cards THIRD -->
+        <!-- 2. Submittals KPI Summary -->
         <div class="panel" style="padding:11px 12px;margin-bottom:0;min-width:0">
           <div class="panel-title" style="margin-bottom:8px">Submittals KPI Summary</div>
           <div class="kpi-grid" style="margin-bottom:0">
@@ -4124,86 +4124,89 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
             <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
           </div>
         </div>
+      </div>
 
-        <!-- 3. PR Analytics -->
-        <div class="panel overview-pr-panel">
-          <div class="panel-title">PR Analytics</div>
-          <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
-            <div style="font-size:11px;color:var(--mu)">Loading...</div>
+      <!-- 3. Documents by Project & Status Distribution Charts -->
+      <div class="charts-grid">
+        <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
+        <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
+      </div>
+
+      <!-- 4. Operational Breakdown -->
+      <div class="panel overview-wide-panel">
+        <div class="panel-title">Operational Breakdown</div>
+        <div class="overview-table-switch">
+          <button type="button" id="ovtab-doc-types" class="overview-table-btn active" onclick="setOverviewTableTab('docTypes')">Document Types Summary</button>
+          <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">Discipline Breakdown</button>
+        </div>
+        <div class="overview-table-shell">
+          <div id="overview-pane-docTypes" class="overview-table-pane active">
+            <div class="tbl-wrap">
+              <table class="dt-tbl">
+                <thead><tr>
+                  <th>Project</th><th>Code</th><th>Type</th>
+                  <th style="text-align:center">Total</th>
+                  <th style="text-align:center">Approved</th>
+                  <th style="text-align:center">Pending</th>
+                  <th style="text-align:center">Rejected</th>
+                  <th style="text-align:center">Info / Closed</th>
+                  <th style="text-align:center">Overdue</th>
+                </tr></thead>
+                <tbody id="dt-tbody"></tbody>
+              </table>
+              <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+            </div>
+          </div>
+          <div id="overview-pane-discipline" class="overview-table-pane">
+            <div class="tbl-wrap">
+              <table class="dt-tbl">
+                <colgroup>
+                  <col style="width:120px">
+                  <col style="width:90px">
+                  <col>
+                  <col style="width:88px">
+                  <col style="width:88px">
+                  <col style="width:88px">
+                  <col style="width:88px">
+                  <col style="width:88px">
+                  <col style="width:88px">
+                  <col style="width:52px">
+                </colgroup>
+                <thead><tr>
+                  <th>Project</th><th>Doc Type</th><th>Disciplines</th>
+                  <th style="text-align:center">Total</th>
+                  <th style="text-align:center">Approved</th>
+                  <th style="text-align:center">Pending</th>
+                  <th style="text-align:center">Rejected</th>
+                  <th style="text-align:center">Info / Closed</th>
+                  <th style="text-align:center">Overdue</th>
+                  <th style="text-align:center;width:42px">View</th>
+                </tr></thead>
+                <tbody id="disc-tbody"></tbody>
+              </table>
+              <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+            </div>
+            <div id="disc-mobile-list" class="disc-mobile-list"></div>
           </div>
         </div>
       </div>
 
+      <!-- 5. PR Analytics -->
+      <div class="panel overview-pr-panel" style="margin-bottom:10px">
+        <div class="panel-title">PR Analytics</div>
+        <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
+          <div style="font-size:11px;color:var(--mu)">Loading...</div>
+        </div>
+      </div>
+
+      <!-- 6. Letters Overview -->
       <div class="panel overview-wide-panel">
         <div class="panel-title">Letters Overview</div>
         <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
           <div style="font-size:11px;color:var(--mu)">Loading...</div>
         </div>
       </div>
-
-    <div class="charts-grid">
-      <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
-      <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
     </div>
-
-    <div class="panel overview-wide-panel">
-      <div class="panel-title">Operational Breakdown</div>
-      <div class="overview-table-switch">
-        <button type="button" id="ovtab-doc-types" class="overview-table-btn active" onclick="setOverviewTableTab('docTypes')">Document Types Summary</button>
-        <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">Discipline Breakdown</button>
-      </div>
-      <div class="overview-table-shell">
-        <div id="overview-pane-docTypes" class="overview-table-pane active">
-          <div class="tbl-wrap">
-            <table class="dt-tbl">
-              <thead><tr>
-                <th>Project</th><th>Code</th><th>Type</th>
-                <th style="text-align:center">Total</th>
-                <th style="text-align:center">Approved</th>
-                <th style="text-align:center">Pending</th>
-                <th style="text-align:center">Rejected</th>
-                <th style="text-align:center">Info / Closed</th>
-                <th style="text-align:center">Overdue</th>
-              </tr></thead>
-              <tbody id="dt-tbody"></tbody>
-            </table>
-            <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
-          </div>
-        </div>
-        <div id="overview-pane-discipline" class="overview-table-pane">
-          <div class="tbl-wrap">
-            <table class="dt-tbl">
-              <colgroup>
-                <col style="width:120px">
-                <col style="width:90px">
-                <col>
-                <col style="width:88px">
-                <col style="width:88px">
-                <col style="width:88px">
-                <col style="width:88px">
-                <col style="width:88px">
-                <col style="width:88px">
-                <col style="width:52px">
-              </colgroup>
-              <thead><tr>
-                <th>Project</th><th>Doc Type</th><th>Disciplines</th>
-                <th style="text-align:center">Total</th>
-                <th style="text-align:center">Approved</th>
-                <th style="text-align:center">Pending</th>
-                <th style="text-align:center">Rejected</th>
-                <th style="text-align:center">Info / Closed</th>
-                <th style="text-align:center">Overdue</th>
-                <th style="text-align:center;width:42px">View</th>
-              </tr></thead>
-              <tbody id="disc-tbody"></tbody>
-            </table>
-            <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
-          </div>
-          <div id="disc-mobile-list" class="disc-mobile-list"></div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- TAB: ANALYTICS -->
   <div id="tab-analytics" class="tab-pane">
@@ -4475,13 +4478,13 @@ function renderPrAnalytics(data){{
     <div class="pr-block pr-trades" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Trades</div>
-          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{data.top_trade_name||'No trade data'}}</div>
-          <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active trade</div>
+          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Disciplines / Trades</div>
+          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{(data.top_trade_name === 'Unspecified' || !data.top_trade_name) ? 'General / Multi-Discipline' : data.top_trade_name}}</div>
+          <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active discipline / trade</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{data.top_trade_count||0}}</div>
-          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{data.trade_count_total||0}} trades</div>
+          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{data.trade_count_total||0}} disciplines / trades</div>
         </div>
       </div>
       <div style="flex:1;min-height:150px;max-height:160px"><canvas id="pr-trades-chart"></canvas></div>
@@ -4495,7 +4498,7 @@ function renderPrAnalytics(data){{
   prTradeChart=new Chart(tradeCanvas,{{
     type:'bar',
     data:{{
-      labels:trades.map(t=>t.trade),
+      labels:trades.map(t=>((t.trade === 'Unspecified' || !t.trade) ? 'General / Multi-Discipline' : t.trade)),
       datasets:[{{
         label:'PR Count',
         data:trades.map(t=>t.pr_count),
@@ -4597,14 +4600,29 @@ function renderCharts(d){{
     options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}}}},
       scales:{{y:{{beginAtZero:true,grid:{{color:gridColor}},ticks:{{color:tickColor}}}},
         x:{{grid:{{display:false}},ticks:{{color:tickColor}}}}}}}}}});
-  const t=d.reduce((s,p)=>s+p.total,0),ap=d.reduce((s,p)=>s+p.approved,0),
-    pe=d.reduce((s,p)=>s+p.pending,0),ov=d.reduce((s,p)=>s+p.overdue,0),
-    rj=d.reduce((s,p)=>s+(p.rejected||0),0),ic=d.reduce((s,p)=>s+(p.info_closed||0),0);
+  const ap=d.reduce((s,p)=>s+p.approved,0),
+    pe=d.reduce((s,p)=>s+p.pending,0),
+    ov=d.reduce((s,p)=>s+p.overdue,0),
+    rj=d.reduce((s,p)=>s+(p.rejected||0),0),
+    ic=d.reduce((s,p)=>s+(p.info_closed||0),0);
+  const peOnTime=Math.max(0, pe - ov);
+  const t = ap + pe + rj + (ic > 0 ? ic : 0);
+
+  const statusLabels=['Approved', 'Pending (On Time)', 'Overdue', 'Rejected'];
+  const statusData=[ap, peOnTime, ov, rj];
+  const statusColors=['#16a34a', '#f59e0b', '#ef4444', '#7c3aed'];
+
+  if(ic > 0){{
+    statusLabels.push('Info / Closed');
+    statusData.push(ic);
+    statusColors.push('#60A5FA');
+  }}
+
   if(sChart)sChart.destroy();
   sChart=new Chart(document.getElementById('cStatus'),{{type:'doughnut',
-    data:{{labels:['Approved','Pending','Rejected','Info / Closed','Overdue'],
-      datasets:[{{data:[ap,pe,rj,ic,ov],
-        backgroundColor:['#16a34a','#f59e0b','#7c3aed','#60A5FA','#ef4444'],
+    data:{{labels:statusLabels,
+      datasets:[{{data:statusData,
+        backgroundColor:statusColors,
         borderWidth:3,borderColor:dark?'#162132':'#fff',hoverOffset:6}}]}},
     options:{{responsive:true,cutout:'65%',
       plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}},
