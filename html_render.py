@@ -3652,7 +3652,7 @@ async function login(){{
 def render_dashboard(u):
     btns, uname, rlbl, rbg = _user_info_html(u)
     role = u["role"] if u else "guest"
-    audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
+    audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;, this)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
     try:
         accessible_projs = db.get_projects_for_user(u["username"], u.get("role")) if u else []
     except Exception:
@@ -4079,11 +4079,11 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
     </select>
     <div class="sp" style="flex:1"></div>
     <div style="display:flex; gap:4px; flex-wrap:nowrap; justify-content:flex-end">
-      <button class="tbtn" onclick="showTab('overview')">📊 Overview</button>
-      <button class="tbtn" onclick="showTab('analytics')">📈 Analytics</button>
-      <button class="tbtn" onclick="showTab('overdue')">⚠️ Overdue</button>
-      <button class="tbtn" onclick="showTab('executive')">📋 Executive</button>
-      <button class="tbtn" onclick="showTab('daily-digest')">🌟 Daily Digest</button>
+      <button class="tbtn active" onclick="showTab('overview', this)">📊 Overview</button>
+      <button class="tbtn" onclick="showTab('analytics', this)">📈 Analytics</button>
+      <button class="tbtn" onclick="showTab('overdue', this)">⚠️ Overdue</button>
+      <button class="tbtn" onclick="showTab('executive', this)">📋 Executive</button>
+      <button class="tbtn" onclick="showTab('daily-digest', this)">🌟 Daily Digest</button>
       {audit_btn}
     </div>
   </div>
@@ -4355,9 +4355,17 @@ let pChart,sChart,tChart,aChart,qChart,arChart,prTradeChart;
 let _currentDisc='',_currentPid='';
 
 // ── Tab switching ──────────────────────────────────────────
-function showTab(name){{
+function showTab(name, btn){{
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.psel-bar .tbtn').forEach(b=>b.classList.remove('active'));
   const pane=document.getElementById('tab-'+name);
+  if(pane) pane.classList.add('active');
+  if(btn){{
+    btn.classList.add('active');
+  }} else {{
+    const b = Array.from(document.querySelectorAll('.psel-bar .tbtn')).find(el => (el.getAttribute('onclick')||'').includes("'" + name + "'"));
+    if(b) b.classList.add('active');
+  }}
   if(name==='analytics'){{
     analyticsLoaded=false;
     setTimeout(()=>{{
@@ -4591,46 +4599,57 @@ async function moveProject(id,delta){{
 }}
 
 function renderCharts(d){{
-  const dark=document.body.classList.contains('dark');
-  const gridColor=dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.05)';
-  const tickColor=dark?'#cbd5e1':'#54657d';
-  const legendColor=dark?'#dbe7f3':'#334155';
-  if(pChart)pChart.destroy();
-  pChart=new Chart(document.getElementById('cProj'),{{type:'bar',
-    data:{{labels:d.map(s=>s.code),datasets:[
-      {{label:'Approved',data:d.map(s=>s.approved),backgroundColor:'#16a34a',borderRadius:4}},
-      {{label:'Pending', data:d.map(s=>s.pending), backgroundColor:'#f59e0b',borderRadius:4}},
-      {{label:'Overdue', data:d.map(s=>s.overdue), backgroundColor:'#ef4444',borderRadius:4}}]}},
-    options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}}}},
-      scales:{{y:{{beginAtZero:true,grid:{{color:gridColor}},ticks:{{color:tickColor}}}},
-        x:{{grid:{{display:false}},ticks:{{color:tickColor}}}}}}}}}});
-  const ap=d.reduce((s,p)=>s+p.approved,0),
-    pe=d.reduce((s,p)=>s+p.pending,0),
-    ov=d.reduce((s,p)=>s+p.overdue,0),
-    rj=d.reduce((s,p)=>s+(p.rejected||0),0),
-    ic=d.reduce((s,p)=>s+(p.info_closed||0),0);
-  const peOnTime=Math.max(0, pe - ov);
-  const t = ap + pe + rj + (ic > 0 ? ic : 0);
+  try {{
+    const pane=document.getElementById('tab-analytics');
+    if(!pane || !pane.classList.contains('active')) return;
+    const cProjEl=document.getElementById('cProj');
+    const cStatusEl=document.getElementById('cStatus');
+    if(!cProjEl || !cStatusEl) return;
+    if(typeof Chart === 'undefined') return;
 
-  const statusLabels=['Approved', 'Pending (On Time)', 'Overdue', 'Rejected'];
-  const statusData=[ap, peOnTime, ov, rj];
-  const statusColors=['#16a34a', '#f59e0b', '#ef4444', '#7c3aed'];
+    const dark=document.body.classList.contains('dark');
+    const gridColor=dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.05)';
+    const tickColor=dark?'#cbd5e1':'#54657d';
+    const legendColor=dark?'#dbe7f3':'#334155';
+    if(pChart)pChart.destroy();
+    pChart=new Chart(cProjEl,{{type:'bar',
+      data:{{labels:d.map(s=>s.code),datasets:[
+        {{label:'Approved',data:d.map(s=>s.approved),backgroundColor:'#16a34a',borderRadius:4}},
+        {{label:'Pending', data:d.map(s=>s.pending), backgroundColor:'#f59e0b',borderRadius:4}},
+        {{label:'Overdue', data:d.map(s=>s.overdue), backgroundColor:'#ef4444',borderRadius:4}}]}},
+      options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}}}},
+        scales:{{y:{{beginAtZero:true,grid:{{color:gridColor}},ticks:{{color:tickColor}}}},
+          x:{{grid:{{display:false}},ticks:{{color:tickColor}}}}}}}}}});
+    const ap=d.reduce((s,p)=>s+p.approved,0),
+      pe=d.reduce((s,p)=>s+p.pending,0),
+      ov=d.reduce((s,p)=>s+p.overdue,0),
+      rj=d.reduce((s,p)=>s+(p.rejected||0),0),
+      ic=d.reduce((s,p)=>s+(p.info_closed||0),0);
+    const peOnTime=Math.max(0, pe - ov);
+    const t = ap + pe + rj + (ic > 0 ? ic : 0);
 
-  if(ic > 0){{
-    statusLabels.push('Info / Closed');
-    statusData.push(ic);
-    statusColors.push('#60A5FA');
+    const statusLabels=['Approved', 'Pending (On Time)', 'Overdue', 'Rejected'];
+    const statusData=[ap, peOnTime, ov, rj];
+    const statusColors=['#16a34a', '#f59e0b', '#ef4444', '#7c3aed'];
+
+    if(ic > 0){{
+      statusLabels.push('Info / Closed');
+      statusData.push(ic);
+      statusColors.push('#60A5FA');
+    }}
+
+    if(sChart)sChart.destroy();
+    sChart=new Chart(cStatusEl,{{type:'doughnut',
+      data:{{labels:statusLabels,
+        datasets:[{{data:statusData,
+          backgroundColor:statusColors,
+          borderWidth:3,borderColor:dark?'#162132':'#fff',hoverOffset:6}}]}},
+      options:{{responsive:true,cutout:'65%',
+        plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}}}},
+          tooltip:{{callbacks:{{label:ctx=>` ${{ctx.label}}: ${{ctx.raw}} (${{t?Math.round(ctx.raw/t*100):0}}%)`}}}}}}}}}});
+  }}catch(e){{
+    console.error('renderCharts error:', e);
   }}
-
-  if(sChart)sChart.destroy();
-  sChart=new Chart(document.getElementById('cStatus'),{{type:'doughnut',
-    data:{{labels:statusLabels,
-      datasets:[{{data:statusData,
-        backgroundColor:statusColors,
-        borderWidth:3,borderColor:dark?'#162132':'#fff',hoverOffset:6}}]}},
-    options:{{responsive:true,cutout:'65%',
-      plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}},
-        tooltip:{{callbacks:{{label:ctx=>` ${{ctx.label}}: ${{ctx.raw}} (${{t?Math.round(ctx.raw/t*100):0}}%)`}}}}}}}}}});
 }}
 
 // ── DT Table ──────────────────────────────────────────────

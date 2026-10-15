@@ -237,5 +237,36 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
             gen_count = [t["pr_count"] for t in top_trades if t["trade"] == "General / Multi-Discipline"][0]
             self.assertEqual(gen_count, 2)
 
+    def test_dashboard_tab_switching_and_panes(self):
+        """Verify that all tabs exist in the DOM and showTab properly activates selected panes."""
+        html = html_render.render_dashboard(
+            {"id": 1, "username": "admin", "role": "admin"}
+        )
+
+        # 1. Verify all 6 tab panes exist
+        expected_panes = [
+            'id="tab-overview"',
+            'id="tab-analytics"',
+            'id="tab-overdue"',
+            'id="tab-executive"',
+            'id="tab-daily-digest"',
+            'id="tab-audit"',
+        ]
+        for pane in expected_panes:
+            self.assertIn(pane, html, f"Dashboard must contain {pane}")
+
+        # 2. Verify Overview is active by default
+        self.assertIn('id="tab-overview" class="tab-pane active"', html)
+
+        # 3. Verify showTab JavaScript implementation has pane activation logic
+        self.assertIn("pane.classList.add('active')", html, "showTab must add 'active' class to the targeted pane")
+        self.assertIn("document.querySelectorAll('.tab-pane').forEach", html)
+        self.assertIn("document.querySelectorAll('.psel-bar .tbtn').forEach", html)
+
+        # 4. Verify renderCharts has guards against hidden container
+        self.assertIn("tab-analytics", html)
+        self.assertIn("pane.classList.contains('active')", html, "renderCharts must verify tab-analytics is active before rendering")
+
 if __name__ == "__main__":
     unittest.main()
+
