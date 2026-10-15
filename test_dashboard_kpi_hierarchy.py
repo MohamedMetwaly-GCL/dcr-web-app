@@ -267,6 +267,32 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
         self.assertIn("tab-analytics", html)
         self.assertIn("pane.classList.contains('active')", html, "renderCharts must verify tab-analytics is active before rendering")
 
+    def test_dashboard_embedded_scripts_syntax(self):
+        """Extract and syntax-check all inline JavaScript in render_dashboard using node -c."""
+        import os, subprocess, re, tempfile, shutil
+        html = html_render.render_dashboard(
+            {"id": 1, "username": "admin", "role": "admin"}
+        )
+        scripts = re.findall(r'<script(?:\s+[^>]*)?>(.*?)</script>', html, re.DOTALL)
+        self.assertTrue(len(scripts) > 0, "Dashboard must have script blocks")
+
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            for idx, script in enumerate(scripts):
+                if not script.strip():
+                    continue
+                js_file = os.path.join(tmp_dir, f"script_{idx}.js")
+                with open(js_file, "w", encoding="utf-8") as f:
+                    f.write(script)
+                res = subprocess.run(["node", "-c", js_file], capture_output=True, text=True)
+                self.assertEqual(
+                    res.returncode,
+                    0,
+                    f"Syntax error in dashboard script block {idx}:\n{res.stderr}",
+                )
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
 if __name__ == "__main__":
     unittest.main()
 

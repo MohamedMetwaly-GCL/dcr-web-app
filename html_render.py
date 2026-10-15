@@ -4639,14 +4639,34 @@ function renderCharts(d){{
     }}
 
     if(sChart)sChart.destroy();
-    sChart=new Chart(cStatusEl,{{type:'doughnut',
-      data:{{labels:statusLabels,
-        datasets:[{{data:statusData,
+    sChart=new Chart(cStatusEl,{{
+      type:'doughnut',
+      data:{{
+        labels:statusLabels,
+        datasets:[{{
+          data:statusData,
           backgroundColor:statusColors,
-          borderWidth:3,borderColor:dark?'#162132':'#fff',hoverOffset:6}}]}},
-      options:{{responsive:true,cutout:'65%',
-        plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}}}},
-          tooltip:{{callbacks:{{label:ctx=>` ${{ctx.label}}: ${{ctx.raw}} (${{t?Math.round(ctx.raw/t*100):0}}%)`}}}}}}}}}});
+          borderWidth:3,
+          borderColor:dark?'#162132':'#fff',
+          hoverOffset:6
+        }}]
+      }},
+      options:{{
+        responsive:true,
+        cutout:'65%',
+        plugins:{{
+          legend:{{
+            position:'bottom',
+            labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}
+          }},
+          tooltip:{{
+            callbacks:{{
+              label:ctx=>` ${{ctx.label}}: ${{ctx.raw}} (${{t?Math.round(ctx.raw/t*100):0}}%)`
+            }}
+          }}
+        }}
+      }}
+    }});
   }}catch(e){{
     console.error('renderCharts error:', e);
   }}
