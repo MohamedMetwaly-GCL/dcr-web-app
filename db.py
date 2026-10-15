@@ -1714,7 +1714,15 @@ def get_dashboard_stats(project_ids=None):
     
     # 1) Try fetching from DB cache
     cached_rows = q("SELECT project_id, cache_data FROM dashboard_cache WHERE project_id = ANY(%s)", (pids,))
-    cache_map = {r["project_id"]: r["cache_data"] for r in cached_rows}
+    cache_map = {}
+    for r in cached_rows:
+        cdata = r.get("cache_data")
+        if isinstance(cdata, dict):
+            # Verify cache adheres to strict submittals total = approved + pending + rejected
+            tot = cdata.get("total", 0)
+            sub_sum = cdata.get("approved", 0) + cdata.get("pending", 0) + cdata.get("rejected", 0)
+            if tot == sub_sum:
+                cache_map[r["project_id"]] = cdata
     
     missing_pids = [pid for pid in pids if pid not in cache_map]
     
@@ -1819,69 +1827,64 @@ def get_dashboard_stats(project_ids=None):
 
             dt_rules = {dt["id"]: get_expected_reply_rule(pid, dt["id"]) for dt in dts}
 
+            # Skip doc types without status column from submittal KPI counts
+            if not dt_has_status.get(dt["id"], False):
+                continue
+
             for base, revisions in doc_groups.items():
                 revisions.sort(key=lambda x: x[0])   # sort ascending by rev
                 latest_rev, d = revisions[-1]
                 doc_no = d.get("docNo", "")
-                status = d.get("status", "")
+                status = str(d.get("status") or "").strip()
                 disc   = d.get("discipline","") or "—"
-                # Docs from types WITHOUT status column → count in total only (no status bucket)
-                if not dt_has_status.get(dt["id"], False):
-                    t += 1
-                    _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
-                    status_val = d.get("status")
-                    action_val = d.get("action")
-                    dt_rule = dt_rules.get(dt["id"])
-                    is_ov = is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val, row=d)
-                    if is_ov: ov += 1
-                    if dt_has_discipline.get(dt["id"], False):
-                        ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0,"info_closed":0})
-                        ds["total"] += 1
-                        if is_ov: ds["overdue"] += 1
-                    continue
+                if not status:
+                    continue  # Skip records without approval status
+
                 # Resolve meta: DB first, then fallback to DEFAULT_STATUS_META
                 meta = resolve_status_meta(status, pid_meta)
-                if meta == "cancelled": continue   # skip cancelled entirely
-                t += 1
+                if meta not in ("approved", "pending", "rejected"):
+                    continue  # Skip cancelled, info_closed, or unmapped status
+
                 is_ap = (meta == "approved")
-                is_rj = (meta == "rejected")
                 is_pe = (meta == "pending")
-                is_ic = (meta == "info_closed")
+                is_rj = (meta == "rejected")
+
                 _has_both = dt_has_exp_reply.get(dt["id"], False) and dt_has_status.get(dt["id"], False) and not dt_is_non_workflow
                 status_val = d.get("status")
                 action_val = d.get("action")
                 dt_rule = dt_rules.get(dt["id"])
                 is_ov = is_pe and is_overdue(d.get("issuedDate"), doc_no, d.get("actualReplyDate"), _has_both, rule=dt_rule, status=status_val, action=action_val, row=d)
+
                 if is_ap: ap += 1
-                if is_pe: pe += 1
-                if is_rj: rj += 1
-                if is_ic: ic += 1
+                elif is_pe: pe += 1
+                elif is_rj: rj += 1
+
                 if is_ov: ov += 1
+
                 # Discipline breakdown
-                # Only add to discipline breakdown if this dt has a discipline column
                 if dt_has_discipline.get(dt["id"], False):
                     ds = disc_map.setdefault(disc, {"total":0,"approved":0,"pending":0,"rejected":0,"overdue":0,"info_closed":0})
                     ds["total"] += 1
                     if is_ap: ds["approved"] += 1
-                    if is_pe: ds["pending"]  += 1
-                    if is_rj: ds["rejected"] += 1
-                    if is_ic: ds["info_closed"] += 1
+                    elif is_pe: ds["pending"]  += 1
+                    elif is_rj: ds["rejected"] += 1
                     if is_ov: ds["overdue"]  += 1
 
+            t = ap + pe + rj
             disc_list = [{"disc":k,"total":v["total"],"approved":v["approved"],
-                          "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"],"info_closed":v["info_closed"]}
+                          "pending":v["pending"],"rejected":v["rejected"],"overdue":v["overdue"],"info_closed":0}
                          for k,v in sorted(disc_map.items())]
             if not dt_is_pr and not dt_is_ltr:
                 dt_stats.append({"id":dt["id"],"code":dt["code"],"name":dt["name"],
-                                 "total":t,"approved":ap,"pending":pe,"info_closed":ic,"overdue":ov,"rejected":rj,
+                                 "total":t,"approved":ap,"pending":pe,"info_closed":0,"overdue":ov,"rejected":rj,
                                  "disc_breakdown":disc_list})
-            total+=t; approved+=ap; pending+=pe; info_closed+=ic; overdue_cnt+=ov; total_rj+=rj
+            total+=t; approved+=ap; pending+=pe; info_closed+=0; overdue_cnt+=ov; total_rj+=rj
 
         pct = round(approved / total * 100) if total else 0
         res_p = {
             "id": pid, "name": p["name"], "code": p["code"],
             "client": pdata.get("client","") if isinstance(pdata, dict) else "",
-            "total": total, "approved": approved, "pending": pending, "info_closed": info_closed,
+            "total": total, "approved": approved, "pending": pending, "info_closed": 0,
             "overdue": overdue_cnt, "rejected": total_rj, "pct": pct, "dt_stats": dt_stats,
             "ltr": ltr_stats_map.get(pid, {"total": 0, "sent": 0, "received": 0, "party_stats": [], "top_parties": []})
         }

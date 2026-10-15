@@ -4067,18 +4067,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
 <div class="wrap">
 
-  <!-- KPIs -->
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kval" id="kpi-total">—</div><div class="klbl">Total Docs</div></div>
-    <div class="kpi ok"><div class="kval" id="kpi-approved">—</div><div class="klbl">Approved</div></div>
-    <div class="kpi wa"><div class="kval" id="kpi-pending">—</div><div class="klbl">Under Review</div></div>
-    <div class="kpi er"><div class="kval" id="kpi-overdue">—</div><div class="klbl">Overdue</div></div>
-    <div class="kpi pu"><div class="kval" id="kpi-rejected">—</div><div class="klbl">Rejected/Revise</div></div>
-    <div class="kpi"><div class="kval" id="kpi-pct">—</div><div class="klbl">Completion %</div></div>
-    <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
-  </div>
-
-  <!-- Toolbar -->
+  <!-- Toolbar / Navigation Bar FIRST -->
   <div class="psel-bar">
     <label>🔍 Project:</label>
     <select id="proj-sel" onchange="filterProject(this.value)">
@@ -4115,12 +4104,28 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
     <!-- TAB: OVERVIEW -->
     <div id="tab-overview" class="tab-pane active">
-      <div class="stitle">🗂 Projects</div>
       <div class="overview-stack">
+        <!-- 1. PROJECTS Grid SECOND -->
         <div class="panel overview-projects-panel">
           <div class="panel-title">Projects</div>
           <div class="pgrid" id="pgrid"></div>
         </div>
+
+        <!-- 2. KPI Summary Cards THIRD -->
+        <div class="panel" style="padding:11px 12px;margin-bottom:0;min-width:0">
+          <div class="panel-title" style="margin-bottom:8px">Submittals KPI Summary</div>
+          <div class="kpi-grid" style="margin-bottom:0">
+            <div class="kpi"><div class="kval" id="kpi-total">—</div><div class="klbl">Total Submittals</div></div>
+            <div class="kpi ok"><div class="kval" id="kpi-approved">—</div><div class="klbl">Approved</div></div>
+            <div class="kpi wa"><div class="kval" id="kpi-pending">—</div><div class="klbl">Under Review</div></div>
+            <div class="kpi er"><div class="kval" id="kpi-overdue">—</div><div class="klbl">Overdue</div><div style="font-size:8.5px;color:var(--mu);margin-top:2px;font-weight:600">FROM PENDING</div></div>
+            <div class="kpi pu"><div class="kval" id="kpi-rejected">—</div><div class="klbl">Rejected/Revise</div></div>
+            <div class="kpi"><div class="kval" id="kpi-pct">—</div><div class="klbl">Completion %</div></div>
+            <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
+          </div>
+        </div>
+
+        <!-- 3. PR Analytics -->
         <div class="panel overview-pr-panel">
           <div class="panel-title">PR Analytics</div>
           <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
@@ -4406,16 +4411,19 @@ function getFiltered(pid,disc){{
     d=d.map(p=>{{
       const dtFiltered=(p.dt_stats||[]).map(dt=>{{
         const discF=(dt.disc_breakdown||[]).filter(ds=>ds.disc===disc);
-        const t=discF.reduce((s,r)=>s+r.total,0);
         const ap=discF.reduce((s,r)=>s+r.approved,0);
         const pe=discF.reduce((s,r)=>s+r.pending,0);
         const rj=discF.reduce((s,r)=>s+r.rejected,0);
+        const t=ap+pe+rj;
         const ov=discF.reduce((s,r)=>s+r.overdue,0);
         return {{...dt,total:t,approved:ap,pending:pe,rejected:rj,overdue:ov,disc_breakdown:discF}};
       }}).filter(dt=>dt.total>0);
-      const t=dtFiltered.reduce((s,dt)=>s+dt.total,0);
       const ap=dtFiltered.reduce((s,dt)=>s+dt.approved,0);
-      return {{...p,dt_stats:dtFiltered,total:t,approved:ap,
+      const pe=dtFiltered.reduce((s,dt)=>s+dt.pending,0);
+      const rj=dtFiltered.reduce((s,dt)=>s+dt.rejected,0);
+      const t=ap+pe+rj;
+      const ov=dtFiltered.reduce((s,dt)=>s+dt.overdue,0);
+      return {{...p,dt_stats:dtFiltered,total:t,approved:ap,pending:pe,rejected:rj,overdue:ov,
         pct:t?Math.round(ap/t*100):0}};
     }}).filter(p=>p.total>0);
   }}
@@ -4509,11 +4517,11 @@ function renderPrAnalytics(data){{
 }}
 
 function updateKPIs(d){{
-  const t=d.reduce((s,p)=>s+p.total,0),
-    ap=d.reduce((s,p)=>s+p.approved,0),
+  const ap=d.reduce((s,p)=>s+p.approved,0),
     pe=d.reduce((s,p)=>s+p.pending,0),
-    ov=d.reduce((s,p)=>s+p.overdue,0),
-    rj=d.reduce((s,p)=>s+(p.rejected||0),0),ic=d.reduce((s,p)=>s+(p.info_closed||0),0);
+    rj=d.reduce((s,p)=>s+(p.rejected||0),0),
+    ov=d.reduce((s,p)=>s+p.overdue,0);
+  const t=ap+pe+rj;
   document.getElementById('kpi-total').textContent=t;
   document.getElementById('kpi-approved').textContent=ap;
   document.getElementById('kpi-pending').textContent=pe;
@@ -4541,6 +4549,8 @@ function renderCards(d,pid){{
         <b style="color:#16a34a">${{p.approved}}</b></div>
       <div class="prow"><span style="font-size:11px;color:var(--mu)">Pending</span>
         <b style="color:#f59e0b">${{p.pending}}</b></div>
+      <div class="prow"><span style="font-size:11px;color:var(--mu)">Rejected</span>
+        <b style="color:#7c3aed">${{p.rejected||0}}</b></div>
       <div class="prog"><div class="progf" style="width:${{p.pct}}%;background:${{col}}"></div></div>
       <div style="font-size:10px;color:${{col}};font-weight:700;margin-top:3px">${{p.pct}}%</div>
       ${{(ROLE==='superadmin'||ROLE==='admin')&&!pid?`<div style="position:absolute;right:6px;bottom:6px;display:flex;gap:4px">
@@ -5036,7 +5046,7 @@ async function loadExecutive(){{
     <div class="panel">
       <div class="panel-title">📋 Executive Summary — Generated ${{EXEC_DATA.generated_at}}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:16px">
-        ${{[['Total Docs',s.total,'var(--pr)'],['Approved',s.approved,'#16a34a'],
+        ${{[['Total Submittals',s.total,'var(--pr)'],['Approved',s.approved,'#16a34a'],
            ['Pending',s.pending,'#f59e0b'],['Rejected',s.rejected,'#7c3aed'],
            ['Overdue',s.overdue,'#ef4444'],['Completion',s.completion_pct+'%',col]]
           .map(([l,v,c])=>`<div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center">
