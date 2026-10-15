@@ -141,12 +141,12 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
     def test_dashboard_html_reordered_hierarchy(self):
         """Verify HTML layout order:
         1. Top Control & Navigation Bar (.psel-bar)
-        2. PROJECTS Grid (.overview-projects-panel)
-        3. SUBMITTALS KPI SUMMARY (Submittals KPI Summary + .kpi-grid)
-        4. DOCUMENTS BY PROJECT & STATUS DISTRIBUTION (.charts-grid)
-        5. OPERATIONAL BREAKDOWN (Operational Breakdown)
-        6. PR ANALYTICS (.overview-pr-panel)
-        7. LETTERS OVERVIEW (Letters Overview)
+        2. In Overview: PROJECTS Grid (.overview-projects-panel)
+        3. In Overview: SUBMITTALS KPI SUMMARY (Submittals KPI Summary + .kpi-grid)
+        4. In Overview: OPERATIONAL BREAKDOWN (Operational Breakdown)
+        5. In Overview: PR ANALYTICS (.overview-pr-panel)
+        6. In Overview: LETTERS OVERVIEW (Letters Overview)
+        7. In Analytics: Documents by Project & Status Distribution Charts
         """
         html = html_render.render_dashboard(
             {"id": 1, "username": "admin", "role": "admin"}
@@ -157,21 +157,27 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
         tab_overview_pos = html.find('id="tab-overview"')
         projects_grid_pos = html.find('class="panel overview-projects-panel"')
         kpi_summary_pos = html.find('Submittals KPI Summary')
-        charts_pos = html.find('class="charts-grid"')
         op_breakdown_pos = html.find('Operational Breakdown')
         pr_panel_pos = html.find('class="panel overview-pr-panel"')
         ltr_panel_pos = html.find('Letters Overview')
+        tab_analytics_pos = html.find('id="tab-analytics"')
+        cproj_pos = html.find('id="cProj"')
+        cstatus_pos = html.find('id="cStatus"')
 
         self.assertTrue(psel_pos > 0, "Toolbar .psel-bar should be present")
         self.assertTrue(tab_overview_pos > psel_pos, "Toolbar should be FIRST, above the tabs")
         self.assertTrue(projects_grid_pos > tab_overview_pos, "Projects Grid should be inside Overview tab")
         self.assertTrue(kpi_summary_pos > projects_grid_pos, "Submittals KPI Summary should be directly below Projects Grid")
-        self.assertTrue(charts_pos > kpi_summary_pos, "Charts Grid must be directly below Submittals KPI Summary")
-        self.assertTrue(op_breakdown_pos > charts_pos, "Operational Breakdown must be below Charts Grid")
+        self.assertTrue(op_breakdown_pos > kpi_summary_pos, "Operational Breakdown must be below Submittals KPI Summary")
         self.assertTrue(pr_panel_pos > op_breakdown_pos, "PR Analytics must be below Operational Breakdown")
         self.assertTrue(ltr_panel_pos > pr_panel_pos, "Letters Overview must be below PR Analytics")
+        self.assertTrue(tab_analytics_pos > ltr_panel_pos, "Analytics tab should be after Overview tab")
 
-        # 2. Check labels & features
+        # 2. Charts must be located inside the Analytics tab
+        self.assertTrue(cproj_pos > tab_analytics_pos, "Documents by Project chart (cProj) must be inside tab-analytics")
+        self.assertTrue(cstatus_pos > tab_analytics_pos, "Status Distribution chart (cStatus) must be inside tab-analytics")
+
+        # 3. Check labels & features
         self.assertIn("Total Submittals", html, "First KPI card must be labeled Total Submittals")
         self.assertIn("FROM PENDING", html, "Overdue KPI card must contain FROM PENDING subtitle")
         self.assertIn("Most Active Disciplines / Trades", html, "PR Analytics header must be Most Active Disciplines / Trades")

@@ -4126,13 +4126,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
         </div>
       </div>
 
-      <!-- 3. Documents by Project & Status Distribution Charts -->
-      <div class="charts-grid">
-        <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
-        <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
-      </div>
-
-      <!-- 4. Operational Breakdown -->
+      <!-- 3. Operational Breakdown -->
       <div class="panel overview-wide-panel">
         <div class="panel-title">Operational Breakdown</div>
         <div class="overview-table-switch">
@@ -4191,7 +4185,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
         </div>
       </div>
 
-      <!-- 5. PR Analytics -->
+      <!-- 4. PR Analytics -->
       <div class="panel overview-pr-panel" style="margin-bottom:10px">
         <div class="panel-title">PR Analytics</div>
         <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
@@ -4199,7 +4193,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
         </div>
       </div>
 
-      <!-- 6. Letters Overview -->
+      <!-- 5. Letters Overview -->
       <div class="panel overview-wide-panel">
         <div class="panel-title">Letters Overview</div>
         <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
@@ -4210,6 +4204,11 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
   <!-- TAB: ANALYTICS -->
   <div id="tab-analytics" class="tab-pane">
+    <!-- Documents by Project & Status Distribution Charts -->
+    <div class="charts-grid">
+      <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
+      <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
+    </div>
     <div class="charts-grid">
       <div class="ccard">
         <div class="clbl">📅 Monthly Trend (last 6 months)</div>
@@ -4359,8 +4358,13 @@ let _currentDisc='',_currentPid='';
 function showTab(name){{
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
   const pane=document.getElementById('tab-'+name);
-  if(pane)pane.classList.add('active');
-  if(name==='analytics'){{analyticsLoaded=false;setTimeout(()=>loadAnalytics(),50);}}
+  if(name==='analytics'){{
+    analyticsLoaded=false;
+    setTimeout(()=>{{
+      loadAnalytics();
+      renderCharts(getFiltered(_currentPid,_currentDisc));
+    }},50);
+  }}
   if(name==='overdue'){{overdueLoaded=false;loadOverdue();}}
   if(name==='executive'){{EXEC_DATA=null;loadExecutive();}}
   if(name==='daily-digest'){{loadDailyDigest();}}
