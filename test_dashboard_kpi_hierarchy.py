@@ -330,6 +330,32 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
         self.assertIn("tab-analytics", html)
         self.assertIn("pane.classList.contains('active')", html, "renderCharts must verify tab-analytics is active before rendering")
 
+    def test_letters_overview_html_refinements(self):
+        """Verify Letters Overview refinements:
+        1. Exclude internal company (GCL) from external parties
+        2. Clean direction labeling (To: and From:)
+        3. Visual mini progress bars in summary cards
+        4. Section titled Most Active External Parties
+        """
+        html = html_render.render_dashboard(
+            {"id": 1, "username": "admin", "role": "admin"}
+        )
+
+        # 1. External parties title and internal party filtering
+        self.assertIn("Most Active External Parties", html, "Letters section must specify External Parties")
+        self.assertIn("isInternalParty", html, "renderLettersOverview must contain isInternalParty filter")
+        self.assertIn("gcl", html, "Internal party filter must check for GCL")
+
+        # 2. Clear direction labeling
+        self.assertIn("To:", html, "Party card must label outgoing correspondence as To:")
+        self.assertIn("From:", html, "Party card must label incoming correspondence as From:")
+        self.assertIn("Sent (Outgoing)", html, "Party card must clarify Sent (Outgoing)")
+        self.assertIn("Received (Incoming)", html, "Party card must clarify Received (Incoming)")
+
+        # 3. Summary mini progress bars
+        self.assertIn("sentPct", html, "Summary cards must compute sentPct")
+        self.assertIn("rcvPct", html, "Summary cards must compute rcvPct")
+
     def test_dashboard_embedded_scripts_syntax(self):
         """Extract and syntax-check all inline JavaScript in render_dashboard using node -c."""
         import os, subprocess, re, tempfile, shutil

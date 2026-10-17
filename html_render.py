@@ -3697,6 +3697,10 @@ body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap,body
 body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap{{background:#101a29!important}}
 body.dark .ltr-party-card{{background:#162132!important}}
 body.dark .pr-total{{border-left-color:#2563eb!important}}
+body.dark .ltr-box-sent{{background:rgba(37,99,168,.18)!important;border-color:rgba(37,99,168,.38)!important}}
+body.dark .ltr-box-sent .val,body.dark .ltr-box-sent .lbl{{color:#93c5fd!important}}
+body.dark .ltr-box-rcv{{background:rgba(22,163,74,.18)!important;border-color:rgba(22,163,74,.38)!important}}
+body.dark .ltr-box-rcv .val,body.dark .ltr-box-rcv .lbl{{color:#86efac!important}}
 
 /* ── KPIs — Enterprise Edition ── */
 .kpi-grid{{
@@ -3797,7 +3801,7 @@ canvas{{max-height:174px}}
 .pr-analytics-grid > div{{min-width:0}}
 .pr-block,.ltr-summary-card,.ltr-parties-wrap,.ltr-party-card,.charts-grid > *,.charts-grid-3 > *,#pr-panel,#ltr-panel{{min-width:0}}
 .ltr-summary-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}}
-.ltr-parties-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}}
+.ltr-parties-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:9px}}
 .pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
@@ -4798,6 +4802,10 @@ function renderLettersOverview(d){{
   try{{
     const safeHtml=v=>String(v??'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
     const partyMap={{}};
+    const isInternalParty=name=>{{
+      const s=String(name||'').trim().toLowerCase();
+      return s==='gcl'||s==='gama'||s==='gama construction'||s==='gama construction llc'||s==='gama-construction';
+    }};
     const stats=(Array.isArray(d)?d:[]).reduce((acc,p)=>{{
       const l=(p&&typeof p==='object'&&p.ltr&&typeof p.ltr==='object')?p.ltr:{{}};
       acc.total+=Number(l.total||0);
@@ -4806,7 +4814,7 @@ function renderLettersOverview(d){{
       if(Number(l.total||0)>0)acc.project_count+=1;
       (Array.isArray(l.party_stats)?l.party_stats:[]).forEach(row=>{{
         const party=String((row&&row.party)||'').trim();
-        if(!party)return;
+        if(!party||isInternalParty(party))return;
         if(!partyMap[party])partyMap[party]={{party,total:0,sent:0,received:0}};
         partyMap[party].total+=Number((row&&row.total)||0);
         partyMap[party].sent+=Number((row&&row.sent)||0);
@@ -4821,58 +4829,95 @@ function renderLettersOverview(d){{
     const topParties=Object.values(partyMap)
       .sort((a,b)=>(b.total-a.total)||(b.sent-a.sent)||(b.received-a.received)||a.party.localeCompare(b.party))
       .slice(0,6);
+
+    const sentPct=stats.total?Math.round((stats.sent/stats.total)*100):0;
+    const rcvPct=stats.total?Math.max(0,100-sentPct):0;
+
     const cards=[
-      ['Total Letters',stats.total,'#2F4F64','Across '+stats.project_count+' project'+(stats.project_count===1?'':'s')],
-      ['Sent',stats.sent,'#2563a8','Outgoing correspondence'],
-      ['Received',stats.received,'#16a34a','Incoming correspondence'],
+      {{
+        label:'Total Letters',
+        val:stats.total,
+        color:'#2F4F64',
+        hint:'Across '+stats.project_count+' project'+(stats.project_count===1?'':'s'),
+        bar:`<div style="height:5px;width:100%;background:rgba(148,163,184,.2);border-radius:3px;overflow:hidden;display:flex;margin-top:8px">
+          <div style="width:${{sentPct}}%;background:#2563a8" title="Sent: ${{stats.sent}} (${{sentPct}}%)"></div>
+          <div style="width:${{rcvPct}}%;background:#16a34a" title="Received: ${{stats.received}} (${{rcvPct}}%)"></div>
+        </div>`
+      }},
+      {{
+        label:'Sent',
+        val:stats.sent,
+        color:'#2563a8',
+        hint:`Outgoing (${{sentPct}}% of total)`,
+        bar:`<div style="height:5px;width:100%;background:rgba(37,99,168,.15);border-radius:3px;overflow:hidden;margin-top:8px">
+          <div style="width:${{sentPct}}%;height:100%;background:#2563a8"></div>
+        </div>`
+      }},
+      {{
+        label:'Received',
+        val:stats.received,
+        color:'#16a34a',
+        hint:`Incoming (${{rcvPct}}% of total)`,
+        bar:`<div style="height:5px;width:100%;background:rgba(22,163,74,.15);border-radius:3px;overflow:hidden;margin-top:8px">
+          <div style="width:${{rcvPct}}%;height:100%;background:#16a34a"></div>
+        </div>`
+      }}
     ];
+
     const summaryHtml=`<div class="ltr-summary-grid">
-      ${{cards.map(([label,value,color,hint])=>`<div class="ltr-summary-card" style="background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{color}};box-shadow:0 1px 2px rgba(0,0,0,.03)">
-        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{label}}</div>
-        <div style="font-size:26px;font-weight:800;color:${{color}};line-height:1.08;margin-top:5px">${{value}}</div>
-        <div style="font-size:10px;color:var(--mu);margin-top:3px">${{hint}}</div>
+      ${{cards.map(c=>`<div class="ltr-summary-card" style="background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{c.color}};box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{c.label}}</div>
+          <div style="font-size:26px;font-weight:800;color:${{c.color}};line-height:1.08;margin-top:4px">${{c.val}}</div>
+          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{c.hint}}</div>
+        </div>
+        ${{c.bar}}
       </div>`).join('')}}
     </div>`;
+
     const partiesHtml=topParties.length
-      ? `<div class="ltr-parties-wrap" style="background:var(--bg);border-radius:8px;padding:9px 11px;border:1px solid #e3eaf2">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
-            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active Parties</div>
-            <div style="font-size:10px;color:var(--mu);font-weight:700">Top ${{topParties.length}} Parties</div>
+      ? `<div class="ltr-parties-wrap" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+            <div>
+              <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active External Parties</div>
+              <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Key correspondence stakeholders (clients, consultants & subcontractors)</div>
+            </div>
+            <div style="font-size:10px;color:var(--mu);font-weight:700;background:rgba(47,79,100,.08);padding:3px 8px;border-radius:12px">Top ${{topParties.length}} External Parties</div>
           </div>
           <div class="ltr-parties-grid">
             ${{topParties.map((row, idx)=>{{
               const pct=stats.total?Math.round((Number(row.total||0)/stats.total)*100):0;
-              const accent=idx<3?'rgba(47,79,100,.12)':'rgba(221,227,237,.95)';
+              const accent=idx<3?'rgba(47,79,100,.15)':'rgba(221,227,237,.95)';
               const bg=idx<3?'linear-gradient(180deg,rgba(255,255,255,.98),rgba(245,249,255,.94))':'rgba(255,255,255,.82)';
               const shadow=idx<3?'0 3px 10px rgba(47,79,100,.06)':'0 1px 3px rgba(15,23,42,.04)';
-              return `<div class="ltr-party-card" style="border:1px solid ${{accent}};border-radius:9px;background:${{bg}};padding:9px 10px;box-shadow:${{shadow}};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
+              return `<div class="ltr-party-card" style="border:1px solid ${{accent}};border-radius:9px;background:${{bg}};padding:10px 12px;box-shadow:${{shadow}};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
                 onmouseenter="this.style.background='linear-gradient(180deg,rgba(255,255,255,1),rgba(244,248,253,.98))';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(47,79,100,.08)'"
                 onmouseleave="this.style.background='${{bg}}';this.style.borderColor='${{accent}}';this.style.transform='translateY(0)';this.style.boxShadow='${{shadow}}'">
                 <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
                   <div style="min-width:0">
-                    <div style="font-size:12px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{safeHtml(row.party)}}</div>
-                    <div style="font-size:9px;color:var(--mu);margin-top:2px">Share of letters: ${{pct}}%</div>
+                    <div style="font-size:12.5px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{safeHtml(row.party)}}">${{safeHtml(row.party)}}</div>
+                    <div style="font-size:9.5px;color:var(--mu);margin-top:2px">${{pct}}% of all letters <span style="color:var(--mu,#64748b)">(${{row.total}}/${{stats.total}})</span></div>
                   </div>
                   <div style="text-align:right;flex-shrink:0">
-                    <div style="font-size:14px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
+                    <div style="font-size:15px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
                     <div style="font-size:9px;color:var(--mu);margin-top:2px">Total</div>
                   </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px">
-                  <div style="background:#eef4fb;border-radius:7px;padding:6px 8px;border:1px solid #dbe8f7">
-                    <div style="font-size:10px;font-weight:800;color:#2563a8">Sent: ${{row.sent}}</div>
-                    <div style="font-size:9px;color:#2563a8;letter-spacing:.2px;margin-top:2px">Outgoing</div>
+                  <div class="ltr-box-sent" style="background:#eef4fb;border-radius:7px;padding:6px 8px;border:1px solid #dbe8f7">
+                    <div class="val" style="font-size:10px;font-weight:800;color:#2563a8">To: ${{row.sent}}</div>
+                    <div class="lbl" style="font-size:9px;color:#2563a8;letter-spacing:.2px;margin-top:1px">Sent (Outgoing)</div>
                   </div>
-                  <div style="background:#edf9f0;border-radius:7px;padding:6px 8px;border:1px solid #d7efdc">
-                    <div style="font-size:10px;font-weight:800;color:#16a34a">Received: ${{row.received}}</div>
-                    <div style="font-size:9px;color:#16a34a;letter-spacing:.2px;margin-top:2px">Incoming</div>
+                  <div class="ltr-box-rcv" style="background:#edf9f0;border-radius:7px;padding:6px 8px;border:1px solid #d7efdc">
+                    <div class="val" style="font-size:10px;font-weight:800;color:#16a34a">From: ${{row.received}}</div>
+                    <div class="lbl" style="font-size:9px;color:#16a34a;letter-spacing:.2px;margin-top:1px">Received (Incoming)</div>
                   </div>
                 </div>
               </div>`;
             }}).join('')}}
           </div>
         </div>`
-      : '<div style="font-size:11px;color:var(--mu)">No party activity available in the current project scope.</div>';
+      : '<div style="font-size:11px;color:var(--mu)">No external party activity available in the current project scope.</div>';
     el.innerHTML=`<div style="display:grid;gap:10px">
       ${{summaryHtml}}
       ${{partiesHtml}}
