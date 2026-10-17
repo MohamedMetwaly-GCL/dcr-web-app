@@ -294,6 +294,9 @@ def _is_record_relevant_to_keyword(record: dict, keyword: str, synonyms: list) -
     if not keyword or not synonyms:
         return True
 
+    if record.get("_keyword_unmatched"):
+        return False
+
     kw_norm = _normalize_arabic(str(keyword).strip().lower())
 
     # Identify equipment category
@@ -907,14 +910,15 @@ def search_submittals(
                 'DOC'
             ) AS doc_type,
             COALESCE(r.data->>'docNo', r.data->>'prNo', r.data->>'prNumber', r.data->>'nocNo', r.data->>'letterRef', '—') AS doc_no,
-            COALESCE(r.data->>'title', r.data->>'prDetails', r.data->>'pr_details', r.data->>'nocSubject', r.data->>'subject', '') AS title,
+            COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
             COALESCE(r.data->>'status', r.data->>'Status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
             COALESCE(r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'issuedDate', r.data->>'IssuedDate', r.data->>'partAIssueDate', '') AS doc_date,
             COALESCE(r.data->>'brand', '') AS brand,
             COALESCE(r.data->>'discipline', r.data->>'Discipline', '') AS discipline,
             COALESCE(r.data->>'trade', r.data->>'Trade', '') AS trade,
             COALESCE(r.data->>'subTrade', r.data->>'sub_trade', r.data->>'SubTrade', '') AS sub_trade,
-            COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', r.data->>'prDetails', r.data->>'msRef', r.data->>'itemRef', '') AS description
+            COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', r.data->>'msRef', r.data->>'itemRef', '') AS description,
+            COALESCE(r.data->>'prDetails', r.data->>'pr_details', '') AS raw_pr_details
         FROM records r
         WHERE {' AND '.join(where_clauses)}
         ORDER BY {', '.join(order_clauses)}
@@ -943,12 +947,13 @@ def search_submittals(
                         'DOC'
                     ) AS doc_type,
                     COALESCE(r.data->>'docNo', r.data->>'prNo', r.data->>'prNumber', r.data->>'nocNo', '—') AS doc_no,
-                    COALESCE(r.data->>'title', r.data->>'prDetails', r.data->>'subject', '') AS title,
+                    COALESCE(r.data->>'title', r.data->>'subject', '') AS title,
                     COALESCE(r.data->>'status', r.data->>'partBStatus', '') AS status,
                     COALESCE(r.data->>'actualReply', r.data->>'issuedDate', '') AS doc_date,
                     COALESCE(r.data->>'discipline', '') AS discipline,
                     COALESCE(r.data->>'trade', '') AS trade,
-                    COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', r.data->>'prDetails', '') AS description
+                    COALESCE(r.data->>'materialDescription', r.data->>'workDescription', r.data->>'description', '') AS description,
+                    COALESCE(r.data->>'prDetails', r.data->>'pr_details', '') AS raw_pr_details
                 FROM records r
                 WHERE {proj_clause}
             """
@@ -979,76 +984,172 @@ def search_submittals(
                 "error": str(e),
             }
 
-    # Enrich PR records with item details and status from pr_items if available
-    pr_row_ids = [
-        r["id"] for r in rows 
-        if str(r.get("doc_type") or "").upper() == "PR" 
-        or str(r.get("doc_no") or "").upper().startswith("PR")
-        or str(r.get("dt_id") or "").upper() == "PR"
-    ]
+    # Identify matched equipment key for conflict checks
+    matched_eq_key = None
+    if keyword:
+        kw_norm = _normalize_arabic(str(keyword).strip().lower())
+        for ek, syns in EQUIPMENT_KEYWORDS.items():
+            norm_syns = {_normalize_arabic(s) for s in syns}
+            norm_syns.update(syns)
+            if kw_norm in norm_syns or any(s in kw_norm for s in norm_syns):
+                matched_eq_key = ek
+                break
+
+    def _is_pr_record(rec):
+        dt = str(rec.get("doc_type") or "").upper()
+        dn = str(rec.get("doc_no") or "").upper()
+        dt_id = str(rec.get("dt_id") or "").upper()
+        return dt == "PR" or dt_id == "PR" or dn.startswith("PR") or "-PR-" in dn or "/PR/" in dn or "PR/" in dn
+
+    pr_row_ids = [r["id"] for r in rows if _is_pr_record(r)]
+    pr_items_map = {}
     if pr_row_ids:
         try:
             pr_items_map = db.get_pr_items_for_records(pr_row_ids)
         except Exception:
             pr_items_map = {}
-        
-        pr_synonyms = _expand_keyword_synonyms(keyword) if keyword else []
 
-        for r in rows:
-            if r.get("id") in pr_items_map:
-                items = pr_items_map[r["id"]]
-                if items:
-                    # Filter items matching requested keyword/synonyms if keyword is present
-                    matching_items = []
+    pr_synonyms = _expand_keyword_synonyms(keyword) if keyword else []
+
+    def _format_item_qty(raw_qty, raw_unit):
+        u_str = str(raw_unit or "").strip()
+        if raw_qty in (None, ""):
+            return f" ({u_str})" if u_str else ""
+        try:
+            f = float(raw_qty)
+            q_str = str(int(f)) if f.is_integer() else f"{f:.2f}".rstrip("0").rstrip(".")
+        except Exception:
+            q_str = str(raw_qty).strip()
+        return f" (Qty: {q_str} {u_str})".replace("  ", " ").strip() if (q_str or u_str) else ""
+
+    for r in rows:
+        if not _is_pr_record(r):
+            continue
+
+        raw_id = r.get("id")
+        relational_items = pr_items_map.get(raw_id, [])
+        # Filter out section headers
+        relational_items = [it for it in relational_items if str(it.get("row_type") or "item").lower() != "header"]
+
+        matched_items_list = []
+        all_items_list = []
+
+        # 1. First attempt: relational pr_items table
+        if relational_items:
+            for it in relational_items:
+                raw_name = str(it.get("item_name") or "").strip()
+                if not raw_name:
+                    continue
+                clean_name = raw_name.replace("|", "-").replace("\n", " ").strip()
+                rem = str(it.get("remarks") or "").strip()
+                qty_badge = _format_item_qty(it.get("quantity"), it.get("unit"))
+                formatted_item_str = f"{clean_name}{qty_badge}".strip()
+                all_items_list.append(formatted_item_str)
+
+                combined = f"{raw_name} {rem}".lower()
+                combined_norm = _normalize_arabic(combined)
+                if pr_synonyms:
+                    if any(s in combined or s in combined_norm for s in pr_synonyms):
+                        matched_items_list.append(formatted_item_str)
+                else:
+                    matched_items_list.append(formatted_item_str)
+
+        # 2. Second attempt: parse text from raw_pr_details (legacy text storage, e.g. CFC PR-018)
+        if not relational_items:
+            raw_text = str(r.get("raw_pr_details") or r.get("description") or "")
+            if not raw_text and ("•" in str(r.get("title") or "") or "\n" in str(r.get("title") or "")):
+                raw_text = str(r.get("title") or "")
+
+            if raw_text:
+                lines = [l.strip() for l in re.split(r'[\r\n•\u2022\u25cf\u25cb]+', raw_text) if l.strip()]
+                for line in lines:
+                    line_low = line.lower()
+                    line_norm = _normalize_arabic(line_low)
+
+                    # Extract quantity badge from line if present
+                    qty_match = re.search(r'(?:PR\s*Qty|Qty|الكمية)\s*[:=]\s*([^\-|;,\n]+)', line, re.IGNORECASE)
+                    clean_item = re.split(r'\s*-\s*PR\s*Qty|\s*PR\s*Qty|\s*-\s*Qty|\s*-\s*PO\s*Qty', line, flags=re.IGNORECASE)[0].strip()
+                    clean_item = re.sub(r'^[•\-\*\s]+', '', clean_item).strip()
+                    clean_item = clean_item.replace("|", "-").replace("\n", " ").strip()
+                    # Strip out trailing PO Qty / Del / Status noise
+                    clean_item = re.sub(r'\s*-\s*(?:PO\s*Qty|Del|Status)[^;,\n]*', '', clean_item, flags=re.IGNORECASE).strip()
+
+                    if not clean_item:
+                        continue
+
+                    if qty_match:
+                        q_val = qty_match.group(1).strip()
+                        formatted_line = f"{clean_item} (Qty: {q_val})"
+                    else:
+                        formatted_line = clean_item[:90]
+
+                    all_items_list.append(formatted_line)
+
                     if pr_synonyms:
-                        for it in items:
-                            it_name = str(it.get("item_name") or "")
-                            it_rem = str(it.get("remarks") or "")
-                            it_combined = f"{it_name} {it_rem}".lower()
-                            it_combined_norm = _normalize_arabic(it_combined)
-                            if any(s in it_combined or s in it_combined_norm for s in pr_synonyms):
-                                matching_items.append(it)
-                    
-                    # If specific matching items found, highlight only those items (prevents non-valve contamination like fittings/tees)
-                    target_items = matching_items if matching_items else items
-                    
-                    item_names = []
-                    for it in target_items:
-                        raw_name = str(it.get("item_name") or "").strip()
-                        if not raw_name:
-                            continue
-                        clean_name = raw_name.replace("|", "-").replace("\n", " ").strip()
-                        qty = it.get("quantity")
-                        unit = str(it.get("unit") or "").strip()
-                        if qty not in (None, ""):
-                            item_names.append(f"{clean_name} ({qty} {unit})".strip())
-                        else:
-                            item_names.append(clean_name)
-                    
-                    if item_names:
-                        preview_str = ", ".join(item_names[:3])
-                        if len(item_names) > 3:
-                            preview_str += f" (+{len(item_names)-3} items)"
-                        
-                        curr_title = str(r.get("title") or "").strip()
-                        generic_titles = {"mechanical", "fire fighting", "plumbing", "hvac", "fire pumps", "materials", "requisition", "pr"}
-                        
-                        if not curr_title or curr_title in ("—", "-", ""):
-                            r["title"] = preview_str
-                        elif curr_title.lower() in generic_titles:
-                            r["title"] = f"{curr_title} ({preview_str})"
-                        else:
-                            r["description"] = f"{r.get('description', '')} - Items: {preview_str}".strip(" -")
-                    
-                    # If status is empty, resolve from item statuses
-                    if not r.get("status") or r["status"] in ("—", ""):
-                        it_statuses = [it.get("status") for it in items if it.get("status")]
-                        if any("pending" in str(s).lower() for s in it_statuses):
-                            r["status"] = "Pending PO"
-                        elif it_statuses:
-                            r["status"] = it_statuses[0]
-                        else:
-                            r["status"] = "Pending PO"
+                        if any(s in line_low or s in line_norm for s in pr_synonyms):
+                            matched_items_list.append(formatted_line)
+                    else:
+                        matched_items_list.append(formatted_line)
+
+        # Determine target items to display
+        items_to_display = matched_items_list if matched_items_list else all_items_list
+
+        if items_to_display:
+            preview_str = ", ".join(items_to_display[:3])
+            if len(items_to_display) > 3:
+                preview_str += f" (+{len(items_to_display)-3} items)"
+
+            curr_title = str(r.get("title") or "").strip()
+            # If curr_title is a giant text block or contains bullet dump, discard it
+            if len(curr_title) > 80 or "•" in curr_title or "\n" in curr_title:
+                curr_title = ""
+
+            generic_titles = {
+                "mechanical", "fire fighting", "plumbing", "hvac", "materials",
+                "requisition", "pr", "doc", "supply", "equipment", "civil", "electrical"
+            }
+
+            if not curr_title or curr_title in ("—", "-", ""):
+                r["title"] = preview_str
+            elif curr_title.lower() in generic_titles:
+                r["title"] = f"{curr_title} ({preview_str})"
+            elif preview_str.lower() in curr_title.lower():
+                r["title"] = curr_title
+            else:
+                # E.g. "Fire Fighting Valves: Gate Valve 4" (Qty: 10 No), Butterfly Valve 6" (Qty: 5 No)"
+                r["title"] = f"{curr_title}: {preview_str}"
+
+            r["description"] = preview_str
+            r["matching_items"] = items_to_display
+
+        # If keyword was requested for PRs:
+        # If no items matched the keyword, check if the title itself explicitly matches the keyword.
+        # If neither items nor title match the keyword (e.g. PEM064-PR-012 Fire Pumps when searching for valves),
+        # mark as unmatched so it is excluded!
+        if pr_synonyms:
+            if not matched_items_list:
+                curr_title = str(r.get("title") or "").strip()
+                curr_norm = _normalize_arabic(curr_title.lower())
+                title_matches = any(s in curr_title.lower() or s in curr_norm for s in pr_synonyms)
+                # Ensure it's not a pump/chiller conflicting equipment title
+                if matched_eq_key == "valve":
+                    if any(ct in curr_title.lower() or ct in curr_norm for ct in ["pump", "pumps", "chiller", "generator", "مضخ", "طلمب"]):
+                        title_matches = False
+                if not title_matches:
+                    r["_keyword_unmatched"] = True
+
+        # Resolve status if empty
+        if not r.get("status") or r["status"] in ("—", ""):
+            if relational_items:
+                it_statuses = [it.get("status") for it in relational_items if it.get("status")]
+                if any("pending" in str(s).lower() for s in it_statuses):
+                    r["status"] = "Pending PO"
+                elif it_statuses:
+                    r["status"] = it_statuses[0]
+                else:
+                    r["status"] = "Pending PO"
+            else:
+                r["status"] = "Pending PO"
 
     # Deep sanitize all fields across all rows to NEVER contain pipe '|' or newlines '\n'
     for r in rows:

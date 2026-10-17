@@ -61,7 +61,7 @@ SYSTEM_INSTRUCTION = (
     "   - In Arabic responses, use Arabic column headers: | رقم الوثيقة | البيان والمواصفات | النوع | الحالة | التاريخ | المشروع |.\n"
     "   - NEVER put pipe characters `|` or newlines `\\n` inside any table cell, as this destroys Markdown table syntax. If describing multiple items or specifications, separate them with commas or dashes (e.g. 'Gate Valve 6in, Butterfly Valve 1050mm').\n"
     "   - Ensure EVERY table row has EXACTLY the same number of columns (6 columns).\n"
-    "   - When presenting PR (Purchase Requisition) records for equipment (e.g. valves, pumps, pipes), only mention the specific matching items. Never dump unrelated fittings, elbows, or plumbing pipes.\n"
+    "   - When presenting PR (Purchase Requisition) records: in the description column ('البيان والمواصفات'), display the specific matching line items and their exact quantities (e.g. 'Gate Valve 4in (Qty: 10 No), Butterfly Valve 6in (Qty: 5 No)'). NEVER dump the raw 'PR Details' column, long technical pump skid specifications, or unrelated plumbing fittings (elbows, tees, couplings, pipes) into the table.\n"
     "   - For PRs and Submittals, show only the latest active revision (REV01 replaces REV00) unless the user explicitly requests revision history.\n"
     "   - Maintain the records in ascending order of Document No (from lowest to highest number) as returned by the tool.\n"
     "7. MULTI-PROJECT QUERIES & SWITCHING: The user can freely query different projects in the same chat session. "

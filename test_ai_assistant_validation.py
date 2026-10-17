@@ -1289,6 +1289,109 @@ class TestAiAssistantValidation(unittest.TestCase):
 
         print("PASS: Dynamic document type discovery reads all registers across all projects automatically.")
 
+    def test_51_pr_line_item_isolation_and_false_positive_exclusion(self):
+        """Verifies that PR search isolates matching items and quantities,
+        enriches PR title with items (e.g. Suez PEM064-PR-008),
+        parses text-based line items and quantities while discarding non-matching fittings (CFC PR-018),
+        and strictly excludes pump/equipment false positives (PEM064-PR-012)."""
+        mock_projects = [
+            {"id": "PEM-064", "name": "Suez Steel", "code": "PEM-064", "data": {}},
+            {"id": "PEM-058", "name": "CFC Ph2", "code": "PEM-058", "data": {}},
+        ]
+        mock_records = [
+            # 1. Suez PEM064-PR-008: Informative title "Fire Fighting Valves" with valve line items in pr_items
+            {
+                "id": "suez_pr8",
+                "project_id": "PEM-064",
+                "doc_type": "PR",
+                "doc_no": "PEM064-PR-008 REV00",
+                "title": "Fire Fighting Valves",
+                "status": "Pending PO",
+                "description": "",
+                "raw_pr_details": ""
+            },
+            # 2. Suez PEM064-PR-012: Fire Pumps package with pump line items in pr_items (mentions valve in spec text)
+            {
+                "id": "suez_pr12",
+                "project_id": "PEM-064",
+                "doc_type": "PR",
+                "doc_no": "PEM064-PR-012 REV00",
+                "title": "Fire Pumps (Electric Motor Fire Pump Type... Air release valve)",
+                "status": "Pending PO",
+                "description": "Air release valve on manifold",
+                "raw_pr_details": ""
+            },
+            # 3. CFC PR-018 REV01: Legacy text storage in raw_pr_details with 20 items (elbows, tees, and 1 valve)
+            {
+                "id": "cfc_pr18",
+                "project_id": "PEM-058",
+                "doc_type": "PR",
+                "doc_no": "PR-018 REV01",
+                "title": "",
+                "status": "Pending PO",
+                "description": "",
+                "raw_pr_details": (
+                    "• مشترك 90 x 50 مم (الشريف بجوان) - PR Qty: 4.0 No - PO Qty: 0.0 - Del: 0.0\n"
+                    "• مواسير 50 مم (الشريف بجوان) - PR Qty: 15.0 M - PO Qty: 0.0\n"
+                    "• كوع 45 x 110 مم - PR Qty: 12.0 No\n"
+                    "• محبس 20 مم - 2 لاكور (PPR) - PR Qty: 5.0 No - PO Qty: 0.0 - Del: 0.0\n"
+                    "• كوع لحام 20 مم - PR Qty: 36.0 No"
+                )
+            },
+        ]
+        mock_pr_items = {
+            "suez_pr8": [
+                {"row_type": "header", "item_name": "Valves Section"},
+                {"row_type": "item", "item_name": "Gate Valve 4\"", "quantity": 10, "unit": "No", "status": "Pending PO"},
+                {"row_type": "item", "item_name": "Butterfly Valve 6\"", "quantity": 5, "unit": "No", "status": "Pending PO"},
+            ],
+            "suez_pr12": [
+                {"row_type": "item", "item_name": "Electric Motor Fire Pump 750 GPM", "quantity": 1, "unit": "No", "status": "Pending PO"},
+                {"row_type": "item", "item_name": "Diesel Engine Fire Pump 750 GPM", "quantity": 1, "unit": "No", "status": "Pending PO"},
+            ],
+        }
+
+        with patch("db.q") as mock_q, patch("db.get_pr_items_for_records") as mock_items:
+            def q_side_effect(sql, params=()):
+                if "FROM projects" in sql:
+                    return mock_projects
+                if "FROM records r" in sql:
+                    return mock_records
+                return []
+            mock_q.side_effect = q_side_effect
+            mock_items.return_value = mock_pr_items
+
+            res = ai_tools.search_submittals(
+                allowed_project_ids=["PEM-064", "PEM-058"],
+                doc_type="PR",
+                keyword="valve"
+            )
+            records = res["records"]
+            doc_nos = [r["doc_no"] for r in records]
+
+            # 1. Suez PEM064-PR-008 MUST be included and enriched with line items and quantities
+            self.assertIn("PEM064-PR-008 REV00", doc_nos)
+            pr8_rec = next(r for r in records if r["doc_no"] == "PEM064-PR-008 REV00")
+            self.assertIn("Gate Valve 4\"", pr8_rec["title"])
+            self.assertIn("Qty: 10 No", pr8_rec["title"])
+            self.assertIn("Butterfly Valve 6\"", pr8_rec["title"])
+            self.assertIn("Qty: 5 No", pr8_rec["title"])
+
+            # 2. Suez Fire Pumps PEM064-PR-012 MUST be excluded because its items are pumps, not valves!
+            self.assertNotIn("PEM064-PR-012 REV00", doc_nos)
+
+            # 3. CFC PR-018 REV01 MUST be included, displaying ONLY the valve item with its quantity
+            self.assertIn("PR-018 REV01", doc_nos)
+            pr18_rec = next(r for r in records if r["doc_no"] == "PR-018 REV01")
+            self.assertIn("محبس 20 مم - 2 لاكور (PPR)", pr18_rec["title"])
+            self.assertIn("Qty: 5.0 No", pr18_rec["title"])
+            # MUST NOT contain elbows, tees, or pipes!
+            self.assertNotIn("مشترك", pr18_rec["title"])
+            self.assertNotIn("مواسير", pr18_rec["title"])
+            self.assertNotIn("كوع", pr18_rec["title"])
+
+        print("PASS: PR line-item and quantity isolation verified with 100% precision.")
+
 
 if __name__ == "__main__":
     unittest.main()
