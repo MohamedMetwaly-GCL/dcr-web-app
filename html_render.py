@@ -3801,7 +3801,10 @@ canvas{{max-height:174px}}
 .pr-analytics-grid > div{{min-width:0}}
 .pr-block,.ltr-summary-card,.ltr-parties-wrap,.ltr-party-card,.charts-grid > *,.charts-grid-3 > *,#pr-panel,#ltr-panel{{min-width:0}}
 .ltr-summary-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}}
-.ltr-parties-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:9px}}
+.ltr-parties-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:7px}}
+@media(min-width:960px){{
+  .ltr-parties-grid{{grid-template-columns:repeat(6,minmax(0,1fr))}}
+}}
 .pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
 .pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
   overflow:hidden;text-decoration:none;color:inherit;display:block;
@@ -4876,13 +4879,10 @@ function renderLettersOverview(d){{
     </div>`;
 
     const partiesHtml=topParties.length
-      ? `<div class="ltr-parties-wrap" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
-            <div>
-              <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active External Parties</div>
-              <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Key correspondence stakeholders (clients, consultants & subcontractors)</div>
-            </div>
-            <div style="font-size:10px;color:var(--mu);font-weight:700;background:rgba(47,79,100,.08);padding:3px 8px;border-radius:12px">Top ${{topParties.length}} External Parties</div>
+      ? `<div class="ltr-parties-wrap" style="background:var(--bg);border-radius:8px;padding:8px 10px;border:1px solid #e3eaf2">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px">
+            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active External Parties</div>
+            <div style="font-size:9.5px;color:var(--mu);font-weight:700;background:rgba(47,79,100,.08);padding:2px 7px;border-radius:10px">Top ${{topParties.length}} External Parties</div>
           </div>
           <div class="ltr-parties-grid">
             ${{topParties.map((row, idx)=>{{
@@ -4890,27 +4890,26 @@ function renderLettersOverview(d){{
               const accent=idx<3?'rgba(47,79,100,.15)':'rgba(221,227,237,.95)';
               const bg=idx<3?'linear-gradient(180deg,rgba(255,255,255,.98),rgba(245,249,255,.94))':'rgba(255,255,255,.82)';
               const shadow=idx<3?'0 3px 10px rgba(47,79,100,.06)':'0 1px 3px rgba(15,23,42,.04)';
-              return `<div class="ltr-party-card" style="border:1px solid ${{accent}};border-radius:9px;background:${{bg}};padding:10px 12px;box-shadow:${{shadow}};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
+              return `<div class="ltr-party-card" style="border:1px solid ${{accent}};border-radius:8px;background:${{bg}};padding:7px 9px;box-shadow:${{shadow}};transition:background .15s,border-color .15s,transform .15s,box-shadow .15s"
                 onmouseenter="this.style.background='linear-gradient(180deg,rgba(255,255,255,1),rgba(244,248,253,.98))';this.style.borderColor='#c7d2de';this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(47,79,100,.08)'"
                 onmouseleave="this.style.background='${{bg}}';this.style.borderColor='${{accent}}';this.style.transform='translateY(0)';this.style.boxShadow='${{shadow}}'">
-                <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-                  <div style="min-width:0">
-                    <div style="font-size:12.5px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{safeHtml(row.party)}}">${{safeHtml(row.party)}}</div>
-                    <div style="font-size:9.5px;color:var(--mu);margin-top:2px">${{pct}}% of all letters <span style="color:var(--mu,#64748b)">(${{row.total}}/${{stats.total}})</span></div>
+                <div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start">
+                  <div style="min-width:0;flex:1">
+                    <div style="font-size:11.5px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{safeHtml(row.party)}}">${{safeHtml(row.party)}}</div>
+                    <div style="font-size:8.5px;color:var(--mu);margin-top:1px">${{pct}}% of all (${{row.total}}/${{stats.total}})</div>
                   </div>
-                  <div style="text-align:right;flex-shrink:0">
-                    <div style="font-size:15px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
-                    <div style="font-size:9px;color:var(--mu);margin-top:2px">Total</div>
+                  <div style="text-align:right;flex-shrink:0;margin-left:4px">
+                    <div style="font-size:13.5px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
                   </div>
                 </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px">
-                  <div class="ltr-box-sent" style="background:#eef4fb;border-radius:7px;padding:6px 8px;border:1px solid #dbe8f7">
-                    <div class="val" style="font-size:10px;font-weight:800;color:#2563a8">To: ${{row.sent}}</div>
-                    <div class="lbl" style="font-size:9px;color:#2563a8;letter-spacing:.2px;margin-top:1px">Sent (Outgoing)</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px">
+                  <div class="ltr-box-sent" title="Sent (Outgoing)" style="background:#eef4fb;border-radius:5px;padding:3px 6px;border:1px solid #dbe8f7;display:flex;justify-content:space-between;align-items:center">
+                    <span class="lbl" style="font-size:8.5px;font-weight:700;color:#2563a8">To:</span>
+                    <span class="val" style="font-size:10px;font-weight:800;color:#2563a8">${{row.sent}}</span>
                   </div>
-                  <div class="ltr-box-rcv" style="background:#edf9f0;border-radius:7px;padding:6px 8px;border:1px solid #d7efdc">
-                    <div class="val" style="font-size:10px;font-weight:800;color:#16a34a">From: ${{row.received}}</div>
-                    <div class="lbl" style="font-size:9px;color:#16a34a;letter-spacing:.2px;margin-top:1px">Received (Incoming)</div>
+                  <div class="ltr-box-rcv" title="Received (Incoming)" style="background:#edf9f0;border-radius:5px;padding:3px 6px;border:1px solid #d7efdc;display:flex;justify-content:space-between;align-items:center">
+                    <span class="lbl" style="font-size:8.5px;font-weight:700;color:#16a34a">From:</span>
+                    <span class="val" style="font-size:10px;font-weight:800;color:#16a34a">${{row.received}}</span>
                   </div>
                 </div>
               </div>`;
