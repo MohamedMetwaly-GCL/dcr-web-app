@@ -3805,24 +3805,51 @@ canvas{{max-height:174px}}
 @media(min-width:960px){{
   .ltr-parties-grid{{grid-template-columns:repeat(6,minmax(0,1fr))}}
 }}
-.pgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:0}}
-.pcard{{background:var(--wh);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);
-  overflow:hidden;text-decoration:none;color:inherit;display:block;
-  transition:transform .15s,box-shadow .15s;position:relative;min-height:132px}}
-.pcard:hover{{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.12)}}
+.pgrid{{display:grid;grid-template-columns:repeat(var(--pgrid-cols, 4), minmax(0, 1fr));gap:10px;margin-bottom:0}}
+@media(max-width:1100px){{
+  .pgrid{{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))!important}}
+}}
+@media(max-width:640px){{
+  .pgrid{{grid-template-columns:1fr!important}}
+}}
+.pcard{{background:var(--wh);border-radius:11px;box-shadow:0 2px 7px rgba(0,0,0,.07);
+  overflow:hidden;text-decoration:none;color:inherit;display:flex;flex-direction:column;
+  transition:transform .15s,box-shadow .15s;position:relative;min-height:148px}}
+.pcard:hover{{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.11)}}
 .pchdr{{
   background:linear-gradient(135deg,var(--brand-navy) 0%,var(--brand-navy-2) 100%);
-  padding:10px 12px;
+  padding:10px 13px;
   display:flex;align-items:center;justify-content:space-between;
   border-bottom:2px solid rgba(126,200,50,.3);
 }}
-.pcbody{{padding:7px 10px 8px;display:flex;flex-direction:column;gap:2px}}
-.prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:1px}}
-.prog{{height:5px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:4px}}
+.pchdr .pcode{{color:rgba(255,255,255,.7);font-size:11px;font-weight:700;letter-spacing:.3px}}
+.pchdr .pname{{color:#fff;font-weight:700;font-size:13.5px;line-height:1.25;margin-top:2px}}
+.pcbody{{padding:9px 12px 10px;display:flex;flex-direction:column;gap:3px;flex:1}}
+.pclient{{font-size:11px;color:var(--mu);margin-bottom:6px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.prow{{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;font-size:12px}}
+.prow span{{font-size:11.5px;color:var(--mu)}}
+.prow b{{font-size:12.5px;font-weight:700}}
+.prog{{height:6px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:5px}}
 .progf{{height:100%;border-radius:99px;transition:width .6s ease}}
-.addcard{{background:linear-gradient(180deg,#fbfcfe,#f5f8fc);border-radius:10px;border:1.5px dashed #c9d4e2;min-height:132px;
-  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
-  cursor:pointer;transition:all .15s;color:#71829a;font-size:12px}}
+.pcard-footer{{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-top:auto;padding-top:6px;border-top:1px solid #f1f5f9;
+}}
+body.dark .pcard-footer{{border-top-color:#23354d!important}}
+.pcard-btn{{
+  background:#f8fafc;border:1px solid #cbd5e1;border-radius:4px;
+  padding:2px 7px;font-size:10px;font-weight:700;color:#64748b;
+  cursor:pointer;transition:all .15s ease;display:inline-flex;align-items:center;justify-content:center;
+}}
+.pcard-btn.pcard-move:hover{{background:#eef4fb;color:#2563a8;border-color:#93c5fd}}
+.pcard-btn.pcard-del{{color:#94a3b8;font-size:11px;border-color:transparent;background:transparent}}
+.pcard-btn.pcard-del:hover{{background:#fef2f2;color:#ef4444;border-color:#fecaca}}
+body.dark .pcard-btn{{background:#1e293b;border-color:#334155;color:#94a3b8}}
+body.dark .pcard-btn.pcard-move:hover{{background:#24354a;color:#93c5fd;border-color:#475569}}
+body.dark .pcard-btn.pcard-del:hover{{background:rgba(239,68,68,.18);color:#fca5a5;border-color:rgba(239,68,68,.35)}}
+.addcard{{background:linear-gradient(180deg,#fbfcfe,#f5f8fc);border-radius:11px;border:1.5px dashed #c9d4e2;min-height:148px;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;
+  cursor:pointer;transition:all .15s;color:#71829a;font-size:13px;font-weight:600}}
 .addcard:hover{{border-color:var(--pr);color:var(--pr);background:linear-gradient(180deg,#ffffff,#f3f8ff)}}
 
 /* ── Tables ── */
@@ -3854,10 +3881,8 @@ canvas{{max-height:174px}}
 }}
 .dt-tbl tr:nth-child(even) td:first-child{{background:#f8fafc}}
 .dt-tbl tr:hover td:first-child{{background:#eef5ff}}
-.dt-summary-row.warn td{{background:#fff4e8}}
-.dt-summary-row.warn:hover td{{background:#feeccc}}
-body.dark .dt-summary-row.warn td{{background:#35271e}}
-body.dark .dt-summary-row.warn:hover td{{background:#453224}}
+.dt-proj-header td{{background:#f1f5f9;color:var(--brand-navy);font-weight:700;font-size:11px;padding:6px 12px;border-top:1.5px solid #cbd5e1;border-bottom:1px solid #cbd5e1;letter-spacing:.3px}}
+body.dark .dt-proj-header td{{background:#17263c!important;color:#93c5fd!important;border-top-color:#2a3d54!important;border-bottom-color:#2a3d54!important}}
 #overview-pane-discipline .dt-tbl{{table-layout:fixed}}
 #overview-pane-discipline .dt-tbl th:first-child,
 #overview-pane-discipline .dt-tbl td:first-child{{white-space:nowrap}}
@@ -4676,35 +4701,49 @@ function updateKPIs(d){{
 // ── Project Cards ─────────────────────────────────────────
 function renderCards(d,pid){{
   const g=document.getElementById('pgrid');g.innerHTML='';
+  const totalItems=d.length+((ROLE==='superadmin'&&!pid)?1:0);
+  const cols=Math.max(4,Math.ceil(totalItems/2));
+  g.style.setProperty('--pgrid-cols',cols);
+  const safe=v=>String(v??'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
+
   d.forEach(p=>{{
     const col=p.pct>=80?'#16a34a':p.pct>=50?'#f59e0b':'#ef4444';
     const a=document.createElement('a');a.href='/app?p='+p.id;a.className='pcard';
+    const clientTitle=p.client?` title="${{safe(p.client)}}"`:'';
     a.innerHTML=`<div class="pchdr">
-      <div><div style="color:rgba(255,255,255,.6);font-size:10px;font-weight:700">${{p.code}}</div>
-        <div style="color:#fff;font-weight:700;font-size:13px">${{p.name}}</div></div>
-      ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">⚠${{p.overdue}}</span>`:''}}</div>
+      <div>
+        <div class="pcode">${{safe(p.code)}}</div>
+        <div class="pname">${{safe(p.name)}}</div>
+      </div>
+      ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:10.5px;font-weight:800;white-space:nowrap" title="${{p.overdue}} Overdue Submittals">⚠ ${{p.overdue}}</span>`:''}}
+    </div>
     <div class="pcbody">
-      ${{p.client?`<div style="font-size:10px;color:var(--mu);margin-bottom:5px">👤 ${{p.client}}</div>`:''}}<div class="prow">
-        <span style="font-size:11px;color:var(--mu)">Total</span><b>${{p.total}}</b></div>
-      <div class="prow"><span style="font-size:11px;color:var(--mu)">Approved</span>
-        <b style="color:#16a34a">${{p.approved}}</b></div>
-      <div class="prow"><span style="font-size:11px;color:var(--mu)">Pending</span>
-        <b style="color:#f59e0b">${{p.pending}}</b></div>
-      <div class="prow"><span style="font-size:11px;color:var(--mu)">Rejected</span>
-        <b style="color:#7c3aed">${{p.rejected||0}}</b></div>
+      ${{p.client?`<div class="pclient"${{clientTitle}}>👤 ${{safe(p.client)}}</div>`:''}}
+      <div class="prow"><span>Total</span><b>${{p.total}}</b></div>
+      <div class="prow"><span>Approved</span><b style="color:#16a34a">${{p.approved}}</b></div>
+      <div class="prow"><span>Pending</span><b style="color:#f59e0b">${{p.pending}}</b></div>
+      <div class="prow"><span>Rejected</span><b style="color:#7c3aed">${{p.rejected||0}}</b></div>
       <div class="prog"><div class="progf" style="width:${{p.pct}}%;background:${{col}}"></div></div>
-      <div style="font-size:10px;color:${{col}};font-weight:700;margin-top:3px">${{p.pct}}%</div>
-      ${{(ROLE==='superadmin'||ROLE==='admin')&&!pid?`<div style="position:absolute;right:6px;bottom:6px;display:flex;gap:4px">
-        <button class="del-pbtn" title="Move project up" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">Up</button>
-        <button class="del-pbtn" title="Move project down" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">Down</button>
-      </div>`:''}}
-      ${{ROLE==='superadmin'?`<button class="del-pbtn" onclick="event.preventDefault();delProject('${{p.id}}','${{p.name}}')">🗑</button>`:''}}
+      <div class="pcard-footer">
+        <div style="font-size:11.5px;color:${{col}};font-weight:800;display:flex;align-items:center;gap:3px">
+          <span>${{p.pct}}%</span><span style="font-size:9.5px;color:var(--mu);font-weight:600">done</span>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center">
+          ${{(ROLE==='superadmin'||ROLE==='admin')&&!pid?`
+            <button type="button" class="pcard-btn pcard-move" title="Move project up" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">▲</button>
+            <button type="button" class="pcard-btn pcard-move" title="Move project down" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">▼</button>
+          `:''}}
+          ${{ROLE==='superadmin'?`
+            <button type="button" class="pcard-btn pcard-del" title="Delete project" onclick="event.preventDefault();event.stopPropagation();delProject('${{p.id}}','${{safe(p.name)}}')">🗑</button>
+          `:''}}
+        </div>
+      </div>
     </div>`;
     g.appendChild(a);
   }});
   if(ROLE==='superadmin'&&!pid){{
     const add=document.createElement('div');add.className='addcard';
-    add.innerHTML='<span style="font-size:28px">➕</span><span>New Project</span>';
+    add.innerHTML='<span style="font-size:32px">➕</span><span>New Project</span>';
     add.onclick=()=>openM('newproj-modal');g.appendChild(add);
   }}
 }}
@@ -4950,27 +4989,47 @@ function setOverviewTableTab(tab){{
 
 function renderDTTable(d){{
   const tbody=document.getElementById('dt-tbody'),empty=document.getElementById('dt-empty');
-  tbody.innerHTML='';let rows=[],i=0;
-  d.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{rows.push({{...dt,pcode:p.code,pid:p.id}});}});}});
-  if(!rows.length){{empty.style.display='block';return;}}
-  empty.style.display='none';
-  rows.forEach(r=>{{
-    const pct=r.total?Math.round(r.approved/r.total*100):0;
-    const col=pct>=80?'#16a34a':pct>=50?'#f59e0b':'#ef4444';
-    const tr=document.createElement('tr');
-    tr.className=`dt-summary-row${{r.overdue>0?' warn':''}}${{i%2?' alt':''}}`;
-    i++;
-    tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{r.pcode}}</td>
-      <td style="font-weight:700;color:var(--pr)">${{r.code}}</td>
-      <td>${{r.name}}</td>
-      <td style="text-align:center;font-weight:700">${{r.total}}</td>
-      <td style="text-align:center;color:#16a34a;font-weight:700">${{r.approved}}</td>
-      <td style="text-align:center;color:#f59e0b;font-weight:700">${{r.pending}}</td>
-      <td style="text-align:center;color:#7c3aed;font-weight:700">${{r.rejected||0}}</td>
+  tbody.innerHTML='';let i=0,lastPid=null,hasRows=false;
+  const safe=v=>String(v??'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
+
+  d.forEach(p=>{{
+    const stats=p.dt_stats||[];
+    if(!stats.length) return;
+    hasRows=true;
+
+    if(d.length>1 && p.id!==lastPid){{
+      lastPid=p.id;
+      const gtr=document.createElement('tr');
+      gtr.className='dt-proj-header';
+      gtr.innerHTML=`<td colspan="9">
+        <span style="color:var(--brand-teal);margin-right:6px">📁</span><strong>${{safe(p.name)}}</strong> <span style="font-weight:500;color:var(--mu);margin-left:6px">(${{safe(p.code)}})</span>
+      </td>`;
+      tbody.appendChild(gtr);
+    }}
+
+    stats.forEach(r=>{{
+      const tr=document.createElement('tr');
+      tr.className=`dt-summary-row${{i%2?' alt':''}}`;
+      i++;
+      const ovBadge=r.overdue>0
+        ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{r.overdue}}</span>`
+        : `<span style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
+
+      tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{safe(p.code)}}</td>
+        <td style="font-weight:700;color:var(--pr)">${{safe(r.code)}}</td>
+        <td>${{safe(r.name)}}</td>
+        <td style="text-align:center;font-weight:700">${{r.total}}</td>
+        <td style="text-align:center;color:#16a34a;font-weight:700">${{r.approved}}</td>
+        <td style="text-align:center;color:#f59e0b;font-weight:700">${{r.pending}}</td>
+        <td style="text-align:center;color:#7c3aed;font-weight:700">${{r.rejected||0}}</td>
         <td style="text-align:center;color:#60A5FA;font-weight:700">${{r.info_closed||0}}</td>
-        <td style="text-align:center;color:#ef4444;font-weight:700">${{r.overdue}}</td>`;
-    tbody.appendChild(tr);
+        <td style="text-align:center">${{ovBadge}}</td>`;
+      tbody.appendChild(tr);
+    }});
   }});
+
+  if(!hasRows){{empty.style.display='block';return;}}
+  empty.style.display='none';
 }}
 
 // ── Disc Table ────────────────────────────────────────────
@@ -5007,7 +5066,7 @@ function renderDiscTable(data){{
         ${{metric('Pending',dt.pending,'#f59e0b')}}
         ${{metric('Rejected',dt.rejected||0,'#7c3aed')}}
         ${{metric('Info / Closed',dt.info_closed||0,'#60A5FA')}}
-        ${{metric('Overdue',dt.overdue,'#ef4444')}}
+        ${{metric('Overdue',dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
       </div>
       <div class="disc-mobile-children">
         ${{disc.map(ds=>`<div class="disc-mobile-child">
@@ -5018,7 +5077,7 @@ function renderDiscTable(data){{
             ${{metric('Pending',ds.pending,'#f59e0b')}}
             ${{metric('Rejected',ds.rejected||0,'#7c3aed')}}
               ${{metric('Info / Closed',ds.info_closed||0,'#60A5FA')}}
-              ${{metric('Overdue',ds.overdue,'#ef4444')}}
+              ${{metric('Overdue',ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
           </div>
         </div>`).join('')}}
       </div>`;
@@ -5034,7 +5093,7 @@ function renderDiscTable(data){{
       ${{mk('Pending',dt.pending,'#f59e0b')}}
       ${{mk('Rejected',dt.rejected||0,'#7c3aed')}}
       ${{mk('Info / Closed',dt.info_closed||0,'#60A5FA')}}
-      ${{mk('Overdue',dt.overdue,'#ef4444')}}
+      ${{mk('Overdue',dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
       <td style="text-align:center"><button type="button" class="disc-expander" data-group="${{groupId}}" aria-expanded="false" onclick="toggleDiscGroup('${{groupId}}', this)">&#9660;</button></td>`;
     tbody.appendChild(tr);
     disc.forEach(ds=>{{
@@ -5049,7 +5108,7 @@ function renderDiscTable(data){{
         ${{mk('Pending',ds.pending,'#f59e0b')}}
         ${{mk('Rejected',ds.rejected||0,'#7c3aed')}}
           ${{mk('Info / Closed',ds.info_closed||0,'#60A5FA')}}
-          ${{mk('Overdue',ds.overdue,'#ef4444')}}
+          ${{mk('Overdue',ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
         <td></td>`;
       tbody.appendChild(child);
     }});
