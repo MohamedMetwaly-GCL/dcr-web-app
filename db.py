@@ -2078,7 +2078,7 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14, projec
     }
 
 
-def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
+def get_pr_analytics_summary(pid=None, limit=6, project_ids=None):
     import json
     if pid:
         cache_key = f"_PR_ANALYTICS_{pid}"
@@ -2089,10 +2089,13 @@ def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
     cached = q("SELECT cache_data FROM dashboard_cache WHERE project_id=%s", (cache_key,), one=True)
     if cached:
         cdata = cached.get("cache_data")
-        # Invalidate cache if it contains legacy 'Unspecified'
-        if isinstance(cdata, dict) and cdata.get("top_trade_name") != "Unspecified":
+        # Invalidate cache if legacy version, or contains 'Unspecified', or unmerged 'Other'
+        if isinstance(cdata, dict) and cdata.get("cache_ver") == 3:
             top_trades = cdata.get("top_trades", [])
-            if not any(t.get("trade") == "Unspecified" for t in top_trades):
+            trade_names_lower = [str(t.get("trade") or "").lower() for t in top_trades]
+            has_other_separate = "other" in trade_names_lower and "others" in trade_names_lower
+            has_unspecified = any(str(t.get("trade") or "").strip().lower() == "unspecified" for t in top_trades)
+            if not has_unspecified and not has_other_separate and cdata.get("top_trade_name") != "Unspecified":
                 return cdata
 
     projects = get_projects(project_ids)
@@ -2139,6 +2142,7 @@ def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
     total_pr_records = len(pr_rows)
     if not total_pr_records:
         return {
+            "cache_ver": 3,
             "total_pr_records": 0,
             "top_projects": [],
             "top_trades": [],
@@ -2166,10 +2170,13 @@ def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
         )
         if not trade or trade.lower() in ("unspecified", "none", "—", "-"):
             trade = "General / Multi-Discipline"
+        elif trade.strip().lower() in ("other", "others"):
+            trade = "Others"
         trade_counts[trade] = trade_counts.get(trade, 0) + 1
 
     top_projects = []
-    for row_pid, pr_count in sorted(project_counts.items(), key=lambda x: (-x[1], x[0]))[:limit]:
+    # Show ALL projects with PRs so sum of projects rows equals total PRs 100%
+    for row_pid, pr_count in sorted(project_counts.items(), key=lambda x: (-x[1], x[0])):
         proj = project_map.get(row_pid, {})
         top_projects.append({
             "project_id": row_pid,
@@ -2187,6 +2194,7 @@ def get_pr_analytics_summary(pid=None, limit=5, project_ids=None):
     top_trade = top_trades[0] if top_trades else {}
 
     res = {
+        "cache_ver": 3,
         "total_pr_records": total_pr_records,
         "top_projects": top_projects,
         "top_trades": top_trades,

@@ -3696,6 +3696,7 @@ body.dark .addcard:hover{{background:linear-gradient(180deg,#17263a,#122033);bor
 body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap,body.dark .ltr-party-card{{border-color:#304257!important}}
 body.dark .pr-block,body.dark .ltr-summary-card,body.dark .ltr-parties-wrap{{background:#101a29!important}}
 body.dark .ltr-party-card{{background:#162132!important}}
+body.dark .pr-total{{border-left-color:#2563eb!important}}
 
 /* ── KPIs — Enterprise Edition ── */
 .kpi-grid{{
@@ -3792,7 +3793,7 @@ canvas{{max-height:174px}}
 .overview-pr-panel .panel-title{{margin-bottom:8px}}
 .overview-wide-panel{{padding:11px 12px;margin-bottom:10px}}
 .overview-wide-panel .panel-title{{margin-bottom:8px}}
-.pr-analytics-grid{{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(240px,1.18fr) minmax(290px,1.5fr);gap:10px;align-items:stretch}}
+.pr-analytics-grid{{display:grid;grid-template-columns:minmax(210px,.95fr) minmax(230px,1.05fr) minmax(280px,1.4fr);gap:10px;align-items:stretch}}
 .pr-analytics-grid > div{{min-width:0}}
 .pr-block,.ltr-summary-card,.ltr-parties-wrap,.ltr-party-card,.charts-grid > *,.charts-grid-3 > *,#pr-panel,#ltr-panel{{min-width:0}}
 .ltr-summary-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}}
@@ -4462,41 +4463,100 @@ function renderPrAnalytics(data){{
     if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
     return;
   }}
-  const topProjects=(data.top_projects||[]).length
-    ? (data.top_projects||[]).map((p,idx)=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:${{idx===0?'7px 0 8px':'6px 0'}};border-bottom:1px solid var(--bd);align-items:center">
-        <div style="min-width:0">
-          <div style="font-size:${{idx===0?'11.5px':'11px'}};font-weight:${{idx===0?'800':'600'}};color:${{idx===0?'var(--pr)':'var(--tx)'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{p.project_name}}</div>
-          ${{idx===0?'<div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active project</div>':''}}
+  const totalPRs=Number(data.total_pr_records||0);
+  const prProjects=Array.isArray(data.top_projects)?data.top_projects:[];
+  const activeProjectsCount=prProjects.length;
+  const topProj=activeProjectsCount?prProjects[0]:null;
+  const topProjName=topProj?(topProj.project_name||topProj.project_code||'Top Project'):'None';
+  const topProjCode=topProj?(topProj.project_code||topProj.project_name||'Top'):'—';
+  const topProjCount=topProj?Number(topProj.pr_count||0):0;
+  const topProjShare=(totalPRs>0&&topProjCount>0)?Math.round((topProjCount/totalPRs)*100):0;
+  const remainingCount=Math.max(0,totalPRs-topProjCount);
+  const remainingShare=Math.max(0,100-topProjShare);
+  const avgPerProject=(activeProjectsCount>0)?Math.round(totalPRs/activeProjectsCount):0;
+
+  // Normalize trades: merge any Other/Others and handle Unspecified
+  const rawTrades=Array.isArray(data.top_trades)?data.top_trades:[];
+  const tradeMap=new Map();
+  rawTrades.forEach(t=>{{
+    let name=(t.trade==='Unspecified'||!t.trade)?'General / Multi-Discipline':String(t.trade).trim();
+    if(name.toLowerCase()==='other'||name.toLowerCase()==='others'){{
+      name='Others';
+    }}
+    tradeMap.set(name,(tradeMap.get(name)||0)+(Number(t.pr_count)||0));
+  }});
+  const trades=Array.from(tradeMap.entries()).map(([trade,pr_count])=>({{trade,pr_count}}));
+  trades.sort((a,b)=>b.pr_count-a.pr_count);
+
+  const topTradeHeadline=(trades.length>0&&trades[0].trade)?trades[0].trade:((data.top_trade_name==='Unspecified'||!data.top_trade_name)?'General / Multi-Discipline':data.top_trade_name);
+  const topTradeCount=(trades.length>0)?trades[0].pr_count:(data.top_trade_count||0);
+
+  const topProjects=prProjects.length
+    ? prProjects.map((p,idx)=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:${{idx===0?'6px 0 7px':'5px 0'}};border-bottom:1px solid var(--bd);align-items:center">
+        <div style="min-width:0;flex:1">
+          <div style="font-size:${{idx===0?'11.5px':'11px'}};font-weight:${{idx===0?'800':'600'}};color:${{idx===0?'var(--pr)':'var(--tx)'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{p.project_name}}">${{p.project_name}}</div>
+          ${{idx===0?'<div style="font-size:9px;color:var(--mu);margin-top:1px;text-transform:uppercase;letter-spacing:.28px">Most active project</div>':''}}
         </div>
-        <span style="font-size:${{idx===0?'12px':'11px'}};font-weight:800;color:var(--pr);white-space:nowrap">${{p.pr_count}}</span>
+        <span style="font-size:${{idx===0?'12px':'11px'}};font-weight:800;color:var(--pr);white-space:nowrap;margin-left:8px">${{p.pr_count}}</span>
       </div>`).join('')
-    : `<div style="font-size:11px;color:var(--mu)">No project data</div>`;
+    : `<div style="font-size:11px;color:var(--mu);padding:12px 0;text-align:center">No project data</div>`;
+
   el.innerHTML=`<div class="pr-analytics-grid">
-    <div class="pr-block pr-total" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;justify-content:center">
-      <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Total PRs</div>
-      <div style="font-size:24px;font-weight:800;color:var(--pr);line-height:1.05;margin-top:4px">${{data.total_pr_records||0}}</div>
-      <div style="font-size:9px;color:var(--mu);margin-top:6px;text-transform:uppercase;letter-spacing:.28px">Current dashboard scope</div>
-      <div style="font-size:10px;color:var(--mu);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Top project: ${{data.top_project_name||'No project data'}}</div>
+    <div class="pr-block pr-total" style="background:var(--bg);border-radius:8px;padding:12px 14px;border:1px solid #e3eaf2;border-left:4px solid #2563eb !important;box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between;min-height:165px">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Total PRs</div>
+            <div style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
+          </div>
+          <span style="font-size:9.5px;font-weight:600;color:#2563eb;background:rgba(37,99,235,.08);padding:3px 7px;border-radius:4px;white-space:nowrap;letter-spacing:.2px;border:1px solid rgba(37,99,235,.15)">Across Portfolio</span>
+        </div>
+        <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Purchase Requisitions Across Portfolio</div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd,#e2e8f0);display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+        <div>
+          <div style="font-size:9px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Active Projects</div>
+          <div style="font-size:13px;font-weight:700;color:var(--tx);margin-top:2px">${{activeProjectsCount}} <span style="font-size:9.5px;font-weight:normal;color:var(--mu)">Projects</span></div>
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.3px" title="${{topProjName}}">Top Share</div>
+          <div style="font-size:13px;font-weight:700;color:#2563eb;margin-top:2px" title="${{topProjName}}: ${{topProjCount}} PRs (${{topProjShare}}%)">${{topProjShare}}% <span style="font-size:9px;font-weight:normal;color:var(--mu)">(${{topProjCode}})</span></div>
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Avg / Proj</div>
+          <div style="font-size:13px;font-weight:700;color:var(--tx);margin-top:2px">${{avgPerProject}} <span style="font-size:9.5px;font-weight:normal;color:var(--mu)">PRs</span></div>
+        </div>
+      </div>
+      <div style="margin-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--mu);margin-bottom:3px">
+          <span>Top: <strong style="color:var(--tx)">${{topProjCode}}</strong> (${{topProjCount}} PRs — ${{topProjShare}}%)</span>
+          <span>Remaining (${{remainingCount}} PRs — ${{remainingShare}}%)</span>
+        </div>
+        <div style="height:5px;width:100%;background:rgba(148,163,184,.2);border-radius:3px;overflow:hidden;display:flex">
+          <div style="width:${{topProjShare}}%;background:#2563eb;" title="${{topProjName}}: ${{topProjCount}} PRs (${{topProjShare}}%)"></div>
+          <div style="width:${{remainingShare}}%;background:#94a3b8;" title="Other Projects: ${{remainingCount}} PRs (${{remainingShare}}%)"></div>
+        </div>
+      </div>
     </div>
-    <div class="pr-block pr-projects" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
+    <div class="pr-block pr-projects" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:165px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Projects</div>
-        <div style="font-size:10px;color:var(--mu);white-space:nowrap">${{(data.top_projects||[]).length}} shown</div>
+        <div style="font-size:10px;color:var(--mu);white-space:nowrap">${{prProjects.length}} projects</div>
       </div>
-      <div style="flex:1;overflow:auto;padding-right:2px">
+      <div style="flex:1;overflow-y:auto;max-height:160px;padding-right:2px">
         ${{topProjects}}
       </div>
     </div>
-    <div class="pr-block pr-trades" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:156px">
+    <div class="pr-block pr-trades" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:165px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div>
           <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Disciplines / Trades</div>
-          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{(data.top_trade_name === 'Unspecified' || !data.top_trade_name) ? 'General / Multi-Discipline' : data.top_trade_name}}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{topTradeHeadline}}</div>
           <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active discipline / trade</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{data.top_trade_count||0}}</div>
-          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{data.trade_count_total||0}} disciplines / trades</div>
+          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{topTradeCount}}</div>
+          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{data.trade_count_total||trades.length||0}} disciplines / trades</div>
         </div>
       </div>
       <div style="flex:1;min-height:150px;max-height:160px"><canvas id="pr-trades-chart"></canvas></div>
@@ -4505,12 +4565,11 @@ function renderPrAnalytics(data){{
   const tradeCanvas=document.getElementById('pr-trades-chart');
   if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
   if(!tradeCanvas)return;
-  const trades=data.top_trades||[];
   const dark=document.body.classList.contains('dark');
   prTradeChart=new Chart(tradeCanvas,{{
     type:'bar',
     data:{{
-      labels:trades.map(t=>((t.trade === 'Unspecified' || !t.trade) ? 'General / Multi-Discipline' : t.trade)),
+      labels:trades.map(t=>t.trade),
       datasets:[{{
         label:'PR Count',
         data:trades.map(t=>t.pr_count),
@@ -4522,7 +4581,21 @@ function renderPrAnalytics(data){{
       responsive:true,
       maintainAspectRatio:false,
       indexAxis:'y',
-      plugins:{{legend:{{display:false}}}},
+      plugins:{{
+        legend:{{display:false}},
+        tooltip:{{
+          backgroundColor:'#0f172a',
+          titleColor:'#ffffff',
+          bodyColor:'#e2e8f0',
+          borderColor:'#334155',
+          borderWidth:1,
+          padding:10,
+          displayColors:false,
+          callbacks:{{
+            label:ctx=>` ${{ctx.parsed.x != null ? ctx.parsed.x : ctx.raw}} Purchase Requisitions`
+          }}
+        }}
+      }},
       scales:{{
         x:{{beginAtZero:true,grid:{{color:dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.06)'}},ticks:{{precision:0,font:{{size:10}},color:dark?'#cbd5e1':'#54657d'}}}},
         y:{{grid:{{display:false}},ticks:{{font:{{size:10}},color:dark?'#dbe7f3':'#334155'}}}}

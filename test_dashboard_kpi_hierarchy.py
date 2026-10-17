@@ -184,22 +184,33 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
         self.assertIn("Pending (On Time)", html, "Donut chart must contain Pending (On Time) slice")
 
     def test_pr_analytics_unspecified_elimination(self):
-        """Verify that get_pr_analytics_summary falls back through trade -> subTrade -> discipline -> General / Multi-Discipline
-        and strictly eliminates 'Unspecified'."""
-        mock_projects = [{"id": "P01", "name": "CFC Project", "code": "PEM-058"}]
+        """Verify that get_pr_analytics_summary falls back through trade -> subTrade -> discipline -> General / Multi-Discipline,
+        strictly eliminates 'Unspecified', merges 'Other' and 'others' into 'Others', and includes all projects."""
+        mock_projects = [
+            {"id": "P01", "name": "CFC Project", "code": "PEM-058"},
+            {"id": "P02", "name": "Project 2", "code": "P02"},
+            {"id": "P03", "name": "Project 3", "code": "P03"},
+            {"id": "P04", "name": "Project 4", "code": "P04"},
+            {"id": "P05", "name": "Project 5", "code": "P05"},
+            {"id": "P06", "name": "Project 6", "code": "P06"},
+        ]
         mock_pr_rows = [
             # 1. Has trade
             {"id": "r1", "project_id": "P01", "data": {"trade": "HVAC", "docNo": "PR-01"}},
             # 2. Has subTrade
-            {"id": "r2", "project_id": "P01", "data": {"subTrade": "Plumbing", "docNo": "PR-02"}},
+            {"id": "r2", "project_id": "P02", "data": {"subTrade": "Plumbing", "docNo": "PR-02"}},
             # 3. Has discipline
-            {"id": "r3", "project_id": "P01", "data": {"discipline": "Electrical", "docNo": "PR-03"}},
+            {"id": "r3", "project_id": "P03", "data": {"discipline": "Electrical", "docNo": "PR-03"}},
             # 4. Has discipline with whitespace
-            {"id": "r4", "project_id": "P01", "data": {"discipline": "  Civil  ", "docNo": "PR-04"}},
+            {"id": "r4", "project_id": "P04", "data": {"discipline": "  Civil  ", "docNo": "PR-04"}},
             # 5. Has no trade/discipline info at all
-            {"id": "r5", "project_id": "P01", "data": {"docNo": "PR-05"}},
+            {"id": "r5", "project_id": "P05", "data": {"docNo": "PR-05"}},
             # 6. Has literal 'Unspecified'
-            {"id": "r6", "project_id": "P01", "data": {"discipline": "Unspecified", "docNo": "PR-06"}},
+            {"id": "r6", "project_id": "P06", "data": {"discipline": "Unspecified", "docNo": "PR-06"}},
+            # 7. Has 'Other'
+            {"id": "r7", "project_id": "P01", "data": {"trade": "Other", "docNo": "PR-07"}},
+            # 8. Has 'others' (case-insensitive)
+            {"id": "r8", "project_id": "P01", "data": {"discipline": "others", "docNo": "PR-08"}},
         ]
 
         with patch("db.get_projects", return_value=mock_projects), \
@@ -216,26 +227,66 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
 
             mock_q.side_effect = q_side_effect
 
-            summary = db.get_pr_analytics_summary(pid="P01")
-            self.assertEqual(summary["total_pr_records"], 6)
+            summary = db.get_pr_analytics_summary()
+            self.assertEqual(summary["total_pr_records"], 8)
+
+            # 1. Verify ALL 6 active projects are listed in top_projects (no 5 project cutoff)
+            self.assertEqual(len(summary["top_projects"]), 6, "All 6 active projects with PRs must be present in top_projects")
+            sum_project_prs = sum(p["pr_count"] for p in summary["top_projects"])
+            self.assertEqual(sum_project_prs, 8, "Sum of project PRs must equal total_pr_records 100%")
 
             top_trades = summary["top_trades"]
             trade_names = [t["trade"] for t in top_trades]
 
-            # Verify 'Unspecified' is 100% eliminated
+            # 2. Verify 'Unspecified' is 100% eliminated
             self.assertNotIn("Unspecified", trade_names)
             self.assertNotEqual(summary["top_trade_name"], "Unspecified")
 
-            # Verify expected trade/discipline categories
+            # 3. Verify 'Other' and 'others' are merged into single 'Others'
+            self.assertNotIn("Other", trade_names)
+            self.assertIn("Others", trade_names)
+            others_count = [t["pr_count"] for t in top_trades if t["trade"] == "Others"][0]
+            self.assertEqual(others_count, 2, "Other + others must merge into Others with count 2")
+
+            # 4. Verify expected trade categories and General / Multi-Discipline count
             self.assertIn("HVAC", trade_names)
             self.assertIn("Plumbing", trade_names)
             self.assertIn("Electrical", trade_names)
             self.assertIn("Civil", trade_names)
             self.assertIn("General / Multi-Discipline", trade_names)
 
-            # Rows 5 and 6 should be mapped to General / Multi-Discipline (count = 2)
             gen_count = [t["pr_count"] for t in top_trades if t["trade"] == "General / Multi-Discipline"][0]
             self.assertEqual(gen_count, 2)
+
+    def test_pr_analytics_html_refinements(self):
+        """Verify PR Analytics HTML structure:
+        1. Left card has border-left: 4px solid #2563eb
+        2. Mini breakdown grid (Active Projects, Top Share, Avg / Proj)
+        3. Mini stacked progress bar
+        4. Project badge uses 'projects' instead of '5 shown'
+        5. Chart.js dark high-contrast tooltip configuration
+        """
+        html = html_render.render_dashboard(
+            {"id": 1, "username": "admin", "role": "admin"}
+        )
+
+        # 1. Left card accent border and layout
+        self.assertIn("border-left:4px solid #2563eb", html, "Left PR total card must have blue accent border")
+        self.assertIn("Across Portfolio", html, "Left PR total card must have Across Portfolio badge/subtitle")
+        self.assertIn("Active Projects", html, "Left PR total card must show Active Projects mini KPI")
+        self.assertIn("Top Share", html, "Left PR total card must show Top Share mini KPI")
+        self.assertIn("Avg / Proj", html, "Left PR total card must show Avg / Proj mini KPI")
+
+        # 2. Middle card projects count badge
+        self.assertIn("${prProjects.length} projects", html, "Middle card badge must show total projects count")
+        self.assertNotIn("5 shown", html, "Legacy '5 shown' text must be removed")
+
+        # 3. High-contrast chart tooltip
+        self.assertIn("backgroundColor:'#0f172a'", html, "PR chart tooltip must have dark background")
+        self.assertIn("titleColor:'#ffffff'", html, "PR chart tooltip title must be white")
+        self.assertIn("bodyColor:'#e2e8f0'", html, "PR chart tooltip body must be #e2e8f0")
+        self.assertIn("borderColor:'#334155'", html, "PR chart tooltip border must be #334155")
+
 
     def test_dashboard_tab_switching_and_panes(self):
         """Verify that all tabs exist in the DOM and showTab properly activates selected panes."""
