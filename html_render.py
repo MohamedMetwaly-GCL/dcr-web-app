@@ -4903,13 +4903,13 @@ function renderLettersOverview(d){{
                   </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px">
-                  <div class="ltr-box-sent" title="Sent (Outgoing)" style="background:#eef4fb;border-radius:5px;padding:3px 6px;border:1px solid #dbe8f7;display:flex;justify-content:space-between;align-items:center">
-                    <span class="lbl" style="font-size:8.5px;font-weight:700;color:#2563a8">To:</span>
-                    <span class="val" style="font-size:10px;font-weight:800;color:#2563a8">${{row.sent}}</span>
+                  <div class="ltr-box-sent" title="Sent (Outgoing): ${{row.sent}}" style="background:#eef4fb;border-radius:5px;padding:4px 3px;border:1px solid #dbe8f7;text-align:center">
+                    <div class="val" style="font-size:9.5px;font-weight:800;color:#2563a8;line-height:1.15">Sent: ${{row.sent}}</div>
+                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#2563a8;margin-top:1px;letter-spacing:.15px">Outgoing</div>
                   </div>
-                  <div class="ltr-box-rcv" title="Received (Incoming)" style="background:#edf9f0;border-radius:5px;padding:3px 6px;border:1px solid #d7efdc;display:flex;justify-content:space-between;align-items:center">
-                    <span class="lbl" style="font-size:8.5px;font-weight:700;color:#16a34a">From:</span>
-                    <span class="val" style="font-size:10px;font-weight:800;color:#16a34a">${{row.received}}</span>
+                  <div class="ltr-box-rcv" title="Received (Incoming): ${{row.received}}" style="background:#edf9f0;border-radius:5px;padding:4px 3px;border:1px solid #d7efdc;text-align:center">
+                    <div class="val" style="font-size:9.5px;font-weight:800;color:#16a34a;line-height:1.15">Received: ${{row.received}}</div>
+                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#16a34a;margin-top:1px;letter-spacing:.15px">Incoming</div>
                   </div>
                 </div>
               </div>`;

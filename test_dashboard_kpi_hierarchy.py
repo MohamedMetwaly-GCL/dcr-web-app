@@ -347,10 +347,10 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
         self.assertIn("gcl", html, "Internal party filter must check for GCL")
 
         # 2. Clear direction labeling
-        self.assertIn("To:", html, "Party card must label outgoing correspondence as To:")
-        self.assertIn("From:", html, "Party card must label incoming correspondence as From:")
         self.assertIn("Sent (Outgoing)", html, "Party card must clarify Sent (Outgoing)")
         self.assertIn("Received (Incoming)", html, "Party card must clarify Received (Incoming)")
+        self.assertIn("Outgoing", html, "Party card must show Outgoing badge")
+        self.assertIn("Incoming", html, "Party card must show Incoming badge")
 
         # 3. Summary mini progress bars
         self.assertIn("sentPct", html, "Summary cards must compute sentPct")
