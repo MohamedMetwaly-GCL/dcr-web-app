@@ -293,6 +293,15 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
         self.assertIn("bodyColor:'#e2e8f0'", html, "PR chart tooltip body must be #e2e8f0")
         self.assertIn("borderColor:'#334155'", html, "PR chart tooltip border must be #334155")
 
+        # 5. Visual ring gauge in Left card (Portfolio Concentration)
+        self.assertIn("Portfolio Concentration", html, "Left PR total card must contain Portfolio Concentration gauge")
+        self.assertIn('viewBox="0 0 36 36"', html, "Portfolio Concentration must use SVG circle gauge")
+
+        # 6. Trade headline PRs unit and Chart.js bar value labels
+        self.assertIn('PRs</span>', html, "Trade header must clarify count with PRs unit")
+        self.assertIn('id:\'prValueLabels\'', html, "PR trade chart must include prValueLabels plugin for bar-end values")
+        self.assertIn('displayTitle', html, "Active projects list must format code and name")
+
 
     def test_dashboard_tab_switching_and_panes(self):
         """Verify that all tabs exist in the DOM and showTab properly activates selected panes."""

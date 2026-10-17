@@ -4490,13 +4490,21 @@ function renderPrAnalytics(data){{
   const topTradeCount=(trades.length>0)?trades[0].pr_count:(data.top_trade_count||0);
 
   const topProjects=prProjects.length
-    ? prProjects.map((p,idx)=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:${{idx===0?'6px 0 7px':'5px 0'}};border-bottom:1px solid var(--bd);align-items:center">
+    ? prProjects.map((p,idx)=>{{
+        const pCode=(p.project_code||'').trim();
+        const pName=(p.project_name||'').trim();
+        let displayTitle=pName||pCode||'Project';
+        if(pCode && pName && !pName.toLowerCase().startsWith(pCode.toLowerCase())){{
+          displayTitle=`${{pCode}} — ${{pName}}`;
+        }}
+        return `<div style="display:flex;justify-content:space-between;gap:10px;padding:${{idx===0?'6px 0 7px':'5px 0'}};border-bottom:1px solid var(--bd);align-items:center">
         <div style="min-width:0;flex:1">
-          <div style="font-size:${{idx===0?'11.5px':'11px'}};font-weight:${{idx===0?'800':'600'}};color:${{idx===0?'var(--pr)':'var(--tx)'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{p.project_name}}">${{p.project_name}}</div>
+          <div style="font-size:${{idx===0?'11.5px':'11px'}};font-weight:${{idx===0?'800':'600'}};color:${{idx===0?'var(--pr)':'var(--tx)'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{displayTitle}}">${{displayTitle}}</div>
           ${{idx===0?'<div style="font-size:9px;color:var(--mu);margin-top:1px;text-transform:uppercase;letter-spacing:.28px">Most active project</div>':''}}
         </div>
         <span style="font-size:${{idx===0?'12px':'11px'}};font-weight:800;color:var(--pr);white-space:nowrap;margin-left:8px">${{p.pr_count}}</span>
-      </div>`).join('')
+      </div>`;
+    }}).join('')
     : `<div style="font-size:11px;color:var(--mu);padding:12px 0;text-align:center">No project data</div>`;
 
   el.innerHTML=`<div class="pr-analytics-grid">
@@ -4506,7 +4514,20 @@ function renderPrAnalytics(data){{
         <div style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
         <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Total Purchase Requisitions</div>
       </div>
-      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--bd,#e2e8f0)">
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 10px;margin:8px 0;background:rgba(37,99,235,.04);border:1px solid rgba(37,99,235,.12);border-radius:6px">
+        <div style="position:relative;width:42px;height:42px;flex-shrink:0">
+          <svg viewBox="0 0 36 36" style="width:100%;height:100%;transform:rotate(-90deg);display:block">
+            <path stroke="rgba(148,163,184,.25)" stroke-width="3.5" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            <path stroke="#2563eb" stroke-dasharray="${{topProjShare}}, 100" stroke-width="3.5" stroke-linecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#2563eb">${{topProjShare}}%</div>
+        </div>
+        <div style="min-width:0">
+          <div style="font-size:10.5px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Portfolio Concentration</div>
+          <div style="font-size:9.5px;color:var(--mu);margin-top:1px;line-height:1.25">Top project accounts for ${{topProjShare}}% of requisitions</div>
+        </div>
+      </div>
+      <div style="margin-top:auto;padding-top:8px;border-top:1px solid var(--bd,#e2e8f0)">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
           <div>
             <div style="font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Top Project Share</div>
@@ -4540,7 +4561,7 @@ function renderPrAnalytics(data){{
           <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active discipline / trade</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{topTradeCount}}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{topTradeCount}} <span style="font-size:10.5px;font-weight:600;color:var(--mu)">PRs</span></div>
           <div style="font-size:10px;color:var(--mu);margin-top:3px">${{data.trade_count_total||trades.length||0}} disciplines / trades</div>
         </div>
       </div>
@@ -4551,6 +4572,8 @@ function renderPrAnalytics(data){{
   if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
   if(!tradeCanvas)return;
   const dark=document.body.classList.contains('dark');
+  const prTradeMax=(trades.length>0)?Number(trades[0].pr_count||0):10;
+  const prScaleMax=Math.ceil(prTradeMax*1.12);
   prTradeChart=new Chart(tradeCanvas,{{
     type:'bar',
     data:{{
@@ -4582,10 +4605,45 @@ function renderPrAnalytics(data){{
         }}
       }},
       scales:{{
-        x:{{beginAtZero:true,grid:{{color:dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.06)'}},ticks:{{precision:0,font:{{size:10}},color:dark?'#cbd5e1':'#54657d'}}}},
+        x:{{
+          beginAtZero:true,
+          suggestedMax:prScaleMax,
+          grid:{{color:dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.06)'}},
+          ticks:{{precision:0,font:{{size:10}},color:dark?'#cbd5e1':'#54657d'}}
+        }},
         y:{{grid:{{display:false}},ticks:{{font:{{size:10}},color:dark?'#dbe7f3':'#334155'}}}}
       }}
-    }}
+    }},
+    plugins:[{{
+      id:'prValueLabels',
+      afterDatasetsDraw(chart){{
+        const ctx=chart.ctx;
+        chart.data.datasets.forEach((dataset,i)=>{{
+          const meta=chart.getDatasetMeta(i);
+          if(!meta||!meta.data)return;
+          meta.data.forEach((bar,idx)=>{{
+            const val=dataset.data[idx];
+            if(val!=null){{
+              ctx.save();
+              ctx.font='700 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+              ctx.fillStyle=dark?'#93c5fd':'#1e40af';
+              ctx.textAlign='left';
+              ctx.textBaseline='middle';
+              const chartRight=(chart.chartArea?chart.chartArea.right:300);
+              const textWidth=ctx.measureText(String(val)).width;
+              if(bar.x + 6 + textWidth > chartRight){{
+                ctx.textAlign='right';
+                ctx.fillStyle='#ffffff';
+                ctx.fillText(String(val), bar.x - 5, bar.y);
+              }}else{{
+                ctx.fillText(String(val), bar.x + 5, bar.y);
+              }}
+              ctx.restore();
+            }}
+          }});
+        }});
+      }}
+    }}]
   }});
 }}
 
