@@ -1397,16 +1397,20 @@ AI_DRAWER_COMPONENT = r"""
 /* AI Floating Action Button (FAB) - Compact & Draggable */
 .ai-fab-btn {
   position: fixed !important;
-  bottom: 28px !important;
-  right: 18px !important;
+  bottom: 28px;
+  right: 18px;
   z-index: 10040 !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   gap: 4px !important;
   height: 32px !important;
-  min-width: 50px !important;
-  padding: 0 10px !important;
+  min-width: 52px !important;
+  width: max-content !important;
+  max-width: max-content !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+  padding: 0 12px !important;
   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%) !important;
   color: #ffffff !important;
   border: 1px solid rgba(255, 255, 255, 0.35) !important;
@@ -1452,7 +1456,7 @@ body.ai-drawer-open #ai-fab-btn {
   transform: scale(0.85) !important;
 }
 
-/* AI Assistant Topbar Circular / Pill Button */
+/* AI Assistant Topbar Button — Unified & Harmonious */
 .tb-btn.ai-btn, .tb-btn.ai-topbar-btn {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.28), rgba(168, 85, 247, 0.28)) !important;
   border: 1px solid rgba(168, 85, 247, 0.55) !important;
@@ -1460,12 +1464,15 @@ body.ai-drawer-open #ai-fab-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 4px !important;
-  border-radius: 9999px !important;
-  padding: 3px 9px !important;
+  gap: 5px !important;
+  padding: 5px 12px !important;
+  border-radius: 20px !important;
+  min-height: 28px !important;
   font-weight: 700 !important;
-  font-size: 11px !important;
-  letter-spacing: 0.3px !important;
+  font-size: 11.5px !important;
+  letter-spacing: 0.25px !important;
+  line-height: 1 !important;
+  box-sizing: border-box !important;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
   cursor: pointer !important;
   z-index: 101 !important;
@@ -1475,15 +1482,15 @@ body.ai-drawer-open #ai-fab-btn {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.45), rgba(168, 85, 247, 0.45)) !important;
   border-color: #c084fc !important;
   box-shadow: 0 0 16px rgba(168, 85, 247, 0.5) !important;
-  transform: translateY(-1px) scale(1.04) !important;
+  transform: translateY(-1px) !important;
 }
 .ai-topbar-sparkle {
-  font-size: 12px !important;
+  font-size: 13px !important;
   display: inline-block !important;
 }
 .ai-topbar-text {
-  font-size: 11px !important;
-  font-weight: 800 !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
 }
 
 /* AI Drawer Backdrop */
@@ -2474,22 +2481,28 @@ function _initAiFabDraggable() {
   let initialLeft = 0, initialTop = 0;
   let hasMoved = false;
 
+  function setFabPos(left, top) {
+    btn.style.setProperty('left', left + 'px', 'important');
+    btn.style.setProperty('top', top + 'px', 'important');
+    btn.style.setProperty('right', 'auto', 'important');
+    btn.style.setProperty('bottom', 'auto', 'important');
+    btn.style.setProperty('width', 'max-content', 'important');
+    btn.style.setProperty('max-width', 'max-content', 'important');
+  }
+
   // Restore saved position
   try {
     const saved = localStorage.getItem('dcr_ai_fab_pos');
     if (saved) {
       const pos = JSON.parse(saved);
       if (typeof pos.left === 'number' && typeof pos.top === 'number') {
-        const btnW = btn.offsetWidth || 50;
-        const btnH = btn.offsetHeight || 32;
+        const btnW = 56;
+        const btnH = 32;
         const maxLeft = Math.max(10, window.innerWidth - btnW - 10);
         const maxTop = Math.max(10, window.innerHeight - btnH - 10);
         const left = Math.min(Math.max(10, pos.left), maxLeft);
         const top = Math.min(Math.max(10, pos.top), maxTop);
-        btn.style.left = left + 'px';
-        btn.style.top = top + 'px';
-        btn.style.right = 'auto';
-        btn.style.bottom = 'auto';
+        setFabPos(left, top);
       }
     }
   } catch (err) {}
@@ -2498,8 +2511,8 @@ function _initAiFabDraggable() {
     if (e.button !== undefined && e.button !== 0) return;
     isDragging = true;
     hasMoved = false;
-    startX = e.clientX || 0;
-    startY = e.clientY || 0;
+    startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+    startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
 
     const rect = btn.getBoundingClientRect();
     initialLeft = rect.left;
@@ -2515,28 +2528,25 @@ function _initAiFabDraggable() {
 
   function onPointerMove(e) {
     if (!isDragging) return;
-    const clientX = e.clientX || 0;
-    const clientY = e.clientY || 0;
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
     const dx = clientX - startX;
     const dy = clientY - startY;
 
-    if (!hasMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+    if (!hasMoved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
       hasMoved = true;
     }
 
     if (hasMoved) {
       if (e.cancelable) e.preventDefault();
-      const btnW = btn.offsetWidth || 50;
+      const btnW = btn.offsetWidth || 56;
       const btnH = btn.offsetHeight || 32;
       const maxLeft = Math.max(10, window.innerWidth - btnW - 10);
       const maxTop = Math.max(10, window.innerHeight - btnH - 10);
       const newLeft = Math.min(Math.max(10, initialLeft + dx), maxLeft);
       const newTop = Math.min(Math.max(10, initialTop + dy), maxTop);
 
-      btn.style.left = newLeft + 'px';
-      btn.style.top = newTop + 'px';
-      btn.style.right = 'auto';
-      btn.style.bottom = 'auto';
+      setFabPos(newLeft, newTop);
     }
   }
 
@@ -2570,17 +2580,26 @@ function _initAiFabDraggable() {
     }
   }, true);
 
+  // Double click resets position to default bottom-right
+  btn.addEventListener('dblclick', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    try { localStorage.removeItem('dcr_ai_fab_pos'); } catch (err) {}
+    btn.style.removeProperty('left');
+    btn.style.removeProperty('top');
+    btn.style.setProperty('right', '18px', 'important');
+    btn.style.setProperty('bottom', '28px', 'important');
+    btn.style.setProperty('width', 'max-content', 'important');
+  });
+
   window.addEventListener('resize', function() {
     const rect = btn.getBoundingClientRect();
-    const btnW = btn.offsetWidth || 50;
+    const btnW = btn.offsetWidth || 56;
     const btnH = btn.offsetHeight || 32;
     const maxLeft = Math.max(10, window.innerWidth - btnW - 10);
     const maxTop = Math.max(10, window.innerHeight - btnH - 10);
     if (rect.left > maxLeft || rect.top > maxTop) {
-      btn.style.left = Math.min(rect.left, maxLeft) + 'px';
-      btn.style.top = Math.min(rect.top, maxTop) + 'px';
-      btn.style.right = 'auto';
-      btn.style.bottom = 'auto';
+      setFabPos(Math.min(rect.left, maxLeft), Math.min(rect.top, maxTop));
     }
   });
 }
@@ -4247,9 +4266,9 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   {GLOBAL_SEARCH_TRIGGER_HTML}
   <div class="sp"></div>
   <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  {btns}
   <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
