@@ -3881,7 +3881,7 @@ body.dark .pcard-btn.pcard-del:hover{{background:rgba(239,68,68,.18);color:#fca5
 }}
 .dt-tbl tr:nth-child(even) td:first-child{{background:#f8fafc}}
 .dt-tbl tr:hover td:first-child{{background:#eef5ff}}
-.dt-proj-header td{{background:#f1f5f9;color:var(--brand-navy);font-weight:700;font-size:11px;padding:6px 12px;border-top:1.5px solid #cbd5e1;border-bottom:1px solid #cbd5e1;letter-spacing:.3px}}
+.dt-proj-header td{{background:#f1f5f9!important;color:var(--brand-navy)!important;font-family:inherit!important;font-weight:700!important;font-size:12px!important;padding:7px 12px!important;border-top:1.5px solid #cbd5e1!important;border-bottom:1px solid #cbd5e1!important;letter-spacing:.3px}}
 body.dark .dt-proj-header td{{background:#17263c!important;color:#93c5fd!important;border-top-color:#2a3d54!important;border-bottom-color:#2a3d54!important}}
 #overview-pane-discipline .dt-tbl{{table-layout:fixed}}
 #overview-pane-discipline .dt-tbl th:first-child,
