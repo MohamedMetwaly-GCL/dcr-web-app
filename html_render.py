@@ -1324,10 +1324,10 @@ if (document.readyState === 'loading') {
 
 AI_DRAWER_COMPONENT = r"""
 <!-- DCR AI ASSISTANT COMPONENT -->
-<!-- Floating Action Button (FAB) -->
-<button id="ai-fab-btn" class="ai-btn ai-fab-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="Open AI Assistant">
+<!-- Floating Action Button (FAB) - Compact & Draggable -->
+<button id="ai-fab-btn" class="ai-btn ai-fab-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash) — Drag to reposition" aria-label="Open AI Assistant">
   <span class="ai-fab-sparkle">✨</span>
-  <span class="ai-fab-text">AI Assistant</span>
+  <span class="ai-fab-text">AI</span>
 </button>
 
 <div id="ai-drawer-backdrop" class="ai-drawer-backdrop hidden" onclick="closeAiDrawer()" style="display: none;"></div>
@@ -1394,47 +1394,57 @@ AI_DRAWER_COMPONENT = r"""
 </aside>
 
 <style>
-/* AI Floating Action Button (FAB) */
+/* AI Floating Action Button (FAB) - Compact & Draggable */
 .ai-fab-btn {
   position: fixed !important;
-  bottom: 36px !important;
-  right: 20px !important;
+  bottom: 28px !important;
+  right: 18px !important;
   z-index: 10040 !important;
   display: inline-flex !important;
   align-items: center !important;
-  gap: 8px !important;
-  padding: 10px 18px !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  height: 32px !important;
+  min-width: 50px !important;
+  padding: 0 10px !important;
   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%) !important;
   color: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
   border-radius: 9999px !important;
-  font-size: 13.5px !important;
-  font-weight: 700 !important;
-  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.45), 0 2px 8px rgba(0, 0, 0, 0.18) !important;
-  cursor: pointer !important;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.3px !important;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.42), 0 2px 6px rgba(0, 0, 0, 0.2) !important;
+  cursor: grab !important;
+  touch-action: none !important;
   user-select: none !important;
+  transition: box-shadow 0.2s, filter 0.2s !important;
   outline: none !important;
 }
 .ai-fab-btn:hover {
-  transform: translateY(-2px) scale(1.03) !important;
-  box-shadow: 0 10px 32px rgba(139, 92, 246, 0.6), 0 4px 12px rgba(0, 0, 0, 0.25) !important;
-  filter: brightness(1.06) !important;
+  filter: brightness(1.08) !important;
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.55), 0 2px 8px rgba(0, 0, 0, 0.25) !important;
 }
 .ai-fab-btn:active {
-  transform: translateY(0) scale(0.98) !important;
+  cursor: grabbing !important;
 }
 .ai-fab-sparkle {
-  font-size: 16px !important;
+  font-size: 13px !important;
   display: inline-block !important;
   animation: ai-fab-pulse 2.8s ease-in-out infinite !important;
+  pointer-events: none !important;
+}
+.ai-fab-text {
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  pointer-events: none !important;
 }
 @keyframes ai-fab-pulse {
   0%, 100% { transform: rotate(0deg) scale(1); }
-  50% { transform: rotate(12deg) scale(1.2); }
+  50% { transform: rotate(12deg) scale(1.18); }
 }
 body.dark .ai-fab-btn {
-  box-shadow: 0 6px 24px rgba(139, 92, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
 }
 body.ai-drawer-open #ai-fab-btn {
   opacity: 0 !important;
@@ -1442,24 +1452,38 @@ body.ai-drawer-open #ai-fab-btn {
   transform: scale(0.85) !important;
 }
 
-/* AI Assistant Topbar Button (Kept for compatibility) */
-.tb-btn.ai-btn {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(168, 85, 247, 0.22)) !important;
-  border: 1px solid rgba(168, 85, 247, 0.45) !important;
+/* AI Assistant Topbar Circular / Pill Button */
+.tb-btn.ai-btn, .tb-btn.ai-topbar-btn {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.28), rgba(168, 85, 247, 0.28)) !important;
+  border: 1px solid rgba(168, 85, 247, 0.55) !important;
   color: #f1f5f9 !important;
   display: inline-flex !important;
   align-items: center !important;
-  gap: 5px !important;
-  font-weight: 600 !important;
-  transition: all 0.2s ease !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  border-radius: 9999px !important;
+  padding: 3px 9px !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.3px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
   cursor: pointer !important;
   z-index: 101 !important;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.25) !important;
 }
-.tb-btn.ai-btn:hover {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.38), rgba(168, 85, 247, 0.38)) !important;
+.tb-btn.ai-btn:hover, .tb-btn.ai-topbar-btn:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.45), rgba(168, 85, 247, 0.45)) !important;
   border-color: #c084fc !important;
-  box-shadow: 0 0 12px rgba(168, 85, 247, 0.45) !important;
-  transform: translateY(-0.5px) !important;
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.5) !important;
+  transform: translateY(-1px) scale(1.04) !important;
+}
+.ai-topbar-sparkle {
+  font-size: 12px !important;
+  display: inline-block !important;
+}
+.ai-topbar-text {
+  font-size: 11px !important;
+  font-weight: 800 !important;
 }
 
 /* AI Drawer Backdrop */
@@ -2440,6 +2464,127 @@ window.addEventListener('keydown', function(e) {
   }
 });
 
+function _initAiFabDraggable() {
+  const btn = document.getElementById('ai-fab-btn');
+  if (!btn || btn._draggableBound) return;
+  btn._draggableBound = true;
+
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  let initialLeft = 0, initialTop = 0;
+  let hasMoved = false;
+
+  // Restore saved position
+  try {
+    const saved = localStorage.getItem('dcr_ai_fab_pos');
+    if (saved) {
+      const pos = JSON.parse(saved);
+      if (typeof pos.left === 'number' && typeof pos.top === 'number') {
+        const btnW = btn.offsetWidth || 50;
+        const btnH = btn.offsetHeight || 32;
+        const maxLeft = Math.max(10, window.innerWidth - btnW - 10);
+        const maxTop = Math.max(10, window.innerHeight - btnH - 10);
+        const left = Math.min(Math.max(10, pos.left), maxLeft);
+        const top = Math.min(Math.max(10, pos.top), maxTop);
+        btn.style.left = left + 'px';
+        btn.style.top = top + 'px';
+        btn.style.right = 'auto';
+        btn.style.bottom = 'auto';
+      }
+    }
+  } catch (err) {}
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    isDragging = true;
+    hasMoved = false;
+    startX = e.clientX || 0;
+    startY = e.clientY || 0;
+
+    const rect = btn.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+
+    btn.style.transition = 'none';
+    btn.style.cursor = 'grabbing';
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp, { passive: false });
+    window.addEventListener('pointercancel', onPointerUp, { passive: false });
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const clientX = e.clientX || 0;
+    const clientY = e.clientY || 0;
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+
+    if (!hasMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      hasMoved = true;
+    }
+
+    if (hasMoved) {
+      if (e.cancelable) e.preventDefault();
+      const btnW = btn.offsetWidth || 50;
+      const btnH = btn.offsetHeight || 32;
+      const maxLeft = Math.max(10, window.innerWidth - btnW - 10);
+      const maxTop = Math.max(10, window.innerHeight - btnH - 10);
+      const newLeft = Math.min(Math.max(10, initialLeft + dx), maxLeft);
+      const newTop = Math.min(Math.max(10, initialTop + dy), maxTop);
+
+      btn.style.left = newLeft + 'px';
+      btn.style.top = newTop + 'px';
+      btn.style.right = 'auto';
+      btn.style.bottom = 'auto';
+    }
+  }
+
+  function onPointerUp(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+    window.removeEventListener('pointercancel', onPointerUp);
+
+    btn.style.transition = '';
+    btn.style.cursor = 'grab';
+
+    if (hasMoved) {
+      try {
+        const rect = btn.getBoundingClientRect();
+        localStorage.setItem('dcr_ai_fab_pos', JSON.stringify({ left: rect.left, top: rect.top }));
+      } catch (err) {}
+      btn._suppressClick = true;
+      setTimeout(() => { btn._suppressClick = false; }, 120);
+    }
+  }
+
+  btn.addEventListener('pointerdown', onPointerDown);
+
+  btn.addEventListener('click', function(e) {
+    if (btn._suppressClick) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  }, true);
+
+  window.addEventListener('resize', function() {
+    const rect = btn.getBoundingClientRect();
+    const btnW = btn.offsetWidth || 50;
+    const btnH = btn.offsetHeight || 32;
+    const maxLeft = Math.max(10, window.innerWidth - btnW - 10);
+    const maxTop = Math.max(10, window.innerHeight - btnH - 10);
+    if (rect.left > maxLeft || rect.top > maxTop) {
+      btn.style.left = Math.min(rect.left, maxLeft) + 'px';
+      btn.style.top = Math.min(rect.top, maxTop) + 'px';
+      btn.style.right = 'auto';
+      btn.style.bottom = 'auto';
+    }
+  });
+}
+
 // Expose globally on window
 window.openAiDrawer = openAiDrawer;
 window.closeAiDrawer = closeAiDrawer;
@@ -2447,11 +2592,16 @@ window.toggleAiDrawer = toggleAiDrawer;
 window.sendAiQuickPrompt = sendAiQuickPrompt;
 window.clearAiChat = clearAiChat;
 window.sendAiPrompt = sendAiPrompt;
+window.initAiFabDraggable = _initAiFabDraggable;
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', _initAiTextareaAutoGrow);
+  document.addEventListener('DOMContentLoaded', () => {
+    _initAiTextareaAutoGrow();
+    _initAiFabDraggable();
+  });
 } else {
   _initAiTextareaAutoGrow();
+  _initAiFabDraggable();
 }
 </script>
 """
@@ -4096,6 +4246,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   <span style="font-weight:700;font-size:14px">Document Control Register</span>
   {GLOBAL_SEARCH_TRIGGER_HTML}
   <div class="sp"></div>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
   {btns}
   <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
@@ -6001,8 +6152,8 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
   background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%236b7a94' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 7px center}}
 #srchbox:focus{{border-color:var(--pl);box-shadow:0 0 0 2px rgba(37,99,168,.1)}}
 #main{{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0}}
-#tblwrap{{flex:1;overflow:auto;min-width:0;-webkit-overflow-scrolling:touch}}
-#regtbl{{width:100%;border-collapse:collapse;min-width:980px;font-size:12px}}
+#tblwrap{{flex:1;overflow:auto;min-width:0;-webkit-overflow-scrolling:touch;padding-bottom:56px !important}}
+#regtbl{{width:100%;border-collapse:collapse;min-width:980px;font-size:12px;margin-bottom:28px !important}}
 .sr{{text-align:center;color:var(--mu);font-size:10px;min-width:40px;white-space:nowrap}}
 #regtbl thead{{position:sticky;top:0;z-index:20}}
 #regtbl th{{background:var(--pr);color:#fff;padding:8px;text-align:left;font-weight:600;
@@ -6370,6 +6521,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   <div style="flex:1"></div>
 
   <a href="/" class="tb-btn">📊<span class="tb-btn-text"> Dashboard</span></a>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
   <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
   {btns}
