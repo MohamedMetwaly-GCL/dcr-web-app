@@ -3881,6 +3881,11 @@ body.dark .pcard-btn.pcard-del:hover{{background:rgba(239,68,68,.18);color:#fca5
 }}
 .dt-tbl tr:nth-child(even) td:first-child{{background:#f8fafc}}
 .dt-tbl tr:hover td:first-child{{background:#eef5ff}}
+.disc-group-row td:first-child{{background:#f9fbfd!important}}
+.disc-group-row.alt td:first-child{{background:#f6f9fc!important}}
+.disc-group-row:hover td:first-child{{background:#edf3f8!important}}
+.disc-child-row td:first-child{{background:#f7fafe!important}}
+.disc-child-row:hover td:first-child{{background:#eef3f8!important}}
 .dt-proj-header td{{background:#f1f5f9!important;color:var(--brand-navy)!important;font-family:inherit!important;font-weight:700!important;font-size:12px!important;padding:7px 12px!important;border-top:1.5px solid #cbd5e1!important;border-bottom:1px solid #cbd5e1!important;letter-spacing:.3px}}
 body.dark .dt-proj-header td{{background:#17263c!important;color:#93c5fd!important;border-top-color:#2a3d54!important;border-bottom-color:#2a3d54!important}}
 #overview-pane-discipline .dt-tbl{{table-layout:fixed}}
@@ -3927,6 +3932,12 @@ body.dark .disc-group-row.alt td{{background:#132031}}
 body.dark .disc-group-row:hover td{{background:#1a2a3d}}
 body.dark .disc-child-row td{{background:#101a29}}
 body.dark .disc-child-row:hover td{{background:#162132}}
+body.dark .disc-group-row td:first-child{{background:#162132!important}}
+body.dark .disc-group-row.alt td:first-child{{background:#132031!important}}
+body.dark .disc-group-row:hover td:first-child{{background:#1a2a3d!important}}
+body.dark .disc-child-row td:first-child{{background:#101a29!important}}
+body.dark .disc-child-row:hover td:first-child{{background:#162132!important}}
+body.dark #kpi-overdue-sub{{background:rgba(239,68,68,.18)!important;color:#fca5a5!important;border-color:rgba(239,68,68,.35)!important}}
 body.dark .disc-badge{{background:#223246;color:#dbe7f3}}
 body.dark .disc-expander{{background:#101a29;border-color:#304257;color:#dbe7f3}}
 body.dark .disc-expander.open{{background:#3b82f6;border-color:#3b82f6;color:#fff}}
@@ -4146,8 +4157,16 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
           <div class="kpi-grid" style="margin-bottom:0">
             <div class="kpi"><div class="kval" id="kpi-total">—</div><div class="klbl">Total Submittals</div></div>
             <div class="kpi ok"><div class="kval" id="kpi-approved">—</div><div class="klbl">Approved</div></div>
-            <div class="kpi wa"><div class="kval" id="kpi-pending">—</div><div class="klbl">Under Review</div></div>
-            <div class="kpi er"><div class="kval" id="kpi-overdue">—</div><div class="klbl">Overdue</div><div style="font-size:8.5px;color:var(--mu);margin-top:2px;font-weight:600">FROM PENDING</div></div>
+            <div class="kpi wa">
+              <div class="kval" id="kpi-pending">—</div>
+              <div class="klbl">Under Review</div>
+              <div id="kpi-pending-sub" style="font-size:9.5px;color:var(--mu);margin-top:3px;font-weight:600">Active Queue</div>
+            </div>
+            <div class="kpi er">
+              <div class="kval" id="kpi-overdue">—</div>
+              <div class="klbl">Overdue</div>
+              <div id="kpi-overdue-sub" style="font-size:9.5px;color:#ef4444;margin-top:3px;font-weight:700;background:#fef2f2;padding:1px 6px;border-radius:4px;border:1px solid #fecaca;display:inline-block">FROM PENDING</div>
+            </div>
             <div class="kpi pu"><div class="kval" id="kpi-rejected">—</div><div class="klbl">Rejected/Revise</div></div>
             <div class="kpi"><div class="kval" id="kpi-pct">—</div><div class="klbl">Completion %</div></div>
             <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
@@ -4692,6 +4711,18 @@ function updateKPIs(d){{
   if(rjEl)rjEl.textContent=rj;
   document.getElementById('kpi-pct').textContent=(t?Math.round(ap/t*100):0)+'%';
   document.getElementById('kpi-projs').textContent=d.length;
+
+  const peSub=document.getElementById('kpi-pending-sub');
+  if(peSub){{
+    const onTime=Math.max(0,pe-ov);
+    peSub.textContent=`${{onTime}} on time · ${{ov}} overdue`;
+  }}
+  const ovSub=document.getElementById('kpi-overdue-sub');
+  if(ovSub){{
+    const pct=pe>0?Math.round(ov/pe*100):0;
+    ovSub.textContent=`FROM PENDING: ${{ov}} of ${{pe}} (${{pct}}%)`;
+    ovSub.title=`${{ov}} out of ${{pe}} documents under review are overdue (${{pct}}%)`;
+  }}
 }}
 
 // ── Project Cards ─────────────────────────────────────────
