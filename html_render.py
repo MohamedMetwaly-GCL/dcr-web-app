@@ -4507,6 +4507,9 @@ function renderPrAnalytics(data){{
     }}).join('')
     : `<div style="font-size:11px;color:var(--mu);padding:12px 0;text-align:center">No project data</div>`;
 
+  const otherProjectsCount=Math.max(0,prProjects.length-1);
+  const otherProjectsLabel=otherProjectsCount>0?`${{otherProjectsCount}} Other Projects`:'Remaining Projects';
+
   el.innerHTML=`<div class="pr-analytics-grid">
     <div class="pr-block pr-total" style="background:var(--bg);border-radius:8px;padding:12px 14px;border:1px solid #e3eaf2;border-left:4px solid #2563eb !important;box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between;min-height:165px">
       <div>
@@ -4514,33 +4517,33 @@ function renderPrAnalytics(data){{
         <div style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
         <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Total Purchase Requisitions</div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;padding:8px 10px;margin:8px 0;background:rgba(37,99,235,.04);border:1px solid rgba(37,99,235,.12);border-radius:6px">
-        <div style="position:relative;width:42px;height:42px;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;margin-top:auto;background:rgba(37,99,235,.04);border:1px solid rgba(37,99,235,.12);border-radius:8px">
+        <div style="position:relative;width:58px;height:58px;flex-shrink:0">
           <svg viewBox="0 0 36 36" style="width:100%;height:100%;transform:rotate(-90deg);display:block">
-            <path stroke="rgba(148,163,184,.25)" stroke-width="3.5" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-            <path stroke="#2563eb" stroke-dasharray="${{topProjShare}}, 100" stroke-width="3.5" stroke-linecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            <path stroke="rgba(148,163,184,.2)" stroke-width="4.2" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            <path stroke="#2563eb" stroke-dasharray="${{topProjShare}}, 100" stroke-width="4.2" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            <path stroke="#94a3b8" stroke-dasharray="${{remainingShare}}, 100" stroke-dashoffset="-${{topProjShare}}" stroke-width="4.2" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
           </svg>
-          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#2563eb">${{topProjShare}}%</div>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1">
+            <span style="font-size:12.5px;font-weight:800;color:#2563eb">${{topProjShare}}%</span>
+            <span style="font-size:7px;font-weight:700;color:var(--mu);text-transform:uppercase;margin-top:2px">Share</span>
+          </div>
         </div>
-        <div style="min-width:0">
-          <div style="font-size:10.5px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Portfolio Concentration</div>
-          <div style="font-size:9.5px;color:var(--mu);margin-top:1px;line-height:1.25">Top project accounts for ${{topProjShare}}% of requisitions</div>
-        </div>
-      </div>
-      <div style="margin-top:auto;padding-top:8px;border-top:1px solid var(--bd,#e2e8f0)">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px">
           <div>
-            <div style="font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Top Project Share</div>
-            <div style="font-size:13.5px;font-weight:800;color:#2563eb;margin-top:2px">${{topProjShare}}% <span style="font-size:10px;font-weight:600;color:var(--mu)">(${{topProjCode}} — ${{topProjCount}} PRs)</span></div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="width:7px;height:7px;border-radius:2px;background:#2563eb;flex-shrink:0"></span>
+              <span style="font-size:11px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{topProjCode}} — ${{topProjName}}">${{topProjCode}}</span>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:#2563eb;margin-left:13px">${{topProjCount}} PRs <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{topProjShare}}%)</span></div>
           </div>
-          <div style="text-align:right">
-            <div style="font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Remaining Projects</div>
-            <div style="font-size:13.5px;font-weight:800;color:var(--tx,#475569);margin-top:2px">${{remainingShare}}% <span style="font-size:10px;font-weight:600;color:var(--mu)">(${{remainingCount}} PRs)</span></div>
+          <div style="border-top:1px dashed var(--bd);padding-top:6px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="width:7px;height:7px;border-radius:2px;background:#94a3b8;flex-shrink:0"></span>
+              <span style="font-size:10.5px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{otherProjectsLabel}}</span>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:var(--tx,#475569);margin-left:13px">${{remainingCount}} PRs <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{remainingShare}}%)</span></div>
           </div>
-        </div>
-        <div style="height:8px;width:100%;background:rgba(148,163,184,.2);border-radius:4px;overflow:hidden;display:flex">
-          <div style="width:${{topProjShare}}%;background:#2563eb;" title="${{topProjName}}: ${{topProjCount}} PRs (${{topProjShare}}%)"></div>
-          <div style="width:${{remainingShare}}%;background:#94a3b8;" title="Remaining Projects: ${{remainingCount}} PRs (${{remainingShare}}%)"></div>
         </div>
       </div>
     </div>

@@ -278,10 +278,11 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
         self.assertIn("Most Active Projects", html, "Middle card must retain Most Active Projects")
         self.assertNotIn("Avg / Proj", html, "Misleading 'Avg / Proj' must be removed")
 
-        # 2. Clean 2-column share summary
-        self.assertIn("Top Project Share", html, "Left PR total card must show Top Project Share")
-        self.assertIn("Remaining Projects", html, "Left PR total card must show Remaining Projects")
-        self.assertIn("height:8px", html, "Progress bar height must be 8px")
+        # 2. Unified Donut breakdown (no duplicate progress bar)
+        self.assertIn('viewBox="0 0 36 36"', html, "Left PR total card must use SVG 2-slice Donut ring")
+        self.assertIn('stroke-dashoffset="-${topProjShare}"', html, "Donut must have remaining share arc offset")
+        self.assertIn('otherProjectsLabel', html, "Left card must render unified other projects legend")
+        self.assertNotIn("height:8px", html, "Duplicate horizontal progress bar must be removed from left card")
 
         # 3. Middle card projects count badge
         self.assertIn("${prProjects.length} projects", html, "Middle card badge must show total projects count")
@@ -293,11 +294,7 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
         self.assertIn("bodyColor:'#e2e8f0'", html, "PR chart tooltip body must be #e2e8f0")
         self.assertIn("borderColor:'#334155'", html, "PR chart tooltip border must be #334155")
 
-        # 5. Visual ring gauge in Left card (Portfolio Concentration)
-        self.assertIn("Portfolio Concentration", html, "Left PR total card must contain Portfolio Concentration gauge")
-        self.assertIn('viewBox="0 0 36 36"', html, "Portfolio Concentration must use SVG circle gauge")
-
-        # 6. Trade headline PRs unit and Chart.js bar value labels
+        # 5. Trade headline PRs unit and Chart.js bar value labels
         self.assertIn('PRs</span>', html, "Trade header must clarify count with PRs unit")
         self.assertIn('id:\'prValueLabels\'', html, "PR trade chart must include prValueLabels plugin for bar-end values")
         self.assertIn('displayTitle', html, "Active projects list must format code and name")
