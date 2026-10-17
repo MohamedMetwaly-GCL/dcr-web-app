@@ -261,10 +261,11 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
     def test_pr_analytics_html_refinements(self):
         """Verify PR Analytics HTML structure:
         1. Left card has border-left: 4px solid #2563eb
-        2. Mini breakdown grid (Active Projects, Top Share, Avg / Proj)
-        3. Mini stacked progress bar
-        4. Project badge uses 'projects' instead of '5 shown'
-        5. Chart.js dark high-contrast tooltip configuration
+        2. Clean 2-column breakdown (Top Project Share, Remaining Projects)
+        3. 8px stacked progress bar
+        4. Removed redundant metrics (Active Projects, Avg / Proj, Across Portfolio)
+        5. Project badge uses 'projects' instead of '5 shown'
+        6. Chart.js dark high-contrast tooltip configuration
         """
         html = html_render.render_dashboard(
             {"id": 1, "username": "admin", "role": "admin"}
@@ -272,16 +273,21 @@ class TestDashboardKPIHierarchy(unittest.TestCase):
 
         # 1. Left card accent border and layout
         self.assertIn("border-left:4px solid #2563eb", html, "Left PR total card must have blue accent border")
-        self.assertIn("Across Portfolio", html, "Left PR total card must have Across Portfolio badge/subtitle")
-        self.assertIn("Active Projects", html, "Left PR total card must show Active Projects mini KPI")
-        self.assertIn("Top Share", html, "Left PR total card must show Top Share mini KPI")
-        self.assertIn("Avg / Proj", html, "Left PR total card must show Avg / Proj mini KPI")
+        self.assertIn("Total Purchase Requisitions", html, "Left PR total card must show Total Purchase Requisitions")
+        self.assertNotIn(">Active Projects<", html, "Redundant 'Active Projects' mini KPI must be removed from left card")
+        self.assertIn("Most Active Projects", html, "Middle card must retain Most Active Projects")
+        self.assertNotIn("Avg / Proj", html, "Misleading 'Avg / Proj' must be removed")
 
-        # 2. Middle card projects count badge
+        # 2. Clean 2-column share summary
+        self.assertIn("Top Project Share", html, "Left PR total card must show Top Project Share")
+        self.assertIn("Remaining Projects", html, "Left PR total card must show Remaining Projects")
+        self.assertIn("height:8px", html, "Progress bar height must be 8px")
+
+        # 3. Middle card projects count badge
         self.assertIn("${prProjects.length} projects", html, "Middle card badge must show total projects count")
         self.assertNotIn("5 shown", html, "Legacy '5 shown' text must be removed")
 
-        # 3. High-contrast chart tooltip
+        # 4. High-contrast chart tooltip
         self.assertIn("backgroundColor:'#0f172a'", html, "PR chart tooltip must have dark background")
         self.assertIn("titleColor:'#ffffff'", html, "PR chart tooltip title must be white")
         self.assertIn("bodyColor:'#e2e8f0'", html, "PR chart tooltip body must be #e2e8f0")

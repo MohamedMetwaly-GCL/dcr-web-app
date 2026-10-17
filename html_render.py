@@ -4465,15 +4465,13 @@ function renderPrAnalytics(data){{
   }}
   const totalPRs=Number(data.total_pr_records||0);
   const prProjects=Array.isArray(data.top_projects)?data.top_projects:[];
-  const activeProjectsCount=prProjects.length;
-  const topProj=activeProjectsCount?prProjects[0]:null;
+  const topProj=prProjects.length?prProjects[0]:null;
   const topProjName=topProj?(topProj.project_name||topProj.project_code||'Top Project'):'None';
   const topProjCode=topProj?(topProj.project_code||topProj.project_name||'Top'):'—';
   const topProjCount=topProj?Number(topProj.pr_count||0):0;
   const topProjShare=(totalPRs>0&&topProjCount>0)?Math.round((topProjCount/totalPRs)*100):0;
   const remainingCount=Math.max(0,totalPRs-topProjCount);
   const remainingShare=Math.max(0,100-topProjShare);
-  const avgPerProject=(activeProjectsCount>0)?Math.round(totalPRs/activeProjectsCount):0;
 
   // Normalize trades: merge any Other/Others and handle Unspecified
   const rawTrades=Array.isArray(data.top_trades)?data.top_trades:[];
@@ -4504,37 +4502,24 @@ function renderPrAnalytics(data){{
   el.innerHTML=`<div class="pr-analytics-grid">
     <div class="pr-block pr-total" style="background:var(--bg);border-radius:8px;padding:12px 14px;border:1px solid #e3eaf2;border-left:4px solid #2563eb !important;box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between;min-height:165px">
       <div>
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Total PRs</div>
+        <div style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
+        <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Total Purchase Requisitions</div>
+      </div>
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--bd,#e2e8f0)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
           <div>
-            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Total PRs</div>
-            <div style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
+            <div style="font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Top Project Share</div>
+            <div style="font-size:13.5px;font-weight:800;color:#2563eb;margin-top:2px">${{topProjShare}}% <span style="font-size:10px;font-weight:600;color:var(--mu)">(${{topProjCode}} — ${{topProjCount}} PRs)</span></div>
           </div>
-          <span style="font-size:9.5px;font-weight:600;color:#2563eb;background:rgba(37,99,235,.08);padding:3px 7px;border-radius:4px;white-space:nowrap;letter-spacing:.2px;border:1px solid rgba(37,99,235,.15)">Across Portfolio</span>
+          <div style="text-align:right">
+            <div style="font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Remaining Projects</div>
+            <div style="font-size:13.5px;font-weight:800;color:var(--tx,#475569);margin-top:2px">${{remainingShare}}% <span style="font-size:10px;font-weight:600;color:var(--mu)">(${{remainingCount}} PRs)</span></div>
+          </div>
         </div>
-        <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Purchase Requisitions Across Portfolio</div>
-      </div>
-      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd,#e2e8f0);display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
-        <div>
-          <div style="font-size:9px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Active Projects</div>
-          <div style="font-size:13px;font-weight:700;color:var(--tx);margin-top:2px">${{activeProjectsCount}} <span style="font-size:9.5px;font-weight:normal;color:var(--mu)">Projects</span></div>
-        </div>
-        <div>
-          <div style="font-size:9px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.3px" title="${{topProjName}}">Top Share</div>
-          <div style="font-size:13px;font-weight:700;color:#2563eb;margin-top:2px" title="${{topProjName}}: ${{topProjCount}} PRs (${{topProjShare}}%)">${{topProjShare}}% <span style="font-size:9px;font-weight:normal;color:var(--mu)">(${{topProjCode}})</span></div>
-        </div>
-        <div>
-          <div style="font-size:9px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.3px">Avg / Proj</div>
-          <div style="font-size:13px;font-weight:700;color:var(--tx);margin-top:2px">${{avgPerProject}} <span style="font-size:9.5px;font-weight:normal;color:var(--mu)">PRs</span></div>
-        </div>
-      </div>
-      <div style="margin-top:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--mu);margin-bottom:3px">
-          <span>Top: <strong style="color:var(--tx)">${{topProjCode}}</strong> (${{topProjCount}} PRs — ${{topProjShare}}%)</span>
-          <span>Remaining (${{remainingCount}} PRs — ${{remainingShare}}%)</span>
-        </div>
-        <div style="height:5px;width:100%;background:rgba(148,163,184,.2);border-radius:3px;overflow:hidden;display:flex">
+        <div style="height:8px;width:100%;background:rgba(148,163,184,.2);border-radius:4px;overflow:hidden;display:flex">
           <div style="width:${{topProjShare}}%;background:#2563eb;" title="${{topProjName}}: ${{topProjCount}} PRs (${{topProjShare}}%)"></div>
-          <div style="width:${{remainingShare}}%;background:#94a3b8;" title="Other Projects: ${{remainingCount}} PRs (${{remainingShare}}%)"></div>
+          <div style="width:${{remainingShare}}%;background:#94a3b8;" title="Remaining Projects: ${{remainingCount}} PRs (${{remainingShare}}%)"></div>
         </div>
       </div>
     </div>
