@@ -712,25 +712,16 @@ def api_daily_digest(pid):
             projects_to_check = get_allowed_project_ids(u)
         else:
             if not can_view_project(pid): return jsonify(error="Forbidden"), 403
-            projects_to_check = [pid]
+            all_projs = db.get_projects()
+            matched = next((p["id"] for p in all_projs if p.get("id") == pid or p.get("code") == pid), pid)
+            projects_to_check = [matched]
             
         combined_digest = {"received": [], "issued": [], "replied": []}
-        is_admin = u["role"] in ("superadmin", "admin")
-        
         for p_id in projects_to_check:
             try:
-                if is_admin:
-                    # Admins see all doc_types for the project
-                    all_dts = db.get_doc_types(p_id)
-                    assigned_dt_ids = [dt["id"] for dt in all_dts]
-                else:
-                    dist = db.get_distribution(p_id)
-                    assigned_dt_ids = []
-                    for dt_id, events in dist.items():
-                        if isinstance(events, dict):
-                            users = events.get("access", [])
-                            if u["username"] in users:
-                                assigned_dt_ids.append(dt_id)
+                # All users authorized for the project see its daily digest records
+                all_dts = db.get_doc_types(p_id)
+                assigned_dt_ids = [dt["id"] for dt in all_dts]
                 if assigned_dt_ids:
                     target_date = request.args.get("date")
                     d = db.get_daily_digest(p_id, assigned_dt_ids, target_date)
