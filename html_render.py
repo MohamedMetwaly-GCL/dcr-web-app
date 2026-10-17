@@ -1758,6 +1758,9 @@ body.dark .ai-chat-body,
   word-break: break-word;
   unicode-bidi: plaintext;
   text-align: start;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 .ai-msg-bubble blockquote,
 .ai-blockquote {
@@ -1843,28 +1846,53 @@ body.dark .ai-msg.assistant .ai-msg-bubble code,
   font-size: 11px;
   margin: 6px 0;
 }
+.ai-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 10px 0;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+}
+body.dark .ai-table-wrap,
+.ai-assistant-drawer.dark-theme .ai-table-wrap {
+  border-color: #334155;
+  background: #0f172a;
+}
+.ai-table-wrap[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+.ai-table-wrap table,
 .ai-message table,
 .ai-msg table,
 .ai-msg-bubble table,
 .ai-msg.assistant .ai-msg-bubble table {
   width: 100% !important;
-  display: block !important;
-  overflow-x: auto !important;
   border-collapse: collapse !important;
   font-size: 12px !important;
-  margin: 10px 0 !important;
+  margin: 0 !important;
 }
+.ai-table-wrap th, .ai-table-wrap td,
 .ai-message th, .ai-message td,
 .ai-msg th, .ai-msg td,
 .ai-msg-bubble th, .ai-msg-bubble td,
 .ai-msg.assistant .ai-msg-bubble th,
 .ai-msg.assistant .ai-msg-bubble td {
   border: 1px solid #cbd5e1;
-  padding: 6px 8px !important;
+  padding: 7px 10px !important;
   white-space: nowrap !important; /* Prevents ugly letter wrapping */
   word-break: normal !important;
   vertical-align: middle !important;
 }
+.ai-table-wrap[dir="rtl"] th,
+.ai-table-wrap[dir="rtl"] td {
+  text-align: right !important;
+}
+body.dark .ai-table-wrap th,
+body.dark .ai-table-wrap td,
 body.dark .ai-msg.assistant .ai-msg-bubble th,
 body.dark .ai-msg.assistant .ai-msg-bubble td,
 .ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble th,
@@ -1873,24 +1901,29 @@ body.dark .ai-message th,
 body.dark .ai-message td {
   border-color: #334155;
 }
+.ai-table-wrap th,
 .ai-message th,
 .ai-msg th,
 .ai-msg-bubble th,
 .ai-msg.assistant .ai-msg-bubble th {
   background: #f1f5f9;
   font-weight: 700;
+  color: #1e293b;
 }
+body.dark .ai-table-wrap th,
 body.dark .ai-msg.assistant .ai-msg-bubble th,
 .ai-assistant-drawer.dark-theme .ai-msg.assistant .ai-msg-bubble th,
 body.dark .ai-message th {
   background: #1e293b;
+  color: #f1f5f9;
 }
+.ai-table-wrap td:nth-child(2),
 .ai-message td:nth-child(2),
 .ai-msg td:nth-child(2),
 .ai-msg-bubble td:nth-child(2),
 .ai-msg.assistant .ai-msg-bubble td:nth-child(2) {
   white-space: normal !important; /* Allow the Title/Description column to wrap nicely */
-  min-width: 160px !important;
+  min-width: 170px !important;
   word-break: normal !important;
 }
 
@@ -2092,12 +2125,14 @@ function _renderSimpleMarkdown(md) {
       if (line.startsWith('&gt; ') || line.startsWith('> ')) {
         const qContent = line.replace(/^(&gt;|>)\s*/, '');
         out.push('<blockquote class="ai-blockquote" dir="auto">' + qContent + '</blockquote>');
+      } else if (line.startsWith('#### ')) {
+        out.push('<h5 dir="auto">' + line.slice(5) + '</h5>');
       } else if (line.startsWith('### ')) {
         out.push('<h4 dir="auto">' + line.slice(4) + '</h4>');
       } else if (line.startsWith('## ')) {
         out.push('<h3 dir="auto">' + line.slice(3) + '</h3>');
-      } else if (line.startsWith('- ') || line.startsWith('* ')) {
-        out.push('<li dir="auto">' + line.slice(2) + '</li>');
+      } else if (line.startsWith('- ') || line.startsWith('* ') || line.startsWith('• ')) {
+        out.push('<li dir="auto">' + line.replace(/^[-*•]\\s*/, '') + '</li>');
       } else if (line.length > 0) {
         out.push('<p dir="auto">' + line + '</p>');
       }
@@ -2117,16 +2152,25 @@ function _renderSimpleMarkdown(md) {
 
 function _buildHtmlTable(rows) {
   if (!rows || !rows.length) return '';
-  let html = '<table>';
+  const colCount = rows[0].length;
+  // Detect if table contents are Arabic
+  const isArabic = rows.some(r => r.some(c => /[\u0600-\u06FF]/.test(c)));
+  const dirAttr = isArabic ? 'dir="rtl"' : 'dir="ltr"';
+
+  let html = '<div class="ai-table-wrap" ' + dirAttr + '><table ' + dirAttr + '>';
   html += '<thead><tr>';
   rows[0].forEach(h => { html += '<th dir="auto">' + h + '</th>'; });
   html += '</tr></thead><tbody>';
   for (let r = 1; r < rows.length; r++) {
     html += '<tr>';
-    rows[r].forEach(cell => { html += '<td dir="auto">' + cell + '</td>'; });
+    const rowCells = rows[r];
+    for (let c = 0; c < colCount; c++) {
+      const cell = rowCells[c] !== undefined ? rowCells[c] : '';
+      html += '<td dir="auto">' + cell + '</td>';
+    }
     html += '</tr>';
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   return html;
 }
 

@@ -664,7 +664,8 @@ def _dedup_latest_revisions(records):
             rev_num = 0
             base_no = doc_no
 
-        base_key = base_no.upper()
+        pid = str(r.get("project_id") or r.get("project_code") or "")
+        base_key = f"{pid}_{base_no.upper()}"
         if base_key not in base_map or rev_num > base_map[base_key]["rev"]:
             base_map[base_key] = {"record": r, "rev": rev_num}
 
@@ -990,19 +991,55 @@ def search_submittals(
             pr_items_map = db.get_pr_items_for_records(pr_row_ids)
         except Exception:
             pr_items_map = {}
+        
+        pr_synonyms = _expand_keyword_synonyms(keyword) if keyword else []
+
         for r in rows:
             if r.get("id") in pr_items_map:
                 items = pr_items_map[r["id"]]
                 if items:
-                    item_names = [it.get("item_name") for it in items if it.get("item_name")]
-                    if item_names:
-                        preview_str = ", ".join(item_names[:4])
-                        if len(item_names) > 4:
-                            preview_str += f" (+{len(item_names)-4} items)"
-                        if not r.get("title") or r["title"] in ("—", ""):
-                            r["title"] = preview_str
+                    # Filter items matching requested keyword/synonyms if keyword is present
+                    matching_items = []
+                    if pr_synonyms:
+                        for it in items:
+                            it_name = str(it.get("item_name") or "")
+                            it_rem = str(it.get("remarks") or "")
+                            it_combined = f"{it_name} {it_rem}".lower()
+                            it_combined_norm = _normalize_arabic(it_combined)
+                            if any(s in it_combined or s in it_combined_norm for s in pr_synonyms):
+                                matching_items.append(it)
+                    
+                    # If specific matching items found, highlight only those items (prevents non-valve contamination like fittings/tees)
+                    target_items = matching_items if matching_items else items
+                    
+                    item_names = []
+                    for it in target_items:
+                        raw_name = str(it.get("item_name") or "").strip()
+                        if not raw_name:
+                            continue
+                        clean_name = raw_name.replace("|", "-").replace("\n", " ").strip()
+                        qty = it.get("quantity")
+                        unit = str(it.get("unit") or "").strip()
+                        if qty not in (None, ""):
+                            item_names.append(f"{clean_name} ({qty} {unit})".strip())
                         else:
-                            r["description"] = f"{r.get('description', '')} | Items: {preview_str}".strip(" |")
+                            item_names.append(clean_name)
+                    
+                    if item_names:
+                        preview_str = ", ".join(item_names[:3])
+                        if len(item_names) > 3:
+                            preview_str += f" (+{len(item_names)-3} items)"
+                        
+                        curr_title = str(r.get("title") or "").strip()
+                        generic_titles = {"mechanical", "fire fighting", "plumbing", "hvac", "fire pumps", "materials", "requisition", "pr"}
+                        
+                        if not curr_title or curr_title in ("—", "-", ""):
+                            r["title"] = preview_str
+                        elif curr_title.lower() in generic_titles:
+                            r["title"] = f"{curr_title} ({preview_str})"
+                        else:
+                            r["description"] = f"{r.get('description', '')} - Items: {preview_str}".strip(" -")
+                    
                     # If status is empty, resolve from item statuses
                     if not r.get("status") or r["status"] in ("—", ""):
                         it_statuses = [it.get("status") for it in items if it.get("status")]
@@ -1012,6 +1049,12 @@ def search_submittals(
                             r["status"] = it_statuses[0]
                         else:
                             r["status"] = "Pending PO"
+
+    # Deep sanitize all fields across all rows to NEVER contain pipe '|' or newlines '\n'
+    for r in rows:
+        for fld in ("title", "description", "status", "doc_no", "doc_date", "project_code"):
+            if r.get(fld):
+                r[fld] = str(r[fld]).replace("|", "-").replace("\n", " ").strip()
 
     # Post-filter keyword false positives & cross-trade contamination
     if keyword and rows:

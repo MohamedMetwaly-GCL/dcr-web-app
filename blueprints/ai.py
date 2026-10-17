@@ -56,9 +56,14 @@ SYSTEM_INSTRUCTION = (
     "- Do NOT output individual NOC item listings or 'Approved NOC Items' at the bottom of the summary unless the user explicitly requests an itemized list of individual NOCs. Keep the summary focused on project-level financial metrics.\n"
     "4. When the user asks about delayed or overdue submittals, call get_overdue_submittals.\n"
     "5. When the user asks about revisions or approval history of a specific document number, call get_document_history.\n"
-    "6. When presenting records, format them in a clean Markdown table with columns: "
-    "| Document No | Title / Description | Type | Status | Date | Project |. "
-    "Maintain the records in ascending order of Document No (from lowest to highest number) as returned by the tool.\n"
+    "6. TABLE FORMATTING & INTEGRITY (CRITICAL):\n"
+    "   - Format records in a clean Markdown table with columns: | Document No | Title / Description | Type | Status | Date | Project |.\n"
+    "   - In Arabic responses, use Arabic column headers: | رقم الوثيقة | البيان والمواصفات | النوع | الحالة | التاريخ | المشروع |.\n"
+    "   - NEVER put pipe characters `|` or newlines `\\n` inside any table cell, as this destroys Markdown table syntax. If describing multiple items or specifications, separate them with commas or dashes (e.g. 'Gate Valve 6in, Butterfly Valve 1050mm').\n"
+    "   - Ensure EVERY table row has EXACTLY the same number of columns (6 columns).\n"
+    "   - When presenting PR (Purchase Requisition) records for equipment (e.g. valves, pumps, pipes), only mention the specific matching items. Never dump unrelated fittings, elbows, or plumbing pipes.\n"
+    "   - For PRs and Submittals, show only the latest active revision (REV01 replaces REV00) unless the user explicitly requests revision history.\n"
+    "   - Maintain the records in ascending order of Document No (from lowest to highest number) as returned by the tool.\n"
     "7. MULTI-PROJECT QUERIES & SWITCHING: The user can freely query different projects in the same chat session. "
     "Projects in the system include:\n"
     "- '24CP01': EKH New Building Office (Egypt Kuwait Holding - EKH / اي كيه اتش)\n"
@@ -88,9 +93,10 @@ SYSTEM_INSTRUCTION = (
     "you MUST pass project_code=None (or omit project_code). DO NOT carry over or recall a project code from previous conversation turns.\n"
     "10. STRICT DOCUMENT TYPE ENFORCEMENT: When the user specifies a document type (e.g. 'PR', 'MS', 'SD', 'IR', 'NOC'), you MUST strictly search for that document type only (doc_type='PR'). If 0 records are found for that document type, report that no matching records of that document type were found. NEVER substitute or return records from other document types (such as NOC, IR, or DS) when a specific document type was requested. "
     "Conversely, if the user does NOT specify a document type (e.g., 'شوفلي المحابس المعتمدة في مشروع CFC' or 'What approved valves are in CFC?'), omit doc_type (doc_type=None) so the tool searches across ALL registers and returns matching records from all document types.\n"
-    "11. BILINGUAL ACCURACY & BIDIRECTIONAL (BiDi) FORMATTING: If the user writes in Arabic, respond in professional Arabic engineering language. "
-    "If in English, respond in English. When responding in Arabic, always format document numbers, project codes, and English acronyms "
-    "in backticks (e.g. `PEM-058`, `MS-CY002P608-00019`, `PR-042 REV01`, `Valves`) so bidirectional text displays in correct natural word order.\n"
+    "11. BILINGUAL ACCURACY & PROFESSIONAL ARABIC PHRASING:\n"
+    "   - If the user writes in Arabic, respond in fluent, professional Egyptian engineering Arabic. Never output literal robotic English translations like 'الخاصة بـ valve لمشروع All Projects'.\n"
+    "   - Instead, phrase naturally: 'طلبات الشراء (PR) الخاصة بالمحابس (Valves) لكافة المشاريع:' or 'اعتمادات المحابس المعتمدة في مشروع...'.\n"
+    "   - Always format document numbers, project codes, and English acronyms in backticks (e.g. `PEM-058`, `PR-005 REV01`, `Valves`) so bidirectional text displays in correct natural word order.\n"
     "12. Never fabricate document numbers or approval statuses. Only report data returned by the tools."
 )
 
@@ -979,7 +985,10 @@ def _execute_deterministic_fallback(
             "تفضل بتحديد المطلوب وسأقوم بالبحث في السجلات فوراً!"
         )
 
-    is_latest_req = any(w in p_low for w in ["احدث", "أحدث", "اخر اصدار", "آخر إصدار", "latest", "last rev"])
+    # Show latest revision by default, unless user explicitly asks for all revisions or revision history
+    is_all_revs = any(w in p_low for w in ["كل المراجعات", "جميع المراجعات", "تاريخ المراجعات", "سجل المراجعات", "all revisions", "revision history", "all revs"])
+    use_latest_rev = not is_all_revs
+
     search_res = ai_tools.search_submittals(
         allowed_project_ids=allowed_project_ids,
         project_code=matched_proj_code,
@@ -987,7 +996,7 @@ def _execute_deterministic_fallback(
         discipline=detected_disc,
         keyword=detected_keyword,
         status=detected_status,
-        latest_revision_only=is_latest_req,
+        latest_revision_only=use_latest_rev,
         limit=50,
     )
 
@@ -996,10 +1005,33 @@ def _execute_deterministic_fallback(
     ) or proj_title
     records = search_res.get("records", [])
 
+    KW_AR_MAP = {
+        "valve": "المحابس (Valves)",
+        "valves": "المحابس (Valves)",
+        "pump": "المضخات (Pumps)",
+        "pumps": "المضخات (Pumps)",
+        "chiller": "المبردات والتكييف (Chillers)",
+        "fan": "المراوح والتهوية (Fans)",
+        "cable": "الكابلات (Cables)",
+        "pipe": "المواسير والأنابيب (Pipes)",
+        "panel": "اللوحات الكهربائية (Panels)",
+        "generator": "المولدات (Generators)",
+        "transformer": "المحولات (Transformers)",
+        "duct": "مجاري الهواء والصاج (Ducts)",
+    }
+
     # Format header description
     dt_label = "طلبات الشراء (PR)" if detected_dt == "PR" else (f"الـ {detected_dt}" if detected_dt else "المشروع")
     disc_label = f" الخاصة بـ {detected_disc}" if detected_disc else ""
-    kw_label = f" الخاصة بـ {detected_keyword}" if detected_keyword else ""
+    
+    if proj_title in ("All Projects", None, ""):
+        kw_display = KW_AR_MAP.get(detected_keyword, detected_keyword or "")
+        kw_label = f" الخاصة بـ {kw_display}" if detected_keyword else ""
+        proj_display_ar = "كافة المشاريع المصرح بها (Global)"
+    else:
+        kw_label = f" الخاصة بـ {detected_keyword}" if detected_keyword else ""
+        proj_display_ar = proj_title
+
     appr_label = " المعتمدة" if detected_status == "approved" else ""
 
     if not records:
@@ -1017,23 +1049,31 @@ def _execute_deterministic_fallback(
             return f"No matching documents were found in project {proj_title}."
 
         if detected_keyword == "valve" and detected_dt == "PR":
-            return f"لم يتم العثور على أي طلبات شراء (PR) تخص المحابس (Valves) في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي طلبات شراء (PR) تخص المحابس (Valves) في سجلات مشروع {proj_display_ar}."
         if detected_keyword == "valve":
-            return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي اعتمادات تخص المحابس (Valves) في سجلات مشروع {proj_display_ar}."
         if detected_keyword == "pump":
-            return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي اعتمادات تخص المضخات (Pumps) في سجلات مشروع {proj_display_ar}."
         if detected_disc and detected_dt:
-            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} تخص الأعمال {detected_disc} في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} تخص الأعمال {detected_disc} في سجلات مشروع {proj_display_ar}."
         if detected_dt:
-            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} مطابقة لطلبك في سجلات مشروع {proj_title}."
-        return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_title}."
+            return f"لم يتم العثور على أي وثائق من نوع الـ {detected_dt} مطابقة لطلبك في سجلات مشروع {proj_display_ar}."
+        return f"لم يتم العثور على أي وثائق مطابقة في سجلات مشروع {proj_display_ar}."
 
     table_rows = []
     for r in records:
         st_clean = r.get("status") or ("Pending PO" if str(r.get("doc_type") or "").upper() == "PR" else "Pending")
         st_badge = f"✅ **{st_clean}**" if any(a in st_clean.lower() for a in ["approv", "status a", "status b", "ordered", "delivered", "completed"]) else st_clean
+        
+        c_doc = str(r.get('doc_no', '—')).replace('|', '-').replace('\n', ' ').strip()
+        c_title = str(r.get('title', '—')).replace('|', '-').replace('\n', ' ').strip()
+        c_type = str(r.get('doc_type', '—')).replace('|', '-').replace('\n', ' ').strip()
+        c_date = str(r.get('doc_date', '—')).replace('|', '-').replace('\n', ' ').strip()
+        c_proj = str(r.get('project_code', '')).replace('|', '-').replace('\n', ' ').strip()
+        c_status = str(st_badge).replace('|', '-').replace('\n', ' ').strip()
+
         table_rows.append(
-            f"| `{r.get('doc_no')}` | {r.get('title', '—')} | `{r.get('doc_type', '—')}` | {st_badge} | {r.get('doc_date', '—')} | `{r.get('project_code', '')}` |"
+            f"| `{c_doc}` | {c_title} | `{c_type}` | {c_status} | {c_date} | `{c_proj}` |"
         )
 
     status_word = "معتمدة و" if detected_status == "approved" else ""
@@ -1049,9 +1089,9 @@ def _execute_deterministic_fallback(
         )
 
     return (
-        f"### 📋 تفاصيل وثائق {dt_label}{disc_label}{kw_label}{appr_label} لمشروع {proj_title}:\n\n"
-        f"تم استخراج {len(records)} وثيقة {status_word}مطابقة لطلبك مباشرة من سجلات المشروع:\n\n"
-        "| رقم الوثيقة | الوصف / العنوان | النوع | الحالة | التاريخ | المشروع |\n"
+        f"### 📋 تفاصيل وثائق {dt_label}{disc_label}{kw_label}{appr_label} لمشروع {proj_display_ar}:\n\n"
+        f"تم استخراج **{len(records)}** وثيقة {status_word}مطابقة لطلبك مباشرة من سجلات المشروعات الرسمية:\n\n"
+        "| رقم الوثيقة | البيان والمواصفات | النوع | الحالة | التاريخ | المشروع |\n"
         "| :--- | :--- | :---: | :---: | :---: | :---: |\n"
         + "\n".join(table_rows)
         + "\n\n📌 *البيانات أعلاه مستخرجة ومطابقة 100% لسجلات النظام الرسمية.*"
