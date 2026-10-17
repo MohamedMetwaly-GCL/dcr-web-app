@@ -3891,8 +3891,6 @@ body.dark .dt-proj-header td{{background:#17263c!important;color:#93c5fd!importa
 .disc-group-row td{{background:#f9fbfd;font-weight:600}}
 .disc-group-row.alt td{{background:#f6f9fc}}
 .disc-group-row:hover td{{background:#edf3f8}}
-.disc-group-row.warn td{{background:#fff4e8}}
-.disc-group-row.warn:hover td{{background:#feeccc}}
 .disc-child-row{{display:none}}
 .disc-child-row.open{{display:table-row}}
 .disc-child-row td{{background:#f7fafe}}
@@ -3927,8 +3925,6 @@ body.dark .dt-proj-header td{{background:#17263c!important;color:#93c5fd!importa
 body.dark .disc-group-row td{{background:#162132;color:#dbe7f3}}
 body.dark .disc-group-row.alt td{{background:#132031}}
 body.dark .disc-group-row:hover td{{background:#1a2a3d}}
-body.dark .disc-group-row.warn td{{background:#3a2a1f}}
-body.dark .disc-group-row.warn:hover td{{background:#4a3425}}
 body.dark .disc-child-row td{{background:#101a29}}
 body.dark .disc-child-row:hover td{{background:#162132}}
 body.dark .disc-badge{{background:#223246;color:#dbe7f3}}
@@ -5036,83 +5032,106 @@ function renderDTTable(d){{
 function renderDiscTable(data){{
   const tbody=document.getElementById('disc-tbody'),empty=document.getElementById('disc-empty');
   const mobile=document.getElementById('disc-mobile-list');
-  tbody.innerHTML='';let rows=0,groupIdx=0;
+  tbody.innerHTML='';let rows=0,groupIdx=0,lastPid=null;
   if(mobile)mobile.innerHTML='';
   const mk=(label,v,c)=>`<td class="disc-num-cell" data-label="${{label}}" style="color:${{c}}">${{v||0}}</td>`;
   const safe=v=>String(v??'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
   const metric=(label,value,color)=>`<div class="disc-mobile-cell"><div class="disc-mobile-lbl">${{label}}</div><div class="disc-mobile-val" style="color:${{color||'var(--tx)'}}">${{value||0}}</div></div>`;
-  data.forEach(p=>{{(p.dt_stats||[]).forEach(dt=>{{
-    const disc=dt.disc_breakdown||[];if(!disc.length)return;
-    rows++;groupIdx++;
-    const groupId=`discgrp-${{groupIdx}}`;
-    const warn=(Number(dt.overdue||0)>0)||disc.some(ds=>Number(ds.overdue||0)>0);
-    if(mobile){{
-      const card=document.createElement('div');
-      card.className=`disc-mobile-card${{warn?' warn':''}}`;
-      card.dataset.group=groupId;
-      card.innerHTML=`<div class="disc-mobile-head">
-        <div>
-          <div class="disc-mobile-title">${{safe(p.code)}} | ${{safe(dt.code)}}</div>
-          <div class="disc-mobile-sub">${{disc.length}} ${{disc.length===1?'discipline':'disciplines'}}</div>
-        </div>
-        <button type="button" class="disc-expander" aria-expanded="false" onclick="toggleDiscMobileGroup('${{groupId}}', this)">&#9660;</button>
-      </div>
-      <div class="disc-mobile-grid">
-        ${{metric('Project',safe(p.code),'var(--pr)')}}
-        ${{metric('Doc Type',safe(dt.code),'var(--pr)')}}
-        ${{metric('Disciplines',disc.length,'#2f4f64')}}
-        ${{metric('Total',dt.total,'var(--pr)')}}
-        ${{metric('Approved',dt.approved,'#16a34a')}}
-        ${{metric('Pending',dt.pending,'#f59e0b')}}
-        ${{metric('Rejected',dt.rejected||0,'#7c3aed')}}
-        ${{metric('Info / Closed',dt.info_closed||0,'#60A5FA')}}
-        ${{metric('Overdue',dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
-      </div>
-      <div class="disc-mobile-children">
-        ${{disc.map(ds=>`<div class="disc-mobile-child">
-          <div class="disc-mobile-title">${{safe(ds.disc)}}</div>
-          <div class="disc-mobile-grid">
-            ${{metric('Total',ds.total,'var(--pr)')}}
-            ${{metric('Approved',ds.approved,'#16a34a')}}
-            ${{metric('Pending',ds.pending,'#f59e0b')}}
-            ${{metric('Rejected',ds.rejected||0,'#7c3aed')}}
-              ${{metric('Info / Closed',ds.info_closed||0,'#60A5FA')}}
-              ${{metric('Overdue',ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
-          </div>
-        </div>`).join('')}}
-      </div>`;
-      mobile.appendChild(card);
+  data.forEach(p=>{{
+    const pDts=(p.dt_stats||[]).filter(dt=>(dt.disc_breakdown||[]).length>0);
+    if(!pDts.length)return;
+
+    if(data.length>1 && p.id!==lastPid){{
+      lastPid=p.id;
+      const gtr=document.createElement('tr');
+      gtr.className='dt-proj-header';
+      gtr.innerHTML=`<td colspan="10">
+        <span style="color:var(--brand-teal);margin-right:6px">📁</span><strong>${{safe(p.name)}}</strong> <span style="font-weight:500;color:var(--mu);margin-left:6px">(${{safe(p.code)}})</span>
+      </td>`;
+      tbody.appendChild(gtr);
     }}
-    const tr=document.createElement('tr');
-    tr.className=`disc-group-row${{warn?' warn':''}}${{rows%2===0?' alt':''}}`;
-    tr.innerHTML=`<td data-label="Project" style="font-size:10px;color:var(--mu)">${{p.code}}</td>
-      <td data-label="Doc Type" style="font-weight:700;color:var(--pr)">${{dt.code}}</td>
-      <td data-label="Disciplines"><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge">${{disc.length}}</span><span class="disc-meta">${{disc.length===1?'1 discipline':`${{disc.length}} disciplines`}}</span></div></td>
-      ${{mk('Total',dt.total,'var(--pr)')}}
-      ${{mk('Approved',dt.approved,'#16a34a')}}
-      ${{mk('Pending',dt.pending,'#f59e0b')}}
-      ${{mk('Rejected',dt.rejected||0,'#7c3aed')}}
-      ${{mk('Info / Closed',dt.info_closed||0,'#60A5FA')}}
-      ${{mk('Overdue',dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
-      <td style="text-align:center"><button type="button" class="disc-expander" data-group="${{groupId}}" aria-expanded="false" onclick="toggleDiscGroup('${{groupId}}', this)">&#9660;</button></td>`;
-    tbody.appendChild(tr);
-    disc.forEach(ds=>{{
-      const child=document.createElement('tr');
-      child.className='disc-child-row';
-      child.dataset.group=groupId;
-      child.innerHTML=`<td class="disc-child-spacer"></td>
-        <td style="font-size:10px;color:var(--mu)">${{dt.code}}</td>
-        <td class="disc-child-label">${{ds.disc}}</td>
-        ${{mk('Total',ds.total,'var(--pr)')}}
-        ${{mk('Approved',ds.approved,'#16a34a')}}
-        ${{mk('Pending',ds.pending,'#f59e0b')}}
-        ${{mk('Rejected',ds.rejected||0,'#7c3aed')}}
-          ${{mk('Info / Closed',ds.info_closed||0,'#60A5FA')}}
-          ${{mk('Overdue',ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
-        <td></td>`;
-      tbody.appendChild(child);
+
+    pDts.forEach(dt=>{{
+      const disc=dt.disc_breakdown||[];if(!disc.length)return;
+      rows++;groupIdx++;
+      const groupId=`discgrp-${{groupIdx}}`;
+      const warn=(Number(dt.overdue||0)>0)||disc.some(ds=>Number(ds.overdue||0)>0);
+      if(mobile){{
+        const card=document.createElement('div');
+        card.className=`disc-mobile-card${{warn?' warn':''}}`;
+        card.dataset.group=groupId;
+        card.innerHTML=`<div class="disc-mobile-head">
+          <div>
+            <div class="disc-mobile-title">${{safe(p.code)}} | ${{safe(dt.code)}}</div>
+            <div class="disc-mobile-sub">${{disc.length}} ${{disc.length===1?'discipline':'disciplines'}}</div>
+          </div>
+          <button type="button" class="disc-expander" aria-expanded="false" onclick="toggleDiscMobileGroup('${{groupId}}', this)">&#9660;</button>
+        </div>
+        <div class="disc-mobile-grid">
+          ${{metric('Project',safe(p.code),'var(--pr)')}}
+          ${{metric('Doc Type',safe(dt.code),'var(--pr)')}}
+          ${{metric('Disciplines',disc.length,'#2f4f64')}}
+          ${{metric('Total',dt.total,'var(--pr)')}}
+          ${{metric('Approved',dt.approved,'#16a34a')}}
+          ${{metric('Pending',dt.pending,'#f59e0b')}}
+          ${{metric('Rejected',dt.rejected||0,'#7c3aed')}}
+          ${{metric('Info / Closed',dt.info_closed||0,'#60A5FA')}}
+          ${{metric('Overdue',dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
+        </div>
+        <div class="disc-mobile-children">
+          ${{disc.map(ds=>`<div class="disc-mobile-child">
+            <div class="disc-mobile-title">${{safe(ds.disc)}}</div>
+            <div class="disc-mobile-grid">
+              ${{metric('Total',ds.total,'var(--pr)')}}
+              ${{metric('Approved',ds.approved,'#16a34a')}}
+              ${{metric('Pending',ds.pending,'#f59e0b')}}
+              ${{metric('Rejected',ds.rejected||0,'#7c3aed')}}
+                ${{metric('Info / Closed',ds.info_closed||0,'#60A5FA')}}
+                ${{metric('Overdue',ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
+            </div>
+          </div>`).join('')}}
+        </div>`;
+        mobile.appendChild(card);
+      }}
+      const tr=document.createElement('tr');
+      tr.className=`disc-group-row${{rows%2===0?' alt':''}}`;
+      const ovBadge=Number(dt.overdue||0)>0
+        ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{dt.overdue}}</span>`
+        : `<span style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
+
+      tr.innerHTML=`<td data-label="Project" style="font-size:10px;color:var(--mu)">${{p.code}}</td>
+        <td data-label="Doc Type" style="font-weight:700;color:var(--pr)">${{dt.code}}</td>
+        <td data-label="Disciplines"><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge">${{disc.length}}</span><span class="disc-meta">${{disc.length===1?'1 discipline':`${{disc.length}} disciplines`}}</span></div></td>
+        ${{mk('Total',dt.total,'var(--pr)')}}
+        ${{mk('Approved',dt.approved,'#16a34a')}}
+        ${{mk('Pending',dt.pending,'#f59e0b')}}
+        ${{mk('Rejected',dt.rejected||0,'#7c3aed')}}
+        ${{mk('Info / Closed',dt.info_closed||0,'#60A5FA')}}
+        <td class="disc-num-cell" data-label="Overdue">${{ovBadge}}</td>
+        <td style="text-align:center"><button type="button" class="disc-expander" data-group="${{groupId}}" aria-expanded="false" onclick="toggleDiscGroup('${{groupId}}', this)">&#9660;</button></td>`;
+      tbody.appendChild(tr);
+      disc.forEach(ds=>{{
+        const child=document.createElement('tr');
+        child.className='disc-child-row';
+        child.dataset.group=groupId;
+        const childOvBadge=Number(ds.overdue||0)>0
+          ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:1px 6px;border-radius:5px;font-weight:800;font-size:10.5px;display:inline-block">${{ds.overdue}}</span>`
+          : `<span style="color:#94a3b8;font-weight:500;font-size:10.5px">0</span>`;
+
+        child.innerHTML=`<td class="disc-child-spacer"></td>
+          <td style="font-size:10px;color:var(--mu)">${{dt.code}}</td>
+          <td class="disc-child-label">${{ds.disc}}</td>
+          ${{mk('Total',ds.total,'var(--pr)')}}
+          ${{mk('Approved',ds.approved,'#16a34a')}}
+          ${{mk('Pending',ds.pending,'#f59e0b')}}
+          ${{mk('Rejected',ds.rejected||0,'#7c3aed')}}
+            ${{mk('Info / Closed',ds.info_closed||0,'#60A5FA')}}
+            <td class="disc-num-cell" data-label="Overdue">${{childOvBadge}}</td>
+          <td></td>`;
+        tbody.appendChild(child);
+      }});
     }});
-  }});}});
+  }});
   [...tbody.querySelectorAll('.disc-group-row')].forEach(tr=>{{
     const cells=tr.children;
     if(cells[0])cells[0].dataset.label='Project';
