@@ -5685,7 +5685,7 @@ async function openAdmin(){{
   const utitle=document.createElement('div');
   utitle.id='admin-utitle';
   utitle.style.cssText = 'padding:12px 18px; border-bottom:1px solid var(--bd); background:var(--wh, #fff); display:flex; justify-content:space-between; align-items:center;';
-  utitle.innerHTML=`<div><strong style="font-size:13px;color:var(--tx)">👥 Users</strong> <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span></div> <input type="text" placeholder="Search users by name or email..." style="padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})">`;
+  utitle.innerHTML=`<div><strong style="font-size:13px;color:var(--tx)">👥 Users</strong> <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span></div> <div style="display:flex;gap:8px;align-items:center"><button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">📥 Export Matrix</button><input type="text" placeholder="Search users by name or email..." style="padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 220px; font-weight: normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})"></div>`;
   
   body.parentNode.insertBefore(utitle, body);
   for(const u of users){{
@@ -5866,6 +5866,38 @@ async function updUsrRole(u){{
   const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_role',username:u,role}})}});
   if(r&&r.ok){{toast('Role updated','ok');closeM('admin-modal');openAdmin();}}
   else toast((r&&r.error)||'Role update failed','er');
+}}
+
+async function exportUsersCSV(){{
+  try {{
+    const [users, projects] = await Promise.all([apiFetch('/api/users'), apiFetch('/api/projects')]);
+    if(!users || !projects) return toast('Failed to fetch users or projects', 'er');
+    const pMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
+    const headers = ["Username", "Email", "Role", "Assigned Projects", "Document Controller (DC)"];
+    const rows = users.map(u => {{
+      const isGlobal = u.role === 'superadmin' || u.role === 'admin';
+      const assigned = isGlobal ? 'All Projects (Global Access)' : (u.projects || []).map(p => (pMap[p.project_id] || p.project_id) + (p.is_dc ? ' [DC]' : '')).join(' | ') || 'None';
+      const dcList = isGlobal ? 'Global (Admin)' : (u.projects || []).filter(p => p.is_dc).map(p => pMap[p.project_id] || p.project_id).join(' | ') || 'No';
+      return [
+        `"${{String(u.username||'').replace(/"/g, '""')}}"`,
+        `"${{String(u.email||'—').replace(/"/g, '""')}}"`,
+        `"${{String(u.role||'').toUpperCase()}}"`,
+        `"${{String(assigned).replace(/"/g, '""')}}"`,
+        `"${{String(dcList).replace(/"/g, '""')}}"`
+      ];
+    }});
+    const csvContent = "\\uFEFF" + [headers.join(','), ...rows.map(r => r.join(','))].join('\\r\\n');
+    const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `GasChill_DCR_Users_Matrix_${{new Date().toISOString().slice(0,10)}}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast('✔ Users Matrix exported to CSV', 'ok');
+  }} catch(e) {{
+    toast('Export failed: ' + e.message, 'er');
+  }}
 }}
 
 let _auditOffset=0,_auditHasMore=true;
@@ -9892,7 +9924,7 @@ async function openAdmin(){{
   const utitle=document.createElement('div');
   utitle.id='admin-utitle';
   utitle.style.cssText = 'padding:12px 18px; border-bottom:1px solid var(--bd); background:var(--wh, #fff); display:flex; justify-content:space-between; align-items:center;';
-  utitle.innerHTML=`<div><strong style="font-size:13px;color:var(--tx)">👥 Users</strong> <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span></div> <input type="text" placeholder="Search users by name or email..." style="padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 250px; font-weight: normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})">`;
+  utitle.innerHTML=`<div><strong style="font-size:13px;color:var(--tx)">👥 Users</strong> <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span></div> <div style="display:flex;gap:8px;align-items:center"><button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">📥 Export Matrix</button><input type="text" placeholder="Search users by name or email..." style="padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 220px; font-weight: normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})"></div>`;
   
   body.parentNode.insertBefore(utitle, body);
   for(const u of users){{
@@ -10068,6 +10100,38 @@ async function updUsrRole(u){{
   const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_role',username:u,role}})}});
   if(r&&r.ok){{toast('Role updated','ok');closeM('admin-modal');openAdmin();}}
   else toast((r&&r.error)||'Role update failed','er');
+}}
+
+async function exportUsersCSV(){{
+  try {{
+    const [users, projects] = await Promise.all([apiFetch('/api/users'), apiFetch('/api/projects')]);
+    if(!users || !projects) return toast('Failed to fetch users or projects', 'er');
+    const pMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
+    const headers = ["Username", "Email", "Role", "Assigned Projects", "Document Controller (DC)"];
+    const rows = users.map(u => {{
+      const isGlobal = u.role === 'superadmin' || u.role === 'admin';
+      const assigned = isGlobal ? 'All Projects (Global Access)' : (u.projects || []).map(p => (pMap[p.project_id] || p.project_id) + (p.is_dc ? ' [DC]' : '')).join(' | ') || 'None';
+      const dcList = isGlobal ? 'Global (Admin)' : (u.projects || []).filter(p => p.is_dc).map(p => pMap[p.project_id] || p.project_id).join(' | ') || 'No';
+      return [
+        `"${{String(u.username||'').replace(/"/g, '""')}}"`,
+        `"${{String(u.email||'—').replace(/"/g, '""')}}"`,
+        `"${{String(u.role||'').toUpperCase()}}"`,
+        `"${{String(assigned).replace(/"/g, '""')}}"`,
+        `"${{String(dcList).replace(/"/g, '""')}}"`
+      ];
+    }});
+    const csvContent = "\\uFEFF" + [headers.join(','), ...rows.map(r => r.join(','))].join('\\r\\n');
+    const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `GasChill_DCR_Users_Matrix_${{new Date().toISOString().slice(0,10)}}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast('✔ Users Matrix exported to CSV', 'ok');
+  }} catch(e) {{
+    toast('Export failed: ' + e.message, 'er');
+  }}
 }}
 
 function populateExportScope(){{
