@@ -34,6 +34,7 @@ def api_users():
 def api_users_action():
     data   = request.get_json(silent=True) or {}
     action = data.get("action")
+    u = current_user() or {"username": "admin"}
     if action == "add":
         uname = data.get("username","").strip().lower()
         pw    = data.get("password","")
@@ -42,15 +43,18 @@ def api_users_action():
         if not uname or not pw:
             return jsonify(ok=False, error="Username and password required"), 400
         db.add_user(uname, pw, role, email)
+        db.log_action(u["username"], "USER_CREATE", detail=f"Created user '{uname}' (Role: {role}, Email: {email or '—'})")
         return jsonify(ok=True)
     if action == "delete":
         uname = data.get("username","")
         if uname == "admin":
             return jsonify(ok=False, error="Cannot delete super admin"), 400
         db.delete_user(uname)
+        db.log_action(u["username"], "USER_DELETE", detail=f"Deleted user '{uname}'")
         return jsonify(ok=True)
     if action == "change_password":
         db.change_pw(data.get("username",""), data.get("password",""))
+        db.log_action(u["username"], "PASSWORD_CHANGE", detail=f"Admin changed password for user '{data.get('username')}'")
         return jsonify(ok=True)
     if action == "update_role":
         uname = data.get("username","").strip().lower()
@@ -59,15 +63,21 @@ def api_users_action():
             return jsonify(ok=False, error="Cannot demote protected super admin"), 400
         if not db.set_user_role(uname, role):
             return jsonify(ok=False, error="Invalid role"), 400
+        db.log_action(u["username"], "ROLE_UPDATE", detail=f"Updated role of '{uname}' to '{role}'")
         return jsonify(ok=True)
     if action == "update_email":
         db.set_user_email(data.get("username","").strip().lower(), data.get("email",""))
+        db.log_action(u["username"], "USER_EDIT", detail=f"Updated email for '{data.get('username')}' to '{data.get('email')}'")
         return jsonify(ok=True)
     if action == "assign":
         db.assign_project(data.get("username",""), data.get("project_id",""), data.get("is_dc", False))
+        db.log_action(u["username"], "PROJECT_ASSIGN", project_id=data.get("project_id"),
+                      detail=f"Assigned project '{data.get('project_id')}' to '{data.get('username')}' (DC: {data.get('is_dc', False)})")
         return jsonify(ok=True)
     if action == "unassign":
         db.unassign_project(data.get("username",""), data.get("project_id",""))
+        db.log_action(u["username"], "PROJECT_UNASSIGN", project_id=data.get("project_id"),
+                      detail=f"Unassigned project '{data.get('project_id')}' from '{data.get('username')}'")
         return jsonify(ok=True)
     return jsonify(ok=False, error="Unknown action"), 400
 
@@ -100,4 +110,5 @@ def api_change_own_pw():
     pw   = data.get("password","")
     if len(pw) < 4: return jsonify(ok=False, error="Min 4 characters"), 400
     db.change_pw(u["username"], pw)
+    db.log_action(u["username"], "PASSWORD_CHANGE", detail="User changed own password")
     return jsonify(ok=True)

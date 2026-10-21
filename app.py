@@ -58,6 +58,11 @@ def enforce_login_and_project_scope():
         pid = str(request.args.get("p") or request.args.get("project_id") or request.args.get("pid") or "").strip()
     if pid and pid != "all" and not can_view_project(pid, u):
         if request.path.startswith("/api/"):
+            try:
+                db.log_action(u.get("username", "unknown"), "ACCESS DENIED", project_id=pid,
+                              detail=f"Unauthorized API access attempt to project '{pid}' on {request.path}")
+            except Exception:
+                pass
             return jsonify(error="Forbidden"), 403
         return "Forbidden", 403
     return None
@@ -99,8 +104,14 @@ def login():
         return jsonify(ok=False, error="Invalid username or password"), 401
     return render_login()
 
-@app.route("/logout", methods=["POST"])
+@app.route("/logout", methods=["POST", "GET"])
 def logout():
+    u = current_user()
+    if u:
+        try:
+            db.log_action(u.get("username", ""), "LOGOUT", detail="User logged out")
+        except Exception:
+            pass
     token = request.cookies.get("dcr_token")
     if token: db.delete_session(token)
     resp = make_response(redirect("/login"))
@@ -227,6 +238,34 @@ def api_next_doc_no(pid, dt_id):
         return resp
 
 # ── Audit Log API ─────────────────────────────────────────────
+# ── Audit Log Event Beacon ────────────────────────────────────
+@app.route("/api/audit/log_event", methods=["POST"])
+def api_audit_log_event():
+    u = current_user()
+    if not u:
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    data = request.get_json(silent=True) or {}
+    event_type = str(data.get("event") or "").strip().upper()
+    ALLOWED_EVENTS = {"DOC_VIEW", "DRIVE_LINK_CLICK"}
+    if event_type not in ALLOWED_EVENTS:
+        return jsonify(error="Invalid event"), 400
+    pid = data.get("project_id")
+    dt_id = data.get("dt_id")
+    doc_no = data.get("doc_no")
+    detail = data.get("detail")
+    try:
+        db.log_action(
+            username=u.get("username", ""),
+            action=event_type,
+            project_id=pid,
+            dt_id=dt_id,
+            doc_no=doc_no,
+            detail=str(detail)[:250] if detail else None
+        )
+    except Exception:
+        pass
+    return jsonify(ok=True)
+
 @app.route("/api/audit")
 def api_audit():
     u = current_user()

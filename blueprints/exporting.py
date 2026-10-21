@@ -1860,7 +1860,12 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
 def api_export_all(pid):
     try:
         u = current_user()
-        if u: db.log_action(u["username"],"EXPORT_EXCEL",pid,detail="Export All")
+        if u:
+            try:
+                db.log_action(u["username"], "EXPORT_EXCEL", pid,
+                              detail=f"Exported all tabs of project '{(proj.get('code') or pid)}' to Excel")
+            except Exception:
+                pass
         import openpyxl
 
         proj    = db.get_project(pid) or {}
@@ -1936,6 +1941,13 @@ def api_export(pid, dt_id):
     try:
         import openpyxl
         from flask import request
+        u = current_user()
+        if u:
+            try:
+                db.log_action(u.get("username", ""), "EXPORT_EXCEL", project_id=pid, dt_id=dt_id,
+                              detail=f"Exported tab '{dt_id}' to Excel")
+            except Exception:
+                pass
 
         proj    = db.get_project(pid) or {}
         cols    = [c for c in db.get_columns(pid, dt_id) if c["visible"]]
@@ -2420,6 +2432,13 @@ def _build_executive_summary_pdf(pid, dt_id=None):
 @exporting_bp.route("/api/export_pdf/<pid>/<dt_id>")
 def api_export_pdf(pid, dt_id):
     try:
+        u = current_user()
+        if u:
+            try:
+                db.log_action(u.get("username", ""), "EXPORT_PDF", project_id=pid, dt_id=dt_id,
+                              detail=f"Exported summary for '{dt_id}' to PDF")
+            except Exception:
+                pass
 
         buf = _build_executive_summary_pdf(pid, dt_id)
         fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
@@ -2432,6 +2451,13 @@ def api_export_pdf(pid, dt_id):
 @exporting_bp.route("/api/export_pdf_all/<pid>")
 def api_export_pdf_all(pid):
     try:
+        u = current_user()
+        if u:
+            try:
+                db.log_action(u.get("username", ""), "EXPORT_PDF", project_id=pid,
+                              detail=f"Exported executive summary of project '{pid}' to PDF")
+            except Exception:
+                pass
 
         buf = _build_executive_summary_pdf(pid, "all")
         fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_Executive_Summary.pdf"
@@ -2539,6 +2565,14 @@ def api_import(pid, dt_id):
         logger.error("import_failed pid=%s dt_id=%s ext=%s error=%s", pid, dt_id, ext, e)
         return jsonify(ok=False, error=str(e)), 500
 
+    u = current_user()
+    if u:
+        try:
+            db.log_action(u.get("username", ""), "IMPORT_EXCEL", project_id=pid, dt_id=dt_id,
+                          detail=f"Imported {imported} records into {dt_id} (Created: {created}, Updated: {updated})")
+        except Exception:
+            pass
+
     return jsonify(
         ok=True,
         imported=imported,
@@ -2630,6 +2664,14 @@ def api_import_project(pid):
                 logger.error("import_project_sheet_failed pid=%s dt_id=%s sheet=%s error=%s",
                              pid, dt.get("id",""), ws.title, e)
                 errors.append({"sheet": ws.title, "error": str(e)})
+
+        u = current_user()
+        if u:
+            try:
+                db.log_action(u.get("username", ""), "IMPORT_PROJECT", project_id=pid,
+                              detail=f"Bulk imported project: {imported_total} records across {len(matched_sheets)} sheets")
+            except Exception:
+                pass
 
         return jsonify(
             ok=True,

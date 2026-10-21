@@ -1222,11 +1222,25 @@ function scrollHighlightedIntoView() {
 }
 
 function navigateToSpotlightRecord(recOrPid, maybeTab, maybeRecId) {
-  let targetPid = '', targetDt = '', recId = '';
+  let targetPid = '', targetDt = '', recId = '', docNo = '';
   if (typeof recOrPid === 'object' && recOrPid !== null) {
     targetPid = recOrPid.project_id || recOrPid.project_code || '';
     targetDt = recOrPid.dt_id || '';
     recId = recOrPid.id || '';
+    docNo = recOrPid.doc_no || '';
+    try {
+      fetch('/api/audit/log_event', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          event: 'DOC_VIEW',
+          project_id: targetPid,
+          dt_id: targetDt,
+          doc_no: docNo,
+          detail: 'Spotlight view: ' + (docNo || recId)
+        })
+      });
+    } catch(e) {}
   } else {
     targetPid = recOrPid || '';
     targetDt = maybeTab || '';
@@ -4552,17 +4566,19 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
         #aud-tbl td{{padding:6px 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
       </style>
       <div style="overflow:auto;max-height:calc(100vh - 270px);border:1px solid var(--bd);border-radius:var(--rd)">
-        <table class="dt-tbl" id="aud-tbl" style="min-width:800px;table-layout:fixed">
+        <table class="dt-tbl" id="aud-tbl" style="min-width:1050px;table-layout:fixed">
           <thead><tr>
-            <th style="width:140px">Time</th>
-            <th style="width:100px">User</th>
+            <th style="width:130px">Time</th>
+            <th style="width:90px">User</th>
             <th style="width:95px">Action</th>
-            <th style="width:120px">Project</th>
-            <th style="width:120px">Document</th>
-            <th style="width:100px">Field</th>
-            <th style="width:140px">Old Value</th>
-            <th style="width:140px">New Value</th>
-            <th style="width:180px">Detail</th>
+            <th style="width:110px">Project</th>
+            <th style="width:110px">Document</th>
+            <th style="width:90px">Field</th>
+            <th style="width:120px">Old Value</th>
+            <th style="width:120px">New Value</th>
+            <th style="width:160px">Detail</th>
+            <th style="width:105px">IP Address</th>
+            <th style="width:125px">Device</th>
           </tr></thead>
           <tbody id="aud-tbody"></tbody>
         </table>
@@ -5872,21 +5888,79 @@ async function exportUsersCSV(){{
   try {{
     const [users, projects] = await Promise.all([apiFetch('/api/users'), apiFetch('/api/projects')]);
     if(!users || !projects) return toast('Failed to fetch users or projects', 'er');
-    const pMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
-    const headers = ["Username", "Email", "Role", "Assigned Projects", "Document Controller (DC)"];
-    const rows = users.map(u => {{
+    
+    // Sort projects cleanly by code
+    projects.sort((a,b) => String(a.code || a.id).localeCompare(String(b.code || b.id)));
+    const pCodeMap = Object.fromEntries(projects.map(p => [p.id, p.code || p.id]));
+    const pNameMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
+    
+    const projHeaders = projects.map(p => `"${{String(p.code || p.id).replace(/"/g, '""')}}"`);
+    const headers = [
+      "No.",
+      "Username",
+      "Email",
+      "Role",
+      ...projHeaders,
+      "Total Assigned Projects",
+      "Document Controller (DC)",
+      "Assigned Projects (Detailed List)"
+    ];
+    
+    const projCounts = Object.fromEntries(projects.map(p => [p.id, 0]));
+    
+    const rows = users.map((u, idx) => {{
       const isGlobal = u.role === 'superadmin' || u.role === 'admin';
-      const assigned = isGlobal ? 'All Projects (Global Access)' : (u.projects || []).map(p => (pMap[p.project_id] || p.project_id) + (p.is_dc ? ' [DC]' : '')).join(' | ') || 'None';
-      const dcList = isGlobal ? 'Global (Admin)' : (u.projects || []).filter(p => p.is_dc).map(p => pMap[p.project_id] || p.project_id).join(' | ') || 'No';
+      const uProjs = u.projects || [];
+      const userProjMap = Object.fromEntries(uProjs.map(p => [p.project_id, p]));
+      
+      let assignedCount = 0;
+      const projCols = projects.map(p => {{
+        if (isGlobal) {{
+          assignedCount++;
+          projCounts[p.id]++;
+          return '"Admin"';
+        }}
+        const up = userProjMap[p.id];
+        if (up) {{
+          assignedCount++;
+          projCounts[p.id]++;
+          if (u.role === 'editor') return '"Editor"';
+          if (up.is_dc) return '"DC (Viewer)"';
+          return '"Viewer"';
+        }}
+        return '"—"';
+      }});
+      
+      const totalCol = isGlobal ? `"${{projects.length}} (All)"` : `"${{assignedCount}}"`;
+      const dcList = isGlobal ? 'Global (Admin)' : (uProjs.filter(p => p.is_dc).map(p => pCodeMap[p.project_id] || p.project_id).join(' | ') || 'No');
+      const projDetailedList = isGlobal ? 'All Projects (Global Access)' : (uProjs.map(p => pNameMap[p.project_id] || p.project_id).join(' | ') || 'None');
+      
       return [
+        `"${{idx + 1}}"`,
         `"${{String(u.username||'').replace(/"/g, '""')}}"`,
         `"${{String(u.email||'—').replace(/"/g, '""')}}"`,
         `"${{String(u.role||'').toUpperCase()}}"`,
-        `"${{String(assigned).replace(/"/g, '""')}}"`,
-        `"${{String(dcList).replace(/"/g, '""')}}"`
+        ...projCols,
+        totalCol,
+        `"${{String(dcList).replace(/"/g, '""')}}"`,
+        `"${{String(projDetailedList).replace(/"/g, '""')}}"`
       ];
     }});
-    const csvContent = "\\uFEFF" + [headers.join(','), ...rows.map(r => r.join(','))].join('\\r\\n');
+    
+    // Totals Summary Footer
+    const footerProjCounts = projects.map(p => `"${{projCounts[p.id]}} Users"`);
+    const footerRow = [
+      '""',
+      '"Total Authorized Users Per Project"',
+      '""',
+      '""',
+      ...footerProjCounts,
+      `"${{users.length}} Total Users"`,
+      '""',
+      '""'
+    ];
+    
+    const csvContent = "\\uFEFF" + [headers.join(','), ...rows.map(r => r.join(',')), footerRow.join(',')].join('\\r\\n');
     const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -5903,13 +5977,20 @@ async function exportUsersCSV(){{
 let _auditOffset=0,_auditHasMore=true;
 const ACTION_COLORS={{
   'ADD':'#166534','EDIT':'#1d4ed8','DELETE':'#991b1b',
-  'LOGIN':'#6b7280','LOGIN_FAIL':'#dc2626','EXPORT_EXCEL':'#7c3aed',
-  'PROJECT VIEW':'#0284c7'
+  'LOGIN':'#475569','LOGIN_FAIL':'#dc2626','LOGOUT':'#64748b',
+  'PROJECT VIEW':'#0284c7','DOC_VIEW':'#0891b2',
+  'SEARCH':'#d97706','AI QUERY':'#8b5cf6',
+  'ACCESS DENIED':'#ef4444',
+  'EXPORT_EXCEL':'#7c3aed','EXPORT_PDF':'#b91c1c',
+  'IMPORT_EXCEL':'#059669','IMPORT_PROJECT':'#059669',
+  'USER_CREATE':'#15803d','USER_DELETE':'#b91c1c','USER_EDIT':'#d97706',
+  'ROLE_UPDATE':'#d97706','PASSWORD_CHANGE':'#4338ca',
+  'PROJECT_ASSIGN':'#0284c7','PROJECT_UNASSIGN':'#b45309'
 }};
 
-const AUD_COL_KEY='dcr_audit_col_widths';
-const AUD_DEFAULT_WIDTHS=[140,100,95,120,120,100,140,140,180];
-const AUD_MIN_WIDTHS=[80,60,70,70,80,60,70,70,90];
+const AUD_COL_KEY='dcr_audit_col_widths_v2';
+const AUD_DEFAULT_WIDTHS=[130,90,95,110,110,90,120,120,160,105,125];
+const AUD_MIN_WIDTHS=[75,60,60,70,70,60,70,70,90,75,80];
 let _auditProjMap={{}};
 
 function getSavedAuditColWidths(){{
@@ -6039,7 +6120,7 @@ async function loadAudit(reset=false){{
   _auditHasMore=rows.length===100;
 
   if(!rows.length){{
-    tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
+    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
   }}else{{
     const _dash='<span style="color:var(--mu);opacity:0.4">—</span>';
     const _val=(v)=>{{
@@ -6054,12 +6135,21 @@ async function loadAudit(reset=false){{
       const ts=new Date(r.ts);
       const tsStr=ts.toLocaleDateString('en-GB')+' '+ts.toLocaleTimeString('en-GB',{{hour:'2-digit',minute:'2-digit'}});
       const actionColor=ACTION_COLORS[r.action]||'#374151';
-      const actionBg=r.action==='ADD'?'#bbf7d0':r.action==='EDIT'?'#dbeafe':r.action==='DELETE'?'#fee2e2':r.action==='LOGIN'?'#f3f4f6':r.action==='PROJECT VIEW'?'#e0f2fe':'#fef3c7';
+      const actionBg=
+        (r.action==='ADD'||r.action==='USER_CREATE'||r.action==='IMPORT_EXCEL'||r.action==='IMPORT_PROJECT') ? '#bbf7d0' :
+        (r.action==='EDIT'||r.action==='PROJECT_ASSIGN'||r.action==='USER_EDIT') ? '#dbeafe' :
+        (r.action==='DELETE'||r.action==='USER_DELETE'||r.action==='LOGIN_FAIL'||r.action==='ACCESS DENIED'||r.action==='EXPORT_PDF') ? '#fee2e2' :
+        (r.action==='PROJECT VIEW'||r.action==='DOC_VIEW') ? '#e0f2fe' :
+        (r.action==='AI QUERY') ? '#ede9fe' :
+        (r.action==='SEARCH') ? '#fef3c7' :
+        (r.action==='EXPORT_EXCEL'||r.action==='PASSWORD_CHANGE') ? '#f3e8ff' : '#f1f5f9';
       const projRaw=_auditProjMap[r.project_id]||r.project_id||'';
       const projDisplay=_val(projRaw);
       const docDisplay=r.doc_no?`<span style="color:var(--pr);font-weight:600">${{r.doc_no}}</span>`:_dash;
       const oldDisplay=r.old_value?`<span style="color:#dc2626">${{r.old_value}}</span>`:_dash;
       const newDisplay=r.new_value?`<span style="color:#166534">${{r.new_value}}</span>`:_dash;
+      const ipDisplay=r.ip_address?`<span style="font-family:monospace;color:var(--mu);font-size:9.5px">${{r.ip_address}}</span>`:_dash;
+      const devDisplay=r.device?`<span style="color:var(--tx);font-size:9.5px">${{r.device}}</span>`:_dash;
 
       tr.innerHTML=`
         <td style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
@@ -6070,7 +6160,9 @@ async function loadAudit(reset=false){{
         <td style="font-size:10px;color:var(--mu)" title="${{r.field_name||''}}">${{_val(r.field_name)}}</td>
         <td style="font-size:10px" title="${{r.old_value||''}}">${{oldDisplay}}</td>
         <td style="font-size:10px" title="${{r.new_value||''}}">${{newDisplay}}</td>
-        <td style="font-size:10px;color:var(--mu)" title="${{r.detail||''}}">${{_val(r.detail)}}</td>`;
+        <td style="font-size:10px;color:var(--mu)" title="${{r.detail||''}}">${{_val(r.detail)}}</td>
+        <td style="font-size:10px" title="${{r.ip_address||''}}">${{ipDisplay}}</td>
+        <td style="font-size:10px" title="${{r.user_agent||''}}">${{devDisplay}}</td>`;
       tbody.appendChild(tr);
     }});
   }}
@@ -10106,21 +10198,79 @@ async function exportUsersCSV(){{
   try {{
     const [users, projects] = await Promise.all([apiFetch('/api/users'), apiFetch('/api/projects')]);
     if(!users || !projects) return toast('Failed to fetch users or projects', 'er');
-    const pMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
-    const headers = ["Username", "Email", "Role", "Assigned Projects", "Document Controller (DC)"];
-    const rows = users.map(u => {{
+    
+    // Sort projects cleanly by code
+    projects.sort((a,b) => String(a.code || a.id).localeCompare(String(b.code || b.id)));
+    const pCodeMap = Object.fromEntries(projects.map(p => [p.id, p.code || p.id]));
+    const pNameMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
+    
+    const projHeaders = projects.map(p => `"${{String(p.code || p.id).replace(/"/g, '""')}}"`);
+    const headers = [
+      "No.",
+      "Username",
+      "Email",
+      "Role",
+      ...projHeaders,
+      "Total Assigned Projects",
+      "Document Controller (DC)",
+      "Assigned Projects (Detailed List)"
+    ];
+    
+    const projCounts = Object.fromEntries(projects.map(p => [p.id, 0]));
+    
+    const rows = users.map((u, idx) => {{
       const isGlobal = u.role === 'superadmin' || u.role === 'admin';
-      const assigned = isGlobal ? 'All Projects (Global Access)' : (u.projects || []).map(p => (pMap[p.project_id] || p.project_id) + (p.is_dc ? ' [DC]' : '')).join(' | ') || 'None';
-      const dcList = isGlobal ? 'Global (Admin)' : (u.projects || []).filter(p => p.is_dc).map(p => pMap[p.project_id] || p.project_id).join(' | ') || 'No';
+      const uProjs = u.projects || [];
+      const userProjMap = Object.fromEntries(uProjs.map(p => [p.project_id, p]));
+      
+      let assignedCount = 0;
+      const projCols = projects.map(p => {{
+        if (isGlobal) {{
+          assignedCount++;
+          projCounts[p.id]++;
+          return '"Admin"';
+        }}
+        const up = userProjMap[p.id];
+        if (up) {{
+          assignedCount++;
+          projCounts[p.id]++;
+          if (u.role === 'editor') return '"Editor"';
+          if (up.is_dc) return '"DC (Viewer)"';
+          return '"Viewer"';
+        }}
+        return '"—"';
+      }});
+      
+      const totalCol = isGlobal ? `"${{projects.length}} (All)"` : `"${{assignedCount}}"`;
+      const dcList = isGlobal ? 'Global (Admin)' : (uProjs.filter(p => p.is_dc).map(p => pCodeMap[p.project_id] || p.project_id).join(' | ') || 'No');
+      const projDetailedList = isGlobal ? 'All Projects (Global Access)' : (uProjs.map(p => pNameMap[p.project_id] || p.project_id).join(' | ') || 'None');
+      
       return [
+        `"${{idx + 1}}"`,
         `"${{String(u.username||'').replace(/"/g, '""')}}"`,
         `"${{String(u.email||'—').replace(/"/g, '""')}}"`,
         `"${{String(u.role||'').toUpperCase()}}"`,
-        `"${{String(assigned).replace(/"/g, '""')}}"`,
-        `"${{String(dcList).replace(/"/g, '""')}}"`
+        ...projCols,
+        totalCol,
+        `"${{String(dcList).replace(/"/g, '""')}}"`,
+        `"${{String(projDetailedList).replace(/"/g, '""')}}"`
       ];
     }});
-    const csvContent = "\\uFEFF" + [headers.join(','), ...rows.map(r => r.join(','))].join('\\r\\n');
+    
+    // Totals Summary Footer
+    const footerProjCounts = projects.map(p => `"${{projCounts[p.id]}} Users"`);
+    const footerRow = [
+      '""',
+      '"Total Authorized Users Per Project"',
+      '""',
+      '""',
+      ...footerProjCounts,
+      `"${{users.length}} Total Users"`,
+      '""',
+      '""'
+    ];
+    
+    const csvContent = "\\uFEFF" + [headers.join(','), ...rows.map(r => r.join(',')), footerRow.join(',')].join('\\r\\n');
     const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

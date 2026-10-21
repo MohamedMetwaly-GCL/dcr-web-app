@@ -220,6 +220,18 @@ def api_search_global():
             "issued_date": row.get("doc_date") or ""
         })
 
+    if q_str and len(q_str) >= 2:
+        try:
+            db.log_action(
+                username=u.get("username", ""),
+                action="SEARCH",
+                project_id=project_filter or None,
+                dt_id=dt_id or None,
+                detail=f"Global query: '{q_str[:80]}' | Found: {total_found}"
+            )
+        except Exception:
+            pass
+
     return jsonify(
         query=q_str,
         total_found=total_found,
@@ -318,7 +330,15 @@ def api_letter_timeline(pid, record_id):
 
 @records_bp.route("/api/records/<pid>/<dt_id>", methods=["POST"])
 def api_save_record(pid, dt_id):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_edit(pid):
+        u = current_user()
+        if u:
+            try:
+                db.log_action(u.get("username", ""), "ACCESS DENIED", project_id=pid, dt_id=dt_id,
+                              detail=f"Unauthorized write attempt on project '{pid}'")
+            except Exception:
+                pass
+        return jsonify(error="LOGIN_REQUIRED"), 403
     u      = current_user()
     uname  = u["username"] if u else "unknown"
     data   = request.get_json(silent=True) or {}
@@ -378,6 +398,11 @@ def api_delete_record(rec_id):
     dt_id = full_row.get("_dt_id", "")
     doc_no = full_row.get("docNo", "")
     if not can_edit(pid):
+        try:
+            db.log_action(u.get("username", ""), "ACCESS DENIED", project_id=pid, dt_id=dt_id,
+                          doc_no=doc_no, detail=f"Unauthorized delete attempt on {doc_no}")
+        except Exception:
+            pass
         return jsonify(error="Forbidden"), 403
     db.delete_record(rec_id)
     db.log_action(

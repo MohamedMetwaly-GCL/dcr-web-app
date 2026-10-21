@@ -186,10 +186,18 @@ CREATE TABLE IF NOT EXISTS audit_log (
     field_name  TEXT,
     old_value   TEXT,
     new_value   TEXT,
-    detail      TEXT
+    detail      TEXT,
+    ip_address  TEXT DEFAULT NULL,
+    user_agent  TEXT DEFAULT NULL,
+    device      TEXT DEFAULT NULL
 );
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS ip_address TEXT DEFAULT NULL;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS user_agent TEXT DEFAULT NULL;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS device TEXT DEFAULT NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_proj ON audit_log(project_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(username, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, ts DESC);
 """
 
 DEFAULT_DOC_TYPES = [
@@ -515,6 +523,7 @@ def init():
         except Exception as e:
             if "already exists" not in str(e).lower():
                 logger.warning("db_schema_note error=%s", e)
+    ensure_audit_schema()
     _ensure_admin()
     _cleanup_custom_columns()
     _global_rename_filelocation()
@@ -2384,18 +2393,91 @@ def get_overdue_records(pid=None, project_ids=None):
 
 
 # ── Audit Log ─────────────────────────────────────────────────
-def log_action(username, action, project_id=None, dt_id=None, record_id=None,
-               doc_no=None, field_name=None, old_value=None, new_value=None, detail=None):
-    """Write one audit entry. Never raises — silently ignores errors."""
+def parse_user_agent(ua_str):
+    """Extract a friendly, concise OS / Browser string from User-Agent."""
+    if not ua_str:
+        return "Unknown"
+    ua = str(ua_str).lower()
+    
+    # Detect OS
+    if "windows nt 10.0" in ua or "windows nt 11.0" in ua:
+        os_name = "Windows 10/11"
+    elif "windows" in ua:
+        os_name = "Windows"
+    elif "iphone" in ua:
+        os_name = "iPhone (iOS)"
+    elif "ipad" in ua:
+        os_name = "iPad (iOS)"
+    elif "android" in ua:
+        os_name = "Android"
+    elif "macintosh" in ua or "mac os" in ua:
+        os_name = "macOS"
+    elif "linux" in ua:
+        os_name = "Linux"
+    else:
+        os_name = "Other"
+
+    # Detect Browser
+    if "edg/" in ua or "edge/" in ua:
+        browser = "Edge"
+    elif "opr/" in ua or "opera" in ua:
+        browser = "Opera"
+    elif "chrome/" in ua:
+        browser = "Chrome"
+    elif "firefox/" in ua:
+        browser = "Firefox"
+    elif "safari/" in ua and "chrome" not in ua:
+        browser = "Safari"
+    else:
+        browser = "Browser"
+
+    return f"{os_name} • {browser}"
+
+def ensure_audit_schema():
+    """Idempotent migration to ensure audit columns and indexes exist."""
     try:
+        exe("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS ip_address TEXT DEFAULT NULL;")
+        exe("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS user_agent TEXT DEFAULT NULL;")
+        exe("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS device TEXT DEFAULT NULL;")
+        exe("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(username, ts DESC);")
+        exe("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, ts DESC);")
+    except Exception as e:
+        logger.warning("ensure_audit_schema warning: %s", e)
+
+def log_action(username, action, project_id=None, dt_id=None, record_id=None,
+               doc_no=None, field_name=None, old_value=None, new_value=None, detail=None,
+               ip_address=None, user_agent=None, device=None):
+    """Write one audit entry with automatic IP & device extraction. Never raises — silently ignores errors."""
+    try:
+        if ip_address is None and user_agent is None:
+            try:
+                from flask import request, has_request_context
+                if has_request_context():
+                    cf_ip = request.headers.get("CF-Connecting-IP")
+                    x_fwd = request.headers.get("X-Forwarded-For")
+                    if cf_ip:
+                        ip_address = cf_ip.strip()
+                    elif x_fwd:
+                        ip_address = x_fwd.split(",")[0].strip()
+                    else:
+                        ip_address = request.remote_addr or ""
+                    
+                    user_agent = request.headers.get("User-Agent", "")[:300]
+                    device = parse_user_agent(user_agent)
+            except Exception:
+                pass
+
         exe("""INSERT INTO audit_log(username,action,project_id,dt_id,record_id,
-               doc_no,field_name,old_value,new_value,detail)
-               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               doc_no,field_name,old_value,new_value,detail,ip_address,user_agent,device)
+               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (username, action, project_id, dt_id, record_id,
              doc_no, field_name,
              str(old_value)[:500] if old_value is not None else None,
              str(new_value)[:500] if new_value is not None else None,
-             str(detail)[:500] if detail else None))
+             str(detail)[:500] if detail else None,
+             str(ip_address)[:100] if ip_address else None,
+             str(user_agent)[:300] if user_agent else None,
+             str(device)[:100] if device else None))
     except Exception as e:
         logger.error("audit_log_failed action=%s project_id=%s dt_id=%s record_id=%s error=%s",
                      action, project_id, dt_id, record_id, e)
@@ -2414,7 +2496,8 @@ def get_audit_log(project_id=None, username=None, action=None,
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     params += [limit, offset]
     return q(f"""SELECT id,ts,username,action,project_id,dt_id,
-                        doc_no,field_name,old_value,new_value,detail
+                        doc_no,field_name,old_value,new_value,detail,
+                        ip_address,user_agent,device
                  FROM audit_log {where}
                  ORDER BY ts DESC
                  LIMIT %s OFFSET %s""", params)

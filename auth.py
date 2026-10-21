@@ -119,7 +119,13 @@ def require_superadmin(fn):
     @wraps(fn)
     def wrapper(*a, **kw):
         u = current_user()
-        if not u or u["role"] != "superadmin":
+        if not u or u.get("role") != "superadmin":
+            if u:
+                try:
+                    db.log_action(u.get("username", ""), "ACCESS DENIED",
+                                  detail=f"Unauthorized superadmin attempt on {request.path}")
+                except Exception:
+                    pass
             return jsonify(error="Forbidden"), 403
         return fn(*a, **kw)
     return wrapper

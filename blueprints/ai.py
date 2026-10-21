@@ -1313,8 +1313,24 @@ def api_ai_query():
         if project_id and str(project_id).strip().upper() not in ("ALL", ""):
             pid = str(project_id).strip()
             if not can_view_project(pid, u):
+                try:
+                    db.log_action(u.get("username", ""), "ACCESS DENIED", project_id=pid,
+                                  detail=f"AI query access denied for project '{pid}'")
+                except Exception:
+                    pass
                 return jsonify(error="Forbidden"), 403
             active_pid = pid
+
+        try:
+            db.log_action(
+                username=u.get("username", ""),
+                action="AI QUERY",
+                project_id=active_pid,
+                dt_id=tab or None,
+                detail=f"Prompt: {prompt[:150]}"
+            )
+        except Exception:
+            pass
 
         try:
             user_allowed = get_allowed_project_ids(u)
