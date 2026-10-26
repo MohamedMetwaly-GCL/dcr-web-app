@@ -1232,6 +1232,7 @@ function navigateToSpotlightRecord(recOrPid, maybeTab, maybeRecId) {
       fetch('/api/audit/log_event', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
+        keepalive: true,
         body: JSON.stringify({
           event: 'DOC_VIEW',
           project_id: targetPid,
@@ -7885,6 +7886,11 @@ function renderRows(){{
       }} else {{
           td.textContent=displayVal;
       }}
+      if (key === 'docNo' || col.col_type === 'docno') {{
+          td.style.cursor = 'pointer';
+          td.title = CAN_EDIT ? 'Click to view/edit document' : 'Click to view document';
+          td.onclick = () => {{ CAN_EDIT ? editRec(row._id) : viewRec(row._id); }};
+      }}
       applyDisplayDirection(td,displayVal);
       tr.appendChild(td);
     }});
@@ -7892,8 +7898,8 @@ function renderRows(){{
     let acts='';
     if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
     if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">Thread</button> <button class="pr-toggle" onclick="openLetterTimeline('${{row._id}}')">Timeline</button> `;
-    if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')">✏</button> <button class="act del" onclick="delRec('${{row._id}}')">🗑</button>`;
-    else if(!acts)acts='<span style="color:var(--mu);font-size:10px">—</span>';
+    if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')" title="Edit">✏</button> <button class="act del" onclick="delRec('${{row._id}}')" title="Delete">🗑</button>`;
+    else acts+=`<button class="act" onclick="viewRec('${{row._id}}')" title="View details">👁</button>`;
     ta.innerHTML=acts;
     tr.appendChild(ta);body.appendChild(tr);
     if(!row._isRev)sr++;
@@ -7937,6 +7943,24 @@ function renderRows(){{
     }}
     setTimeout(() => {{
       setSelectedRegisterRow(hlParam);
+      const targetRec = state.recs.find(r => r._id === hlParam);
+      if (targetRec) {{
+        const docNo = targetRec.docNo || targetRec.nocNo || '';
+        try {{
+          fetch('/api/audit/log_event', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            keepalive: true,
+            body: JSON.stringify({{
+              event: 'DOC_VIEW',
+              project_id: PID,
+              dt_id: state.tab,
+              doc_no: docNo,
+              detail: 'Quick search highlighted: ' + (docNo || hlParam)
+            }})
+          }});
+        }} catch(e) {{}}
+      }}
       const tr = document.querySelector(`#regtbl tbody tr[data-rec-id="${{CSS.escape(String(hlParam))}}"]`);
       if (tr) {{
         tr.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
@@ -8394,6 +8418,8 @@ function addRecord(){{
   state.editId=null;
   state.revisionDraftActive=false;
   state.savingRecord=false;setRecordSaveState(false);
+  const saveBtn=document.getElementById('rec-save-btn');
+  if(saveBtn) saveBtn.style.display='';
   const draft=buildRevisionDraftFromSelected();
   if(draft===false)return;
   if(draft){{
@@ -8406,7 +8432,63 @@ function addRecord(){{
   }}
   openM('rec-modal');
 }}
-function editRec(id){{state.editId=id;state.revisionDraftActive=false;state.savingRecord=false;setRecordSaveState(false);const row=state.recs.find(r=>r._id===id);if(!row)return;document.getElementById('rec-title').textContent='Edit Document';buildForm(row);openM('rec-modal');}}
+
+function editRec(id){{
+  state.editId=id;
+  state.revisionDraftActive=false;
+  state.savingRecord=false;
+  setRecordSaveState(false);
+  const saveBtn=document.getElementById('rec-save-btn');
+  if(saveBtn) saveBtn.style.display='';
+  const row=state.recs.find(r=>r._id===id);
+  if(!row)return;
+  const docNo=row.docNo||row.nocNo||'';
+  try {{
+    fetch('/api/audit/log_event', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      keepalive: true,
+      body: JSON.stringify({{
+        event: 'DOC_VIEW',
+        project_id: PID,
+        dt_id: state.tab,
+        doc_no: docNo,
+        detail: 'Document opened: ' + (docNo || id)
+      }})
+    }});
+  }} catch(e) {{}}
+  document.getElementById('rec-title').textContent='Edit Document';
+  buildForm(row);
+  openM('rec-modal');
+}}
+
+function viewRec(id){{
+  state.editId=id;
+  state.revisionDraftActive=false;
+  state.savingRecord=false;
+  const saveBtn=document.getElementById('rec-save-btn');
+  if(saveBtn) saveBtn.style.display='none';
+  const row=state.recs.find(r=>r._id===id);
+  if(!row)return;
+  const docNo=row.docNo||row.nocNo||'';
+  try {{
+    fetch('/api/audit/log_event', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      keepalive: true,
+      body: JSON.stringify({{
+        event: 'DOC_VIEW',
+        project_id: PID,
+        dt_id: state.tab,
+        doc_no: docNo,
+        detail: 'Document viewed: ' + (docNo || id)
+      }})
+    }});
+  }} catch(e) {{}}
+  document.getElementById('rec-title').textContent='Document Details';
+  buildForm(row);
+  openM('rec-modal');
+}}
 
 function setRecordSaveState(isSaving){{
   const btn=document.getElementById('rec-save-btn');
