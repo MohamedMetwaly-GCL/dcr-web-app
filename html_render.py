@@ -5979,7 +5979,7 @@ let _auditOffset=0,_auditHasMore=true;
 const ACTION_COLORS={{
   'ADD':'#166534','EDIT':'#1d4ed8','DELETE':'#991b1b',
   'LOGIN':'#475569','LOGIN_FAIL':'#dc2626','LOGOUT':'#64748b',
-  'PROJECT VIEW':'#0284c7','DOC_VIEW':'#0891b2',
+  'PROJECT VIEW':'#0284c7','TAB_VIEW':'#0284c7','DOC_VIEW':'#0891b2',
   'SEARCH':'#d97706','AI QUERY':'#8b5cf6',
   'ACCESS DENIED':'#ef4444',
   'EXPORT_EXCEL':'#7c3aed','EXPORT_PDF':'#b91c1c',
@@ -6140,7 +6140,7 @@ async function loadAudit(reset=false){{
         (r.action==='ADD'||r.action==='USER_CREATE'||r.action==='IMPORT_EXCEL'||r.action==='IMPORT_PROJECT') ? '#bbf7d0' :
         (r.action==='EDIT'||r.action==='PROJECT_ASSIGN'||r.action==='USER_EDIT') ? '#dbeafe' :
         (r.action==='DELETE'||r.action==='USER_DELETE'||r.action==='LOGIN_FAIL'||r.action==='ACCESS DENIED'||r.action==='EXPORT_PDF') ? '#fee2e2' :
-        (r.action==='PROJECT VIEW'||r.action==='DOC_VIEW') ? '#e0f2fe' :
+        (r.action==='PROJECT VIEW'||r.action==='TAB_VIEW'||r.action==='DOC_VIEW') ? '#e0f2fe' :
         (r.action==='AI QUERY') ? '#ede9fe' :
         (r.action==='SEARCH') ? '#fef3c7' :
         (r.action==='EXPORT_EXCEL'||r.action==='PASSWORD_CHANGE') ? '#f3e8ff' : '#f1f5f9';
@@ -6791,7 +6791,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       <button class="xbtn" onclick="closeM('rec-modal')">✕</button></div>
     <div class="mbody"><div class="record-form-shell" id="rec-form"></div></div>
     <div class="mfoot record-modal-actions">
-      <button class="btn btn-sc" onclick="closeM('rec-modal')">Cancel</button>
+      <button class="btn btn-sc" id="rec-cancel-btn" onclick="closeM('rec-modal')">Cancel</button>
       <button class="btn btn-pr" id="rec-save-btn" onclick="saveRecord()">Save</button>
     </div>
   </div>
@@ -7341,12 +7341,31 @@ function renderTabs(dts){{
   }});
 }}
 
-function switchTab(id){{
+function switchTab(id, isInitial){{
+  const prevTab = state.tab;
   state.tab=id;state.recs=null;state.visibleRows=[];state.selectedRowId=null;state.filters={{}};state.sortCol=null;
   document.getElementById('srchbox').value='';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
   updateLTRQuickBar();
   loadRecords();
+
+  if(!isInitial && prevTab && prevTab !== id){{
+    const dt=state.dtList?.find(d=>d.id===id)||{{}};
+    const dtLabel=dt.code ? (dt.code + (dt.name ? ' - ' + dt.name : '')) : id;
+    try {{
+      fetch('/api/audit/log_event', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        keepalive: true,
+        body: JSON.stringify({{
+          event: 'TAB_VIEW',
+          project_id: PID,
+          dt_id: id,
+          detail: 'Switched register tab: ' + dtLabel
+        }})
+      }});
+    }} catch(e) {{}}
+  }}
 }}
 
 function isMobileRegister(){{
@@ -8497,6 +8516,8 @@ function addRecord(){{
   state.savingRecord=false;setRecordSaveState(false);
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn) saveBtn.style.display='';
+  const cBtn=document.getElementById('rec-cancel-btn');
+  if(cBtn) cBtn.textContent='Cancel';
   const draft=buildRevisionDraftFromSelected();
   if(draft===false)return;
   if(draft){{
@@ -8510,13 +8531,15 @@ function addRecord(){{
   openM('rec-modal');
 }}
 
-function editRec(id){{
+async function editRec(id){{
   state.editId=id;
   state.revisionDraftActive=false;
   state.savingRecord=false;
   setRecordSaveState(false);
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn) saveBtn.style.display='';
+  const cBtn=document.getElementById('rec-cancel-btn');
+  if(cBtn) cBtn.textContent='Cancel';
   const row=state.recs.find(r=>r._id===id);
   if(!row)return;
   const docNo=row.docNo||row.nocNo||'';
@@ -8530,21 +8553,24 @@ function editRec(id){{
         project_id: PID,
         dt_id: state.tab,
         doc_no: docNo,
-        detail: 'Document opened: ' + (docNo || id)
+        detail: 'Document opened (Edit): ' + (docNo || id)
       }})
     }});
   }} catch(e) {{}}
   document.getElementById('rec-title').textContent='Edit Document';
-  buildForm(row);
+  await buildForm(row);
+  if(saveBtn) saveBtn.style.display='';
   openM('rec-modal');
 }}
 
-function viewRec(id){{
+async function viewRec(id){{
   state.editId=id;
   state.revisionDraftActive=false;
   state.savingRecord=false;
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn) saveBtn.style.display='none';
+  const cBtn=document.getElementById('rec-cancel-btn');
+  if(cBtn) cBtn.textContent='Close';
   const row=state.recs.find(r=>r._id===id);
   if(!row)return;
   const docNo=row.docNo||row.nocNo||'';
@@ -8558,12 +8584,13 @@ function viewRec(id){{
         project_id: PID,
         dt_id: state.tab,
         doc_no: docNo,
-        detail: 'Document viewed: ' + (docNo || id)
+        detail: 'Document viewed (Read-only): ' + (docNo || id)
       }})
     }});
   }} catch(e) {{}}
-  document.getElementById('rec-title').textContent='Document Details';
-  buildForm(row);
+  document.getElementById('rec-title').textContent='Document Details (View Only)';
+  await buildForm(row, {{readonly: true}});
+  if(saveBtn) saveBtn.style.display='none';
   openM('rec-modal');
 }}
 
@@ -8927,6 +8954,27 @@ async function buildForm(row,opts={{}}){{
     if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
   }}
   if(!isNocTab)compactSingleFieldFormSections(formRoot);
+  if(opts && opts.readonly){{
+    formRoot.querySelectorAll('input, select, textarea').forEach(el=>{{
+      el.disabled=true;
+      el.readOnly=true;
+      el.style.cursor='default';
+      el.style.backgroundColor='var(--bg, #f8fafc)';
+      el.style.opacity='0.9';
+    }});
+    formRoot.querySelectorAll('button, .btn-sm, #add-item-btn, .xbtn, .item-remove-btn, .chip-del, .chip-remove').forEach(b=>{{
+      b.style.display='none';
+    }});
+    setTimeout(()=>{{
+      formRoot.querySelectorAll('input, select, textarea').forEach(el=>{{
+        el.disabled=true;
+        el.readOnly=true;
+      }});
+      formRoot.querySelectorAll('button, .btn-sm, #add-item-btn, .item-remove-btn').forEach(b=>{{
+        b.style.display='none';
+      }});
+    }}, 150);
+  }}
 }}
 
 function moveRowUp(btn) {{
@@ -9402,6 +9450,7 @@ function durChoice(docNo){{
 }}
 
 async function saveRecord(){{
+  if(!CAN_EDIT){{toast('You have view-only permissions.', 'wa');return;}}
   if(state.savingRecord)return;
   state.savingRecord=true;setRecordSaveState(true);
   try{{
