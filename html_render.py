@@ -5979,7 +5979,7 @@ let _auditOffset=0,_auditHasMore=true;
 const ACTION_COLORS={{
   'ADD':'#166534','EDIT':'#1d4ed8','DELETE':'#991b1b',
   'LOGIN':'#475569','LOGIN_FAIL':'#dc2626','LOGOUT':'#64748b',
-  'PROJECT VIEW':'#0284c7','TAB_VIEW':'#0284c7','DOC_VIEW':'#0891b2',
+  'PROJECT VIEW':'#0284c7','TAB_VIEW':'#0284c7','DOC_VIEW':'#0891b2','DRIVE_LINK_CLICK':'#0891b2','FILE_DOWNLOAD':'#7c3aed',
   'SEARCH':'#d97706','AI QUERY':'#8b5cf6',
   'ACCESS DENIED':'#ef4444',
   'EXPORT_EXCEL':'#7c3aed','EXPORT_PDF':'#b91c1c',
@@ -6140,7 +6140,7 @@ async function loadAudit(reset=false){{
         (r.action==='ADD'||r.action==='USER_CREATE'||r.action==='IMPORT_EXCEL'||r.action==='IMPORT_PROJECT') ? '#bbf7d0' :
         (r.action==='EDIT'||r.action==='PROJECT_ASSIGN'||r.action==='USER_EDIT') ? '#dbeafe' :
         (r.action==='DELETE'||r.action==='USER_DELETE'||r.action==='LOGIN_FAIL'||r.action==='ACCESS DENIED'||r.action==='EXPORT_PDF') ? '#fee2e2' :
-        (r.action==='PROJECT VIEW'||r.action==='TAB_VIEW'||r.action==='DOC_VIEW') ? '#e0f2fe' :
+        (r.action==='PROJECT VIEW'||r.action==='TAB_VIEW'||r.action==='DOC_VIEW'||r.action==='DRIVE_LINK_CLICK') ? '#e0f2fe' : (r.action==='FILE_DOWNLOAD') ? '#f3e8ff' :
         (r.action==='AI QUERY') ? '#ede9fe' :
         (r.action==='SEARCH') ? '#fef3c7' :
         (r.action==='EXPORT_EXCEL'||r.action==='PASSWORD_CHANGE') ? '#f3e8ff' : '#f1f5f9';
@@ -6486,6 +6486,21 @@ body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:l
 #rec-modal .record-modal{{width:min(96vw,980px)!important;max-width:980px!important}}
 #rec-modal .mbody{{padding:14px 16px 12px}}
 #rec-modal .record-modal-actions{{gap:10px;flex-wrap:wrap;border-top:1px solid rgba(148,163,184,.34);background:linear-gradient(180deg,rgba(248,250,252,.96),#eef4fb);box-shadow:0 -10px 24px rgba(15,23,42,.10);z-index:5}}
+#rec-modal.rec-modal-readonly #rec-save-btn {{ display: none !important; }}
+#rec-modal.rec-modal-readonly .record-modal-actions {{ justify-content: flex-end !important; }}
+#rec-modal.rec-modal-readonly .record-modal-actions #rec-cancel-btn {{ min-width: 120px !important; }}
+#rec-modal.rec-modal-readonly .ms-con {{ pointer-events: none !important; cursor: default !important; background: var(--bg, #f8fafc) !important; }}
+#rec-modal.rec-modal-readonly .ms-rm {{ display: none !important; }}
+#rec-modal.rec-modal-readonly .ms-dd {{ display: none !important; }}
+#rec-modal.rec-modal-readonly input,
+#rec-modal.rec-modal-readonly select,
+#rec-modal.rec-modal-readonly textarea {{ pointer-events: none !important; cursor: default !important; background: var(--bg, #f8fafc) !important; color: var(--tx, #1e293b) !important; user-select: text !important; }}
+#rec-modal.rec-modal-readonly button:not(#rec-cancel-btn):not(.xbtn) {{ display: none !important; }}
+#rec-modal.rec-modal-readonly .btn-sm,
+#rec-modal.rec-modal-readonly #add-item-btn,
+#rec-modal.rec-modal-readonly .item-remove-btn,
+#rec-modal.rec-modal-readonly .act,
+#rec-modal.rec-modal-readonly .del {{ display: none !important; }}
 body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:linear-gradient(180deg,#142033,#101a29);box-shadow:0 -12px 26px rgba(0,0,0,.28)}}
 .record-modal-actions .btn{{min-height:38px}}
 #pr-items-editor{{overflow-x:auto;padding-bottom:2px}}
@@ -7755,6 +7770,23 @@ function sanitizeRevisionDraftData(oldRecord,newDocNo){{
   return draft;
 }}
 
+function logFileAction(event, docNo, url){{
+  try {{
+    fetch('/api/audit/log_event', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      keepalive: true,
+      body: JSON.stringify({{
+        event: event,
+        project_id: PID,
+        dt_id: state.tab,
+        doc_no: docNo,
+        detail: (event === 'FILE_DOWNLOAD' ? 'File downloaded: ' : 'File link opened: ') + (docNo || '')
+      }})
+    }});
+  }} catch(e) {{}}
+}}
+
 function renderRows(){{
   try {{
   const body=document.getElementById('tbody');body.innerHTML='';
@@ -7861,13 +7893,14 @@ function renderRows(){{
         if(hasValidLink){{
           let eyeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
           let dlSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-          let icons = `<a class="view-file-icon" href="${{url}}" target="_blank" title="${{isFolder ? 'Open Folder' : 'View File'}}">${{eyeSvg}}</a>`;
+          const escDocNo = escHtml(row.docNo||row.nocNo||'');
+          let icons = `<a class="view-file-icon" href="${{url}}" target="_blank" onclick="logFileAction('DRIVE_LINK_CLICK', '${{escDocNo}}', '${{escHtml(url)}}')" title="${{isFolder ? 'Open Folder' : 'View File'}}">${{eyeSvg}}</a>`;
           if(!isFolder) {{
             let dlUrl = url;
             let m = url.match(/d\\/([a-zA-Z0-9_-]+)/);
             if(m) dlUrl = `https://drive.google.com/uc?export=download&id=${{m[1]}}`;
             else {{ m = url.match(/id=([a-zA-Z0-9_-]+)/); if(m) dlUrl = `https://drive.google.com/uc?export=download&id=${{m[1]}}`; }}
-            icons += `<a class="dl-file-icon" href="${{dlUrl}}" target="_blank" title="Download File">${{dlSvg}}</a>`;
+            icons += `<a class="dl-file-icon" href="${{dlUrl}}" target="_blank" onclick="logFileAction('FILE_DOWNLOAD', '${{escDocNo}}', '${{escHtml(dlUrl)}}')" title="Download File">${{dlSvg}}</a>`;
           }}
           td.innerHTML=icons;
         }}
@@ -8514,8 +8547,10 @@ function addRecord(){{
   state.editId=null;
   state.revisionDraftActive=false;
   state.savingRecord=false;setRecordSaveState(false);
+  const modalEl=document.getElementById('rec-modal');
+  if(modalEl) modalEl.classList.remove('rec-modal-readonly');
   const saveBtn=document.getElementById('rec-save-btn');
-  if(saveBtn) saveBtn.style.display='';
+  if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
   if(cBtn) cBtn.textContent='Cancel';
   const draft=buildRevisionDraftFromSelected();
@@ -8536,8 +8571,10 @@ async function editRec(id){{
   state.revisionDraftActive=false;
   state.savingRecord=false;
   setRecordSaveState(false);
+  const modalEl=document.getElementById('rec-modal');
+  if(modalEl) modalEl.classList.remove('rec-modal-readonly');
   const saveBtn=document.getElementById('rec-save-btn');
-  if(saveBtn) saveBtn.style.display='';
+  if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
   if(cBtn) cBtn.textContent='Cancel';
   const row=state.recs.find(r=>r._id===id);
@@ -8559,7 +8596,7 @@ async function editRec(id){{
   }} catch(e) {{}}
   document.getElementById('rec-title').textContent='Edit Document';
   await buildForm(row);
-  if(saveBtn) saveBtn.style.display='';
+  if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   openM('rec-modal');
 }}
 
@@ -8567,8 +8604,10 @@ async function viewRec(id){{
   state.editId=id;
   state.revisionDraftActive=false;
   state.savingRecord=false;
+  const modalEl=document.getElementById('rec-modal');
+  if(modalEl) modalEl.classList.add('rec-modal-readonly');
   const saveBtn=document.getElementById('rec-save-btn');
-  if(saveBtn) saveBtn.style.display='none';
+  if(saveBtn){{ saveBtn.style.setProperty('display', 'none', 'important'); saveBtn.classList.add('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
   if(cBtn) cBtn.textContent='Close';
   const row=state.recs.find(r=>r._id===id);
@@ -8590,7 +8629,7 @@ async function viewRec(id){{
   }} catch(e) {{}}
   document.getElementById('rec-title').textContent='Document Details (View Only)';
   await buildForm(row, {{readonly: true}});
-  if(saveBtn) saveBtn.style.display='none';
+  if(saveBtn){{ saveBtn.style.setProperty('display', 'none', 'important'); saveBtn.classList.add('hidden'); }}
   openM('rec-modal');
 }}
 

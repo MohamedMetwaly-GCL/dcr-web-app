@@ -246,7 +246,7 @@ def api_audit_log_event():
         return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
     event_type = str(data.get("event") or "").strip().upper()
-    ALLOWED_EVENTS = {"DOC_VIEW", "DRIVE_LINK_CLICK", "TAB_VIEW"}
+    ALLOWED_EVENTS = {"DOC_VIEW", "DRIVE_LINK_CLICK", "TAB_VIEW", "FILE_DOWNLOAD"}
     if event_type not in ALLOWED_EVENTS:
         return jsonify(error="Invalid event"), 400
     pid = data.get("project_id")
@@ -284,6 +284,10 @@ def api_audit():
         actions = sorted(actions + ["PROJECT VIEW"])
     if "TAB_VIEW" not in actions:
         actions = sorted(actions + ["TAB_VIEW"])
+    if "FILE_DOWNLOAD" not in actions:
+        actions = sorted(actions + ["FILE_DOWNLOAD"])
+    if "DRIVE_LINK_CLICK" not in actions:
+        actions = sorted(actions + ["DRIVE_LINK_CLICK"])
     projects = db.get_projects()
     return jsonify(
         rows=[{**dict(r), "ts": str(r["ts"])} for r in rows],
