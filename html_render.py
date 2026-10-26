@@ -6348,6 +6348,7 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
   white-space:nowrap;border-right:1px solid rgba(255,255,255,.1);cursor:pointer;user-select:none;position:relative}}
 #thead tr:first-child th{{position:relative;top:auto;z-index:auto;border-bottom:2px solid rgba(255,255,255,.24);box-shadow:none}}
 #regtbl th:hover{{background:var(--pl)}}
+#regtbl th:hover .sort-arrow.muted{{opacity:.9!important;color:#38bdf8!important}}
 .frow{{position:static}}
 .frow th{{background:#eef1f7;padding:3px 4px;cursor:default;position:static;top:auto;z-index:auto;box-shadow:0 1px 0 rgba(221,227,237,.95)}}
 .frow th:hover{{background:#eef1f7}}
@@ -7462,12 +7463,20 @@ function buildHead(){{
   const chk=document.createElement('th'); chk.className='chkcell';
   if(CAN_EDIT)chk.innerHTML='<input type="checkbox" id="chkall" onchange="selAll(this.checked)">';
   hr.appendChild(chk);
-  const sr=document.createElement('th');sr.textContent='Sr.';
+  const sr=document.createElement('th');
   const _srW=state.colWidths&&state.colWidths['_sr'];
   sr.dataset.key='_sr';
-  sr.style.cssText=(isMobileRegister()?'width:34px;min-width:34px;max-width:34px;':(_srW?'width:'+_srW+'px;min-width:'+_srW+'px;max-width:'+_srW+'px;':'width:40px;min-width:40px;'))
-    +'white-space:nowrap;cursor:default';
+  sr.style.cssText=(isMobileRegister()?'width:34px;min-width:34px;max-width:34px;':(_srW?'width:'+_srW+'px;min-width:'+_srW+'px;max-width:'+_srW+'px;':'width:44px;min-width:44px;'))
+    +'white-space:nowrap;cursor:pointer;user-select:none;';
+  const srIsActive = state.sortCol === '_sr' || (!state.sortCol && state.sortDir === 'desc');
+  const srArrow = srIsActive
+    ? (state.sortDir==='asc' ? '<span class="sort-arrow active" style="color:#38bdf8;font-size:9.5px;margin-left:3px;display:inline-block;">▲</span>' : '<span class="sort-arrow active" style="color:#38bdf8;font-size:9.5px;margin-left:3px;display:inline-block;">▼</span>')
+    : '<span class="sort-arrow muted" style="opacity:0.35;font-size:9px;margin-left:3px;display:inline-block;">↕</span>';
+  sr.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:center;width:100%;">Sr.'+srArrow+'</span>';
+  sr.title='Click to reverse document order (Oldest / Newest)';
+  sr.onclick=()=>sortBy('_sr');
   hr.appendChild(sr);
+
   state.cols.forEach(col=>{{
     const th=document.createElement('th');th.dataset.key=col.col_key;
     const w=state.colWidths&&state.colWidths[col.col_key];
@@ -7480,10 +7489,25 @@ function buildHead(){{
     if(mw)th.style.cssText='width:'+mw+'px;min-width:'+mw+'px;white-space:normal;word-break:normal';
     else if(w)th.style.cssText='width:'+w+'px;min-width:'+w+'px;max-width:'+w+'px;white-space:normal;word-break:normal';
     else th.style.cssText=(minW?'min-width:'+minW+'px;':'')+'white-space:normal;word-break:normal';
-    const sortInd=state.sortCol===col.col_key?(state.sortDir==='asc'?' ↑':' ↓'):'';
-    th.innerHTML='<span class="th-lbl">'+col.label+sortInd+'</span>';
-    if(!['auto_date','auto_num'].includes(col.col_type))th.onclick=()=>sortBy(col.col_key);
-    else th.style.cursor='default';
+    
+    const isSortable = !['auto_date','auto_num'].includes(col.col_type);
+    let sortArrow = '';
+    if(isSortable){{
+      const isCurrent = state.sortCol === col.col_key || (!state.sortCol && (col.col_key === 'docNo' || col.col_key === 'nocNo'));
+      if(isCurrent){{
+        sortArrow = state.sortDir==='asc'
+          ? '<span class="sort-arrow active" style="color:#38bdf8;font-size:9.5px;margin-left:5px;display:inline-block;flex-shrink:0;">▲</span>'
+          : '<span class="sort-arrow active" style="color:#38bdf8;font-size:9.5px;margin-left:5px;display:inline-block;flex-shrink:0;">▼</span>';
+      }}else{{
+        sortArrow = '<span class="sort-arrow muted" style="opacity:0.35;font-size:9.5px;margin-left:5px;display:inline-block;flex-shrink:0;">↕</span>';
+      }}
+      th.style.cursor='pointer';
+      th.title='Click to sort / reverse order by '+col.label;
+      th.onclick=()=>sortBy(col.col_key);
+    }}else{{
+      th.style.cursor='default';
+    }}
+    th.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:space-between;width:100%;"><span>'+escHtml(col.label)+'</span>'+sortArrow+'</span>';
     hr.appendChild(th);
   }});
   const at=document.createElement('th');at.textContent='Actions';at.style.cssText='width:64px;cursor:default';hr.appendChild(at);
@@ -7561,21 +7585,49 @@ function suggestNextDocNoFromVisibleRows(){{
   return suggestNextDocNoFromRows(state.visibleRows||[]);
 }}
 
-function sortByDocNo(rows){{
-  // Group by base (prefix+num), then sort revs within group
+function parseSortDate(val){{
+  if(!val)return null;
+  const s=String(val).trim();
+  const dmy=s.match(/^([0-9]{1,2})[-/. ]([0-9]{1,2})[-/. ]([0-9]{4})/);
+  if(dmy)return new Date(parseInt(dmy[3],10),parseInt(dmy[2],10)-1,parseInt(dmy[1],10)).getTime();
+  const ymd=s.match(/^([0-9]{4})[-/. ]([0-9]{1,2})[-/. ]([0-9]{1,2})/);
+  if(ymd)return new Date(parseInt(ymd[1],10),parseInt(ymd[2],10)-1,parseInt(ymd[3],10)).getTime();
+  const t=Date.parse(s);
+  return isNaN(t)?null:t;
+}}
+
+function sortBy(colKey){{
+  if(state.sortCol === colKey){{
+    state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+  }} else if((!state.sortCol || state.sortCol === '_sr' || state.sortCol === 'docNo' || state.sortCol === 'nocNo') && (colKey === '_sr' || colKey === 'docNo' || colKey === 'nocNo')){{
+    state.sortCol = colKey;
+    state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+  }} else {{
+    state.sortCol = colKey;
+    state.sortDir = (colKey === '_sr' || colKey === 'docNo' || colKey === 'nocNo') ? 'desc' : 'asc';
+  }}
+  buildHead();
+  requestAnimationFrame(()=>initRz());
+  renderRows();
+}}
+
+function sortByDocNo(rows, dir){{
+  const isDesc = (dir || (state ? state.sortDir : 'asc')) === 'desc';
   const groups={{}};
   rows.forEach(r=>{{
-    const p=parseDocNo(r.docNo||'');
+    const p=parseDocNo(r.docNo||r.nocNo||'');
     const key=p.prefix+'-'+String(p.num).padStart(6,'0');
     if(!groups[key])groups[key]={{baseNum:p.num,prefix:p.prefix,rows:[]}};
     groups[key].rows.push({{...r,_parsedNum:p.num,_parsedRev:p.rev}});
   }});
-  // Sort groups by base number, then rows within group by rev
   const sorted=[];
   Object.values(groups)
-    .sort((a,b)=>a.prefix.localeCompare(b.prefix)||a.baseNum-b.baseNum)
+    .sort((a,b)=>{{
+      const cmp = a.prefix.localeCompare(b.prefix) || (a.baseNum - b.baseNum);
+      return isDesc ? -cmp : cmp;
+    }})
     .forEach(g=>{{
-      g.rows.sort((a,b)=>a._parsedRev-b._parsedRev);
+      g.rows.sort((a,b)=> isDesc ? (b._parsedRev - a._parsedRev) : (a._parsedRev - b._parsedRev));
       g.rows.forEach(r=>sorted.push(r));
     }});
   return sorted;
@@ -7704,13 +7756,38 @@ function renderRows(){{
     }}
     return true;
   }});
-  if(state.sortCol){{
+  if(state.sortCol && state.sortCol !== '_sr' && state.sortCol !== 'docNo' && state.sortCol !== 'nocNo'){{
+    const sortColMeta = state.cols.find(c => c.col_key === state.sortCol);
+    const isDateCol = sortColMeta && (sortColMeta.col_type === 'date' || String(sortColMeta.col_key||'').toLowerCase().includes('date'));
+    const isNumCol = sortColMeta && (sortColMeta.col_type === 'number' || sortColMeta.col_type === 'currency' || String(sortColMeta.col_key||'').toLowerCase().includes('dur') || String(sortColMeta.col_key||'').toLowerCase().includes('qty'));
+
     rows.sort((a,b)=>{{
-      const va=String(a[state.sortCol]||'').toLowerCase(),vb=String(b[state.sortCol]||'').toLowerCase();
-      return state.sortDir==='asc'?(va>vb?1:-1):(va<vb?1:-1);
+      const rawA = a[state.sortCol];
+      const rawB = b[state.sortCol];
+      if (rawA === rawB) return 0;
+      if (rawA === undefined || rawA === null || String(rawA).trim() === '') return 1;
+      if (rawB === undefined || rawB === null || String(rawB).trim() === '') return -1;
+
+      let cmp = 0;
+      if (isDateCol) {{
+        const da = parseSortDate(rawA);
+        const db = parseSortDate(rawB);
+        if (da !== null && db !== null) cmp = da - db;
+        else if (da !== null) cmp = -1;
+        else if (db !== null) cmp = 1;
+        else cmp = String(rawA).localeCompare(String(rawB));
+      }} else if (isNumCol) {{
+        const na = parseFloat(String(rawA).replace(/[^0-9.-]/g, ''));
+        const nb = parseFloat(String(rawB).replace(/[^0-9.-]/g, ''));
+        if (!isNaN(na) && !isNaN(nb)) cmp = na - nb;
+        else cmp = String(rawA).localeCompare(String(rawB));
+      }} else {{
+        cmp = String(rawA).localeCompare(String(rawB), undefined, {{numeric: true, sensitivity: 'base'}});
+      }}
+      return state.sortDir === 'asc' ? cmp : -cmp;
     }});
   }}else{{
-    rows=sortByDocNo(rows);
+    rows=sortByDocNo(rows, state.sortDir);
   }}
   state.visibleRows=rows;
   const emptyEl=document.getElementById('empty');
