@@ -169,7 +169,11 @@ def logout():
 
 @app.route("/")
 def home():
-    return render_dashboard(current_user())
+    ws_id = request.args.get("ws")
+    try:
+        return render_dashboard(current_user(), active_ws_id=ws_id)
+    except TypeError:
+        return render_dashboard(current_user())
 
 _recent_project_views = {}
 
@@ -193,7 +197,11 @@ def register():
             )
     except Exception as e:
         pass
-    return render_register(u, proj)
+    ws_id = request.args.get("ws") or proj.get("workspace_id", "ENG")
+    try:
+        return render_register(u, proj, active_ws_id=ws_id)
+    except TypeError:
+        return render_register(u, proj)
 
 @app.route("/api/settings/holidays", methods=["GET"])
 def api_get_holidays():

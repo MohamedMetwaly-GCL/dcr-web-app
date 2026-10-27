@@ -2694,12 +2694,74 @@ def _user_info_html(u):
     labels = {"superadmin":"SUPER ADMIN","admin":"ADMIN","editor":"EDITOR","viewer":"VIEWER"}
     rlbl = labels.get(role, role.upper())
     btns = ""
-    if role == "superadmin":
+    if role in ("superadmin", "admin"):
         btns += '<button class="tb-btn" onclick="openAdmin()">⚙<span class="tb-btn-text"> Admin</span></button>'
     btns += '<button class="tb-btn" onclick="changePw()">🔑</button>'
     btns += '<form action="/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 6px;" title="Logout"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button></form>'
     name = u["username"]
     return btns, name, rlbl, rbg
+
+def _workspace_switcher_html(u, active_ws_id=None):
+    if not u:
+        return ""
+    try:
+        workspaces = db.get_user_workspaces(u.get("username", "")) if hasattr(db, "get_user_workspaces") else []
+    except Exception:
+        workspaces = []
+
+    if not workspaces:
+        workspaces = [
+            {"id": "ENG", "code": "ENG", "name": "Engineering & Projects", "name_ar": "المشروعات الهندسية", "icon": "🏗️", "type": "engineering"}
+        ]
+
+    ws_map = {w["id"]: w for w in workspaces}
+    current_id = active_ws_id or "ENG"
+    if current_id not in ws_map and workspaces:
+        current_id = workspaces[0]["id"]
+
+    current_ws = ws_map.get(current_id, workspaces[0])
+    is_multi = len(workspaces) > 1
+    arrow_html = '<span class="ws-arrow">▾</span>' if is_multi else ''
+    btn_class = "ws-switcher-btn" if is_multi else "ws-switcher-btn single-ws"
+    btn_onclick = 'onclick="toggleWsDropdown(event)"' if is_multi else ''
+
+    items_html = ""
+    if is_multi:
+        for ws in workspaces:
+            is_active = (ws["id"] == current_id)
+            active_class = "active" if is_active else ""
+            check_html = '<span class="ws-item-check">✓</span>' if is_active else ""
+            items_html += f'''
+            <a href="/?ws={ws['id']}" class="ws-item {active_class}" onclick="selectWorkspace('{ws['id']}', event)">
+              <span class="ws-item-icon">{ws.get('icon', '📁')}</span>
+              <div class="ws-item-text">
+                <div class="ws-item-title">{ws.get('name_ar', ws['name'])}</div>
+                <div class="ws-item-sub">{ws['name']}</div>
+              </div>
+              {check_html}
+            </a>
+            '''
+        dropdown_html = f'''
+        <div class="ws-dropdown-menu" id="ws-dropdown-menu">
+          <div class="ws-dropdown-header">مساحات العمل المؤسسية</div>
+          {items_html}
+        </div>
+        '''
+    else:
+        dropdown_html = ""
+
+    return f'''
+    <div class="ws-switcher" id="ws-switcher">
+      <button class="{btn_class}" {btn_onclick} title="مساحة العمل الحالية: {current_ws.get('name_ar', current_ws['name'])}">
+        <span class="ws-icon">{current_ws.get('icon', '📁')}</span>
+        <span class="ws-name">{current_ws.get('name_ar', current_ws['name'])}</span>
+        {arrow_html}
+      </button>
+      {dropdown_html}
+    </div>
+    '''
+
+
 
 BASE_CSS = """
 <style>
@@ -2858,6 +2920,151 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   font-size:10px;font-weight:800;color:#fff;flex-shrink:0;
 }
 .topbar-title-short{display:none}
+
+/* ── Workspace Switcher (Topbar) ── */
+.ws-switcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  z-index: 1000;
+}
+.ws-switcher-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #ffffff;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.ws-switcher-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.ws-switcher-btn.single-ws {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.ws-switcher-btn.single-ws:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+.ws-switcher-btn .ws-icon {
+  font-size: 14px;
+}
+.ws-switcher-btn .ws-name {
+  color: #f1f5f9;
+  letter-spacing: 0.2px;
+}
+.ws-switcher-btn .ws-arrow {
+  font-size: 10px;
+  opacity: 0.7;
+  transition: transform 0.2s;
+  margin-left: 2px;
+}
+.ws-switcher.open .ws-arrow {
+  transform: rotate(180deg);
+}
+.ws-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 250px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  padding: 6px;
+  z-index: 10001;
+  animation: wsDropdownFadeIn 0.15s ease-out;
+}
+@keyframes wsDropdownFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ws-switcher.open .ws-dropdown-menu {
+  display: block;
+}
+.ws-dropdown-header {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  padding: 6px 10px 4px 10px;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 4px;
+}
+.ws-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #cbd5e1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ws-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+.ws-item.active {
+  background: rgba(126, 200, 50, 0.15);
+  color: #ffffff;
+  border: 1px solid rgba(126, 200, 50, 0.3);
+}
+.ws-item-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.ws-item-text {
+  flex: 1;
+}
+.ws-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.ws-item-sub {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+.ws-item.active .ws-item-sub {
+  color: #a3e635;
+}
+.ws-item-check {
+  font-size: 14px;
+  color: #7ec832;
+  font-weight: bold;
+}
+@media (max-width: 600px) {
+  .ws-switcher-btn {
+    padding: 2px 6px;
+    font-size: 10.5px;
+    gap: 3px;
+  }
+  .ws-switcher-btn .ws-name {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;
   display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
 .overlay.hidden{display:none!important}
@@ -3554,6 +3761,28 @@ function toggleDark(){
   applyDarkMode(on);
   localStorage.setItem('dcr_dark',on?'1':'');
 }
+function toggleWsDropdown(e){
+  if(e){e.preventDefault();e.stopPropagation();}
+  const sw=document.getElementById('ws-switcher');
+  if(sw)sw.classList.toggle('open');
+}
+document.addEventListener('click',function(e){
+  const sw=document.getElementById('ws-switcher');
+  if(sw&&!sw.contains(e.target)){
+    sw.classList.remove('open');
+  }
+});
+function selectWorkspace(wsId,e){
+  if(e)e.preventDefault();
+  localStorage.setItem('dcr_active_workspace',wsId);
+  const u=new URL(window.location.href);
+  u.searchParams.set('ws',wsId);
+  if(u.searchParams.has('p')){
+    window.location.href='/?ws='+encodeURIComponent(wsId);
+  }else{
+    window.location.href=u.toString();
+  }
+}
 if(localStorage.getItem('dcr_dark'))applyDarkMode(true);
 function toast(msg,type=''){
   const t=document.getElementById('toast');
@@ -3901,15 +4130,24 @@ async function login(){{
 
 
 
-def render_dashboard(u):
+def render_dashboard(u, active_ws_id=None):
     btns, uname, rlbl, rbg = _user_info_html(u)
     role = u["role"] if u else "guest"
     audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;, this)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
+    active_ws = active_ws_id or "ENG"
     try:
-        accessible_projs = db.get_projects_for_user(u["username"], u.get("role")) if u else []
+        user_ws = db.get_user_workspaces(u["username"]) if u else []
+        ws_ids = [w["id"] for w in user_ws]
+        if ws_ids and active_ws not in ws_ids:
+            active_ws = ws_ids[0]
+    except Exception:
+        pass
+    try:
+        accessible_projs = db.get_projects_for_user(u["username"], u.get("role"), workspace_id=active_ws) if u else []
     except Exception:
         accessible_projs = []
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
+    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
 
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -4345,7 +4583,9 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
 <div id="topbar">
   <span style="font-size:20px">📋</span>
-  <span style="font-weight:700;font-size:14px">Document Control Register</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  {ws_switcher_html}
   {GLOBAL_SEARCH_TRIGGER_HTML}
   <div class="sp"></div>
   <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
@@ -6216,7 +6456,7 @@ init();
 
 
 
-def render_register(u, proj):
+def render_register(u, proj, active_ws_id=None):
     pid      = proj["id"]
     uname    = u["username"] if u else "guest"
     role     = u["role"]     if u else "guest"
@@ -6224,11 +6464,13 @@ def render_register(u, proj):
     btns, _, rlbl, rbg = _user_info_html(u)
     sc_json  = json.dumps(STATUS_COLORS)
     custom_sc_json = json.dumps(proj.get("status_colors", {}))
+    active_ws = active_ws_id or proj.get("workspace_id", "ENG") if proj else "ENG"
     try:
-        accessible_projs = db.get_projects_for_user(u["username"], u.get("role")) if u else []
+        accessible_projs = db.get_projects_for_user(u["username"], u.get("role"), workspace_id=active_ws) if u else []
     except Exception:
         accessible_projs = []
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
+    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
 
     dts       = db.get_doc_types(pid)
     logo_l    = db.get_logo(pid,"logo_left")
@@ -6739,6 +6981,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   <span class="topbar-title-full" style="font-weight:700;font-size:14px;letter-spacing:.3px">Document Control Register</span>
   <span class="topbar-title-short" style="font-weight:800;font-size:13px;letter-spacing:.35px">DCR</span>
   
+  {ws_switcher_html}
   {GLOBAL_SEARCH_TRIGGER_HTML}
 
   <div style="flex:1"></div>

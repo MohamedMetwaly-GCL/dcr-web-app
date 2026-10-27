@@ -54,18 +54,18 @@ def require_login(fn):
     return wrapper
 
 
-def get_allowed_project_ids(user=None):
+def get_allowed_project_ids(user=None, workspace_id=None):
     """Return the project ids the given/current user may view."""
     u = user or current_user()
     if not u:
         return []
     if u["role"] in ("superadmin", "admin"):
-        return [p["id"] for p in db.get_projects()]
+        return [p["id"] for p in db.get_projects(workspace_id=workspace_id)]
     user_projs = db.get_user_projects(u["username"])
     assigned_raw = [p["project_id"] for p in user_projs if p.get("project_id")]
     if not assigned_raw:
         return []
-    matched_projs = db.get_projects(assigned_raw)
+    matched_projs = db.get_projects(assigned_raw, workspace_id=workspace_id)
     if matched_projs:
         resolved = []
         seen = set()

@@ -21,26 +21,30 @@ analytics_bp = Blueprint("analytics", __name__)
 @analytics_bp.route("/api/analytics/trend")
 def api_trend():
     pid = request.args.get("pid")
+    ws = request.args.get("workspace_id") or request.args.get("ws")
     u = current_user()
-    return jsonify(db.get_monthly_trend(pid, project_ids=get_allowed_project_ids(u)))
+    return jsonify(db.get_monthly_trend(pid, project_ids=get_allowed_project_ids(u, workspace_id=ws)))
 
 
 @analytics_bp.route("/api/analytics/aging")
 def api_aging():
     pid = request.args.get("pid")
+    ws = request.args.get("workspace_id") or request.args.get("ws")
     u = current_user()
-    return jsonify(db.get_aging_report(pid, project_ids=get_allowed_project_ids(u)))
+    return jsonify(db.get_aging_report(pid, project_ids=get_allowed_project_ids(u, workspace_id=ws)))
 
 
 @analytics_bp.route("/api/analytics/quality")
 def api_quality():
     pid = request.args.get("pid")
+    ws = request.args.get("workspace_id") or request.args.get("ws")
     u = current_user()
-    return jsonify(db.get_quality_report(pid, project_ids=get_allowed_project_ids(u)))
+    return jsonify(db.get_quality_report(pid, project_ids=get_allowed_project_ids(u, workspace_id=ws)))
 
 
 @analytics_bp.route("/api/analytics/overdue")
 def api_overdue_list():
     pid = request.args.get("pid")
+    ws = request.args.get("workspace_id") or request.args.get("ws")
     u = current_user()
-    return jsonify(db.get_overdue_records(pid, project_ids=get_allowed_project_ids(u)))
+    return jsonify(db.get_overdue_records(pid, project_ids=get_allowed_project_ids(u, workspace_id=ws)))
