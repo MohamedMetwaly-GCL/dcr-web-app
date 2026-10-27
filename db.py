@@ -205,12 +205,14 @@ CREATE TABLE IF NOT EXISTS departments (
     name_ar          TEXT DEFAULT '',
     icon             TEXT DEFAULT '🏢',
     description      TEXT DEFAULT '',
+    module_type      VARCHAR(30) DEFAULT 'engineering',
     is_project_based BOOLEAN DEFAULT TRUE,
     sort_order       INTEGER DEFAULT 0,
     is_active        BOOLEAN DEFAULT TRUE,
     data             JSONB NOT NULL DEFAULT '{}',
     created_at       TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE departments ADD COLUMN IF NOT EXISTS module_type VARCHAR(30) DEFAULT 'engineering';
 CREATE TABLE IF NOT EXISTS user_departments (
     username       TEXT NOT NULL,
     department_id  TEXT NOT NULL,
@@ -642,6 +644,15 @@ def set_user_project_dc(username, project_id, is_dc):
 
 # ── Departments & Organizational Hierarchy (Phase 1 Base) ─────
 _dept_schema_ensured = False
+ALLOWED_MODULE_TYPES = ("engineering", "hr", "procurement", "corporate_edms")
+
+def _normalize_module_type(module_type, dept_id="", is_project_based=True):
+    if str(dept_id or "").strip().upper() == "ENG":
+        return "engineering"
+    mt = str(module_type or "").strip().lower()
+    if mt in ALLOWED_MODULE_TYPES:
+        return mt
+    return "engineering" if is_project_based else "corporate_edms"
 
 def ensure_departments_schema():
     """Idempotent migration to ensure departments, user_departments, and extended RBAC columns exist."""
@@ -656,12 +667,14 @@ def ensure_departments_schema():
             name_ar          TEXT DEFAULT '',
             icon             TEXT DEFAULT '🏢',
             description      TEXT DEFAULT '',
+            module_type      VARCHAR(30) DEFAULT 'engineering',
             is_project_based BOOLEAN DEFAULT TRUE,
             sort_order       INTEGER DEFAULT 0,
             is_active        BOOLEAN DEFAULT TRUE,
             data             JSONB NOT NULL DEFAULT '{}',
             created_at       TIMESTAMPTZ DEFAULT NOW()
         )""")
+        exe("ALTER TABLE departments ADD COLUMN IF NOT EXISTS module_type VARCHAR(30) DEFAULT 'engineering'")
         exe("""CREATE TABLE IF NOT EXISTS user_departments (
             username       TEXT NOT NULL,
             department_id  TEXT NOT NULL,
@@ -673,11 +686,12 @@ def ensure_departments_schema():
         exe("ALTER TABLE users ADD COLUMN IF NOT EXISTS confidentiality_clearance TEXT DEFAULT 'internal'")
         cnt = q("SELECT COUNT(*) AS c FROM departments", one=True)
         if not cnt or cnt.get("c", 0) == 0:
-            exe("""INSERT INTO departments(id, code, name, name_ar, icon, description, is_project_based, sort_order, is_active)
-                   VALUES(%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+            exe("""INSERT INTO departments(id, code, name, name_ar, icon, description, module_type, is_project_based, sort_order, is_active)
+                   VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
                    ON CONFLICT DO NOTHING""",
                 ("ENG", "ENG", "Engineering & Projects", "الهندسة والمشاريع", "🏗",
-                 "Engineering Submittals, Site Instructions & Project Registers", True, 0))
+                 "Engineering Submittals, Site Instructions & Project Registers", "engineering", True, 0))
+        exe("UPDATE departments SET module_type = 'engineering' WHERE id = 'ENG' OR module_type IS NULL OR TRIM(module_type) = ''")
         exe("UPDATE projects SET department_id = 'ENG' WHERE department_id IS NULL OR TRIM(department_id) = ''")
         _dept_schema_ensured = True
     except Exception as e:
@@ -689,13 +703,15 @@ def get_departments(include_inactive=False):
         "id": "ENG", "code": "ENG", "name": "Engineering & Projects",
         "name_ar": "الهندسة والمشاريع", "icon": "🏗",
         "description": "Engineering Submittals, Site Instructions & Project Registers",
-        "is_project_based": True, "sort_order": 0, "is_active": True
+        "module_type": "engineering", "is_project_based": True, "sort_order": 0, "is_active": True
     }]
     try:
         where = "" if include_inactive else "WHERE COALESCE(is_active, TRUE) = TRUE"
         rows = q(f"SELECT * FROM departments {where} ORDER BY sort_order, id")
         if not rows and not include_inactive:
             return default_eng
+        for r in rows:
+            r["module_type"] = _normalize_module_type(r.get("module_type"), r.get("id"), r.get("is_project_based", True))
         return rows
     except Exception:
         return default_eng
@@ -705,11 +721,14 @@ def get_department(dept_id):
     if not dept_id:
         return None
     try:
-        return q("SELECT * FROM departments WHERE id=%s", (str(dept_id).strip().upper(),), one=True)
+        r = q("SELECT * FROM departments WHERE id=%s", (str(dept_id).strip().upper(),), one=True)
+        if r:
+            r["module_type"] = _normalize_module_type(r.get("module_type"), r.get("id"), r.get("is_project_based", True))
+        return r
     except Exception:
         return None
 
-def save_department(dept_id, code, name, name_ar="", icon="🏢", description="", is_project_based=True, sort_order=None, is_active=True):
+def save_department(dept_id, code, name, name_ar="", icon="🏢", description="", is_project_based=True, sort_order=None, is_active=True, module_type=None):
     ensure_departments_schema()
     dept_id = str(dept_id or "").strip().upper()
     code = str(code or dept_id).strip().upper()
@@ -717,7 +736,11 @@ def save_department(dept_id, code, name, name_ar="", icon="🏢", description=""
     name_ar = str(name_ar or "").strip()
     icon = str(icon or "🏢").strip() or "🏢"
     description = str(description or "").strip()
-    is_project_based = bool(is_project_based)
+    mod_type = _normalize_module_type(module_type, dept_id, is_project_based)
+    is_project_based = (mod_type == "engineering") if module_type else bool(is_project_based)
+    if dept_id == "ENG":
+        mod_type = "engineering"
+        is_project_based = True
     is_active = bool(is_active)
 
     existing = get_department(dept_id)
@@ -728,18 +751,19 @@ def save_department(dept_id, code, name, name_ar="", icon="🏢", description=""
             r = q("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM departments", one=True)
             sort_order = r["next_order"] if r else 0
 
-    exe("""INSERT INTO departments(id, code, name, name_ar, icon, description, is_project_based, sort_order, is_active)
-           VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    exe("""INSERT INTO departments(id, code, name, name_ar, icon, description, module_type, is_project_based, sort_order, is_active)
+           VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT(id) DO UPDATE SET
                code = EXCLUDED.code,
                name = EXCLUDED.name,
                name_ar = EXCLUDED.name_ar,
                icon = EXCLUDED.icon,
                description = EXCLUDED.description,
+               module_type = EXCLUDED.module_type,
                is_project_based = EXCLUDED.is_project_based,
                sort_order = EXCLUDED.sort_order,
                is_active = EXCLUDED.is_active""",
-        (dept_id, code, name, name_ar, icon, description, is_project_based, int(sort_order), is_active))
+        (dept_id, code, name, name_ar, icon, description, mod_type, is_project_based, int(sort_order), is_active))
     return get_department(dept_id)
 
 def delete_department(dept_id):
@@ -805,6 +829,37 @@ def unassign_user_department(username, department_id):
     dept_id = str(department_id or "").strip().upper()
     exe("DELETE FROM user_departments WHERE username=%s AND department_id=%s", (username, dept_id))
 
+def set_user_primary_dept(username, primary_dept="ENG"):
+    ensure_departments_schema()
+    pdept = str(primary_dept or "ENG").strip().upper()
+    exe("UPDATE users SET primary_dept=%s WHERE username=%s", (pdept, username))
+    existing = [d["department_id"].upper() for d in get_user_departments(username)]
+    if pdept and pdept not in existing:
+        u = get_user(username) or {}
+        default_role = "head" if u.get("role") == "admin" else ("editor" if u.get("role") == "editor" else "viewer")
+        assign_user_department(username, pdept, default_role)
+
+def save_user_permissions(username, primary_dept=None, departments_list=None, projects_list=None):
+    """Atomically save a user's department roles and project assignments."""
+    ensure_departments_schema()
+    if primary_dept is not None:
+        pdept = str(primary_dept or "ENG").strip().upper()
+        exe("UPDATE users SET primary_dept=%s WHERE username=%s", (pdept, username))
+    if isinstance(departments_list, list):
+        exe("DELETE FROM user_departments WHERE username=%s", (username,))
+        for item in departments_list:
+            did = str((item or {}).get("department_id") or "").strip().upper()
+            drole = str((item or {}).get("dept_role") or "viewer").strip().lower()
+            if did:
+                assign_user_department(username, did, drole)
+    if isinstance(projects_list, list):
+        exe("DELETE FROM user_projects WHERE username=%s", (username,))
+        for item in projects_list:
+            pid = str((item or {}).get("project_id") or "").strip()
+            is_dc = bool((item or {}).get("is_dc", False))
+            if pid:
+                assign_project(username, pid, is_dc)
+
 def set_user_clearance(username, clearance="internal", primary_dept=None):
     ensure_departments_schema()
     clearance = str(clearance or "internal").strip().lower()
@@ -824,6 +879,12 @@ def get_departments_for_user(username, role=None):
     if user_role in ("superadmin", "admin"):
         return all_depts
     allowed_dept_ids = set()
+    try:
+        u_row = get_user(username)
+        if u_row and u_row.get("primary_dept"):
+            allowed_dept_ids.add(str(u_row["primary_dept"]).strip().upper())
+    except Exception:
+        pass
     for ud in get_user_departments(username):
         if ud.get("department_id"):
             allowed_dept_ids.add(ud["department_id"].upper())
@@ -1146,6 +1207,145 @@ def save_project(pid, name, code, extra: dict):
            ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data""",
         (pid, name, code, jdata))
 
+MODULE_WORKSPACE_TEMPLATES = {
+    "hr": {
+        "doc_types": [
+            ("EMP", "Employee Files (ملفات الموظفين)", 0),
+            ("CNT", "Employment Contracts (عقود العمل)", 1),
+            ("RES", "Visas & Residencies (الإقامات والتأشيرات)", 2),
+            ("PAY", "Payroll & Benefits (مسيرات الرواتب)", 3),
+            ("CIR", "HR Policies & Circulars (اللوائح والتعاميم)", 4),
+        ],
+        "cols": [
+            ("docNo", "Document Ref.", "docno", None, 0, True),
+            ("empId", "Employee ID (الرقم الوظيفي)", "text", None, 1, True),
+            ("empName", "Employee Name (اسم الموظف)", "text", None, 2, True),
+            ("title", "Document Subject (البيان)", "text", None, 3, True),
+            ("category", "HR Section (القسم)", "dropdown", "hr_category", 4, True),
+            ("issuedDate", "Issue / Effective Date", "date", None, 5, True),
+            ("expectedReplyDate", "Expiry / Renewal Date", "date", None, 6, True),
+            ("confidentiality", "Confidentiality (السرية)", "dropdown", "confidentiality_level", 7, True),
+            ("status", "Status (الحالة)", "dropdown", "status", 8, True),
+            ("remarks", "Remarks (ملاحظات)", "text", None, 9, True),
+            ("fileLocation", "Attachment / Drive Link", "url", None, 10, True),
+        ],
+        "lists": {
+            "hr_category": ["Personnel & Onboarding", "Contracts & Renewals", "Payroll & Compensation", "Government Relations / Visas", "Training & Appraisal", "Disciplinary & Legal"],
+            "confidentiality_level": ["Public", "Internal", "Confidential", "Restricted"],
+            "status": [
+                ("Active (ساري)", "approved"),
+                ("Renewed (تم التجديد)", "approved"),
+                ("Expiring Soon (ينتهي قريباً)", "pending"),
+                ("Under Processing (قيد الإجراء)", "pending"),
+                ("Expired (منتهي)", "rejected"),
+                ("Archived (مؤرشف)", "info_closed"),
+            ],
+        },
+    },
+    "procurement": {
+        "doc_types": [
+            ("PR", "Purchase Requisitions (طلبات الشراء)", 0),
+            ("RFQ", "Supplier Quotations (عروض الأسعار)", 1),
+            ("PO", "Purchase Orders (أوامر التوريد)", 2),
+            ("VND", "Vendor Qualification (تأهيل الموردين)", 3),
+            ("INV", "Invoices & Delivery (الفواتير والاستلام)", 4),
+        ],
+        "cols": [
+            ("docNo", "Order / Ref No.", "docno", None, 0, True),
+            ("vendorName", "Supplier / Vendor (المورد)", "text", None, 1, True),
+            ("title", "Description / Subject (البيان)", "text", None, 2, True),
+            ("category", "Supply Category (التصنيف)", "dropdown", "proc_category", 3, True),
+            ("totalValue", "Total Value (القيمة)", "number", None, 4, True),
+            ("issuedDate", "Issue Date (تاريخ الإصدار)", "date", None, 5, True),
+            ("expectedReplyDate", "Target Delivery (تاريخ التوريد)", "date", None, 6, True),
+            ("actualReplyDate", "Actual Delivery (الاستلام الفعلي)", "date", None, 7, True),
+            ("confidentiality", "Confidentiality (السرية)", "dropdown", "confidentiality_level", 8, True),
+            ("status", "Status (الحالة)", "dropdown", "status", 9, True),
+            ("remarks", "Remarks (ملاحظات)", "text", None, 10, True),
+            ("fileLocation", "Attachment / Drive Link", "url", None, 11, True),
+        ],
+        "lists": {
+            "proc_category": ["Raw Materials & Equipment", "Subcontracts & Services", "IT & Office Supplies", "Logistics & Customs", "Spare Parts & Maintenance"],
+            "confidentiality_level": ["Public", "Internal", "Confidential", "Restricted"],
+            "status": [
+                ("Delivered / Completed (تم التوريد)", "approved"),
+                ("PO Issued (صدر أمر توريد)", "approved"),
+                ("Under Quotation / Review (قيد الدراسة والعروض)", "pending"),
+                ("Awaiting Delivery (بانتظار التوريد)", "pending"),
+                ("Rejected / Delayed (مرفوض / متأخر)", "rejected"),
+                ("Cancelled (ملغي)", "cancelled"),
+            ],
+        },
+    },
+    "corporate_edms": {
+        "doc_types": [
+            ("DOC", "Official Documents (الوثائق الرسمية)", 0),
+            ("AGR", "Contracts & Agreements (العقود والاتفاقيات)", 1),
+            ("LIC", "Licenses & Permits (التراخيص والسجلات)", 2),
+            ("DEC", "Administrative Decisions (القرارات والتعاميم)", 3),
+            ("COR", "Official Correspondence (المراسلات الإدارية)", 4),
+        ],
+        "cols": [
+            ("docNo", "Document Ref.", "docno", None, 0, True),
+            ("title", "Subject / Title (عنوان الوثيقة)", "text", None, 1, True),
+            ("partyName", "Counterparty / Entity (الجهة المعنية)", "text", None, 2, True),
+            ("category", "Document Category (التصنيف)", "dropdown", "corp_category", 3, True),
+            ("issuedDate", "Issue / Effective Date", "date", None, 4, True),
+            ("expectedReplyDate", "Expiry / Review Date", "date", None, 5, True),
+            ("confidentiality", "Confidentiality (السرية)", "dropdown", "confidentiality_level", 6, True),
+            ("status", "Status (الحالة)", "dropdown", "status", 7, True),
+            ("remarks", "Remarks (ملاحظات)", "text", None, 8, True),
+            ("fileLocation", "Attachment / Drive Link", "url", None, 9, True),
+        ],
+        "lists": {
+            "corp_category": ["Corporate Governance", "Legal & Contracts", "Financial & Audit", "Official Licenses", "Internal Policies", "General Archive"],
+            "confidentiality_level": ["Public", "Internal", "Confidential", "Restricted"],
+            "status": [
+                ("Active & Valid (ساري ومعتمد)", "approved"),
+                ("Under Review / Signature (قيد المراجعة والتوقيع)", "pending"),
+                ("Expiring Soon (ينتهي قريباً)", "pending"),
+                ("Expired / Terminated (منتهي / مفسوخ)", "rejected"),
+                ("Archived (مؤرشف)", "info_closed"),
+            ],
+        },
+    },
+}
+
+def _seed_department_workspace(pid, module_type="corporate_edms"):
+    tmpl = MODULE_WORKSPACE_TEMPLATES.get(module_type) or MODULE_WORKSPACE_TEMPLATES["corporate_edms"]
+    for code, name, order in tmpl["doc_types"]:
+        exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+            (code, pid, name, code, order))
+        for ck, lbl, ct, ln, so, visible in tmpl["cols"]:
+            exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
+                   VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                (pid, code, ck, lbl, ct, ln, visible, so))
+    for ln, items in tmpl["lists"].items():
+        for i, item in enumerate(items):
+            if isinstance(item, tuple):
+                val, meta = item
+            else:
+                val, meta = item, None
+            exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
+                " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
+                " DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
+                (pid, ln, val, i, meta))
+
+def reset_workspace_to_module_template(pid, module_type="corporate_edms"):
+    """Convert an empty workspace (0 records) from engineering doc types to clean department doc types."""
+    rec_cnt = q("SELECT COUNT(*) AS c FROM records WHERE project_id=%s", (pid,), one=True)
+    if rec_cnt and rec_cnt.get("c", 0) > 0:
+        return False, "Workspace already contains records; cannot overwrite existing document types."
+    exe("DELETE FROM columns_config WHERE project_id=%s", (pid,))
+    exe("DELETE FROM doc_types WHERE project_id=%s", (pid,))
+    exe("DELETE FROM dropdown_lists WHERE project_id=%s", (pid,))
+    if module_type == "engineering":
+        _seed_project(pid)
+    else:
+        _seed_department_workspace(pid, module_type)
+    invalidate_dashboard_cache(pid)
+    return True, ""
+
 def create_project(pid, name, code, creator=None, department_id="ENG"):
     ensure_departments_schema()
     dept_id = str(department_id or "ENG").strip().upper() or "ENG"
@@ -1155,7 +1355,12 @@ def create_project(pid, name, code, creator=None, department_id="ENG"):
     except Exception:
         exe("INSERT INTO projects(id,name,code,data) VALUES(%s,%s,%s,'{}') ON CONFLICT DO NOTHING",
             (pid, name, code))
-    _seed_project(pid)
+    dept = get_department(dept_id) or {}
+    mod_type = _normalize_module_type(dept.get("module_type"), dept_id, dept.get("is_project_based", True))
+    if mod_type == "engineering":
+        _seed_project(pid)
+    else:
+        _seed_department_workspace(pid, mod_type)
     if creator: assign_project(creator, pid)
 
 def delete_project(pid):

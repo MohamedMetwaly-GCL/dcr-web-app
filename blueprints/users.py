@@ -117,6 +117,25 @@ def api_users_action():
         db.log_action(u["username"], "USER_EDIT",
                       detail=f"Updated clearance for '{uname}' to '{clearance}'" + (f" (Primary Dept: {pdept})" if pdept else ""))
         return jsonify(ok=True)
+    if action == "update_primary_dept":
+        uname = data.get("username","").strip().lower()
+        pdept = str(data.get("primary_dept") or "ENG").strip().upper()
+        db.set_user_primary_dept(uname, pdept)
+        db.log_action(u["username"], "USER_EDIT", detail=f"Updated primary department for '{uname}' to '{pdept}'")
+        return jsonify(ok=True)
+    if action == "save_permissions":
+        uname = data.get("username","").strip().lower()
+        if not uname:
+            return jsonify(ok=False, error="Username required"), 400
+        pdept = data.get("primary_dept")
+        depts_list = data.get("departments")
+        projs_list = data.get("projects")
+        db.save_user_permissions(uname, primary_dept=pdept, departments_list=depts_list, projects_list=projs_list)
+        dept_summary = ", ".join([f"{d.get('department_id')}({d.get('dept_role','viewer')})" for d in (depts_list or [])]) or "None"
+        proj_summary = f"{len(projs_list)} project(s)" if isinstance(projs_list, list) else "Unchanged"
+        db.log_action(u["username"], "USER_EDIT",
+                      detail=f"Updated permissions for '{uname}' — Depts: [{dept_summary}], Projects: {proj_summary}")
+        return jsonify(ok=True)
     return jsonify(ok=False, error="Unknown action"), 400
 
 

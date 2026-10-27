@@ -3593,7 +3593,25 @@ function escHtml(v){
 }
 
 // ── Enterprise Phase 1: Departments & Extended RBAC Admin Suite ──
-window._ADMIN_CACHE = { users: [], projects: [], depts: [], activeTab: 'users' };
+window._ADMIN_CACHE = { users: [], projects: [], depts: [], activeTab: 'users', deptFilter: '', searchQuery: '', showAddUser: false };
+
+const MODULE_TYPE_META = {
+  'engineering': { label: '🏗 Engineering & Projects (مشاريع هندسية)', short: 'Engineering', badgeBg: '#eff6ff', badgeTx: '#1d4ed8', badgeBd: '#bfdbfe' },
+  'hr':          { label: '👥 Human Resources - HR (الموارد البشرية)', short: 'HR Module', badgeBg: '#fdf2f8', badgeTx: '#be185d', badgeBd: '#fbcfe8' },
+  'procurement': { label: '📦 Procurement & Supply (المشتريات والعقود)', short: 'Procurement', badgeBg: '#fffbeb', badgeTx: '#b45309', badgeBd: '#fde68a' },
+  'corporate_edms': { label: '🏛️ Corporate / General EDMS (وثائق إدارية عامة)', short: 'Corporate EDMS', badgeBg: '#f0fdf4', badgeTx: '#047857', badgeBd: '#bbf7d0' }
+};
+
+function getDeptModuleType(deptObjOrId){
+  if(!deptObjOrId) return 'engineering';
+  const d = typeof deptObjOrId === 'object'
+    ? deptObjOrId
+    : (window.DEPTS || window._ADMIN_CACHE.depts || []).find(x => String(x.id).toUpperCase() === String(deptObjOrId).toUpperCase());
+  if(!d) return String(deptObjOrId).toUpperCase() === 'ENG' ? 'engineering' : 'corporate_edms';
+  if(String(d.id).toUpperCase() === 'ENG') return 'engineering';
+  if(d.module_type && MODULE_TYPE_META[d.module_type]) return d.module_type;
+  return d.is_project_based ? 'engineering' : 'corporate_edms';
+}
 
 async function openEnterpriseAdmin(initialTab){
   if(initialTab) window._ADMIN_CACHE.activeTab = initialTab;
@@ -3607,13 +3625,13 @@ async function openEnterpriseAdmin(initialTab){
   window._ADMIN_CACHE.projects = projects;
   window._ADMIN_CACHE.depts = (depts && depts.length) ? depts : [{
     id: 'ENG', code: 'ENG', name: 'Engineering & Projects', name_ar: 'الهندسة والمشاريع',
-    icon: '🏗', description: 'Engineering Submittals & Project Registers', is_project_based: true, project_count: projects.length
+    icon: '🏗', description: 'Engineering Submittals & Project Registers', module_type: 'engineering', is_project_based: true, project_count: projects.length
   }];
   window.DEPTS = window._ADMIN_CACHE.depts;
   if(typeof renderDeptBar === 'function') renderDeptBar();
 
   const modalEl = document.querySelector('#admin-modal .modal');
-  if(modalEl) modalEl.style.maxWidth = '920px';
+  if(modalEl) modalEl.style.maxWidth = '1060px';
 
   renderEnterpriseAdminBody();
   openM('admin-modal');
@@ -3629,7 +3647,7 @@ function renderEnterpriseAdminBody(){
   const body = document.getElementById('admin-body');
   if(!body) return;
   body.innerHTML = '';
-  body.style.paddingTop = '';
+  body.style.paddingTop = '12px';
 
   let existingUtitle = document.getElementById('admin-utitle');
   if(existingUtitle) existingUtitle.remove();
@@ -3637,6 +3655,9 @@ function renderEnterpriseAdminBody(){
   const utitle = document.createElement('div');
   utitle.id = 'admin-utitle';
   utitle.style.cssText = 'padding:10px 18px; border-bottom:1px solid var(--bd); background:var(--wh, #fff); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;';
+
+  const deptFilterOpts = `<option value="">🌐 كل الإدارات (All Departments)</option>` +
+    depts.map(d => `<option value="${escHtml(d.id)}" ${window._ADMIN_CACHE.deptFilter===d.id?'selected':''}>${escHtml(d.icon||'🏢')} ${escHtml(d.code)} — ${escHtml(d.name)}${d.name_ar?' ('+escHtml(d.name_ar)+')':''}</option>`).join('');
 
   const tabsHtml = `
     <div style="display:flex; gap:6px; align-items:center;">
@@ -3650,11 +3671,15 @@ function renderEnterpriseAdminBody(){
   `;
 
   const rightToolsHtml = activeTab === 'users'
-    ? `<div style="display:flex;gap:8px;align-items:center">
-         <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">📥 Export Matrix</button>
-         <input type="text" placeholder="Search users by name or email..." style="padding:5px 9px; font-size:11px; border:1px solid var(--bd); border-radius:4px; width:210px; font-weight:normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';})">
+    ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+         <select id="usr-dept-filter" class="btn btn-sc btn-sm" style="height:30px;padding:3px 8px;font-size:11.5px;outline:none;" onchange="window._ADMIN_CACHE.deptFilter=this.value; filterUsersTable()">
+           ${deptFilterOpts}
+         </select>
+         <input id="usr-search-input" type="text" value="${escHtml(window._ADMIN_CACHE.searchQuery||'')}" placeholder="🔍 بحث بالاسم أو البريد..." style="padding:5px 9px; height:30px; font-size:11.5px; border:1px solid var(--bd); border-radius:6px; width:180px; font-weight:normal;" oninput="window._ADMIN_CACHE.searchQuery=this.value; filterUsersTable()">
+         <button type="button" class="btn btn-pr btn-sm" style="height:30px;padding:4px 10px" onclick="toggleAddUserPanel()">➕ مستخدم جديد</button>
+         <button type="button" class="btn btn-sc btn-sm" style="height:30px;padding:4px 10px" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">📥 Export</button>
        </div>`
-    : `<div style="font-size:11px;color:var(--mu);font-weight:600;">✨ Flexible Enterprise Hierarchy — Add, rename & organize departments freely</div>`;
+    : `<div style="font-size:11px;color:var(--mu);font-weight:600;">✨ Modular Enterprise Workspaces — Configure department modules & independent schemas</div>`;
 
   utitle.innerHTML = tabsHtml + rightToolsHtml;
   body.parentNode.insertBefore(utitle, body);
@@ -3666,198 +3691,212 @@ function renderEnterpriseAdminBody(){
   }
 }
 
+function toggleAddUserPanel(){
+  window._ADMIN_CACHE.showAddUser = !window._ADMIN_CACHE.showAddUser;
+  const panel = document.getElementById('admin-add-user-card');
+  if(panel){
+    panel.style.display = window._ADMIN_CACHE.showAddUser ? 'block' : 'none';
+    if(window._ADMIN_CACHE.showAddUser) document.getElementById('nu-name')?.focus();
+  }
+}
+
+function filterUsersTable(){
+  const deptFilter = String(window._ADMIN_CACHE.deptFilter || '').toUpperCase();
+  const q = String(window._ADMIN_CACHE.searchQuery || '').trim().toLowerCase();
+  const rows = document.querySelectorAll('#admin-users-tbody tr.usr-tbl-row');
+  let visibleCount = 0;
+  rows.forEach(tr => {
+    const uDept = String(tr.dataset.dept || 'ENG').toUpperCase();
+    const uDeptsAll = String(tr.dataset.alldepts || uDept).toUpperCase().split(',');
+    const uSearch = String(tr.dataset.search || '').toLowerCase();
+    const matchDept = !deptFilter || uDept === deptFilter || uDeptsAll.includes(deptFilter);
+    const matchQ = !q || uSearch.includes(q);
+    const show = matchDept && matchQ;
+    tr.style.display = show ? '' : 'none';
+    if(show) visibleCount++;
+  });
+  const emptyRow = document.getElementById('admin-users-empty-row');
+  if(emptyRow) emptyRow.style.display = visibleCount === 0 ? '' : 'none';
+}
+
 function renderAdminUsersView(body, users, projects, depts){
   const clearanceLabels = {
-    'public': '🟢 Public (عام)',
-    'internal': '🔵 Internal (داخلي)',
+    'public':       '🟢 Public (عام)',
+    'internal':     '🔵 Internal (داخلي)',
     'confidential': '🟠 Confidential (سري)',
-    'restricted': '🔴 Restricted (سري للغاية)'
+    'restricted':   '🔴 Restricted (سري للغاية)'
   };
-  const deptRoleLabels = {
-    'viewer': 'Viewer',
-    'editor': 'Editor',
-    'head': 'Dept Head ★'
+  const roleLabels = {
+    'superadmin': '👑 Superadmin (مدير النظام)',
+    'admin':      '🛡️ Dept Admin (مدير إدارة)',
+    'editor':     '✏️ User / Editor (محرر)',
+    'viewer':     '👁️ Viewer (مشاهد فقط)'
   };
+  const deptMap = Object.fromEntries(depts.map(d => [String(d.id).toUpperCase(), d]));
+  const deptOpts = depts.map(d => `<option value="${escHtml(d.id)}">${escHtml(d.icon||'🏢')} ${escHtml(d.code)} — ${escHtml(d.name_ar || d.name)}</option>`).join('');
 
+  // 1. Collapsible Add User Card at top
+  const addCard = document.createElement('div');
+  addCard.id = 'admin-add-user-card';
+  addCard.style.cssText = `display:${window._ADMIN_CACHE.showAddUser ? 'block' : 'none'}; padding:12px 14px; margin-bottom:12px; border:1.5px solid var(--brand-teal, #0d9488); border-radius:10px; background:var(--card, #f8fafc);`;
+  addCard.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:800;color:var(--pr)">➕ إضافة مستخدم جديد (Add New User)</div>
+      <button type="button" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:10px" onclick="toggleAddUserPanel()">✕ إغلاق</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 1.3fr 1.2fr 1.1fr 1fr 1fr auto;gap:8px;align-items:end">
+      <div class="fg"><label>اسم المستخدم (Username)</label><input id="nu-name" placeholder="e.g. ahmed_hr"></div>
+      <div class="fg"><label>البريد الإلكتروني (Email)</label><input id="nu-email" placeholder="user@company.com"></div>
+      <div class="fg"><label>الإدارة الرئيسية (Primary Dept)</label><select id="nu-dept">${deptOpts}</select></div>
+      <div class="fg"><label>الرتبة الإدارية (Role)</label><select id="nu-role">
+        <option value="editor">✏️ User / Editor (محرر)</option>
+        <option value="viewer">👁️ Viewer (مشاهد فقط)</option>
+        <option value="admin">🛡️ Dept Admin (مدير إدارة)</option>
+        <option value="superadmin">👑 Superadmin (مدير النظام)</option>
+      </select></div>
+      <div class="fg"><label>مستوى السرية (Clearance)</label><select id="nu-clearance">
+        <option value="internal">🔵 Internal</option>
+        <option value="public">🟢 Public</option>
+        <option value="confidential">🟠 Confidential</option>
+        <option value="restricted">🔴 Restricted</option>
+      </select></div>
+      <div class="fg"><label>كلمة المرور (Password)</label><input id="nu-pw" type="password" placeholder="••••••"></div>
+      <button type="button" class="btn btn-pr btn-sm" style="height:36px;padding:0 16px;font-weight:700" onclick="addUsr()">✔ حفظ</button>
+    </div>
+  `;
+  body.appendChild(addCard);
+
+  // 2. Clean Unified Responsive Data Table
+  const tblWrap = document.createElement('div');
+  tblWrap.style.cssText = 'border:1px solid var(--bd); border-radius:10px; overflow-x:auto; background:var(--wh, #fff); box-shadow:0 1px 3px rgba(0,0,0,0.03);';
+
+  let rowsHtml = '';
   for(const u of users){
-    const assigned_cached = u.projects || [];
-    const assigned_depts = u.departments || [];
-    const uwrap = document.createElement('div');
-    uwrap.className = 'urow-wrapper';
-    const row = document.createElement('div');
-    row.className = 'urow';
-    row.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
-    row.innerHTML = `<span style="flex:1;font-weight:700;min-width:115px">👤 ${escHtml(u.username)}</span>
-      <input id="email-${escHtml(u.username)}" placeholder="Email (e.g. dc@company.com)" value="${escHtml(u.email || '')}" style="flex:1.4; min-width:150px; padding:4px 6px; font-size:11px; border:1px solid var(--bd); border-radius:4px;" onblur="updUsrEmail('${escHtml(u.username)}')">
-      ${u.username !== 'admin' ? `
-        <select id="clearance-${escHtml(u.username)}" class="btn btn-sc btn-sm" style="height:auto;padding:4px 6px;font-size:10.5px;outline:none;" title="Confidentiality Clearance Level (مستوى السرية)" onchange="updUsrClearance('${escHtml(u.username)}')">
-          ${['public','internal','confidential','restricted'].map(c => `<option value="${c}" ${(u.confidentiality_clearance||'internal')===c?'selected':''}>${clearanceLabels[c]}</option>`).join('')}
-        </select>
-        <button class="btn btn-sc btn-sm" onclick="chgPw('${escHtml(u.username)}')">🔑 PW</button>
-        <button class="btn btn-er btn-sm" style="background:transparent;color:var(--er);border-color:transparent;font-size:14px;padding:0 4px" title="Delete User" onclick="delUsr('${escHtml(u.username)}')">🗑️</button>`
-      : '<span style="flex:0 0 auto;font-size:10px;color:var(--mu)">(protected superadmin)</span>'}`;
+    const uname = u.username;
+    const isProtectedAdmin = uname === 'admin';
+    const pDeptId = String(u.primary_dept || 'ENG').toUpperCase();
+    const pDeptObj = deptMap[pDeptId] || { id: pDeptId, code: pDeptId, name: pDeptId, icon: '🏢', module_type: 'engineering' };
+    const uModType = getDeptModuleType(pDeptObj);
+    const uDepts = u.departments || [];
+    const uProjs = u.projects || [];
+    const allDeptIds = Array.from(new Set([pDeptId, ...uDepts.map(d => String(d.department_id).toUpperCase())])).join(',');
 
-    if(u.username !== 'admin'){
-      const roleSel = document.createElement('select');
-      roleSel.id = 'role-' + u.username;
-      roleSel.className = 'btn btn-sc btn-sm';
-      roleSel.style.cssText = 'height:auto;padding:4px 8px;outline:none;';
-      roleSel.setAttribute('onchange', "this.nextSibling.style.opacity='1'; this.nextSibling.style.pointerEvents='auto'; this.nextSibling.style.filter='none';");
-      roleSel.innerHTML = ['viewer','editor','admin','superadmin'].map(r => `<option value="${r}" ${u.role===r?'selected':''}>${r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('');
-      const roleBtn = document.createElement('button');
-      roleBtn.className = 'btn btn-pr btn-sm role-save-btn';
-      roleBtn.style.cssText = 'opacity:0.4; pointer-events:none; filter:grayscale(100%); transition:all 0.2s';
-      roleBtn.textContent = 'Save Role';
-      roleBtn.onclick = () => updUsrRole(u.username);
-      row.insertBefore(roleSel, row.children[1] || null);
-      row.insertBefore(roleBtn, row.children[2] || null);
+    // Build concise access summary badge
+    let scopeSummaryHtml = '';
+    if(u.role === 'superadmin'){
+      scopeSummaryHtml = `<span style="font-size:10px;padding:2px 7px;border-radius:12px;background:#dcfce7;color:#166534;font-weight:700">🌐 صلاحية شاملة للنظام</span>`;
+    } else if(uModType === 'engineering'){
+      const dcCount = uProjs.filter(p => p.is_dc).length;
+      scopeSummaryHtml = `<span style="font-size:10px;padding:2px 7px;border-radius:12px;background:#eff6ff;color:#1d4ed8;font-weight:700">📁 ${uProjs.length} مشروع هندسي${dcCount ? ` (${dcCount} DC)` : ''}</span>`;
+    } else {
+      const dRec = uDepts.find(d => String(d.department_id).toUpperCase() === pDeptId);
+      const dRole = dRec ? dRec.dept_role : (u.role === 'admin' ? 'head' : (u.role === 'editor' ? 'editor' : 'viewer'));
+      const dRoleAr = dRole === 'head' ? 'مدير قسم ★' : (dRole === 'editor' ? 'محرر وثائق' : 'مشاهد');
+      scopeSummaryHtml = `<span style="font-size:10px;padding:2px 7px;border-radius:12px;background:#f0fdf4;color:#047857;font-weight:700">${escHtml(pDeptObj.icon||'🏢')} ${escHtml(pDeptObj.code)}: ${dRoleAr}</span>`;
     }
-    uwrap.appendChild(row);
-    body.appendChild(uwrap);
 
-    if(u.role !== 'superadmin'){
-      const ad = document.createElement('div');
-      ad.style.cssText = 'padding:6px 10px 10px 28px;border-bottom:1px solid var(--bd);margin-bottom:4px;display:flex;flex-direction:column;gap:8px;';
+    const rowDeptSelect = isProtectedAdmin
+      ? `<span style="font-size:11px;font-weight:700;color:var(--mu)">🌐 جميع الإدارات (All)</span>`
+      : `<select id="pdept-${escHtml(uname)}" style="width:100%;padding:5px 7px;font-size:11.5px;border:1px solid var(--bd);border-radius:6px;background:var(--bg,#f8fafc);color:var(--tx);font-weight:600" onchange="updUsrPrimaryDept('${escHtml(uname)}', this.value)">
+           ${depts.map(d => `<option value="${escHtml(d.id)}" ${String(d.id).toUpperCase()===pDeptId?'selected':''}>${escHtml(d.icon||'🏢')} ${escHtml(d.code)} — ${escHtml(d.name_ar || d.name)}</option>`).join('')}
+         </select>`;
 
-      // 1) Department Access Row
-      const deptWrap = document.createElement('div');
-      deptWrap.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <div style="font-size:10px;font-weight:700;color:#0f766e">🏢 Department Access <span style="font-weight:400;color:var(--mu)">(Left-click: Toggle access · Right-click: Cycle role Viewer ➔ Editor ➔ Dept Head ★)</span></div>
-      </div>`;
-      const dl = document.createElement('div');
-      dl.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;';
-      depts.forEach(d => {
-        const dAccess = assigned_depts.find(a => String(a.department_id).toUpperCase() === String(d.id).toUpperCase());
-        const isOn = !!dAccess;
-        const dRole = dAccess ? (dAccess.dept_role || 'viewer') : 'viewer';
-        const btn = document.createElement('button');
-        const borderCol = !isOn ? '#e2e8f0' : (dRole === 'head' ? '#10b981' : (dRole === 'editor' ? '#f59e0b' : '#0284c7'));
-        const bgCol = isOn ? '#0f4c5c' : '#f8fafc';
-        const txCol = isOn ? '#fff' : '#94a3b8';
-        btn.style.cssText = `padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;transition:all .15s;border:2px solid ${borderCol};background:${bgCol};color:${txCol}`;
-        btn.textContent = `${d.icon || '🏢'} ${d.code}` + (isOn ? ` (${deptRoleLabels[dRole] || dRole})` : '');
-        btn.title = `${d.name}${d.name_ar ? ' - ' + d.name_ar : ''} | Left-click: toggle access | Right-click: cycle role (Viewer / Editor / Dept Head)`;
-        if(isOn) btn.dataset.on = '1';
-        btn.onclick = async () => {
-          const currentlyOn = !!btn.dataset.on;
-          try {
-            await apiFetch('/api/users', {
-              method: 'POST',
-              body: JSON.stringify({
-                action: currentlyOn ? 'unassign_dept' : 'assign_dept',
-                username: u.username,
-                department_id: d.id,
-                dept_role: u.role === 'editor' ? 'editor' : 'viewer'
-              })
-            });
-            openEnterpriseAdmin('users');
-          } catch(e) { toast(e.message || 'Error', 'er'); }
-        };
-        btn.oncontextmenu = async (e) => {
-          e.preventDefault();
-          if(!btn.dataset.on) return toast('Assign user to department first (left-click)', 'wa');
-          const order = ['viewer', 'editor', 'head'];
-          const nextRole = order[(order.indexOf(dRole) + 1) % order.length];
-          await apiFetch('/api/users', {
-            method: 'POST',
-            body: JSON.stringify({
-              action: 'assign_dept',
-              username: u.username,
-              department_id: d.id,
-              dept_role: nextRole
-            })
-          });
-          toast(`✔ ${u.username} role in ${d.code}: ${deptRoleLabels[nextRole]}`, 'ok');
-          openEnterpriseAdmin('users');
-        };
-        dl.appendChild(btn);
-      });
-      deptWrap.appendChild(dl);
-      ad.appendChild(deptWrap);
+    const rowRoleSelect = isProtectedAdmin
+      ? `<span style="font-size:11px;font-weight:700;color:#059669">👑 Superadmin (محمي)</span>`
+      : `<select id="role-${escHtml(uname)}" style="width:100%;padding:5px 7px;font-size:11.5px;border:1px solid var(--bd);border-radius:6px;background:var(--bg,#f8fafc);color:var(--tx);font-weight:600" onchange="updUsrRole('${escHtml(uname)}')">
+           ${['superadmin','admin','editor','viewer'].map(r => `<option value="${r}" ${u.role===r?'selected':''}>${roleLabels[r]}</option>`).join('')}
+         </select>`;
 
-      // 2) Project Access Row
-      const projWrap = document.createElement('div');
-      projWrap.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="font-size:10px;font-weight:700;color:var(--mu)">📁 Project / Workspace Access <span style="font-weight:400">(Left-click: Toggle · Right-click: Project DC)</span></div><div><a href="#" style="font-size:9px;margin-right:8px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => { if(b.dataset.on!=='1') b.click(); })">Select All</a><a href="#" style="font-size:9px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => { if(b.dataset.on==='1') b.click(); })">Clear All</a></div></div>`;
-      const pl = document.createElement('div');
-      pl.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px';
-      projects.forEach(p => {
-        const projAccess = assigned_cached.find(a => a.project_id === p.id);
-        const isOn = !!projAccess;
-        const isDC = isOn && projAccess.is_dc;
-        const btn = document.createElement('button');
-        btn.style.cssText = 'padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;transition:all .15s;border:2px solid '+(isDC?'#22c55e':(isOn?'#f0a500':'#e2e8f0'))+';background:'+(isOn?'#1a3a5c':'#f8fafc')+';color:'+(isOn?'#fff':'#94a3b8');
-        btn.textContent = p.code + (isDC ? ' (DC)' : '');
-        btn.title = `${p.name} [${p.department_id || 'ENG'}] | Left-click to assign access. Right-click to set as Project DC`;
-        if(isOn) btn.dataset.on = '1';
-        btn.onclick = async () => {
-          const on = !!btn.dataset.on;
-          btn.dataset.on = on ? '' : '1';
-          const nextOn = !on;
-          btn.style.borderColor = isDC?'#22c55e':(nextOn?'#f0a500':'#e2e8f0');
-          btn.style.background = nextOn?'#1a3a5c':'#f8fafc';
-          btn.style.color = nextOn?'#fff':'#94a3b8';
-          btn.textContent = p.code + (isDC ? ' (DC)' : '');
-          try {
-            await apiFetch('/api/users',{method:'POST',body:JSON.stringify({action:on?'unassign':'assign',username:u.username,project_id:p.id,is_dc:false})});
-          } catch(e) { openEnterpriseAdmin('users'); }
-        };
-        btn.oncontextmenu = async (e) => {
-          e.preventDefault();
-          const currIsOn = !!btn.dataset.on;
-          if(!currIsOn) return toast('User must be assigned to project first','wa');
-          await apiFetch('/api/users', {method:'POST', body:JSON.stringify({action:'assign',username:u.username,project_id:p.id, is_dc: !isDC})});
-          openEnterpriseAdmin('users');
-        };
-        pl.appendChild(btn);
-      });
-      projWrap.appendChild(pl);
-      ad.appendChild(projWrap);
-      uwrap.appendChild(ad);
-    }
+    const rowClearanceSelect = isProtectedAdmin
+      ? `<span style="font-size:11px;font-weight:700;color:#b91c1c">🔴 Restricted (كامل)</span>`
+      : `<select id="clearance-${escHtml(uname)}" style="width:100%;padding:5px 7px;font-size:11.5px;border:1px solid var(--bd);border-radius:6px;background:var(--bg,#f8fafc);color:var(--tx);font-weight:600" onchange="updUsrClearance('${escHtml(uname)}')">
+           ${['public','internal','confidential','restricted'].map(c => `<option value="${c}" ${(u.confidentiality_clearance||'internal')===c?'selected':''}>${clearanceLabels[c]}</option>`).join('')}
+         </select>`;
+
+    rowsHtml += `
+      <tr class="usr-tbl-row" data-dept="${escHtml(pDeptId)}" data-alldepts="${escHtml(allDeptIds)}" data-search="${escHtml(uname + ' ' + (u.email||'') + ' ' + pDeptId)}">
+        <td style="padding:8px 12px;vertical-align:middle;white-space:nowrap">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--brand-navy,#1a2f4e),var(--brand-teal,#00b4a6));color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0">
+              ${escHtml(uname.slice(0,2).toUpperCase())}
+            </div>
+            <div>
+              <div style="font-weight:800;font-size:12.5px;color:var(--tx)">${escHtml(uname)}</div>
+              <div style="margin-top:2px">${scopeSummaryHtml}</div>
+            </div>
+          </div>
+        </td>
+        <td style="padding:8px 10px;vertical-align:middle;min-width:170px">
+          <input id="email-${escHtml(uname)}" value="${escHtml(u.email || '')}" placeholder="user@company.com"
+            style="width:100%;padding:5px 8px;font-size:11.5px;border:1px solid var(--bd);border-radius:6px;background:var(--bg,#f8fafc);color:var(--tx)"
+            onblur="updUsrEmail('${escHtml(uname)}')" onkeydown="if(event.key==='Enter')this.blur()">
+        </td>
+        <td style="padding:8px 10px;vertical-align:middle;min-width:175px">
+          ${rowDeptSelect}
+        </td>
+        <td style="padding:8px 10px;vertical-align:middle;min-width:165px">
+          ${rowRoleSelect}
+        </td>
+        <td style="padding:8px 10px;vertical-align:middle;min-width:150px">
+          ${rowClearanceSelect}
+        </td>
+        <td style="padding:8px 12px;vertical-align:middle;text-align:center;white-space:nowrap">
+          <div style="display:inline-flex;gap:5px;align-items:center">
+            ${!isProtectedAdmin ? `<button type="button" class="btn btn-pr btn-sm" style="padding:4px 10px;font-size:11px" onclick="openUserPermsModal('${escHtml(uname)}')" title="إدارة صلاحيات الإدارات والمشاريع">⚙️ الصلاحيات</button>` : ''}
+            <button type="button" class="btn btn-sc btn-sm" style="padding:4px 8px;font-size:11px" onclick="chgPw('${escHtml(uname)}')" title="تغيير كلمة المرور">🔑</button>
+            ${!isProtectedAdmin ? `<button type="button" class="btn btn-er btn-sm" style="padding:4px 8px;font-size:12px" onclick="delUsr('${escHtml(uname)}')" title="حذف المستخدم">🗑️</button>` : ''}
+          </div>
+        </td>
+      </tr>
+    `;
   }
 
-  // Add User Section
-  const deptOpts = depts.map(d => `<option value="${escHtml(d.id)}">${escHtml(d.icon||'🏢')} ${escHtml(d.code)} - ${escHtml(d.name)}</option>`).join('');
-  const at = document.createElement('div');
-  at.className = 'stitle';
-  at.textContent = '➕ Add User';
-  body.appendChild(at);
+  tblWrap.innerHTML = `
+    <table class="dt-tbl" style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead>
+        <tr style="background:var(--brand-navy,#1a2f4e);color:#fff;text-align:left">
+          <th style="padding:10px 12px;font-size:11px">اسم المستخدم (User)</th>
+          <th style="padding:10px 10px;font-size:11px">البريد الإلكتروني (Email)</th>
+          <th style="padding:10px 10px;font-size:11px">الإدارة الرئيسية (Primary Dept)</th>
+          <th style="padding:10px 10px;font-size:11px">الرتبة الإدارية (System Role)</th>
+          <th style="padding:10px 10px;font-size:11px">مستوى السرية (Clearance)</th>
+          <th style="padding:10px 12px;font-size:11px;text-align:center">إجراءات (Actions)</th>
+        </tr>
+      </thead>
+      <tbody id="admin-users-tbody">
+        ${rowsHtml}
+        <tr id="admin-users-empty-row" style="display:none">
+          <td colspan="6" style="text-align:center;padding:24px;color:var(--mu);font-size:12px">لا يوجد مستخدمون مطابقون لفلتر البحث الحالي.</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+  body.appendChild(tblWrap);
+  filterUsersTable();
 
-  const ar = document.createElement('div');
-  ar.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1.3fr 0.9fr 1.1fr 1fr 1fr auto;gap:8px;align-items:end;flex-wrap:wrap">
-    <div class="fg"><label>Username</label><input id="nu-name" placeholder="username"></div>
-    <div class="fg"><label>Email</label><input id="nu-email" placeholder="Email"></div>
-    <div class="fg"><label>Role</label><select id="nu-role">
-      <option value="editor">Editor</option><option value="viewer">Viewer</option>
-      <option value="admin">Admin</option><option value="superadmin">Super Admin</option></select></div>
-    <div class="fg"><label>Primary Dept</label><select id="nu-dept">${deptOpts}</select></div>
-    <div class="fg"><label>Clearance</label><select id="nu-clearance">
-      <option value="internal">Internal</option>
-      <option value="public">Public</option>
-      <option value="confidential">Confidential</option>
-      <option value="restricted">Restricted</option></select></div>
-    <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
-    <button class="btn btn-pr btn-sm" style="height:34px" onclick="addUsr()">Add</button></div>`;
-  body.appendChild(ar);
-
-  // Global Sequence Audit Card
+  // 3. Compact Global Sequence Audit Card (Collapsible at bottom)
   const auditCard = document.createElement('div');
-  auditCard.style.cssText = 'margin-top:20px; padding:15px; border:1px solid var(--bd); border-radius:8px; background:var(--card, #fff); margin-bottom:10px;';
-  let projOptions = projects.map(p => `<option value="${escHtml(p.id)}">${escHtml(p.code)} - ${escHtml(p.name)}</option>`).join('');
+  auditCard.style.cssText = 'margin-top:16px; padding:12px 14px; border:1px solid var(--bd); border-radius:8px; background:var(--card, #fff);';
+  const engProjects = projects.filter(p => getDeptModuleType(p.department_id || 'ENG') === 'engineering');
+  let projOptions = engProjects.map(p => `<option value="${escHtml(p.id)}">${escHtml(p.code)} - ${escHtml(p.name)}</option>`).join('');
   auditCard.innerHTML = `
-    <h3 style="margin-top:0;font-size:14px;color:var(--tx);margin-bottom:4px;">Global Sequence Audit</h3>
-    <p style="font-size:11px;color:var(--mu);margin-bottom:12px;">Detect missing sequence numbers (gaps) in document logs.</p>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-       <select id="audit-proj" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
-          <option value="">Select Project</option>
-          ${projOptions}
-       </select>
-       <select id="audit-dt" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
-          <option value="">Select Doc Type</option>
-       </select>
-       <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div>
+        <strong style="font-size:12.5px;color:var(--tx)">🔍 Global Sequence Audit (فحص تسلسل أرقام الوثائق)</strong>
+        <span style="font-size:11px;color:var(--mu);margin-left:8px">Detect missing sequence numbers in document logs.</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+         <select id="audit-proj" class="btn btn-sc btn-sm" style="height:auto;padding:5px 8px;outline:none;min-width:140px;background:var(--wh, #fff);border:1px solid var(--bd);">
+            <option value="">Select Project</option>
+            ${projOptions}
+         </select>
+         <select id="audit-dt" class="btn btn-sc btn-sm" style="height:auto;padding:5px 8px;outline:none;min-width:140px;background:var(--wh, #fff);border:1px solid var(--bd);">
+            <option value="">Select Doc Type</option>
+         </select>
+         <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
+      </div>
     </div>
-    <div id="audit-result" style="font-size:12px;margin-top:10px;"></div>
+    <div id="audit-result" style="font-size:12px;margin-top:8px;"></div>
   `;
   body.appendChild(auditCard);
 
@@ -3903,27 +3942,281 @@ function renderAdminUsersView(body, users, projects, depts){
   };
 }
 
+// ── Dedicated User Permissions Modal (نافذة الصلاحيات المنبثقة) ──
+function openUserPermsModal(username){
+  const { users, projects, depts } = window._ADMIN_CACHE;
+  const u = (users || []).find(x => x.username === username);
+  if(!u) return;
+
+  let modalOverlay = document.getElementById('user-perms-modal');
+  if(!modalOverlay){
+    modalOverlay = document.createElement('div');
+    modalOverlay.id = 'user-perms-modal';
+    modalOverlay.className = 'overlay hidden';
+    modalOverlay.style.zIndex = '10200';
+    document.body.appendChild(modalOverlay);
+  }
+
+  const pDeptId = String(u.primary_dept || 'ENG').toUpperCase();
+  const assignedDeptsMap = {};
+  (u.departments || []).forEach(d => {
+    assignedDeptsMap[String(d.department_id).toUpperCase()] = d.dept_role || 'viewer';
+  });
+  if(!assignedDeptsMap[pDeptId]){
+    assignedDeptsMap[pDeptId] = u.role === 'admin' ? 'head' : (u.role === 'editor' ? 'editor' : 'viewer');
+  }
+
+  const assignedProjsMap = {};
+  (u.projects || []).forEach(p => {
+    assignedProjsMap[p.project_id] = !!p.is_dc;
+  });
+
+  const deptsRowsHtml = depts.map(d => {
+    const did = String(d.id).toUpperCase();
+    const isPrimary = did === pDeptId;
+    const isChecked = isPrimary || (did in assignedDeptsMap);
+    const currRole = assignedDeptsMap[did] || (u.role === 'admin' ? 'head' : (u.role === 'editor' ? 'editor' : 'viewer'));
+    const modMeta = MODULE_TYPE_META[getDeptModuleType(d)] || MODULE_TYPE_META.engineering;
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid var(--bd);border-radius:8px;background:${isChecked?'var(--wh,#fff)':'var(--bg,#f8fafc)'};gap:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;font-weight:700;font-size:12px;color:var(--tx)">
+          <input type="checkbox" class="perm-dept-cb" data-dept="${escHtml(did)}" data-modtype="${escHtml(getDeptModuleType(d))}" ${isChecked?'checked':''} onchange="refreshPermsModalProjectsSection()" style="width:16px;height:16px;accent-color:var(--brand-teal,#0d9488)">
+          <span>${escHtml(d.icon||'🏢')} ${escHtml(d.code)} — ${escHtml(d.name_ar || d.name)}</span>
+          ${isPrimary ? `<span style="font-size:9.5px;padding:1px 6px;border-radius:10px;background:#dbeafe;color:#1e40af">الإدارة الرئيسية</span>` : ''}
+          <span style="font-size:9.5px;padding:1px 6px;border-radius:10px;background:${modMeta.badgeBg};color:${modMeta.badgeTx};border:1px solid ${modMeta.badgeBd}">${modMeta.short}</span>
+        </label>
+        <select class="perm-dept-role" data-dept="${escHtml(did)}" style="padding:4px 8px;font-size:11.5px;border:1px solid var(--bd);border-radius:6px;background:var(--wh,#fff);color:var(--tx);font-weight:600">
+          <option value="viewer" ${currRole==='viewer'?'selected':''}>👁️ مشاهد (Viewer)</option>
+          <option value="editor" ${currRole==='editor'?'selected':''}>✏️ محرر وثائق (Editor)</option>
+          <option value="head" ${currRole==='head'?'selected':''}>⭐ مدير الإدارة (Dept Head — وصول كامل)</option>
+        </select>
+      </div>
+    `;
+  }).join('');
+
+  modalOverlay.innerHTML = `
+    <div class="modal" style="max-width:740px;width:95%">
+      <div class="mhdr" style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:15px;font-weight:800">⚙️ إعداد صلاحيات المستخدم: <span style="color:var(--brand-teal,#00b4a6)">${escHtml(username)}</span></div>
+          <div style="font-size:11px;color:var(--mu);font-weight:500;margin-top:2px">تحديد صلاحيات الإدارات ومساحات العمل بوضوح بدون تعقيد</div>
+        </div>
+        <button class="xbtn" onclick="closeM('user-perms-modal')">✕</button>
+      </div>
+      <div class="mbody" style="padding:16px 20px;display:flex;flex-direction:column;gap:16px">
+        <!-- 1. Department Access & Role -->
+        <div>
+          <div class="stitle" style="margin-top:0">🏢 1. الإدارات والصلاحية داخل كل إدارة (Department Membership & Role)</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            ${deptsRowsHtml}
+          </div>
+        </div>
+
+        <!-- 2. Context-Aware Projects / Workspaces Section -->
+        <div id="perm-projects-container"></div>
+      </div>
+      <div class="mfoot" style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:11px;color:var(--mu)">💡 ملاحظة: اختيار "مدير الإدارة (Dept Head)" يمنح المستخدم تلقائياً صلاحية الوصول الكاملة لجميع سجلات ومشاريع تلك الإدارة.</div>
+        <div style="display:flex;gap:8px">
+          <button type="button" class="btn btn-sc" onclick="closeM('user-perms-modal')">إلغاء (Cancel)</button>
+          <button type="button" class="btn btn-pr" onclick="saveUserPermsModal('${escHtml(username)}')">💾 حفظ الصلاحيات (Save)</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  window._PERM_MODAL_STATE = { username, assignedProjsMap };
+  openM('user-perms-modal');
+  refreshPermsModalProjectsSection();
+}
+
+function refreshPermsModalProjectsSection(){
+  const container = document.getElementById('perm-projects-container');
+  if(!container || !window._PERM_MODAL_STATE) return;
+  const { projects, depts } = window._ADMIN_CACHE;
+  const { assignedProjsMap } = window._PERM_MODAL_STATE;
+
+  // Capture any current checkbox changes before re-rendering
+  document.querySelectorAll('.perm-proj-cb').forEach(cb => {
+    const pid = cb.dataset.pid;
+    const dcCb = document.querySelector(`.perm-proj-dc[data-pid="${pid}"]`);
+    if(cb.checked){
+      assignedProjsMap[pid] = dcCb ? dcCb.checked : false;
+    } else {
+      delete assignedProjsMap[pid];
+    }
+  });
+
+  const checkedDeptCbs = Array.from(document.querySelectorAll('.perm-dept-cb:checked'));
+  const checkedDeptIds = checkedDeptCbs.map(cb => String(cb.dataset.dept).toUpperCase());
+  const hasEngDept = checkedDeptCbs.some(cb => cb.dataset.modtype === 'engineering');
+
+  if(!hasEngDept){
+    // User belongs ONLY to non-engineering departments (e.g. HR, Procurement, Corporate)
+    // Hide all Engineering projects! Only show department-specific workspaces if any exist for their checked departments.
+    const deptWorkspaces = (projects || []).filter(p => checkedDeptIds.includes(String(p.department_id || 'ENG').toUpperCase()));
+    const selectedDeptNames = depts.filter(d => checkedDeptIds.includes(String(d.id).toUpperCase())).map(d => `${d.icon||'🏢'} ${d.name_ar || d.name}`).join(' ، ');
+
+    let wsHtml = '';
+    if(deptWorkspaces.length > 0){
+      wsHtml = `
+        <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px">
+          ${deptWorkspaces.map(p => {
+            const isChecked = p.id in assignedProjsMap;
+            return `
+              <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--wh,#fff);cursor:pointer;font-size:12px">
+                <input type="checkbox" class="perm-proj-cb" data-pid="${escHtml(p.id)}" ${isChecked?'checked':''} style="width:15px;height:15px;accent-color:var(--brand-teal,#0d9488)">
+                <div style="min-width:0;flex:1">
+                  <div style="font-weight:700;color:var(--tx)">${escHtml(p.code)} — ${escHtml(p.name)}</div>
+                </div>
+              </label>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <div class="stitle" style="margin-top:0">🏛️ 2. صلاحيات القسم الإداري (Department Workspace Permissions)</div>
+      <div style="padding:14px 16px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0;color:#065f46;font-size:12px;line-height:1.6">
+        <div style="font-weight:800;font-size:13px;margin-bottom:4px">✔ تم عزل المشاريع الهندسية تلقائياً</div>
+        هذا المستخدم يتبع إدارة غير هندسية (<strong>${escHtml(selectedDeptNames || 'إدارة عامة')}</strong>)، لذلك <strong>لا تظهر له مشاريع الهندسة أو المقاولين</strong>، وتقتصر صلاحيته على بيئة عمل وسجلات قسمه فقط حسب الرتبة المحددة أعلاه (مشاهد / محرر / مدير إدارة).
+        ${wsHtml}
+      </div>
+    `;
+    return;
+  }
+
+  // User has Engineering department access -> Show Engineering Projects with clean Checkboxes
+  const engProjects = (projects || []).filter(p => checkedDeptIds.includes(String(p.department_id || 'ENG').toUpperCase()));
+  const rowsHtml = engProjects.map(p => {
+    const isChecked = p.id in assignedProjsMap;
+    const isDC = !!assignedProjsMap[p.id];
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid ${isChecked?'var(--brand-teal,#0d9488)':'var(--bd)'};border-radius:8px;background:${isChecked?'rgba(13,148,136,0.04)':'var(--wh,#fff)'};gap:8px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;min-width:0">
+          <input type="checkbox" class="perm-proj-cb" data-pid="${escHtml(p.id)}" ${isChecked?'checked':''}
+            onchange="onPermProjToggle(this)"
+            style="width:16px;height:16px;accent-color:var(--brand-teal,#0d9488);flex-shrink:0">
+          <div style="min-width:0;flex:1">
+            <div style="font-weight:800;font-size:12px;color:var(--pr);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.code)}</div>
+            <div style="font-size:10.5px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(p.name)}">${escHtml(p.name)}</div>
+          </div>
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:3px 7px;border-radius:6px;background:${isDC?'#dcfce7':'var(--bg,#f1f5f9)'};color:${isDC?'#166534':'var(--mu)'};cursor:pointer;flex-shrink:0" title="تعيين كمسؤول وثائق المشروع (Document Controller)">
+          <input type="checkbox" class="perm-proj-dc" data-pid="${escHtml(p.id)}" ${isDC?'checked':''} ${!isChecked?'disabled':''} style="width:13px;height:13px;accent-color:#16a34a">
+          <span>DC</span>
+        </label>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="stitle" style="margin:0">📁 2. المشاريع الهندسية المسموح بالوصول إليها (Engineering Projects)</div>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="btn btn-sc btn-sm" style="padding:3px 8px;font-size:10.5px" onclick="toggleAllPermsProjects(true)">☑️ تحديد الكل (Select All)</button>
+        <button type="button" class="btn btn-sc btn-sm" style="padding:3px 8px;font-size:10.5px" onclick="toggleAllPermsProjects(false)">⬜ إلغاء الكل (Clear All)</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:8px;max-height:290px;overflow-y:auto;padding:2px">
+      ${rowsHtml || '<div style="padding:12px;color:var(--mu);font-size:12px">لا توجد مشاريع مسجلة في هذه الإدارة.</div>'}
+    </div>
+  `;
+}
+
+function onPermProjToggle(cb){
+  const pid = cb.dataset.pid;
+  const dc = document.querySelector(`.perm-proj-dc[data-pid="${pid}"]`);
+  if(dc){
+    dc.disabled = !cb.checked;
+    if(!cb.checked) dc.checked = false;
+  }
+}
+
+function toggleAllPermsProjects(check){
+  document.querySelectorAll('.perm-proj-cb').forEach(cb => {
+    cb.checked = !!check;
+    const pid = cb.dataset.pid;
+    const dc = document.querySelector(`.perm-proj-dc[data-pid="${pid}"]`);
+    if(dc){
+      dc.disabled = !check;
+      if(!check) dc.checked = false;
+    }
+  });
+}
+
+async function saveUserPermsModal(username){
+  const departments = [];
+  document.querySelectorAll('.perm-dept-cb:checked').forEach(cb => {
+    const did = cb.dataset.dept;
+    const roleSel = document.querySelector(`.perm-dept-role[data-dept="${did}"]`);
+    departments.push({ department_id: did, dept_role: roleSel ? roleSel.value : 'viewer' });
+  });
+
+  const projects = [];
+  document.querySelectorAll('.perm-proj-cb:checked').forEach(cb => {
+    const pid = cb.dataset.pid;
+    const dcCb = document.querySelector(`.perm-proj-dc[data-pid="${pid}"]`);
+    projects.push({ project_id: pid, is_dc: !!(dcCb && dcCb.checked) });
+  });
+
+  const primary_dept = departments.length > 0 ? departments[0].department_id : undefined;
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'save_permissions', username, primary_dept, departments, projects })
+    });
+    if(r && r.ok){
+      toast(`✔ تم حفظ صلاحيات المستخدم ${username} بنجاح`, 'ok');
+      closeM('user-perms-modal');
+      openEnterpriseAdmin('users');
+    } else {
+      toast((r && r.error) || 'فشل حفظ الصلاحيات', 'er');
+    }
+  } catch(e) {
+    toast(e.message || 'خطأ أثناء حفظ الصلاحيات', 'er');
+  }
+}
+
+async function updUsrPrimaryDept(username, primary_dept){
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_primary_dept', username, primary_dept })
+    });
+    if(r && r.ok){
+      toast(`✔ تم تحديث الإدارة الرئيسية للمستخدم ${username} إلى ${primary_dept}`, 'ok');
+      openEnterpriseAdmin('users');
+    }
+  } catch(e) {
+    toast(e.message || 'فشل تحديث الإدارة الرئيسية', 'er');
+  }
+}
+
 function renderAdminDeptsView(body, depts, projects){
   const quickIcons = ['🏗','👥','💰','📦','⚖️','🛡️','🏢','📊','📁','🔧','🏛️','📑'];
   const addCard = document.createElement('div');
   addCard.style.cssText = 'padding:14px; border:1px solid var(--bd); border-radius:8px; background:var(--card, #f8fafc); margin-bottom:16px;';
   addCard.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px">
-      <div style="font-size:13px;font-weight:800;color:var(--pr)">➕ Add New Department (إضافة إدارة جديدة)</div>
+      <div style="font-size:13px;font-weight:800;color:var(--pr)">➕ Add New Department (إضافة إدارة جديدة بنمط عمل مستقل)</div>
       <div style="display:flex;gap:4px;align-items:center;font-size:11px;color:var(--mu)">
         <span>Quick Icon:</span>
         ${quickIcons.map(ic => `<button type="button" style="border:1px solid var(--bd);background:#fff;border-radius:4px;cursor:pointer;padding:2px 5px;font-size:13px" onclick="document.getElementById('nd-icon').value='${ic}'">${ic}</button>`).join('')}
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:65px 110px 1.3fr 1.3fr 1.1fr auto;gap:8px;align-items:end">
+    <div style="display:grid;grid-template-columns:60px 100px 1.2fr 1.2fr 1.5fr auto;gap:8px;align-items:end">
       <div class="fg"><label>Icon</label><input id="nd-icon" value="🏢" style="text-align:center;font-size:15px"></div>
-      <div class="fg"><label>Code (ID)</label><input id="nd-code" placeholder="e.g. HR, FIN" style="text-transform:uppercase"></div>
+      <div class="fg"><label>Code (ID)</label><input id="nd-code" placeholder="e.g. HR, PROC" style="text-transform:uppercase"></div>
       <div class="fg"><label>Name (English)</label><input id="nd-name" placeholder="e.g. Human Resources"></div>
       <div class="fg"><label>Name (المسمى بالعربية)</label><input id="nd-name-ar" placeholder="مثال: الموارد البشرية" dir="rtl"></div>
-      <div class="fg"><label>Structure Type</label>
-        <select id="nd-type">
-          <option value="1">Project-Based (مشاريع)</option>
-          <option value="0">Corporate / Dept-Wide (إدارة عامة)</option>
+      <div class="fg"><label>Department Module Type (نمط عمل الإدارة)</label>
+        <select id="nd-modtype">
+          <option value="corporate_edms">🏛️ Corporate / General EDMS (وثائق إدارية وعامة)</option>
+          <option value="hr">👥 Human Resources - HR (موارد بشرية وشؤون موظفين)</option>
+          <option value="procurement">📦 Procurement & Supply (مشتريات وعقود وموردين)</option>
+          <option value="engineering">🏗 Engineering & Projects (مشاريع هندسية واستشاريين)</option>
         </select>
       </div>
       <button class="btn btn-pr btn-sm" style="height:35px;padding:0 14px;font-weight:700" onclick="addDept()">➕ Add</button>
@@ -3937,17 +4230,19 @@ function renderAdminDeptsView(body, depts, projects){
   // Existing Departments Editable List
   const listTitle = document.createElement('div');
   listTitle.className = 'stitle';
-  listTitle.textContent = '🏢 Existing Departments — Edit Names, Codes & Order (تعديل مسميات وترتيب الإدارات)';
+  listTitle.textContent = '🏢 Existing Departments — Edit Names, Module Type & Order (تعديل مسميات وأنماط الإدارات)';
   body.appendChild(listTitle);
 
   const listWrap = document.createElement('div');
   listWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:20px;';
 
   depts.forEach((d, idx) => {
+    const modType = getDeptModuleType(d);
+    const isEngCore = String(d.id).toUpperCase() === 'ENG';
     const card = document.createElement('div');
     card.style.cssText = 'padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--wh,#fff);display:flex;flex-direction:column;gap:6px;';
     card.innerHTML = `
-      <div style="display:grid;grid-template-columns:55px 95px 1.3fr 1.3fr 1fr auto;gap:8px;align-items:center">
+      <div style="display:grid;grid-template-columns:55px 90px 1.2fr 1.2fr 1.4fr auto;gap:8px;align-items:center">
         <div>
           <label style="font-size:9px;color:var(--mu);display:block">Icon</label>
           <input id="ed-icon-${escHtml(d.id)}" value="${escHtml(d.icon || '🏢')}" style="width:100%;text-align:center;font-size:15px;padding:4px;border:1px solid var(--bd);border-radius:4px">
@@ -3965,10 +4260,12 @@ function renderAdminDeptsView(body, depts, projects){
           <input id="ed-ar-${escHtml(d.id)}" value="${escHtml(d.name_ar || '')}" dir="rtl" placeholder="المسمى بالعربية" style="width:100%;font-weight:600;padding:5px 8px;font-size:12px;border:1px solid var(--bd);border-radius:4px">
         </div>
         <div>
-          <label style="font-size:9px;color:var(--mu);display:block">Scope Mode</label>
-          <select id="ed-type-${escHtml(d.id)}" style="width:100%;padding:5px 6px;font-size:11px;border:1px solid var(--bd);border-radius:4px">
-            <option value="1" ${d.is_project_based ? 'selected' : ''}>Project-Based</option>
-            <option value="0" ${!d.is_project_based ? 'selected' : ''}>Department-Wide</option>
+          <label style="font-size:9px;color:var(--mu);display:block">Module Type (النمط المعماري)</label>
+          <select id="ed-modtype-${escHtml(d.id)}" ${isEngCore?'disabled':''} style="width:100%;padding:5px 6px;font-size:11px;border:1px solid var(--bd);border-radius:4px">
+            <option value="engineering" ${modType==='engineering'?'selected':''}>🏗 Engineering (مشاريع هندسية)</option>
+            <option value="hr" ${modType==='hr'?'selected':''}>👥 HR (الموارد البشرية)</option>
+            <option value="procurement" ${modType==='procurement'?'selected':''}>📦 Procurement (المشتريات والعقود)</option>
+            <option value="corporate_edms" ${modType==='corporate_edms'?'selected':''}>🏛️ Corporate EDMS (إدارة عامة)</option>
           </select>
         </div>
         <div style="display:flex;gap:4px;align-items:center;padding-top:12px">
@@ -3980,7 +4277,7 @@ function renderAdminDeptsView(body, depts, projects){
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
         <input id="ed-desc-${escHtml(d.id)}" value="${escHtml(d.description || '')}" placeholder="Description..." style="flex:1;padding:4px 8px;font-size:11px;border:1px solid var(--bd);border-radius:4px;color:var(--mu)">
-        <span style="font-size:10.5px;color:var(--mu);white-space:nowrap;font-weight:600">📁 ${d.project_count || 0} Workspace(s) / Project(s)</span>
+        <span style="font-size:10.5px;color:var(--mu);white-space:nowrap;font-weight:600">📁 ${d.project_count || 0} Workspace(s) / Register(s)</span>
       </div>
     `;
     listWrap.appendChild(card);
@@ -3990,7 +4287,7 @@ function renderAdminDeptsView(body, depts, projects){
   // Project-to-Department Mapping Card
   const mapTitle = document.createElement('div');
   mapTitle.className = 'stitle';
-  mapTitle.textContent = '🔗 Assign Workspaces / Projects to Departments (تسكين المشاريع على الإدارات)';
+  mapTitle.textContent = '🔗 Assign Workspaces / Projects to Departments (تسكين السجلات والمشاريع على الإدارات)';
   body.appendChild(mapTitle);
 
   const mapGrid = document.createElement('div');
@@ -4019,13 +4316,14 @@ async function addDept(){
   const code = document.getElementById('nd-code')?.value.trim().toUpperCase();
   const name = document.getElementById('nd-name')?.value.trim();
   const name_ar = document.getElementById('nd-name-ar')?.value.trim();
-  const is_project_based = document.getElementById('nd-type')?.value === '1';
+  const module_type = document.getElementById('nd-modtype')?.value || 'corporate_edms';
+  const is_project_based = (module_type === 'engineering');
   const description = document.getElementById('nd-desc')?.value.trim() || '';
   if(!code || !name) return toast('Department Code and Name are required', 'er');
   try {
     const r = await apiFetch('/api/departments', {
       method: 'POST',
-      body: JSON.stringify({ action: 'create', id: code, code, name, name_ar, icon, is_project_based, description })
+      body: JSON.stringify({ action: 'create', id: code, code, name, name_ar, icon, module_type, is_project_based, description })
     });
     if(r && r.ok){
       toast(`✔ Department "${name}" added`, 'ok');
@@ -4041,17 +4339,21 @@ async function saveDept(deptId){
   const code = document.getElementById('ed-code-' + deptId)?.value.trim().toUpperCase() || deptId;
   const name = document.getElementById('ed-name-' + deptId)?.value.trim();
   const name_ar = document.getElementById('ed-ar-' + deptId)?.value.trim() || '';
-  const is_project_based = document.getElementById('ed-type-' + deptId)?.value === '1';
+  const module_type = document.getElementById('ed-modtype-' + deptId)?.value || 'engineering';
+  const is_project_based = (module_type === 'engineering');
   const description = document.getElementById('ed-desc-' + deptId)?.value.trim() || '';
   if(!name) return toast('Department name cannot be empty', 'er');
   try {
     const r = await apiFetch('/api/departments', {
       method: 'POST',
-      body: JSON.stringify({ action: 'update', id: deptId, code, name, name_ar, icon, is_project_based, description })
+      body: JSON.stringify({ action: 'update', id: deptId, code, name, name_ar, icon, module_type, is_project_based, description })
     });
     if(r && r.ok){
       toast(`✔ Department "${name}" updated`, 'ok');
-      openEnterpriseAdmin('depts');
+      await openEnterpriseAdmin('depts');
+      if(typeof filterDept === 'function' && typeof _currentDept !== 'undefined'){
+        filterDept(_currentDept);
+      }
     } else {
       toast((r && r.error) || 'Update failed', 'er');
     }
@@ -4903,20 +5205,23 @@ body.dark .dept-manage-btn{{color:#5eead4;border-color:#00b4a6;background:rgba(0
 
   <!-- Toolbar / Navigation Bar FIRST -->
   <div class="psel-bar">
-    <label>🔍 Project:</label>
-    <select id="proj-sel" onchange="filterProject(this.value)">
-      <option value="">All Projects</option>
-    </select>
-    <label>🏗 Discipline:</label>
-    <select id="disc-sel" onchange="filterDisc(this.value)">
-      <option value="">All Disciplines</option>
-    </select>
+    <div id="eng-filters-wrap" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <label>🔍 Project:</label>
+      <select id="proj-sel" onchange="filterProject(this.value)">
+        <option value="">All Projects</option>
+      </select>
+      <label>🏗 Discipline:</label>
+      <select id="disc-sel" onchange="filterDisc(this.value)">
+        <option value="">All Disciplines</option>
+      </select>
+    </div>
+    <div id="dept-ws-bar-title" style="display:none;align-items:center;gap:8px;font-weight:800;font-size:12.5px;color:var(--pr)"></div>
     <div class="sp" style="flex:1"></div>
     <div style="display:flex; gap:4px; flex-wrap:nowrap; justify-content:flex-end">
       <button class="tbtn active" onclick="showTab('overview', this)">📊 Overview</button>
       <button class="tbtn" onclick="showTab('analytics', this)">📈 Analytics</button>
-      <button class="tbtn" onclick="showTab('overdue', this)">⚠️ Overdue</button>
-      <button class="tbtn" onclick="showTab('executive', this)">📋 Executive</button>
+      <button class="tbtn" id="tbtn-overdue" onclick="showTab('overdue', this)">⚠️ Overdue</button>
+      <button class="tbtn" id="tbtn-executive" onclick="showTab('executive', this)">📋 Executive</button>
       <button class="tbtn" onclick="showTab('daily-digest', this)">🌟 Daily Digest</button>
       {audit_btn}
     </div>
@@ -4938,6 +5243,11 @@ body.dark .dept-manage-btn{{color:#5eead4;border-color:#00b4a6;background:rgba(0
 
     <!-- TAB: OVERVIEW -->
     <div id="tab-overview" class="tab-pane active">
+      <!-- Clean Modular Department Workspace (Shown for HR, Procurement, Corporate EDMS) -->
+      <div id="dept-workspace-container" style="display:none"></div>
+
+      <!-- Engineering Projects & Submittals Overview (Shown ONLY for Engineering Module) -->
+      <div id="eng-overview-container">
       <div class="overview-stack">
         <!-- 1. PROJECTS Grid -->
         <div class="panel overview-projects-panel">
@@ -5042,6 +5352,7 @@ body.dark .dept-manage-btn{{color:#5eead4;border-color:#00b4a6;background:rgba(0
           <div style="font-size:11px;color:var(--mu)">Loading...</div>
         </div>
       </div>
+      </div><!-- /#eng-overview-container -->
     </div>
 
   <!-- TAB: ANALYTICS -->
@@ -5233,13 +5544,16 @@ function showTab(name, btn){{
         apiFetch('/api/departments').catch(()=>[])
       ]);
       STATS=stats;
-      window.DEPTS=(depts&&depts.length)?depts:[{{id:'ENG',code:'ENG',name:'Engineering & Projects',name_ar:'الهندسة والمشاريع',icon:'🏗',is_project_based:true}}];
+      window.DEPTS=(depts&&depts.length)?depts:[{{id:'ENG',code:'ENG',name:'Engineering & Projects',name_ar:'الهندسة والمشاريع',icon:'🏗',module_type:'engineering',is_project_based:true}}];
       if(!STATS)return;
+      if(window.DEPTS.length===1 && ROLE!=='superadmin' && ROLE!=='admin'){{
+        _currentDept=String(window.DEPTS[0].id||'ENG').toUpperCase();
+      }}
       renderDeptBar();
       populateProjectDropdown();
     // Populate discipline filter
     const discs=new Set();
-    STATS.forEach(p=>(p.dt_stats||[]).forEach(dt=>
+    STATS.filter(p=>getDeptModuleType(p.department_id||'ENG')==='engineering').forEach(p=>(p.dt_stats||[]).forEach(dt=>
       (dt.disc_breakdown||[]).forEach(d=>discs.add(d.disc))));
         document.getElementById('disc-sel').innerHTML=
           '<option value="">All Disciplines</option>'+
@@ -5286,10 +5600,12 @@ function renderDeptBar(){{
 }}
 
 function populateProjectDropdown(){{
-  const scope=_currentDept ? (STATS||[]).filter(p=>String(p.department_id||'ENG').toUpperCase()===_currentDept) : (STATS||[]);
+  const scope=_currentDept
+    ? (STATS||[]).filter(p=>String(p.department_id||'ENG').toUpperCase()===_currentDept)
+    : (STATS||[]).filter(p=>getDeptModuleType(p.department_id||'ENG')==='engineering');
   const sel=document.getElementById('proj-sel');
   if(!sel)return;
-  sel.innerHTML='<option value="">All Projects / Workspaces</option>'+
+  sel.innerHTML='<option value="">All Projects</option>'+
     scope.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
 }}
 
@@ -5325,7 +5641,9 @@ async function refreshOverviewPanels(pid){{
 }}
 
 function getFiltered(pid,disc){{
-  let base=_currentDept?STATS.filter(s=>String(s.department_id||'ENG').toUpperCase()===_currentDept):STATS;
+  let base=_currentDept
+    ? STATS.filter(s=>String(s.department_id||'ENG').toUpperCase()===_currentDept)
+    : STATS.filter(s=>getDeptModuleType(s.department_id||'ENG')==='engineering');
   let d=pid?base.filter(s=>s.id===pid):base;
   if(disc){{
     d=d.map(p=>{{
@@ -5351,10 +5669,328 @@ function getFiltered(pid,disc){{
 }}
 
 function renderAll(pid,disc){{
+  const activeDeptObj = _currentDept ? (window.DEPTS||[]).find(x => String(x.id).toUpperCase() === _currentDept) : null;
+  const modType = activeDeptObj ? getDeptModuleType(activeDeptObj) : 'engineering';
+  const engContainer = document.getElementById('eng-overview-container');
+  const deptContainer = document.getElementById('dept-workspace-container');
+  const engFilters = document.getElementById('eng-filters-wrap');
+  const deptBarTitle = document.getElementById('dept-ws-bar-title');
+
+  if(activeDeptObj && modType !== 'engineering'){{
+    // Non-Engineering Department Selected -> Hide Engineering Dashboard & Show Clean Department Workspace
+    if(engContainer) engContainer.style.display = 'none';
+    if(engFilters) engFilters.style.display = 'none';
+    if(deptBarTitle){{
+      deptBarTitle.style.display = 'flex';
+      const mMeta = MODULE_TYPE_META[modType] || MODULE_TYPE_META.corporate_edms;
+      deptBarTitle.innerHTML = `<span>${{escHtml(activeDeptObj.icon||'🏢')}} ${{escHtml(activeDeptObj.name)}} ${{activeDeptObj.name_ar ? '— ' + escHtml(activeDeptObj.name_ar) : ''}}</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:12px;background:${{mMeta.badgeBg}};color:${{mMeta.badgeTx}};border:1px solid ${{mMeta.badgeBd}}">${{mMeta.short}}</span>`;
+    }}
+    if(deptContainer){{
+      deptContainer.style.display = 'block';
+      const deptWorkspaces = (STATS||[]).filter(s => String(s.department_id||'ENG').toUpperCase() === _currentDept);
+      renderCleanDepartmentWorkspace(activeDeptObj, modType, deptWorkspaces);
+    }}
+    return;
+  }}
+
+  // Engineering Mode (or All Departments)
+  if(engContainer) engContainer.style.display = 'block';
+  if(engFilters) engFilters.style.display = 'flex';
+  if(deptBarTitle) deptBarTitle.style.display = 'none';
+
+  if(deptContainer){{
+    if(activeDeptObj && String(activeDeptObj.id).toUpperCase() !== 'ENG' && (ROLE === 'superadmin' || ROLE === 'admin')){{
+      // Helpful 1-click switcher if a custom department was created earlier under 'engineering' mode
+      deptContainer.style.display = 'block';
+      deptContainer.innerHTML = `
+        <div class="panel" style="margin-bottom:10px;padding:10px 14px;background:linear-gradient(90deg,#f0fdf4,#eff6ff);border:1px solid #bbf7d0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <div style="font-size:12px;color:#065f46">
+            <strong>💡 نمط عرض إدارة (${{escHtml(activeDeptObj.name_ar || activeDeptObj.name)}}):</strong>
+            هذه الإدارة تعمل حالياً بالنمط الهندسي (Engineering). إذا كانت إدارة إدارية أو عامة، يمكنك تحويلها بضغطة واحدة لعزلها عن شاشات الاستشاريين والمشاريع الهندسية:
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn btn-pr btn-sm" onclick="quickSwitchDeptModule('${{escHtml(activeDeptObj.id)}}','corporate_edms')">🏛️ تحويل إلى إدارة عامة (Corporate EDMS)</button>
+            <button type="button" class="btn btn-sc btn-sm" onclick="quickSwitchDeptModule('${{escHtml(activeDeptObj.id)}}','hr')">👥 موارد بشرية (HR)</button>
+            <button type="button" class="btn btn-sc btn-sm" onclick="quickSwitchDeptModule('${{escHtml(activeDeptObj.id)}}','procurement')">📦 مشتريات وعقود (Procurement)</button>
+          </div>
+        </div>
+      `;
+    }} else {{
+      deptContainer.style.display = 'none';
+      deptContainer.innerHTML = '';
+    }}
+  }}
+
   const d=getFiltered(pid,disc);
-  const lettersScope=pid?STATS.filter(s=>s.id===pid):STATS;
+  const lettersScope=pid?STATS.filter(s=>s.id===pid):d;
   updateKPIs(d);renderCards(d,pid);renderLettersOverview(lettersScope);renderCharts(d);renderDTTable(d);renderDiscTable(d);
   ensureOverviewTableControls();setOverviewTableTab(window._overviewTableTab||'docTypes');
+}}
+
+function renderCleanDepartmentWorkspace(dept, modType, workspaces){{
+  const container = document.getElementById('dept-workspace-container');
+  if(!container) return;
+
+  const modLabels = {{
+    'hr': {{
+      titleAr: 'مساحة عمل وثائق الموارد البشرية وشؤون الموظفين',
+      subtitle: 'إدارة ملفات الموظفين، عقود العمل، الإقامات والتأشيرات، مسيرات الرواتب، واللوائح الداخلية بمعزل تام عن المشاريع الهندسية.',
+      kpiTotal: 'إجمالي وثائق الـ HR',
+      kpiActive: 'وثائق وعقود سارية (Active)',
+      kpiPending: 'قيد الإجراء / التجديد القريب',
+      kpiExpired: 'منتهية / تتطلب تجديد',
+      kpiArchived: 'وثائق مؤرشفة / مرجعية',
+      kpiRate: 'معدل السريان والامتثال %',
+      defaultCats: ['EMP — ملفات الموظفين', 'CNT — عقود العمل', 'RES — الإقامات والتأشيرات', 'PAY — مسيرات الرواتب', 'CIR — اللوائح والتعاميم']
+    }},
+    'procurement': {{
+      titleAr: 'مساحة عمل المشتريات والعقود وسلسلة الإمداد',
+      subtitle: 'إدارة طلبات الشراء (PR)، عروض الأسعار (RFQ)، أوامر التوريد (PO)، تأهيل الموردين، والفواتير.',
+      kpiTotal: 'إجمالي وثائق المشتريات',
+      kpiActive: 'أوامر توريد مكتملة / معتمدة',
+      kpiPending: 'قيد الدراسة وعروض الأسعار',
+      kpiExpired: 'توريدات متأخرة / مرفوضة',
+      kpiArchived: 'ملفات موردين / مؤرشف',
+      kpiRate: 'معدل إنجاز التوريدات %',
+      defaultCats: ['PR — طلبات الشراء', 'RFQ — عروض الأسعار', 'PO — أوامر التوريد', 'VND — تأهيل الموردين', 'INV — الفواتير والاستلام']
+    }},
+    'corporate_edms': {{
+      titleAr: 'مساحة عمل الوثائق الإدارية والأرشيف المؤسسي',
+      subtitle: 'إدارة الوثائق الرسمية، العقود والاتفاقيات، التراخيص والسجلات التجارية، القرارات الإدارية، والمراسلات.',
+      kpiTotal: 'إجمالي الوثائق الإدارية',
+      kpiActive: 'وثائق وعقود سارية (Valid)',
+      kpiPending: 'قيد المراجعة / التوقيع',
+      kpiExpired: 'منتهية الصلاحية / تتطلب إجراء',
+      kpiArchived: 'وثائق مؤرشفة / مرجعية',
+      kpiRate: 'نسبة السريان والاعتماد %',
+      defaultCats: ['DOC — الوثائق الرسمية', 'AGR — العقود والاتفاقيات', 'LIC — التراخيص والسجلات', 'DEC — القرارات والتعاميم', 'COR — المراسلات الإدارية']
+    }}
+  }};
+
+  const cfg = modLabels[modType] || modLabels.corporate_edms;
+  const totDocs = workspaces.reduce((s, w) => s + (w.total || 0), 0);
+  const actDocs = workspaces.reduce((s, w) => s + (w.approved || 0), 0);
+  const pndDocs = workspaces.reduce((s, w) => s + (w.pending || 0), 0);
+  const expDocs = workspaces.reduce((s, w) => s + (w.rejected || 0) + (w.overdue || 0), 0);
+  const arcDocs = workspaces.reduce((s, w) => s + (w.info_closed || 0), 0);
+  const compPct = totDocs > 0 ? Math.round((actDocs / totDocs) * 100) : 100;
+
+  // Check if any workspace has legacy 16 engineering doc types (DS, SD, MS, IR...) with 0 records
+  const engCodes = ['DS','SD','MS','IR','MIR','RFI','WN','QS','ABD','CVI'];
+  const wsCardsHtml = workspaces.map(w => {{
+    const dtCodes = (w.dt_stats || []).map(dt => String(dt.code || '').toUpperCase());
+    const hasLegacyEngTabs = (w.total === 0) && engCodes.filter(c => dtCodes.includes(c)).length >= 5;
+    return `
+      <div class="pcard" style="cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;min-height:145px;border-top:3px solid var(--brand-teal,#0d9488)" onclick="window.location='/project/${{encodeURIComponent(w.id)}}'">
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+            <span style="font-size:11px;font-weight:800;color:var(--brand-teal,#0d9488);font-family:monospace">${{escHtml(w.code)}}</span>
+            <span style="font-size:9.5px;padding:2px 7px;border-radius:10px;background:#f0fdf4;color:#047857;font-weight:700">${{escHtml(dept.icon||'🏢')}} ${{escHtml(dept.code)}}</span>
+          </div>
+          <div style="font-size:14px;font-weight:800;color:var(--tx);margin:4px 0 8px">${{escHtml(w.name)}}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:11px;color:var(--mu)">
+            <div>إجمالي الوثائق: <strong style="color:var(--tx)">${{w.total || 0}}</strong></div>
+            <div>ساري / معتمد: <strong style="color:#16a34a">${{w.approved || 0}}</strong></div>
+            <div>قيد الإجراء: <strong style="color:#d97706">${{w.pending || 0}}</strong></div>
+            <div>منتهي / متأخر: <strong style="color:#dc2626">${{(w.rejected || 0) + (w.overdue || 0)}}</strong></div>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="event.stopPropagation()">
+          <button type="button" class="btn btn-pr btn-sm" style="padding:4px 10px;font-size:11px;flex:1" onclick="window.location='/project/${{encodeURIComponent(w.id)}}'">📂 فتح السجل (Open Register)</button>
+          ${{hasLegacyEngTabs && (ROLE==='superadmin'||ROLE==='admin') ? `<button type="button" class="btn btn-sc btn-sm" style="padding:4px 8px;font-size:10.5px;color:#0d9488;border-color:#0d9488" onclick="resetDeptWorkspaceTemplate('${{escHtml(w.id)}}','${{escHtml(modType)}}')" title="استبدال التبويبات الهندسية الـ 16 بتبويبات هذه الإدارة النظيفة">✨ تهيئة تبويبات الإدارة</button>` : ''}}
+          ${{ROLE==='superadmin' ? `<button type="button" class="btn btn-er btn-sm" style="padding:4px 6px;font-size:11px" onclick="delProj('${{escHtml(w.id)}}','${{escHtml(w.name)}}')" title="حذف السجل">🗑️</button>` : ''}}
+        </div>
+      </div>
+    `;
+  }}).join('');
+
+  // Document Categories Breakdown rows across all workspaces in this department
+  const catRows = [];
+  workspaces.forEach(w => {{
+    (w.dt_stats || []).forEach(dt => {{
+      catRows.push({{
+        wsId: w.id,
+        wsCode: w.code,
+        wsName: w.name,
+        code: dt.code,
+        name: dt.name,
+        total: dt.total || 0,
+        active: dt.approved || 0,
+        pending: dt.pending || 0,
+        expired: (dt.rejected || 0) + (dt.overdue || 0),
+        archived: dt.info_closed || 0
+      }});
+    }});
+  }});
+
+  const catTableRowsHtml = catRows.length > 0
+    ? catRows.map(r => `
+        <tr style="cursor:pointer" onclick="window.location='/project/${{encodeURIComponent(r.wsId)}}?dt=${{encodeURIComponent(r.code)}}'">
+          <td style="font-weight:700;color:var(--pr)">${{escHtml(r.wsCode)}} — ${{escHtml(r.wsName)}}</td>
+          <td><span style="font-family:monospace;font-weight:800;padding:2px 7px;border-radius:4px;background:var(--bg,#f1f5f9)">${{escHtml(r.code)}}</span></td>
+          <td style="font-weight:600">${{escHtml(r.name)}}</td>
+          <td style="text-align:center;font-weight:800">${{r.total}}</td>
+          <td style="text-align:center;color:#16a34a;font-weight:700">${{r.active}}</td>
+          <td style="text-align:center;color:#d97706;font-weight:700">${{r.pending}}</td>
+          <td style="text-align:center;color:#dc2626;font-weight:700">${{r.expired}}</td>
+          <td style="text-align:center;color:#0284c7;font-weight:700">${{r.archived}}</td>
+        </tr>
+      `).join('')
+    : `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--mu)">لا توجد سجلات مفعلة بعد في هذه الإدارة. اضغط على "🚀 تفعيل وفتح سجل الإدارة" للبدء فوراً بتصنيفات نظيفة ومستقلة.</td></tr>`;
+
+  container.innerHTML = `
+    <!-- 1. Department Workspace Hero Banner -->
+    <div class="panel" style="margin-bottom:12px;padding:16px 20px;border-left:5px solid var(--brand-teal,#0d9488);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:26px">${{escHtml(dept.icon || '🏢')}}</span>
+          <div>
+            <div style="font-size:17px;font-weight:800;color:var(--tx)">
+              ${{escHtml(dept.name)}} ${{dept.name_ar ? `<span style="color:var(--brand-teal,#0d9488)">— ${{escHtml(dept.name_ar)}}</span>` : ''}}
+            </div>
+            <div style="font-size:12px;color:var(--mu);margin-top:2px">${{cfg.titleAr}} · ${{escHtml(dept.description || cfg.subtitle)}}</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+          ${{cfg.defaultCats.map(c => `<span style="font-size:10.5px;padding:3px 9px;border-radius:12px;background:var(--bg,#f1f5f9);color:var(--tx);font-weight:600;border:1px solid var(--bd)">📑 ${{escHtml(c)}}</span>`).join('')}}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn btn-pr" onclick="openOrInitDeptRegister('${{escHtml(dept.id)}}','${{escHtml(dept.code)}}','${{escHtml(dept.name)}}')">
+          ${{workspaces.length > 0 ? '📂 فتح السجل الرئيسي للإدارة' : '🚀 تفعيل وفتح سجل الإدارة الآن'}}
+        </button>
+        ${{(ROLE==='superadmin'||ROLE==='admin') ? `<button type="button" class="btn btn-sc" onclick="openNewDeptSectionModal('${{escHtml(dept.id)}}')">➕ إضافة سجل / قسم فرعي</button>` : ''}}
+      </div>
+    </div>
+
+    <!-- 2. Specialized Department KPI Summary (Zero Engineering / Consultant Jargon) -->
+    <div class="panel" style="padding:12px 14px;margin-bottom:12px">
+      <div class="panel-title" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+        <span>📊 مؤشرات الأداء والوثائق الخاصة بإدارة (${{escHtml(dept.name_ar || dept.name)}})</span>
+        <span style="font-size:10.5px;color:var(--mu);font-weight:600">🔒 محمي بنظام مستويات السرية (Public / Internal / Confidential / Restricted)</span>
+      </div>
+      <div class="kpi-grid" style="margin-bottom:0;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+        <div class="kpi"><div class="kval">${{totDocs}}</div><div class="klbl">${{cfg.kpiTotal}}</div></div>
+        <div class="kpi ok"><div class="kval">${{actDocs}}</div><div class="klbl">${{cfg.kpiActive}}</div></div>
+        <div class="kpi wa"><div class="kval">${{pndDocs}}</div><div class="klbl">${{cfg.kpiPending}}</div></div>
+        <div class="kpi er"><div class="kval">${{expDocs}}</div><div class="klbl">${{cfg.kpiExpired}}</div></div>
+        <div class="kpi pu"><div class="kval">${{arcDocs}}</div><div class="klbl">${{cfg.kpiArchived}}</div></div>
+        <div class="kpi"><div class="kval">${{totDocs > 0 ? compPct + '%' : '—'}}</div><div class="klbl">${{cfg.kpiRate}}</div></div>
+      </div>
+    </div>
+
+    <!-- 3. Department Registers / Sections Grid -->
+    <div class="panel" style="margin-bottom:12px">
+      <div class="panel-title">📁 سجلات وأقسام إدارة ${{escHtml(dept.name_ar || dept.name)}} (Department Registers)</div>
+      <div class="pgrid">
+        ${{wsCardsHtml}}
+        ${{(ROLE==='superadmin'||ROLE==='admin') ? `
+          <div class="pcard new-card" style="min-height:145px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;border:2px dashed var(--bd)" onclick="openNewDeptSectionModal('${{escHtml(dept.id)}}')">
+            <div style="font-size:28px;color:var(--pr);line-height:1">＋</div>
+            <div style="font-size:12px;font-weight:700;color:var(--mu);margin-top:6px">إضافة سجل / قسم جديد في ${{escHtml(dept.code)}}</div>
+          </div>
+        ` : ''}}
+      </div>
+    </div>
+
+    <!-- 4. Department Document Categories Summary Table -->
+    <div class="panel">
+      <div class="panel-title">📑 تفصيل فئات وتصنيفات الوثائق (Document Categories Breakdown)</div>
+      <div class="tbl-wrap">
+        <table class="dt-tbl">
+          <thead>
+            <tr>
+              <th>السجل / القسم (Register)</th>
+              <th>الكود (Code)</th>
+              <th>تصنيف الوثيقة (Category)</th>
+              <th style="text-align:center">الإجمالي (Total)</th>
+              <th style="text-align:center">ساري / معتمد (Active)</th>
+              <th style="text-align:center">قيد الإجراء (Pending)</th>
+              <th style="text-align:center">منتهي / متأخر (Expired)</th>
+              <th style="text-align:center">مؤرشف (Archived)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${{catTableRowsHtml}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}}
+
+async function quickSwitchDeptModule(deptId, moduleType){{
+  const dept = (window.DEPTS||[]).find(d => String(d.id).toUpperCase() === String(deptId).toUpperCase());
+  if(!dept) return;
+  try {{
+    const r = await apiFetch('/api/departments', {{
+      method: 'POST',
+      body: JSON.stringify({{
+        action: 'update',
+        id: dept.id,
+        code: dept.code,
+        name: dept.name,
+        name_ar: dept.name_ar || '',
+        icon: dept.icon || '🏢',
+        description: dept.description || '',
+        module_type: moduleType,
+        is_project_based: moduleType === 'engineering'
+      }})
+    }});
+    if(r && r.ok){{
+      dept.module_type = moduleType;
+      dept.is_project_based = (moduleType === 'engineering');
+      toast(`✔ تم تحويل الإدارة إلى نمط ${{moduleType.toUpperCase()}} بنجاح`, 'ok');
+      renderAll(_currentPid, _currentDisc);
+    }}
+  }} catch(e) {{ toast(e.message || 'Error', 'er'); }}
+}}
+
+async function resetDeptWorkspaceTemplate(pid, modType){{
+  if(!confirm('هل ترغب في تهيئة هذا السجل بتبويبات الإدارة المخصصة وإزالة الـ 16 تبويب الهندسي (DS, SD, IR...)؟')) return;
+  try {{
+    const r = await apiFetch('/api/departments', {{
+      method: 'POST',
+      body: JSON.stringify({{ action: 'reset_workspace_template', project_id: pid, module_type: modType }})
+    }});
+    if(r && r.ok){{
+      toast('✔ تم تهيئة تبويبات السجل بنجاح! جاري تحديث البيانات...', 'ok');
+      await init();
+    }} else {{
+      toast((r && r.error) || 'تعذر تهيئة السجل', 'er');
+    }}
+  }} catch(e) {{ toast(e.message || 'تعذر تهيئة السجل', 'er'); }}
+}}
+
+async function openOrInitDeptRegister(deptId, deptCode, deptName){{
+  const existing = (STATS||[]).filter(s => String(s.department_id||'ENG').toUpperCase() === String(deptId).toUpperCase());
+  if(existing.length > 0){{
+    window.location = '/project/' + encodeURIComponent(existing[0].id);
+    return;
+  }}
+  // Automatically initialize the primary register for this department
+  const pid = deptCode + '-MAIN';
+  try {{
+    const r = await apiFetch('/api/projects/create', {{
+      method: 'POST',
+      body: JSON.stringify({{ id: pid, code: deptCode, name: deptName + ' — Main Register', department_id: deptId }})
+    }});
+    if(r && r.ok){{
+      toast('✔ تم تفعيل سجل الإدارة بنجاح', 'ok');
+      window.location = '/project/' + encodeURIComponent(pid);
+    }} else {{
+      openNewDeptSectionModal(deptId);
+    }}
+  }} catch(e) {{
+    openNewDeptSectionModal(deptId);
+  }}
+}}
+
+function openNewDeptSectionModal(deptId){{
+  const npDept = document.getElementById('np-dept');
+  if(npDept && deptId) npDept.value = deptId;
+  openM('newproj-modal');
 }}
 
 // ── KPIs ──────────────────────────────────────────────────

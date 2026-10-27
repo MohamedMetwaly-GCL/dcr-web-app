@@ -44,6 +44,7 @@ def api_get_departments():
     out = []
     for d in depts:
         did = str(d.get("id", "")).strip().upper()
+        mod_type = db._normalize_module_type(d.get("module_type"), did, d.get("is_project_based", True))
         out.append({
             "id": did,
             "code": d.get("code") or did,
@@ -51,7 +52,8 @@ def api_get_departments():
             "name_ar": d.get("name_ar") or "",
             "icon": d.get("icon") or "🏢",
             "description": d.get("description") or "",
-            "is_project_based": bool(d.get("is_project_based", True)),
+            "module_type": mod_type,
+            "is_project_based": mod_type == "engineering",
             "sort_order": d.get("sort_order", 0),
             "is_active": bool(d.get("is_active", True)),
             "project_count": proj_counts.get(did, 0),
@@ -75,7 +77,10 @@ def api_departments_action():
         name_ar = str(data.get("name_ar") or "").strip()
         icon = str(data.get("icon") or "🏢").strip() or "🏢"
         description = str(data.get("description") or "").strip()
+        module_type = str(data.get("module_type") or "").strip().lower()
         is_project_based = bool(data.get("is_project_based", True))
+        if module_type:
+            is_project_based = (module_type == "engineering")
         sort_order = data.get("sort_order")
 
         if not raw_id or not DEPT_CODE_RE.match(raw_id):
@@ -95,11 +100,12 @@ def api_departments_action():
             description=description,
             is_project_based=is_project_based,
             sort_order=sort_order,
+            module_type=module_type or None,
         )
         act_type = "DEPT_CREATE" if action == "create" else "DEPT_EDIT"
         db.log_action(
             u["username"], act_type,
-            detail=f"{'Created' if action == 'create' else 'Updated'} department '{name}' ({raw_code})"
+            detail=f"{'Created' if action == 'create' else 'Updated'} department '{name}' ({raw_code}, module={dept.get('module_type')})"
                    + (f" - {name_ar}" if name_ar else "")
         )
         return jsonify(ok=True, department=dept)
@@ -132,6 +138,20 @@ def api_departments_action():
         db.log_action(
             u["username"], "PROJECT_DEPT_CHANGE", project_id=pid,
             detail=f"Assigned project '{pid}' to department '{dept_id}'"
+        )
+        return jsonify(ok=True)
+
+    if action == "reset_workspace_template":
+        pid = str(data.get("project_id") or "").strip()
+        mod_type = str(data.get("module_type") or "corporate_edms").strip().lower()
+        if not pid:
+            return jsonify(ok=False, error="project_id required"), 400
+        ok, msg = db.reset_workspace_to_module_template(pid, mod_type)
+        if not ok:
+            return jsonify(ok=False, error=msg), 400
+        db.log_action(
+            u["username"], "DEPT_EDIT", project_id=pid,
+            detail=f"Initialized workspace '{pid}' with '{mod_type}' document categories"
         )
         return jsonify(ok=True)
 
