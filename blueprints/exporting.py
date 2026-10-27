@@ -24,6 +24,7 @@ from flask import Blueprint, jsonify, request, send_file
 import db
 from auth import current_user, can_edit
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
+from security import scan_and_validate_file
 
 exporting_bp = Blueprint("exporting", __name__)
 logger = logging.getLogger(__name__)
@@ -2475,6 +2476,20 @@ def api_import(pid, dt_id):
     ext  = data.get("ext","csv")
     if "," in b64: b64 = b64.split(",",1)[1]
 
+    try:
+        raw_bytes = base64.b64decode(b64)
+    except Exception:
+        return jsonify(ok=False, error="Invalid base64 encoded file payload"), 400
+
+    is_safe, error_reason = scan_and_validate_file(raw_bytes, ext, allowed_exts=["xlsx", "xls", "csv"], max_size_mb=15)
+    if not is_safe:
+        u = current_user() or {}
+        try:
+            db.log_action(u.get("username", ""), "FILE_REJECTED", project_id=pid, dt_id=dt_id, detail=f"Blocked unsafe file: {error_reason}")
+        except Exception:
+            pass
+        return jsonify(ok=False, error=f"File security check failed: {error_reason}"), 400
+
     cols    = db.get_columns(pid, dt_id)
     col_map = {c["label"]: c["col_key"] for c in cols}
     imported = 0
@@ -2488,7 +2503,7 @@ def api_import(pid, dt_id):
         if ext in ("xlsx","xls"):
             import openpyxl
             import re
-            wb  = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
+            wb  = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
             ws  = wb.active
             
             def _norm_detect(s): return re.sub(r'[^a-z0-9]', '', str(s).lower()) if s else ""
@@ -2524,7 +2539,7 @@ def api_import(pid, dt_id):
                 imported, created, updated, _, skipped_blank, skipped_invalid, warnings = _import_excel_worksheet(pid, dt_id, ws, cols)
         else:
             import csv, datetime as _dt
-            text   = base64.b64decode(b64).decode("utf-8","ignore")
+            text   = raw_bytes.decode("utf-8","ignore")
             header = None
             date_cols = {c["col_key"] for c in cols if c.get("col_type") in ("date","auto_date")}
             for row_idx, line in enumerate(csv.reader(io.StringIO(text)), start=1):
@@ -2595,9 +2610,23 @@ def api_import_project(pid):
         return jsonify(ok=False, error="Only Excel workbooks are supported"), 400
 
     try:
+        raw_bytes = base64.b64decode(b64)
+    except Exception:
+        return jsonify(ok=False, error="Invalid base64 encoded file payload"), 400
+
+    is_safe, error_reason = scan_and_validate_file(raw_bytes, ext, allowed_exts=["xlsx", "xls"], max_size_mb=25)
+    if not is_safe:
+        u = current_user() or {}
+        try:
+            db.log_action(u.get("username", ""), "FILE_REJECTED", project_id=pid, detail=f"Blocked unsafe workbook: {error_reason}")
+        except Exception:
+            pass
+        return jsonify(ok=False, error=f"File security check failed: {error_reason}"), 400
+
+    try:
         import openpyxl
 
-        wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(b64)), data_only=True)
+        wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
         dts = db.get_doc_types(pid)
         imported_total = 0
         created_total = 0

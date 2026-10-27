@@ -3839,7 +3839,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
       <div class="err" id="err" style="display:none"></div>
       <div class="fld">
         <label>Username</label>
-        <input id="un" type="text" autofocus autocomplete="username" placeholder="Enter your username">
+        <input id="un" type="text" autofocus autocomplete="username" placeholder="Enter your username" maxlength="40" pattern="[a-zA-Z0-9_.-]{3,40}">
       </div>
       <div class="fld">
         <label>Password</label>
@@ -3865,12 +3865,36 @@ async function login(){{
   const pw=document.getElementById('pw').value;
   const err=document.getElementById('err');
   err.style.display='none';
+  err.style.background='#fef2f2';
+  err.style.borderColor='#fecaca';
+  err.style.color='#b91c1c';
+  err.style.fontWeight='normal';
   if(!un||!pw){{err.textContent='Please enter username and password';err.style.display='flex';return;}}
-  const r=await fetch('/login',{{method:'POST',credentials:'include',
-    headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{username:un,password:pw}})}});
-  const d=await r.json();
-  if(d.ok) window.location='/';
-  else{{err.textContent=d.error||'Invalid credentials';err.style.display='block';}}
+  const unameRegex = /^[a-zA-Z0-9_.-]{{3,40}}$/;
+  if(!unameRegex.test(un)){{
+    err.textContent='Invalid username format: letters, numbers, dots, hyphens, and underscores only (3-40 chars).';
+    err.style.display='block';
+    return;
+  }}
+  try {{
+    const r=await fetch('/login',{{method:'POST',credentials:'include',
+      headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{username:un,password:pw}})}});
+    const d=await r.json();
+    if(d.ok) window.location='/';
+    else{{
+      err.textContent=d.error||'Invalid credentials';
+      err.style.display='block';
+      if(d.locked){{
+        err.style.background='#fee2e2';
+        err.style.borderColor='#f87171';
+        err.style.color='#991b1b';
+        err.style.fontWeight='600';
+      }}
+    }}
+  }} catch(e){{
+    err.textContent='Connection error. Please try again.';
+    err.style.display='block';
+  }}
 }}
 </script></body></html>"""
 
@@ -5980,6 +6004,7 @@ const ACTION_COLORS={{
   'ADD':'#166534','EDIT':'#1d4ed8','DELETE':'#991b1b',
   'LOGIN':'#475569','LOGIN_FAIL':'#dc2626','LOGOUT':'#64748b',
   'PROJECT VIEW':'#0284c7','TAB_VIEW':'#0284c7','DOC_VIEW':'#0891b2','DRIVE_LINK_CLICK':'#0891b2','FILE_DOWNLOAD':'#7c3aed',
+  'SECURITY_ALERT':'#b91c1c','BRUTE_FORCE_BLOCKED':'#991b1b','LOGIN_LOCKOUT':'#dc2626','FILE_REJECTED':'#c2410c',
   'SEARCH':'#d97706','AI QUERY':'#8b5cf6',
   'ACCESS DENIED':'#ef4444',
   'EXPORT_EXCEL':'#7c3aed','EXPORT_PDF':'#b91c1c',
@@ -6139,7 +6164,7 @@ async function loadAudit(reset=false){{
       const actionBg=
         (r.action==='ADD'||r.action==='USER_CREATE'||r.action==='IMPORT_EXCEL'||r.action==='IMPORT_PROJECT') ? '#bbf7d0' :
         (r.action==='EDIT'||r.action==='PROJECT_ASSIGN'||r.action==='USER_EDIT') ? '#dbeafe' :
-        (r.action==='DELETE'||r.action==='USER_DELETE'||r.action==='LOGIN_FAIL'||r.action==='ACCESS DENIED'||r.action==='EXPORT_PDF') ? '#fee2e2' :
+        (r.action==='DELETE'||r.action==='USER_DELETE'||r.action==='LOGIN_FAIL'||r.action==='ACCESS DENIED'||r.action==='EXPORT_PDF'||r.action==='SECURITY_ALERT'||r.action==='BRUTE_FORCE_BLOCKED'||r.action==='LOGIN_LOCKOUT'||r.action==='FILE_REJECTED') ? '#fee2e2' :
         (r.action==='PROJECT VIEW'||r.action==='TAB_VIEW'||r.action==='DOC_VIEW'||r.action==='DRIVE_LINK_CLICK') ? '#e0f2fe' : (r.action==='FILE_DOWNLOAD') ? '#f3e8ff' :
         (r.action==='AI QUERY') ? '#ede9fe' :
         (r.action==='SEARCH') ? '#fef3c7' :

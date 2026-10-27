@@ -6,6 +6,7 @@ from utils import get_next_doc_no, get_next_plain_doc_no, doc_type_uses_revision
 
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
 from html_render import render_login, render_dashboard, render_register
+from security import validate_username, login_limiter, get_client_ip
 from blueprints.projects import projects_bp
 from blueprints.doc_types import doc_types_bp
 from blueprints.columns import columns_bp
@@ -89,9 +90,38 @@ def keepalive():
 def login():
     if request.method == "POST":
         data  = request.get_json(silent=True) or {}
-        uname = data.get("username","").strip().lower()
-        pw    = data.get("password","")
+        raw_uname = str(data.get("username","")).strip()
+        pw    = str(data.get("password",""))
+        ip    = get_client_ip()
+
+        # 1. Brute Force Protection & Rate Limiting check
+        is_locked, remaining_sec = login_limiter.is_locked(ip, raw_uname)
+        if is_locked:
+            mins = max(1, round(remaining_sec / 60))
+            db.log_action(raw_uname or "unknown", "BRUTE_FORCE_BLOCKED",
+                          detail=f"Blocked login attempt during active lockout ({remaining_sec}s remaining)")
+            return jsonify(
+                ok=False,
+                error=f"Too many failed login attempts. Access is temporarily locked for {mins} minute(s). Please try again later.",
+                locked=True,
+                remaining_seconds=remaining_sec
+            ), 429
+
+        # 2. Username sanitization & injection prevention
+        is_valid, err_msg, is_suspicious = validate_username(raw_uname)
+        if not is_valid:
+            if is_suspicious:
+                db.log_action(raw_uname[:50] or "unknown", "SECURITY_ALERT",
+                              detail=f"Blocked suspicious/injected username attempt: '{raw_uname[:50]}'")
+            else:
+                db.log_action(raw_uname[:50] or "unknown", "LOGIN_FAIL", detail="Invalid username format")
+            return jsonify(ok=False, error=err_msg), 400
+
+        uname = raw_uname.lower()
+
+        # 3. Verify credentials
         if db.verify_pw(uname, pw):
+            login_limiter.record_success(ip, uname)
             u     = db.get_user(uname)
             token = db.create_session(uname, u["role"])
             db.log_action(uname,"LOGIN",detail=f"Role: {u['role']}")
@@ -100,8 +130,27 @@ def login():
                             samesite="Lax", secure=IS_RENDER,
                             max_age=db.SESSION_TTL)
             return resp
-        db.log_action(uname,"LOGIN_FAIL",detail="Invalid credentials")
-        return jsonify(ok=False, error="Invalid username or password"), 401
+
+        # Record failed attempt (6 attempts threshold)
+        is_locked_now, remaining_attempts, lockout_sec = login_limiter.record_failure(ip, uname)
+        if is_locked_now:
+            mins = max(1, round(lockout_sec / 60))
+            db.log_action(uname, "LOGIN_LOCKOUT",
+                          detail=f"Maximum failed attempts (6) reached. Locked out for {mins} minutes.")
+            return jsonify(
+                ok=False,
+                error=f"Too many failed login attempts (6/6). Account / IP is temporarily locked for {mins} minutes.",
+                locked=True,
+                remaining_seconds=lockout_sec
+            ), 429
+        else:
+            db.log_action(uname, "LOGIN_FAIL",
+                          detail=f"Invalid credentials ({remaining_attempts} attempt(s) remaining)")
+            return jsonify(
+                ok=False,
+                error=f"Invalid username or password. ({remaining_attempts} attempt(s) remaining before temporary lockout).",
+                remaining_attempts=remaining_attempts
+            ), 401
     return render_login()
 
 @app.route("/logout", methods=["POST", "GET"])
@@ -288,6 +337,9 @@ def api_audit():
         actions = sorted(actions + ["FILE_DOWNLOAD"])
     if "DRIVE_LINK_CLICK" not in actions:
         actions = sorted(actions + ["DRIVE_LINK_CLICK"])
+    for sec_act in ["SECURITY_ALERT", "BRUTE_FORCE_BLOCKED", "LOGIN_LOCKOUT", "FILE_REJECTED"]:
+        if sec_act not in actions:
+            actions = sorted(actions + [sec_act])
     projects = db.get_projects()
     return jsonify(
         rows=[{**dict(r), "ts": str(r["ts"])} for r in rows],

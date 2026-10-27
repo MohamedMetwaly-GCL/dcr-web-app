@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request, send_file
 
 import db
 from auth import can_edit
+from security import scan_and_validate_image
 
 logos_bp = Blueprint("logos", __name__)
 
@@ -31,5 +32,15 @@ def api_get_logo(pid, key):
 def api_save_logo(pid, key):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    db.save_logo(pid, key, data.get("data",""))
+    raw_b64 = data.get("data","")
+    if "," in raw_b64: raw_b64 = raw_b64.split(",",1)[1]
+    if raw_b64:
+        try:
+            raw_bytes = base64.b64decode(raw_b64)
+        except Exception:
+            return jsonify(ok=False, error="Invalid base64 image data"), 400
+        is_safe, error_reason, mime = scan_and_validate_image(raw_bytes, max_size_mb=3)
+        if not is_safe:
+            return jsonify(ok=False, error=f"Image security check failed: {error_reason}"), 400
+    db.save_logo(pid, key, raw_b64)
     return jsonify(ok=True)

@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 
 import db
 from auth import current_user, require_superadmin, get_allowed_project_ids
+from security import validate_username
 
 users_bp = Blueprint("users", __name__)
 
@@ -42,6 +43,9 @@ def api_users_action():
         email = data.get("email","")
         if not uname or not pw:
             return jsonify(ok=False, error="Username and password required"), 400
+        is_valid, err_msg, _ = validate_username(uname)
+        if not is_valid:
+            return jsonify(ok=False, error=err_msg), 400
         db.add_user(uname, pw, role, email)
         db.log_action(u["username"], "USER_CREATE", detail=f"Created user '{uname}' (Role: {role}, Email: {email or '—'})")
         return jsonify(ok=True)
