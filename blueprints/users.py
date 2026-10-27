@@ -25,8 +25,12 @@ users_bp = Blueprint("users", __name__)
 def api_users():
     users = db.get_all_users()
     all_projects = db.get_all_user_projects()
+    all_depts = db.get_all_user_departments()
     for u in users:
         u["projects"] = all_projects.get(u["username"], [])
+        u["departments"] = all_depts.get(u["username"], [])
+        u["primary_dept"] = u.get("primary_dept") or "ENG"
+        u["confidentiality_clearance"] = u.get("confidentiality_clearance") or "internal"
     return jsonify(users)
 
 
@@ -46,8 +50,15 @@ def api_users_action():
         is_valid, err_msg, _ = validate_username(uname)
         if not is_valid:
             return jsonify(ok=False, error=err_msg), 400
-        db.add_user(uname, pw, role, email)
-        db.log_action(u["username"], "USER_CREATE", detail=f"Created user '{uname}' (Role: {role}, Email: {email or '—'})")
+        pdept = str(data.get("primary_dept") or "ENG").strip().upper()
+        clearance = str(data.get("confidentiality_clearance") or "internal").strip().lower()
+        db.add_user(uname, pw, role, email, primary_dept=pdept, confidentiality_clearance=clearance)
+        if pdept:
+            try:
+                db.assign_user_department(uname, pdept, "editor" if role in ("editor", "admin", "superadmin") else "viewer")
+            except Exception:
+                pass
+        db.log_action(u["username"], "USER_CREATE", detail=f"Created user '{uname}' (Role: {role}, Dept: {pdept}, Clearance: {clearance})")
         return jsonify(ok=True)
     if action == "delete":
         uname = data.get("username","")
@@ -82,6 +93,29 @@ def api_users_action():
         db.unassign_project(data.get("username",""), data.get("project_id",""))
         db.log_action(u["username"], "PROJECT_UNASSIGN", project_id=data.get("project_id"),
                       detail=f"Unassigned project '{data.get('project_id')}' from '{data.get('username')}'")
+        return jsonify(ok=True)
+    if action == "assign_dept":
+        uname = data.get("username","").strip().lower()
+        dept_id = str(data.get("department_id","")).strip().upper()
+        dept_role = str(data.get("dept_role","viewer")).strip().lower()
+        db.assign_user_department(uname, dept_id, dept_role)
+        db.log_action(u["username"], "DEPT_ASSIGN",
+                      detail=f"Assigned department '{dept_id}' to '{uname}' (Dept Role: {dept_role})")
+        return jsonify(ok=True)
+    if action == "unassign_dept":
+        uname = data.get("username","").strip().lower()
+        dept_id = str(data.get("department_id","")).strip().upper()
+        db.unassign_user_department(uname, dept_id)
+        db.log_action(u["username"], "DEPT_UNASSIGN",
+                      detail=f"Unassigned department '{dept_id}' from '{uname}'")
+        return jsonify(ok=True)
+    if action == "update_clearance":
+        uname = data.get("username","").strip().lower()
+        clearance = str(data.get("confidentiality_clearance","internal")).strip().lower()
+        pdept = data.get("primary_dept")
+        db.set_user_clearance(uname, clearance, pdept)
+        db.log_action(u["username"], "USER_EDIT",
+                      detail=f"Updated clearance for '{uname}' to '{clearance}'" + (f" (Primary Dept: {pdept})" if pdept else ""))
         return jsonify(ok=True)
     return jsonify(ok=False, error="Unknown action"), 400
 

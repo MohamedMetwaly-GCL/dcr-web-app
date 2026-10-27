@@ -3591,6 +3591,528 @@ function escHtml(v){
     .replaceAll('"','&quot;')
     .replaceAll("'",'&#39;');
 }
+
+// ── Enterprise Phase 1: Departments & Extended RBAC Admin Suite ──
+window._ADMIN_CACHE = { users: [], projects: [], depts: [], activeTab: 'users' };
+
+async function openEnterpriseAdmin(initialTab){
+  if(initialTab) window._ADMIN_CACHE.activeTab = initialTab;
+  const [users, projects, depts] = await Promise.all([
+    apiFetch('/api/users'),
+    apiFetch('/api/projects'),
+    apiFetch('/api/departments').catch(() => [])
+  ]);
+  if(!users || !projects) return;
+  window._ADMIN_CACHE.users = users;
+  window._ADMIN_CACHE.projects = projects;
+  window._ADMIN_CACHE.depts = (depts && depts.length) ? depts : [{
+    id: 'ENG', code: 'ENG', name: 'Engineering & Projects', name_ar: 'الهندسة والمشاريع',
+    icon: '🏗', description: 'Engineering Submittals & Project Registers', is_project_based: true, project_count: projects.length
+  }];
+  window.DEPTS = window._ADMIN_CACHE.depts;
+  if(typeof renderDeptBar === 'function') renderDeptBar();
+
+  const modalEl = document.querySelector('#admin-modal .modal');
+  if(modalEl) modalEl.style.maxWidth = '920px';
+
+  renderEnterpriseAdminBody();
+  openM('admin-modal');
+}
+
+function switchAdminTab(tab){
+  window._ADMIN_CACHE.activeTab = tab;
+  renderEnterpriseAdminBody();
+}
+
+function renderEnterpriseAdminBody(){
+  const { users, projects, depts, activeTab } = window._ADMIN_CACHE;
+  const body = document.getElementById('admin-body');
+  if(!body) return;
+  body.innerHTML = '';
+  body.style.paddingTop = '';
+
+  let existingUtitle = document.getElementById('admin-utitle');
+  if(existingUtitle) existingUtitle.remove();
+
+  const utitle = document.createElement('div');
+  utitle.id = 'admin-utitle';
+  utitle.style.cssText = 'padding:10px 18px; border-bottom:1px solid var(--bd); background:var(--wh, #fff); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;';
+
+  const tabsHtml = `
+    <div style="display:flex; gap:6px; align-items:center;">
+      <button type="button" class="btn ${activeTab === 'users' ? 'btn-pr' : 'btn-sc'} btn-sm" onclick="switchAdminTab('users')" style="font-weight:700; padding:6px 12px;">
+        👥 Users & Access Control <span class="badge" style="margin-left:6px;background:${activeTab === 'users' ? 'rgba(255,255,255,.25)' : 'var(--pr)'};color:#fff">${users.length}</span>
+      </button>
+      <button type="button" class="btn ${activeTab === 'depts' ? 'btn-pr' : 'btn-sc'} btn-sm" onclick="switchAdminTab('depts')" style="font-weight:700; padding:6px 12px;">
+        🏢 Departments / الإدارات <span class="badge" style="margin-left:6px;background:${activeTab === 'depts' ? 'rgba(255,255,255,.25)' : '#0d9488'};color:#fff">${depts.length}</span>
+      </button>
+    </div>
+  `;
+
+  const rightToolsHtml = activeTab === 'users'
+    ? `<div style="display:flex;gap:8px;align-items:center">
+         <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">📥 Export Matrix</button>
+         <input type="text" placeholder="Search users by name or email..." style="padding:5px 9px; font-size:11px; border:1px solid var(--bd); border-radius:4px; width:210px; font-weight:normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';})">
+       </div>`
+    : `<div style="font-size:11px;color:var(--mu);font-weight:600;">✨ Flexible Enterprise Hierarchy — Add, rename & organize departments freely</div>`;
+
+  utitle.innerHTML = tabsHtml + rightToolsHtml;
+  body.parentNode.insertBefore(utitle, body);
+
+  if(activeTab === 'depts'){
+    renderAdminDeptsView(body, depts, projects);
+  } else {
+    renderAdminUsersView(body, users, projects, depts);
+  }
+}
+
+function renderAdminUsersView(body, users, projects, depts){
+  const clearanceLabels = {
+    'public': '🟢 Public (عام)',
+    'internal': '🔵 Internal (داخلي)',
+    'confidential': '🟠 Confidential (سري)',
+    'restricted': '🔴 Restricted (سري للغاية)'
+  };
+  const deptRoleLabels = {
+    'viewer': 'Viewer',
+    'editor': 'Editor',
+    'head': 'Dept Head ★'
+  };
+
+  for(const u of users){
+    const assigned_cached = u.projects || [];
+    const assigned_depts = u.departments || [];
+    const uwrap = document.createElement('div');
+    uwrap.className = 'urow-wrapper';
+    const row = document.createElement('div');
+    row.className = 'urow';
+    row.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
+    row.innerHTML = `<span style="flex:1;font-weight:700;min-width:115px">👤 ${escHtml(u.username)}</span>
+      <input id="email-${escHtml(u.username)}" placeholder="Email (e.g. dc@company.com)" value="${escHtml(u.email || '')}" style="flex:1.4; min-width:150px; padding:4px 6px; font-size:11px; border:1px solid var(--bd); border-radius:4px;" onblur="updUsrEmail('${escHtml(u.username)}')">
+      ${u.username !== 'admin' ? `
+        <select id="clearance-${escHtml(u.username)}" class="btn btn-sc btn-sm" style="height:auto;padding:4px 6px;font-size:10.5px;outline:none;" title="Confidentiality Clearance Level (مستوى السرية)" onchange="updUsrClearance('${escHtml(u.username)}')">
+          ${['public','internal','confidential','restricted'].map(c => `<option value="${c}" ${(u.confidentiality_clearance||'internal')===c?'selected':''}>${clearanceLabels[c]}</option>`).join('')}
+        </select>
+        <button class="btn btn-sc btn-sm" onclick="chgPw('${escHtml(u.username)}')">🔑 PW</button>
+        <button class="btn btn-er btn-sm" style="background:transparent;color:var(--er);border-color:transparent;font-size:14px;padding:0 4px" title="Delete User" onclick="delUsr('${escHtml(u.username)}')">🗑️</button>`
+      : '<span style="flex:0 0 auto;font-size:10px;color:var(--mu)">(protected superadmin)</span>'}`;
+
+    if(u.username !== 'admin'){
+      const roleSel = document.createElement('select');
+      roleSel.id = 'role-' + u.username;
+      roleSel.className = 'btn btn-sc btn-sm';
+      roleSel.style.cssText = 'height:auto;padding:4px 8px;outline:none;';
+      roleSel.setAttribute('onchange', "this.nextSibling.style.opacity='1'; this.nextSibling.style.pointerEvents='auto'; this.nextSibling.style.filter='none';");
+      roleSel.innerHTML = ['viewer','editor','admin','superadmin'].map(r => `<option value="${r}" ${u.role===r?'selected':''}>${r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('');
+      const roleBtn = document.createElement('button');
+      roleBtn.className = 'btn btn-pr btn-sm role-save-btn';
+      roleBtn.style.cssText = 'opacity:0.4; pointer-events:none; filter:grayscale(100%); transition:all 0.2s';
+      roleBtn.textContent = 'Save Role';
+      roleBtn.onclick = () => updUsrRole(u.username);
+      row.insertBefore(roleSel, row.children[1] || null);
+      row.insertBefore(roleBtn, row.children[2] || null);
+    }
+    uwrap.appendChild(row);
+    body.appendChild(uwrap);
+
+    if(u.role !== 'superadmin'){
+      const ad = document.createElement('div');
+      ad.style.cssText = 'padding:6px 10px 10px 28px;border-bottom:1px solid var(--bd);margin-bottom:4px;display:flex;flex-direction:column;gap:8px;';
+
+      // 1) Department Access Row
+      const deptWrap = document.createElement('div');
+      deptWrap.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-size:10px;font-weight:700;color:#0f766e">🏢 Department Access <span style="font-weight:400;color:var(--mu)">(Left-click: Toggle access · Right-click: Cycle role Viewer ➔ Editor ➔ Dept Head ★)</span></div>
+      </div>`;
+      const dl = document.createElement('div');
+      dl.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;';
+      depts.forEach(d => {
+        const dAccess = assigned_depts.find(a => String(a.department_id).toUpperCase() === String(d.id).toUpperCase());
+        const isOn = !!dAccess;
+        const dRole = dAccess ? (dAccess.dept_role || 'viewer') : 'viewer';
+        const btn = document.createElement('button');
+        const borderCol = !isOn ? '#e2e8f0' : (dRole === 'head' ? '#10b981' : (dRole === 'editor' ? '#f59e0b' : '#0284c7'));
+        const bgCol = isOn ? '#0f4c5c' : '#f8fafc';
+        const txCol = isOn ? '#fff' : '#94a3b8';
+        btn.style.cssText = `padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;transition:all .15s;border:2px solid ${borderCol};background:${bgCol};color:${txCol}`;
+        btn.textContent = `${d.icon || '🏢'} ${d.code}` + (isOn ? ` (${deptRoleLabels[dRole] || dRole})` : '');
+        btn.title = `${d.name}${d.name_ar ? ' - ' + d.name_ar : ''} | Left-click: toggle access | Right-click: cycle role (Viewer / Editor / Dept Head)`;
+        if(isOn) btn.dataset.on = '1';
+        btn.onclick = async () => {
+          const currentlyOn = !!btn.dataset.on;
+          try {
+            await apiFetch('/api/users', {
+              method: 'POST',
+              body: JSON.stringify({
+                action: currentlyOn ? 'unassign_dept' : 'assign_dept',
+                username: u.username,
+                department_id: d.id,
+                dept_role: u.role === 'editor' ? 'editor' : 'viewer'
+              })
+            });
+            openEnterpriseAdmin('users');
+          } catch(e) { toast(e.message || 'Error', 'er'); }
+        };
+        btn.oncontextmenu = async (e) => {
+          e.preventDefault();
+          if(!btn.dataset.on) return toast('Assign user to department first (left-click)', 'wa');
+          const order = ['viewer', 'editor', 'head'];
+          const nextRole = order[(order.indexOf(dRole) + 1) % order.length];
+          await apiFetch('/api/users', {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'assign_dept',
+              username: u.username,
+              department_id: d.id,
+              dept_role: nextRole
+            })
+          });
+          toast(`✔ ${u.username} role in ${d.code}: ${deptRoleLabels[nextRole]}`, 'ok');
+          openEnterpriseAdmin('users');
+        };
+        dl.appendChild(btn);
+      });
+      deptWrap.appendChild(dl);
+      ad.appendChild(deptWrap);
+
+      // 2) Project Access Row
+      const projWrap = document.createElement('div');
+      projWrap.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="font-size:10px;font-weight:700;color:var(--mu)">📁 Project / Workspace Access <span style="font-weight:400">(Left-click: Toggle · Right-click: Project DC)</span></div><div><a href="#" style="font-size:9px;margin-right:8px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => { if(b.dataset.on!=='1') b.click(); })">Select All</a><a href="#" style="font-size:9px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => { if(b.dataset.on==='1') b.click(); })">Clear All</a></div></div>';
+      const pl = document.createElement('div');
+      pl.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px';
+      projects.forEach(p => {
+        const projAccess = assigned_cached.find(a => a.project_id === p.id);
+        const isOn = !!projAccess;
+        const isDC = isOn && projAccess.is_dc;
+        const btn = document.createElement('button');
+        btn.style.cssText = 'padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;transition:all .15s;border:2px solid '+(isDC?'#22c55e':(isOn?'#f0a500':'#e2e8f0'))+';background:'+(isOn?'#1a3a5c':'#f8fafc')+';color:'+(isOn?'#fff':'#94a3b8');
+        btn.textContent = p.code + (isDC ? ' (DC)' : '');
+        btn.title = `${p.name} [${p.department_id || 'ENG'}] | Left-click to assign access. Right-click to set as Project DC`;
+        if(isOn) btn.dataset.on = '1';
+        btn.onclick = async () => {
+          const on = !!btn.dataset.on;
+          btn.dataset.on = on ? '' : '1';
+          const nextOn = !on;
+          btn.style.borderColor = isDC?'#22c55e':(nextOn?'#f0a500':'#e2e8f0');
+          btn.style.background = nextOn?'#1a3a5c':'#f8fafc';
+          btn.style.color = nextOn?'#fff':'#94a3b8';
+          btn.textContent = p.code + (isDC ? ' (DC)' : '');
+          try {
+            await apiFetch('/api/users',{method:'POST',body:JSON.stringify({action:on?'unassign':'assign',username:u.username,project_id:p.id,is_dc:false})});
+          } catch(e) { openEnterpriseAdmin('users'); }
+        };
+        btn.oncontextmenu = async (e) => {
+          e.preventDefault();
+          const currIsOn = !!btn.dataset.on;
+          if(!currIsOn) return toast('User must be assigned to project first','wa');
+          await apiFetch('/api/users', {method:'POST', body:JSON.stringify({action:'assign',username:u.username,project_id:p.id, is_dc: !isDC})});
+          openEnterpriseAdmin('users');
+        };
+        pl.appendChild(btn);
+      });
+      projWrap.appendChild(pl);
+      ad.appendChild(projWrap);
+      uwrap.appendChild(ad);
+    }
+  }
+
+  // Add User Section
+  const deptOpts = depts.map(d => `<option value="${escHtml(d.id)}">${escHtml(d.icon||'🏢')} ${escHtml(d.code)} - ${escHtml(d.name)}</option>`).join('');
+  const at = document.createElement('div');
+  at.className = 'stitle';
+  at.textContent = '➕ Add User';
+  body.appendChild(at);
+
+  const ar = document.createElement('div');
+  ar.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1.3fr 0.9fr 1.1fr 1fr 1fr auto;gap:8px;align-items:end;flex-wrap:wrap">
+    <div class="fg"><label>Username</label><input id="nu-name" placeholder="username"></div>
+    <div class="fg"><label>Email</label><input id="nu-email" placeholder="Email"></div>
+    <div class="fg"><label>Role</label><select id="nu-role">
+      <option value="editor">Editor</option><option value="viewer">Viewer</option>
+      <option value="admin">Admin</option><option value="superadmin">Super Admin</option></select></div>
+    <div class="fg"><label>Primary Dept</label><select id="nu-dept">${deptOpts}</select></div>
+    <div class="fg"><label>Clearance</label><select id="nu-clearance">
+      <option value="internal">Internal</option>
+      <option value="public">Public</option>
+      <option value="confidential">Confidential</option>
+      <option value="restricted">Restricted</option></select></div>
+    <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
+    <button class="btn btn-pr btn-sm" style="height:34px" onclick="addUsr()">Add</button></div>`;
+  body.appendChild(ar);
+
+  // Global Sequence Audit Card
+  const auditCard = document.createElement('div');
+  auditCard.style.cssText = 'margin-top:20px; padding:15px; border:1px solid var(--bd); border-radius:8px; background:var(--card, #fff); margin-bottom:10px;';
+  let projOptions = projects.map(p => `<option value="${escHtml(p.id)}">${escHtml(p.code)} - ${escHtml(p.name)}</option>`).join('');
+  auditCard.innerHTML = `
+    <h3 style="margin-top:0;font-size:14px;color:var(--tx);margin-bottom:4px;">Global Sequence Audit</h3>
+    <p style="font-size:11px;color:var(--mu);margin-bottom:12px;">Detect missing sequence numbers (gaps) in document logs.</p>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+       <select id="audit-proj" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
+          <option value="">Select Project</option>
+          ${projOptions}
+       </select>
+       <select id="audit-dt" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
+          <option value="">Select Doc Type</option>
+       </select>
+       <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
+    </div>
+    <div id="audit-result" style="font-size:12px;margin-top:10px;"></div>
+  `;
+  body.appendChild(auditCard);
+
+  document.getElementById('audit-proj')?.addEventListener('change', async (e) => {
+    const pid = e.target.value;
+    const dtSel = document.getElementById('audit-dt');
+    dtSel.innerHTML = '<option value="">Select Doc Type</option>';
+    if(!pid) return;
+    const dts = await apiFetch('/api/doc_types/' + pid);
+    if(dts){
+      dtSel.innerHTML += dts.map(d => `<option value="${escHtml(d.id)}">${escHtml(d.code)} - ${escHtml(d.name)}</option>`).join('');
+    }
+  });
+
+  window.runSequenceAudit = async () => {
+    const pid = document.getElementById('audit-proj').value;
+    const dtId = document.getElementById('audit-dt').value;
+    const resEl = document.getElementById('audit-result');
+    if(!pid || !dtId){
+      resEl.innerHTML = '<div style="padding:10px;background:#fef08a;color:#854d0e;border-radius:4px;">Please select both Project and Document Type.</div>';
+      return;
+    }
+    resEl.innerHTML = '<div style="color:var(--mu)">Auditing...</div>';
+    const r = await apiFetch('/api/audit-sequence?project_id='+pid+'&dt_id='+dtId);
+    if(r && !r.error){
+      if(r.missing && r.missing.length > 0){
+        resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">
+           <strong>⚠️ Missing Sequences Found!</strong><br>
+           Expected range: ${r.min} to ${r.max}<br>
+           Missing: ${r.missing.join(', ')}
+        </div>`;
+      } else if(r.min === 0 && r.max === 0){
+        resEl.innerHTML = `<div style="padding:10px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;">No numbered documents found to audit.</div>`;
+      } else {
+        resEl.innerHTML = `<div style="padding:10px;background:#dcfce3;color:#166534;border:1px solid #86efac;border-radius:4px;">
+           <strong>✅ 100% Intact.</strong><br>
+           No missing sequences detected. Range: ${r.min} to ${r.max}.
+        </div>`;
+      }
+    } else {
+      resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">Error running audit: ${r?r.error:'Unknown'}</div>`;
+    }
+  };
+}
+
+function renderAdminDeptsView(body, depts, projects){
+  const quickIcons = ['🏗','👥','💰','📦','⚖️','🛡️','🏢','📊','📁','🔧','🏛️','📑'];
+  const addCard = document.createElement('div');
+  addCard.style.cssText = 'padding:14px; border:1px solid var(--bd); border-radius:8px; background:var(--card, #f8fafc); margin-bottom:16px;';
+  addCard.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+      <div style="font-size:13px;font-weight:800;color:var(--pr)">➕ Add New Department (إضافة إدارة جديدة)</div>
+      <div style="display:flex;gap:4px;align-items:center;font-size:11px;color:var(--mu)">
+        <span>Quick Icon:</span>
+        ${quickIcons.map(ic => `<button type="button" style="border:1px solid var(--bd);background:#fff;border-radius:4px;cursor:pointer;padding:2px 5px;font-size:13px" onclick="document.getElementById('nd-icon').value='${ic}'">${ic}</button>`).join('')}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:65px 110px 1.3fr 1.3fr 1.1fr auto;gap:8px;align-items:end">
+      <div class="fg"><label>Icon</label><input id="nd-icon" value="🏢" style="text-align:center;font-size:15px"></div>
+      <div class="fg"><label>Code (ID)</label><input id="nd-code" placeholder="e.g. HR, FIN" style="text-transform:uppercase"></div>
+      <div class="fg"><label>Name (English)</label><input id="nd-name" placeholder="e.g. Human Resources"></div>
+      <div class="fg"><label>Name (المسمى بالعربية)</label><input id="nd-name-ar" placeholder="مثال: الموارد البشرية" dir="rtl"></div>
+      <div class="fg"><label>Structure Type</label>
+        <select id="nd-type">
+          <option value="1">Project-Based (مشاريع)</option>
+          <option value="0">Corporate / Dept-Wide (إدارة عامة)</option>
+        </select>
+      </div>
+      <button class="btn btn-pr btn-sm" style="height:35px;padding:0 14px;font-weight:700" onclick="addDept()">➕ Add</button>
+    </div>
+    <div style="margin-top:8px">
+      <input id="nd-desc" placeholder="Optional description (وصف مختصر لاختصاصات الإدارة وسجلاتها)..." style="width:100%;padding:6px 10px;font-size:11.5px;border:1px solid var(--bd);border-radius:4px;">
+    </div>
+  `;
+  body.appendChild(addCard);
+
+  // Existing Departments Editable List
+  const listTitle = document.createElement('div');
+  listTitle.className = 'stitle';
+  listTitle.textContent = '🏢 Existing Departments — Edit Names, Codes & Order (تعديل مسميات وترتيب الإدارات)';
+  body.appendChild(listTitle);
+
+  const listWrap = document.createElement('div');
+  listWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:20px;';
+
+  depts.forEach((d, idx) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--wh,#fff);display:flex;flex-direction:column;gap:6px;';
+    card.innerHTML = `
+      <div style="display:grid;grid-template-columns:55px 95px 1.3fr 1.3fr 1fr auto;gap:8px;align-items:center">
+        <div>
+          <label style="font-size:9px;color:var(--mu);display:block">Icon</label>
+          <input id="ed-icon-${escHtml(d.id)}" value="${escHtml(d.icon || '🏢')}" style="width:100%;text-align:center;font-size:15px;padding:4px;border:1px solid var(--bd);border-radius:4px">
+        </div>
+        <div>
+          <label style="font-size:9px;color:var(--mu);display:block">Code</label>
+          <input id="ed-code-${escHtml(d.id)}" value="${escHtml(d.code || d.id)}" style="width:100%;font-weight:700;text-transform:uppercase;padding:5px 6px;font-size:11.5px;border:1px solid var(--bd);border-radius:4px">
+        </div>
+        <div>
+          <label style="font-size:9px;color:var(--mu);display:block">Department Name (EN)</label>
+          <input id="ed-name-${escHtml(d.id)}" value="${escHtml(d.name || '')}" style="width:100%;font-weight:600;padding:5px 8px;font-size:12px;border:1px solid var(--bd);border-radius:4px">
+        </div>
+        <div>
+          <label style="font-size:9px;color:var(--mu);display:block">المسمى بالعربية (AR)</label>
+          <input id="ed-ar-${escHtml(d.id)}" value="${escHtml(d.name_ar || '')}" dir="rtl" placeholder="المسمى بالعربية" style="width:100%;font-weight:600;padding:5px 8px;font-size:12px;border:1px solid var(--bd);border-radius:4px">
+        </div>
+        <div>
+          <label style="font-size:9px;color:var(--mu);display:block">Scope Mode</label>
+          <select id="ed-type-${escHtml(d.id)}" style="width:100%;padding:5px 6px;font-size:11px;border:1px solid var(--bd);border-radius:4px">
+            <option value="1" ${d.is_project_based ? 'selected' : ''}>Project-Based</option>
+            <option value="0" ${!d.is_project_based ? 'selected' : ''}>Department-Wide</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;padding-top:12px">
+          <button class="btn btn-pr btn-sm" onclick="saveDept('${escHtml(d.id)}')" title="Save changes to this department">💾 Save</button>
+          <button class="btn btn-sc btn-sm" onclick="moveDept('${escHtml(d.id)}', -1)" ${idx===0?'disabled':''} title="Move Up">▲</button>
+          <button class="btn btn-sc btn-sm" onclick="moveDept('${escHtml(d.id)}', 1)" ${idx===depts.length-1?'disabled':''} title="Move Down">▼</button>
+          <button class="btn btn-er btn-sm" style="background:transparent;color:var(--er);border-color:transparent" onclick="delDept('${escHtml(d.id)}','${escHtml(d.name)}')" title="Delete Department">🗑️</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <input id="ed-desc-${escHtml(d.id)}" value="${escHtml(d.description || '')}" placeholder="Description..." style="flex:1;padding:4px 8px;font-size:11px;border:1px solid var(--bd);border-radius:4px;color:var(--mu)">
+        <span style="font-size:10.5px;color:var(--mu);white-space:nowrap;font-weight:600">📁 ${d.project_count || 0} Workspace(s) / Project(s)</span>
+      </div>
+    `;
+    listWrap.appendChild(card);
+  });
+  body.appendChild(listWrap);
+
+  // Project-to-Department Mapping Card
+  const mapTitle = document.createElement('div');
+  mapTitle.className = 'stitle';
+  mapTitle.textContent = '🔗 Assign Workspaces / Projects to Departments (تسكين المشاريع على الإدارات)';
+  body.appendChild(mapTitle);
+
+  const mapGrid = document.createElement('div');
+  mapGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;';
+  projects.forEach(p => {
+    const pDept = String(p.department_id || 'ENG').toUpperCase();
+    const item = document.createElement('div');
+    item.style.cssText = 'padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--wh,#fff);display:flex;justify-content:space-between;align-items:center;gap:8px;';
+    const opts = depts.map(d => `<option value="${escHtml(d.id)}" ${String(d.id).toUpperCase()===pDept?'selected':''}>${escHtml(d.icon||'🏢')} ${escHtml(d.code)} - ${escHtml(d.name)}</option>`).join('');
+    item.innerHTML = `
+      <div style="min-width:0;flex:1">
+        <div style="font-size:11.5px;font-weight:800;color:var(--pr);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.code)}</div>
+        <div style="font-size:10.5px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(p.name)}">${escHtml(p.name)}</div>
+      </div>
+      <select class="btn btn-sc btn-sm" style="height:auto;padding:4px 6px;font-size:11px;max-width:140px" onchange="assignProjDept('${escHtml(p.id)}', this.value)">
+        ${opts}
+      </select>
+    `;
+    mapGrid.appendChild(item);
+  });
+  body.appendChild(mapGrid);
+}
+
+async function addDept(){
+  const icon = document.getElementById('nd-icon')?.value.trim() || '🏢';
+  const code = document.getElementById('nd-code')?.value.trim().toUpperCase();
+  const name = document.getElementById('nd-name')?.value.trim();
+  const name_ar = document.getElementById('nd-name-ar')?.value.trim();
+  const is_project_based = document.getElementById('nd-type')?.value === '1';
+  const description = document.getElementById('nd-desc')?.value.trim() || '';
+  if(!code || !name) return toast('Department Code and Name are required', 'er');
+  try {
+    const r = await apiFetch('/api/departments', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'create', id: code, code, name, name_ar, icon, is_project_based, description })
+    });
+    if(r && r.ok){
+      toast(`✔ Department "${name}" added`, 'ok');
+      openEnterpriseAdmin('depts');
+    } else {
+      toast((r && r.error) || 'Failed to add department', 'er');
+    }
+  } catch(e) { toast(e.message || 'Error adding department', 'er'); }
+}
+
+async function saveDept(deptId){
+  const icon = document.getElementById('ed-icon-' + deptId)?.value.trim() || '🏢';
+  const code = document.getElementById('ed-code-' + deptId)?.value.trim().toUpperCase() || deptId;
+  const name = document.getElementById('ed-name-' + deptId)?.value.trim();
+  const name_ar = document.getElementById('ed-ar-' + deptId)?.value.trim() || '';
+  const is_project_based = document.getElementById('ed-type-' + deptId)?.value === '1';
+  const description = document.getElementById('ed-desc-' + deptId)?.value.trim() || '';
+  if(!name) return toast('Department name cannot be empty', 'er');
+  try {
+    const r = await apiFetch('/api/departments', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update', id: deptId, code, name, name_ar, icon, is_project_based, description })
+    });
+    if(r && r.ok){
+      toast(`✔ Department "${name}" updated`, 'ok');
+      openEnterpriseAdmin('depts');
+    } else {
+      toast((r && r.error) || 'Update failed', 'er');
+    }
+  } catch(e) { toast(e.message || 'Error updating department', 'er'); }
+}
+
+async function delDept(deptId, deptName){
+  if(!confirm(`Delete department "${deptName}" (${deptId})?`)) return;
+  try {
+    const r = await apiFetch('/api/departments', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete', id: deptId })
+    });
+    if(r && r.ok){
+      toast('✔ Department deleted', 'ok');
+      openEnterpriseAdmin('depts');
+    } else {
+      toast((r && r.error) || 'Cannot delete department', 'er');
+    }
+  } catch(e) { toast(e.message || 'Cannot delete department', 'er'); }
+}
+
+async function moveDept(deptId, delta){
+  const depts = window._ADMIN_CACHE.depts || [];
+  const idx = depts.findIndex(d => d.id === deptId);
+  const next = idx + delta;
+  if(idx < 0 || next < 0 || next >= depts.length) return;
+  [depts[idx], depts[next]] = [depts[next], depts[idx]];
+  const order = depts.map(d => d.id);
+  await apiFetch('/api/departments', { method: 'POST', body: JSON.stringify({ action: 'reorder', order }) });
+  openEnterpriseAdmin('depts');
+}
+
+async function assignProjDept(pid, deptId){
+  try {
+    const r = await apiFetch('/api/departments', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'assign_project', project_id: pid, department_id: deptId })
+    });
+    if(r && r.ok){
+      toast(`✔ Assigned ${pid} to ${deptId}`, 'ok');
+      if(typeof STATS !== 'undefined' && Array.isArray(STATS)){
+        const st = STATS.find(s => s.id === pid);
+        if(st) st.department_id = deptId;
+      }
+      openEnterpriseAdmin('depts');
+      if(typeof renderAll === 'function') renderAll(window._currentPid || '', window._currentDisc || '');
+    }
+  } catch(e) { toast(e.message || 'Failed to assign department', 'er'); }
+}
+
+async function updUsrClearance(username){
+  const clearance = document.getElementById('clearance-' + username)?.value || 'internal';
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_clearance', username, confidentiality_clearance: clearance })
+    });
+    if(r && r.ok) toast(`✔ Clearance updated for ${username}`, 'ok');
+  } catch(e) { toast('Failed to update clearance', 'er'); }
+}
 </script>"""
 
 
@@ -4330,6 +4852,22 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   canvas{{max-height:190px}}
 }}
 
+/* ── Enterprise Department Switcher Bar ── */
+.dept-bar{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--wh,#fff);padding:8px 12px;border-radius:10px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid var(--bd)}}
+.dept-bar-lbl{{font-size:10.5px;font-weight:800;color:var(--mu);text-transform:uppercase;letter-spacing:.5px;margin-right:4px;display:flex;align-items:center;gap:4px}}
+.dept-pill{{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1.5px solid var(--bd);background:var(--bg,#f8fafc);color:var(--tx);font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s;font-family:inherit}}
+.dept-pill:hover{{border-color:var(--pr);transform:translateY(-1px)}}
+.dept-pill.active{{background:linear-gradient(135deg,#1a2f4e 0%,#243b61 100%);color:#fff;border-color:#1a2f4e;box-shadow:0 3px 10px rgba(26,47,78,.22)}}
+.dept-pill .dept-ar{{font-size:10px;opacity:.82;font-weight:600}}
+.dept-pill .dept-cnt{{background:rgba(148,163,184,.22);color:inherit;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:800}}
+.dept-pill.active .dept-cnt{{background:rgba(126,200,50,.28);color:#d9f99d}}
+.dept-manage-btn{{margin-left:auto;padding:5px 10px;border-radius:7px;border:1px dashed var(--pr);background:rgba(26,47,78,.04);color:var(--pr);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}}
+.dept-manage-btn:hover{{background:var(--pr);color:#fff;border-style:solid}}
+body.dark .dept-bar{{background:#142033;border-color:#2a3c54}}
+body.dark .dept-pill{{background:#101a29;border-color:#2a3c54;color:#e2e8f0}}
+body.dark .dept-pill.active{{background:linear-gradient(135deg,#00b4a6 0%,#0f766e 100%);color:#fff;border-color:#00b4a6}}
+body.dark .dept-manage-btn{{color:#5eead4;border-color:#00b4a6;background:rgba(0,180,166,.08)}}
+
 /* ── Del button ── */
 .del-pbtn{{background:none;border:none;cursor:pointer;color:#ef4444;
   font-size:11px;padding:2px 5px;border-radius:3px}}
@@ -4359,6 +4897,9 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 </div>
 
 <div class="wrap">
+
+  <!-- Enterprise Department Switcher Bar -->
+  <div id="dept-bar" class="dept-bar"></div>
 
   <!-- Toolbar / Navigation Bar FIRST -->
   <div class="psel-bar">
@@ -4629,7 +5170,8 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <div class="fgrid">
         <div class="fg"><label>Project ID</label><input id="np-id" placeholder="e.g. 24CP01"></div>
         <div class="fg"><label>Short Code</label><input id="np-code" placeholder="e.g. CP01"></div>
-        <div class="fg full"><label>Project Name</label><input id="np-name" placeholder="Full project name"></div>
+        <div class="fg full"><label>Project / Workspace Name</label><input id="np-name" placeholder="Full project or workspace name"></div>
+        <div class="fg full"><label>Department (الإدارة التابع لها)</label><select id="np-dept"><option value="ENG">🏗 ENG - Engineering & Projects</option></select></div>
       </div>
     </div>
     <div class="mfoot">
@@ -4655,7 +5197,8 @@ window._ACCESSIBLE_PROJECTS = {projs_json};
 let STATS=[],OVERDUE_DATA=[],EXEC_DATA=null;
 let PR_ANALYTICS=null;
 let pChart,sChart,tChart,aChart,qChart,arChart,prTradeChart;
-let _currentDisc='',_currentPid='';
+let _currentDisc='',_currentPid='',_currentDept='';
+window.DEPTS=[];
 
 // ── Tab switching ──────────────────────────────────────────
 function showTab(name, btn){{
@@ -4685,15 +5228,15 @@ function showTab(name, btn){{
 // ── Init ──────────────────────────────────────────────────
   async function init(){{
     try{{
-    const [stats]=await Promise.all([
+    const [stats, depts]=await Promise.all([
         apiFetch('/api/dashboard_stats'),
+        apiFetch('/api/departments').catch(()=>[])
       ]);
       STATS=stats;
+      window.DEPTS=(depts&&depts.length)?depts:[{{id:'ENG',code:'ENG',name:'Engineering & Projects',name_ar:'الهندسة والمشاريع',icon:'🏗',is_project_based:true}}];
       if(!STATS)return;
-      // Populate project filter
-      document.getElementById('proj-sel').innerHTML=
-        '<option value="">All Projects</option>'+
-      STATS.map(p=>`<option value="${{p.id}}">${{p.name}} (${{p.code}})</option>`).join('');
+      renderDeptBar();
+      populateProjectDropdown();
     // Populate discipline filter
     const discs=new Set();
     STATS.forEach(p=>(p.dt_stats||[]).forEach(dt=>
@@ -4705,6 +5248,64 @@ function showTab(name, btn){{
         renderAll('','');
     }}finally{{document.getElementById('ld').style.display='none';}}
   }}
+
+function renderDeptBar(){{
+  const bar=document.getElementById('dept-bar');
+  if(!bar)return;
+  const depts=window.DEPTS||[];
+  const deptCounts={{}};
+  (STATS||[]).forEach(p=>{{
+    const did=String(p.department_id||'ENG').toUpperCase();
+    deptCounts[did]=(deptCounts[did]||0)+1;
+  }});
+  let html=`<span class="dept-bar-lbl">🏢 Departments:</span>`;
+  if(depts.length>1 || ROLE==='superadmin' || ROLE==='admin'){{
+    html+=`<button type="button" class="dept-pill ${{_currentDept===''?'active':''}}" onclick="filterDept('')">
+      <span>🌐 All Departments</span>
+      <span class="dept-cnt">${{(STATS||[]).length}}</span>
+    </button>`;
+  }}
+  depts.forEach(d=>{{
+    const did=String(d.id||'').toUpperCase();
+    const cnt=deptCounts[did]||0;
+    const isAct=_currentDept===did || (depts.length===1 && _currentDept==='' && ROLE!=='superadmin' && ROLE!=='admin');
+    html+=`<button type="button" class="dept-pill ${{isAct?'active':''}}" onclick="filterDept('${{escHtml(did)}}')" title="${{escHtml(d.description||d.name)}}">
+      <span>${{escHtml(d.icon||'🏢')}} ${{escHtml(d.name)}}</span>
+      ${{d.name_ar?`<span class="dept-ar">· ${{escHtml(d.name_ar)}}</span>`:''}}
+      <span class="dept-cnt">${{cnt}}</span>
+    </button>`;
+  }});
+  if(ROLE==='superadmin' || ROLE==='admin'){{
+    html+=`<button type="button" class="dept-manage-btn" onclick="openAdmin('depts')" title="Add, rename or organize Enterprise Departments">⚙️ Manage Departments / الإدارات</button>`;
+  }}
+  bar.innerHTML=html;
+  const npDept=document.getElementById('np-dept');
+  if(npDept && depts.length){{
+    npDept.innerHTML=depts.map(d=>`<option value="${{escHtml(d.id)}}" ${{(d.id===(_currentDept||'ENG'))?'selected':''}}>${{escHtml(d.icon||'🏢')}} ${{escHtml(d.code)}} — ${{escHtml(d.name)}} ${{d.name_ar?'('+escHtml(d.name_ar)+')':''}}</option>`).join('');
+  }}
+}}
+
+function populateProjectDropdown(){{
+  const scope=_currentDept ? (STATS||[]).filter(p=>String(p.department_id||'ENG').toUpperCase()===_currentDept) : (STATS||[]);
+  const sel=document.getElementById('proj-sel');
+  if(!sel)return;
+  sel.innerHTML='<option value="">All Projects / Workspaces</option>'+
+    scope.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
+}}
+
+function filterDept(deptId){{
+  _currentDept=deptId||'';
+  if(_currentPid){{
+    const proj=(STATS||[]).find(p=>p.id===_currentPid);
+    if(proj && _currentDept && String(proj.department_id||'ENG').toUpperCase()!==_currentDept){{
+      _currentPid='';
+    }}
+  }}
+  renderDeptBar();
+  populateProjectDropdown();
+  refreshOverviewPanels(_currentPid);
+  renderAll(_currentPid,_currentDisc);
+}}
 
 function filterProject(pid){{
   _currentPid=pid;refreshOverviewPanels(pid);renderAll(pid,_currentDisc);
@@ -4724,7 +5325,8 @@ async function refreshOverviewPanels(pid){{
 }}
 
 function getFiltered(pid,disc){{
-  let d=pid?STATS.filter(s=>s.id===pid):STATS;
+  let base=_currentDept?STATS.filter(s=>String(s.department_id||'ENG').toUpperCase()===_currentDept):STATS;
+  let d=pid?base.filter(s=>s.id===pid):base;
   if(disc){{
     d=d.map(p=>{{
       const dtFiltered=(p.dt_stats||[]).map(dt=>{{
@@ -4992,9 +5594,11 @@ function renderCards(d,pid){{
     const col=p.pct>=80?'#16a34a':p.pct>=50?'#f59e0b':'#ef4444';
     const a=document.createElement('a');a.href='/app?p='+p.id;a.className='pcard';
     const clientTitle=p.client?` title="${{safe(p.client)}}"`:'';
+    const deptObj=(window.DEPTS||[]).find(x=>String(x.id).toUpperCase()===String(p.department_id||'ENG').toUpperCase());
+    const deptBadge=deptObj?`<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(15,118,110,.1);color:#0f766e;margin-left:6px;vertical-align:middle">${{safe(deptObj.icon||'🏢')}} ${{safe(deptObj.code)}}</span>`:'';
     a.innerHTML=`<div class="pchdr">
       <div>
-        <div class="pcode">${{safe(p.code)}}</div>
+        <div class="pcode">${{safe(p.code)}}${{deptBadge}}</div>
         <div class="pname">${{safe(p.name)}}</div>
       </div>
       ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:10.5px;font-weight:800;white-space:nowrap" title="${{p.overdue}} Overdue Submittals">⚠ ${{p.overdue}}</span>`:''}}
@@ -5689,13 +6293,14 @@ async function createProject(){{
   const id=document.getElementById('np-id')?.value.trim();
   const code=document.getElementById('np-code')?.value.trim();
   const name=document.getElementById('np-name')?.value.trim();
+  const department_id=document.getElementById('np-dept')?.value || _currentDept || 'ENG';
   if(!id||!name){{toast('Fill in Project ID and Name','er');return;}}
   const btn=document.getElementById('cpbtn');
   btn.disabled=true;btn.textContent='Creating...';
   try{{
     const r=await fetch('/api/projects/create',{{method:'POST',credentials:'include',
       headers:{{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}},
-      body:JSON.stringify({{id,code:code||id,name}})}});
+      body:JSON.stringify({{id,code:code||id,name,department_id}})}});
     const d=await r.json();
     if(d.ok){{toast('✔ Project created','ok');closeM('newproj-modal');
       setTimeout(()=>location.reload(),800);}}
@@ -5712,7 +6317,10 @@ async function delProject(pid,name){{
 }}
 
 // ── Admin Panel ─────────────────────────────────────────
-async function openAdmin(){{
+async function openAdmin(initialTab){{
+  return openEnterpriseAdmin(initialTab);
+}}
+async function _legacyOpenAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
   if(!users||!projects)return;
   const body=document.getElementById('admin-body');body.innerHTML='';
@@ -5878,10 +6486,12 @@ async function addUsr(){{
   const name=document.getElementById('nu-name')?.value.trim().toLowerCase();
   const role=document.getElementById('nu-role')?.value;
   const pw=document.getElementById('nu-pw')?.value;
-  const email=document.getElementById('nu-email')?.value;
+  const email=document.getElementById('nu-email')?.value || '';
+  const primary_dept=document.getElementById('nu-dept')?.value || 'ENG';
+  const confidentiality_clearance=document.getElementById('nu-clearance')?.value || 'internal';
   if(!name||!pw){{toast('Username and password required','er');return;}}
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw,email:email}})}});
-  if(r&&r.ok){{toast('✔ User added','ok');closeM('admin-modal');openAdmin();}}
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw,email,primary_dept,confidentiality_clearance}})}});
+  if(r&&r.ok){{toast('✔ User added','ok');openEnterpriseAdmin('users');}}
   else toast((r&&r.error)||'Error','er');
 }}
 async function delUsr(u){{
@@ -6011,7 +6621,9 @@ const ACTION_COLORS={{
   'IMPORT_EXCEL':'#059669','IMPORT_PROJECT':'#059669',
   'USER_CREATE':'#15803d','USER_DELETE':'#b91c1c','USER_EDIT':'#d97706',
   'ROLE_UPDATE':'#d97706','PASSWORD_CHANGE':'#4338ca',
-  'PROJECT_ASSIGN':'#0284c7','PROJECT_UNASSIGN':'#b45309'
+  'PROJECT_ASSIGN':'#0284c7','PROJECT_UNASSIGN':'#b45309',
+  'DEPT_CREATE':'#0d9488','DEPT_EDIT':'#0284c7','DEPT_DELETE':'#b91c1c',
+  'DEPT_ASSIGN':'#0d9488','DEPT_UNASSIGN':'#d97706','PROJECT_DEPT_CHANGE':'#4f46e5'
 }};
 
 const AUD_COL_KEY='dcr_audit_col_widths_v2';
@@ -10273,7 +10885,10 @@ async function saveAddCol(){{
 }}
 
 // Admin Panel (same as dashboard)
-async function openAdmin(){{
+async function openAdmin(initialTab){{
+  return openEnterpriseAdmin(initialTab);
+}}
+async function _legacyOpenAdmin(){{
   const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
   if(!users||!projects) return;
   
@@ -10440,13 +11055,15 @@ async function addUsr(){{
   const role=document.getElementById('nu-role')?.value;
   const pw=document.getElementById('nu-pw')?.value;
   const email=document.getElementById('nu-email')?.value || '';
+  const primary_dept=document.getElementById('nu-dept')?.value || 'ENG';
+  const confidentiality_clearance=document.getElementById('nu-clearance')?.value || 'internal';
   if(!name||!pw){{toast('Username and password required','er');return;}}
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw,email:email}})}});
-  if(r&&r.ok){{toast('✔ User added','ok');closeM('admin-modal');openAdmin();}}else toast((r&&r.error)||'Error','er');
+  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw,email:email,primary_dept,confidentiality_clearance}})}});
+  if(r&&r.ok){{toast('✔ User added','ok');openEnterpriseAdmin('users');}}else toast((r&&r.error)||'Error','er');
 }}
 async function delUsr(u){{if(!confirm('Delete user: '+u+'?'))return;
   const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'delete',username:u}})}});
-  if(r&&r.ok){{toast('Deleted','wa');closeM('admin-modal');openAdmin();}}
+  if(r&&r.ok){{toast('Deleted','wa');openEnterpriseAdmin('users');}}
 }}
 async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)return;
   await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
@@ -10462,7 +11079,7 @@ async function updUsrRole(u){{
   const role=document.getElementById('role-'+u)?.value;
   if(!role)return;
   const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_role',username:u,role}})}});
-  if(r&&r.ok){{toast('Role updated','ok');closeM('admin-modal');openAdmin();}}
+  if(r&&r.ok){{toast('Role updated','ok');openEnterpriseAdmin('users');}}
   else toast((r&&r.error)||'Role update failed','er');
 }}
 
