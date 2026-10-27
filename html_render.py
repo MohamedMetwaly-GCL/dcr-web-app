@@ -3752,9 +3752,284 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
     }
 }
 
+
+/* ── Modern User Management & Scoped RBAC Modal ── */
+.admin-modal-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.admin-toolbar {
+  padding: 12px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--bd);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+}
+.admin-toolbar-left, .admin-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.user-tbl-wrap {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid var(--bd);
+  background: var(--wh, #fff);
+  margin: 14px 18px;
+}
+.user-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+.user-tbl th {
+  background: var(--bg);
+  color: var(--tx-mu, #64748b);
+  font-weight: 600;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--bd);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.user-tbl td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--bd);
+  color: var(--tx);
+  vertical-align: middle;
+}
+.user-tbl tr:last-child td {
+  border-bottom: none;
+}
+.user-tbl tr:hover {
+  background: var(--row-hover, #f8fafc);
+}
+.u-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e0f2fe;
+  color: #0284c7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+body.dark .u-avatar {
+  background: #0c4a6e;
+  color: #38bdf8;
+}
+.u-name-cell {
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dept-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dept-badge-eng {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+body.dark .dept-badge-eng {
+  background: #1e3a5f;
+  color: #93c5fd;
+  border-color: #2563eb;
+}
+.dept-badge-om {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+body.dark .dept-badge-om {
+  background: #064e3b;
+  color: #6ee7b7;
+  border-color: #059669;
+}
+.dept-badge-other {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+.uact-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--bd);
+  background: var(--wh, #fff);
+  color: var(--tx);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+.uact-btn:hover {
+  background: var(--bg);
+  border-color: var(--tx-mu, #64748b);
+}
+.uact-btn-perm {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+body.dark .uact-btn-perm {
+  background: #14532d;
+  color: #86efac;
+  border-color: #166534;
+}
+.uact-btn-perm:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+.uact-btn-del {
+  color: #dc2626;
+  border-color: transparent;
+  background: transparent;
+}
+.uact-btn-del:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+body.dark .uact-btn-del:hover {
+  background: #7f1d1d;
+  border-color: #991b1b;
+}
+.tbl-input {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 11px;
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  background: var(--wh, #fff);
+  color: var(--tx);
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.tbl-input:focus {
+  outline: none;
+  border-color: var(--pr);
+}
+.tbl-select {
+  padding: 4px 6px;
+  font-size: 11px;
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  background: var(--wh, #fff);
+  color: var(--tx);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.tbl-select:focus {
+  outline: none;
+  border-color: var(--pr);
+}
+.add-user-card {
+  margin: 12px 18px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--bd);
+}
+.perm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.perm-table th {
+  background: var(--bg);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bd);
+  color: var(--tx-mu);
+  font-size: 10.5px;
+  text-align: left;
+  text-transform: uppercase;
+}
+.perm-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: middle;
+}
+.perm-table tr:hover {
+  background: var(--row-hover, #f8fafc);
+}
+.perm-check-cell {
+  text-align: center;
+  width: 110px;
+}
+.perm-toggle-switch {
+  cursor: pointer;
+  transform: scale(1.15);
+}
+
 </style>"""
 
 SHARED_JS = """
+<!-- ADMIN MODAL (Users & Access Control) -->
+<div class="overlay hidden" id="admin-modal">
+  <div class="modal" style="max-width:980px; width:95%; max-height:92vh; display:flex; flex-direction:column;">
+    <div class="mhdr" style="padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:16px;">👥</span>
+        <strong style="font-size:14px;">User Management & Access Control</strong>
+        <span id="admin-user-count" class="badge" style="background:var(--pr);color:#fff;">0</span>
+      </div>
+      <button class="xbtn" onclick="closeM('admin-modal')">✕</button>
+    </div>
+    <div class="mbody" id="admin-body" style="padding:0; overflow-y:auto; flex:1;"></div>
+    <div class="mfoot" style="padding:10px 18px; display:flex; justify-content:space-between; align-items:center;">
+      <div style="font-size:11px; color:var(--mu);">Scoped Multi-Workspace RBAC Active</div>
+      <button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- PERMISSIONS MODAL -->
+<div class="overlay hidden" id="permissions-modal" style="z-index: 1060;">
+  <div class="modal" style="max-width:720px; width:92%; max-height:85vh; display:flex; flex-direction:column;">
+    <div class="mhdr" style="padding:12px 18px; display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <div style="font-size:14px; font-weight:700; color:var(--tx);" id="perm-title">⚙ User Permissions</div>
+        <div style="font-size:11px; color:var(--mu); margin-top:2px;" id="perm-subtitle">Department Projects & Contracts</div>
+      </div>
+      <button class="xbtn" onclick="closeM('permissions-modal')">✕</button>
+    </div>
+    <div style="padding:10px 18px; background:var(--surface); border-bottom:1px solid var(--bd); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+      <input type="text" id="perm-search" placeholder="Search projects/contracts..." class="tbl-input" style="max-width:240px;" oninput="filterPermProjects(this.value)">
+      <div style="display:flex; gap:12px; align-items:center; font-size:11px;">
+        <a href="#" style="color:var(--pr); text-decoration:none; font-weight:600;" onclick="permSelectAll(event)">Select All</a>
+        <span style="color:var(--bd);">|</span>
+        <a href="#" style="color:var(--pr); text-decoration:none; font-weight:600;" onclick="permClearAll(event)">Clear All</a>
+      </div>
+    </div>
+    <div class="mbody" id="perm-body" style="padding:0; overflow-y:auto; flex:1;"></div>
+    <div class="mfoot" style="padding:10px 18px; display:flex; justify-content:space-between; align-items:center;">
+      <div id="perm-save-status" style="font-size:11px; color:var(--mu);">Permissions are applied immediately.</div>
+      <button class="btn btn-sc" onclick="closeM('permissions-modal')">Done</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 <script>
 function applyDarkMode(on){
@@ -3826,6 +4101,762 @@ function escHtml(v){
     .replaceAll('"','&quot;')
     .replaceAll("'",'&#39;');
 }
+
+// ── Unified Multi-Workspace Enterprise Admin Panel ─────────────────────────
+window._ADMIN_DATA = { users: [], projects: [], workspaces: [], whoami: {} };
+window._ACTIVE_PERM_USER = null;
+
+async function openAdmin() {
+  try {
+    const [whoami, users, projects, workspaces] = await Promise.all([
+      apiFetch('/api/whoami'),
+      apiFetch('/api/users'),
+      apiFetch('/api/projects'),
+      apiFetch('/api/workspaces')
+    ]);
+    if (!users || !projects) return;
+    _ADMIN_DATA = { whoami: whoami || {}, users: users || [], projects: projects || [], workspaces: workspaces || [] };
+    
+    // Sort projects cleanly by code/name
+    _ADMIN_DATA.projects.sort((a,b) => String(a.code || a.id).localeCompare(String(b.code || b.id)));
+    
+    const countEl = document.getElementById('admin-user-count');
+    if (countEl) countEl.textContent = _ADMIN_DATA.users.length;
+    
+    const body = document.getElementById('admin-body');
+    if (!body) return;
+    body.innerHTML = '';
+    
+    const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
+    const userRole = (_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.role) || '';
+    
+    // 1. Top Toolbar (Search, Department Filter, Role Filter, Actions)
+    const toolbar = document.createElement('div');
+    toolbar.className = 'admin-toolbar';
+    
+    let deptOptions = '<option value="">All Departments</option>';
+    (_ADMIN_DATA.workspaces || []).forEach(w => {
+      const icon = w.id === 'OM' ? '⚙️' : '📐';
+      deptOptions += `<option value="${w.id}">${icon} ${escHtml(w.name)} (${w.id})</option>`;
+    });
+    
+    toolbar.innerHTML = `
+      <div class="admin-toolbar-left">
+        <select id="admin-dept-filter" class="tbl-select" style="padding:5px 8px;font-weight:600;min-width:180px;" onchange="renderAdminTable()">
+          ${deptOptions}
+        </select>
+        <select id="admin-role-filter" class="tbl-select" style="padding:5px 8px;font-weight:600;min-width:110px;" onchange="renderAdminTable()">
+          <option value="">All Roles</option>
+          <option value="superadmin">Super Admin</option>
+          <option value="admin">Admin</option>
+          <option value="editor">Editor</option>
+          <option value="viewer">Viewer</option>
+        </select>
+        <input type="text" id="admin-user-search" class="tbl-input" placeholder="Search by user or email..." style="width:200px;" oninput="renderAdminTable()">
+      </div>
+      <div class="admin-toolbar-right">
+        <button class="btn btn-pr btn-sm" onclick="toggleAddUserCard()" style="display:inline-flex;align-items:center;gap:4px;">
+          <span>➕</span><span>Add User</span>
+        </button>
+        <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">
+          <span>📥</span><span>Export Matrix</span>
+        </button>
+        <button class="btn btn-sc btn-sm" onclick="toggleAuditCard()" title="Detect Sequence Gaps">
+          <span>🔍</span><span>Gap Audit</span>
+        </button>
+      </div>
+    `;
+    body.appendChild(toolbar);
+    
+    // 2. Collapsible Add User Card
+    const addCard = document.createElement('div');
+    addCard.id = 'admin-add-card';
+    addCard.className = 'add-user-card';
+    addCard.style.display = 'none';
+    
+    let addDeptOptions = '';
+    (_ADMIN_DATA.workspaces || []).forEach(w => {
+      addDeptOptions += `<option value="${w.id}">${w.id === 'OM' ? '⚙️' : '📐'} ${escHtml(w.name)} (${w.id})</option>`;
+    });
+    
+    addCard.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <strong style="font-size:13px;color:var(--tx);">➕ Add New User</strong>
+        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAddUserCard();">Close ✕</a>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)) auto;gap:8px;align-items:end;">
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Username</label><input id="nu-name" class="tbl-input" placeholder="username" autocomplete="off"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Email</label><input id="nu-email" class="tbl-input" placeholder="user@company.com"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Department</label><select id="nu-dept" class="tbl-select" style="width:100%">${addDeptOptions}</select></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Role</label><select id="nu-role" class="tbl-select" style="width:100%">
+          <option value="editor">Editor</option>
+          <option value="viewer">Viewer</option>
+          <option value="admin">Admin</option>
+          ${isSuper ? '<option value="superadmin">Super Admin</option>' : ''}
+        </select></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Password</label><input id="nu-pw" type="password" class="tbl-input" placeholder="••••••••"></div>
+        <button class="btn btn-pr btn-sm" onclick="submitAddUser()" style="height:30px;padding:0 12px;">Create</button>
+      </div>
+    `;
+    body.appendChild(addCard);
+    
+    // 3. Collapsible Sequence Gap Audit Card
+    const auditCard = document.createElement('div');
+    auditCard.id = 'admin-audit-card';
+    auditCard.className = 'add-user-card';
+    auditCard.style.display = 'none';
+    
+    let auditProjOptions = _ADMIN_DATA.projects.map(p => `<option value="${p.id}">${p.code} - ${escHtml(p.name)}</option>`).join('');
+    auditCard.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <strong style="font-size:13px;color:var(--tx);">Global Sequence Gap Audit</strong>
+        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAuditCard();">Close ✕</a>
+      </div>
+      <p style="font-size:11px;color:var(--mu);margin-bottom:10px;">Detect missing sequence numbers (gaps) in document logs for any project.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="audit-proj" class="tbl-select" style="min-width:180px;">
+          <option value="">Select Project</option>
+          ${auditProjOptions}
+        </select>
+        <select id="audit-dt" class="tbl-select" style="min-width:180px;">
+          <option value="">Select Doc Type</option>
+        </select>
+        <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
+      </div>
+      <div id="audit-result" style="font-size:11px;margin-top:10px;"></div>
+    `;
+    body.appendChild(auditCard);
+    
+    // Wire audit project change
+    const auditProjSel = auditCard.querySelector('#audit-proj');
+    if (auditProjSel) {
+      auditProjSel.addEventListener('change', async (e) => {
+        const pid = e.target.value;
+        const dtSel = document.getElementById('audit-dt');
+        if (!dtSel) return;
+        dtSel.innerHTML = '<option value="">Select Doc Type</option>';
+        if (!pid) return;
+        const dts = await apiFetch('/api/doc_types/' + pid);
+        if (dts) {
+          dtSel.innerHTML += dts.map(d => `<option value="${d.id}">${d.code} - ${escHtml(d.name)}</option>`).join('');
+        }
+      });
+    }
+    
+    // 4. User Table Container
+    const tblWrap = document.createElement('div');
+    tblWrap.className = 'user-tbl-wrap';
+    tblWrap.id = 'admin-user-tbl-wrap';
+    body.appendChild(tblWrap);
+    
+    renderAdminTable();
+    openM('admin-modal');
+  } catch (err) {
+    toast('Error opening admin: ' + err.message, 'er');
+  }
+}
+
+function toggleAddUserCard() {
+  const card = document.getElementById('admin-add-card');
+  if (card) {
+    const isHidden = card.style.display === 'none';
+    card.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) {
+      const nameInput = document.getElementById('nu-name');
+      if (nameInput) nameInput.focus();
+    }
+  }
+}
+
+function toggleAuditCard() {
+  const card = document.getElementById('admin-audit-card');
+  if (card) {
+    card.style.display = card.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+function renderAdminTable() {
+  const tblWrap = document.getElementById('admin-user-tbl-wrap');
+  if (!tblWrap) return;
+  
+  const deptVal = document.getElementById('admin-dept-filter')?.value || '';
+  const roleVal = document.getElementById('admin-role-filter')?.value || '';
+  const searchVal = (document.getElementById('admin-user-search')?.value || '').trim().toLowerCase();
+  const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
+  
+  const filteredUsers = (_ADMIN_DATA.users || []).filter(u => {
+    if (deptVal && (u.primary_workspace || 'ENG') !== deptVal) return false;
+    if (roleVal && u.role !== roleVal) return false;
+    if (searchVal) {
+      const un = (u.username || '').toLowerCase();
+      const em = (u.email || '').toLowerCase();
+      if (!un.includes(searchVal) && !em.includes(searchVal)) return false;
+    }
+    return true;
+  });
+  
+  const countEl = document.getElementById('admin-user-count');
+  if (countEl) countEl.textContent = `${filteredUsers.length} / ${_ADMIN_DATA.users.length}`;
+  
+  if (filteredUsers.length === 0) {
+    tblWrap.innerHTML = '<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">No users match the selected filters.</div>';
+    return;
+  }
+  
+  let html = `
+    <table class="user-tbl">
+      <thead>
+        <tr>
+          <th style="min-width:140px;">User</th>
+          <th style="min-width:180px;">Email</th>
+          <th style="min-width:130px;">Department</th>
+          <th style="min-width:110px;">Role</th>
+          <th style="text-align:right;min-width:180px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  filteredUsers.forEach(u => {
+    const isProtected = u.username === 'admin';
+    const initial = (u.username || '?').charAt(0).toUpperCase();
+    const assignedCount = (u.projects || []).length;
+    const wsId = u.primary_workspace || 'ENG';
+    const isOM = wsId === 'OM';
+    const deptBadgeClass = isOM ? 'dept-badge-om' : 'dept-badge-eng';
+    const deptIcon = isOM ? '⚙️' : '📐';
+    const deptLabel = isOM ? 'O&M' : 'Engineering';
+    
+    // Department column: if superadmin and not protected, allow quick dropdown change
+    let deptCol = '';
+    if (isSuper && !isProtected) {
+      let wsOpts = '';
+      (_ADMIN_DATA.workspaces || []).forEach(w => {
+        wsOpts += `<option value="${w.id}" ${wsId === w.id ? 'selected' : ''}>${w.id === 'OM' ? '⚙️' : '📐'} ${w.id}</option>`;
+      });
+      deptCol = `<select class="tbl-select" onchange="updUsrDept('${escHtml(u.username)}', this.value)" title="Change primary department">${wsOpts}</select>`;
+    } else {
+      deptCol = `<span class="dept-badge ${deptBadgeClass}">${deptIcon} ${deptLabel}</span>`;
+    }
+    
+    // Role column:
+    let roleCol = '';
+    if (isProtected) {
+      roleCol = '<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;">Super Admin</span>';
+    } else {
+      const roles = ['viewer', 'editor', 'admin'];
+      if (isSuper) roles.push('superadmin');
+      let roleOpts = roles.map(r => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${r === 'superadmin' ? 'Super Admin' : r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('');
+      roleCol = `<select class="tbl-select" onchange="updUsrRole('${escHtml(u.username)}', this.value)">${roleOpts}</select>`;
+    }
+    
+    // Email column
+    const emailCol = `<input class="tbl-input email-input" id="email-inp-${escHtml(u.username)}" value="${escHtml(u.email || '')}" placeholder="Add email..." onblur="updUsrEmail('${escHtml(u.username)}', this.value)" style="border-color:transparent;background:transparent;" onfocus="this.style.borderColor='';this.style.background='var(--wh)';" onblur="this.style.borderColor='transparent';this.style.background='transparent';">`;
+    
+    // Actions column
+    let actionsHtml = `
+      <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
+        <button class="uact-btn uact-btn-perm" id="perm-btn-${escHtml(u.username)}" onclick="openPermissionsModal('${escHtml(u.username)}')" title="Manage project & contract permissions">
+          <span>⚙️</span><span>Permissions</span><span class="badge" style="background:#15803d;color:#fff;padding:1px 5px;font-size:10px;margin-left:2px;">${assignedCount}</span>
+        </button>
+        ${!isProtected ? `
+          <button class="uact-btn" onclick="chgPw('${escHtml(u.username)}')" title="Reset Password">
+            <span>🔑</span>
+          </button>
+          <button class="uact-btn uact-btn-del" onclick="delUsr('${escHtml(u.username)}')" title="Delete User">
+            <span>🗑️</span>
+          </button>
+        ` : '<span style="font-size:10px;color:var(--mu);padding:0 6px;">🔒 Protected</span>'}
+      </div>
+    `;
+    
+    html += `
+      <tr id="urow-${escHtml(u.username)}">
+        <td>
+          <div class="u-name-cell">
+            <span class="u-avatar">${initial}</span>
+            <span>${escHtml(u.username)}</span>
+          </div>
+        </td>
+        <td>${emailCol}</td>
+        <td>${deptCol}</td>
+        <td>${roleCol}</td>
+        <td>${actionsHtml}</td>
+      </tr>
+    `;
+  });
+  
+  html += `</tbody></table>`;
+  tblWrap.innerHTML = html;
+}
+
+// ── Scoped Permissions Modal ─────────────────────────────────
+function openPermissionsModal(username) {
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  if (!u) return toast('User not found', 'er');
+  window._ACTIVE_PERM_USER = username;
+  
+  const userDept = u.primary_workspace || 'ENG';
+  const isOM = userDept === 'OM';
+  const deptName = isOM ? 'Operation & Maintenance' : 'Engineering & Projects';
+  const deptIcon = isOM ? '⚙️' : '📐';
+  
+  document.getElementById('perm-title').innerHTML = `⚙️ Project / Contract Permissions — <strong>${escHtml(u.username)}</strong>`;
+  document.getElementById('perm-subtitle').innerHTML = `<span class="dept-badge ${isOM ? 'dept-badge-om' : 'dept-badge-eng'}">${deptIcon} ${deptName}</span> <span style="margin-left:6px;color:var(--mu);">Scoped to user's assigned department</span>`;
+  
+  // Scoped project filtering: projects belonging to user's department
+  const allowedWs = (u.workspaces && u.workspaces.length > 0) ? u.workspaces.map(w => w.workspace_id) : [userDept];
+  const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
+  
+  let scopedProjects = _ADMIN_DATA.projects.filter(p => {
+    const pWs = p.workspace_id || 'ENG';
+    return allowedWs.includes(pWs) || (isSuper && allowedWs.length === 0);
+  });
+  
+  if (scopedProjects.length === 0) {
+    scopedProjects = _ADMIN_DATA.projects;
+  }
+  
+  window._ACTIVE_PERM_PROJECTS = scopedProjects;
+  
+  const searchInput = document.getElementById('perm-search');
+  if (searchInput) searchInput.value = '';
+  
+  renderPermTable(scopedProjects);
+  openM('permissions-modal');
+}
+
+function renderPermTable(projects) {
+  const body = document.getElementById('perm-body');
+  if (!body) return;
+  const username = window._ACTIVE_PERM_USER;
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  if (!u) return;
+  
+  const userProjects = u.projects || [];
+  const assignedMap = Object.fromEntries(userProjects.map(p => [p.project_id, p]));
+  
+  if (!projects || projects.length === 0) {
+    body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">No projects or contracts found for this department.</div>';
+    return;
+  }
+  
+  let html = `
+    <table class="perm-table">
+      <thead>
+        <tr>
+          <th>Project / Contract</th>
+          <th class="perm-check-cell">Access</th>
+          <th class="perm-check-cell">Document Controller (DC)</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  projects.forEach(p => {
+    const access = assignedMap[p.id];
+    const hasAccess = !!access;
+    const isDC = hasAccess && !!access.is_dc;
+    const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • Client: ${escHtml(p.client)}</span>` : '';
+    
+    html += `
+      <tr class="perm-row" data-pid="${escHtml(p.id)}" data-text="${escHtml((p.code + ' ' + p.name + ' ' + (p.client||'')).toLowerCase())}">
+        <td>
+          <div style="font-weight:600;color:var(--tx);">${escHtml(p.code)} <span style="font-weight:400;color:var(--tx-mu, #64748b);">${escHtml(p.name)}</span></div>
+          ${clientText}
+        </td>
+        <td class="perm-check-cell">
+          <input type="checkbox" class="perm-toggle-switch" id="chk-access-${escHtml(p.id)}" ${hasAccess ? 'checked' : ''} onchange="togglePermAccess('${escHtml(username)}', '${escHtml(p.id)}', this.checked)">
+        </td>
+        <td class="perm-check-cell">
+          <input type="checkbox" class="perm-toggle-switch" id="chk-dc-${escHtml(p.id)}" ${isDC ? 'checked' : ''} ${!hasAccess ? 'disabled' : ''} onchange="togglePermDC('${escHtml(username)}', '${escHtml(p.id)}', this.checked)">
+        </td>
+      </tr>
+    `;
+  });
+  
+  html += `</tbody></table>`;
+  body.innerHTML = html;
+}
+
+function filterPermProjects(query) {
+  const q = (query || '').trim().toLowerCase();
+  const rows = document.querySelectorAll('.perm-row');
+  rows.forEach(r => {
+    const text = r.getAttribute('data-text') || '';
+    r.style.display = text.includes(q) ? '' : 'none';
+  });
+}
+
+async function togglePermAccess(username, pid, enable) {
+  const dcChk = document.getElementById('chk-dc-' + pid);
+  if (dcChk) {
+    dcChk.disabled = !enable;
+    if (!enable) dcChk.checked = false;
+  }
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  const statusEl = document.getElementById('perm-save-status');
+  if (statusEl) statusEl.textContent = 'Saving...';
+  
+  try {
+    await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: enable ? 'assign' : 'unassign',
+        username: username,
+        project_id: pid,
+        is_dc: false
+      })
+    });
+    if (u) {
+      if (!u.projects) u.projects = [];
+      if (enable) {
+        if (!u.projects.some(p => p.project_id === pid)) {
+          u.projects.push({ project_id: pid, is_dc: false });
+        }
+      } else {
+        u.projects = u.projects.filter(p => p.project_id !== pid);
+      }
+      updateUserPermBadge(username);
+    }
+    if (statusEl) statusEl.textContent = '✔ Changes saved.';
+    setTimeout(() => { if (statusEl) statusEl.textContent = 'Permissions are applied immediately.'; }, 2000);
+  } catch (e) {
+    toast('Failed to update permission: ' + e.message, 'er');
+    if (statusEl) statusEl.textContent = 'Failed to save.';
+  }
+}
+
+async function togglePermDC(username, pid, isDC) {
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  const statusEl = document.getElementById('perm-save-status');
+  if (statusEl) statusEl.textContent = 'Saving...';
+  
+  try {
+    await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'assign',
+        username: username,
+        project_id: pid,
+        is_dc: isDC
+      })
+    });
+    if (u && u.projects) {
+      const pObj = u.projects.find(p => p.project_id === pid);
+      if (pObj) pObj.is_dc = isDC;
+      else u.projects.push({ project_id: pid, is_dc: isDC });
+    }
+    if (statusEl) statusEl.textContent = '✔ Changes saved.';
+    setTimeout(() => { if (statusEl) statusEl.textContent = 'Permissions are applied immediately.'; }, 2000);
+  } catch (e) {
+    toast('Failed to update DC: ' + e.message, 'er');
+    if (statusEl) statusEl.textContent = 'Failed to save.';
+  }
+}
+
+async function permSelectAll(e) {
+  if (e) e.preventDefault();
+  const username = window._ACTIVE_PERM_USER;
+  if (!username) return;
+  const visibleRows = Array.from(document.querySelectorAll('.perm-row')).filter(r => r.style.display !== 'none');
+  for (const row of visibleRows) {
+    const pid = row.getAttribute('data-pid');
+    const chk = document.getElementById('chk-access-' + pid);
+    if (chk && !chk.checked) {
+      chk.checked = true;
+      await togglePermAccess(username, pid, true);
+    }
+  }
+}
+
+async function permClearAll(e) {
+  if (e) e.preventDefault();
+  const username = window._ACTIVE_PERM_USER;
+  if (!username) return;
+  const visibleRows = Array.from(document.querySelectorAll('.perm-row')).filter(r => r.style.display !== 'none');
+  for (const row of visibleRows) {
+    const pid = row.getAttribute('data-pid');
+    const chk = document.getElementById('chk-access-' + pid);
+    if (chk && chk.checked) {
+      chk.checked = false;
+      await togglePermAccess(username, pid, false);
+    }
+  }
+}
+
+function updateUserPermBadge(username) {
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  if (!u) return;
+  const count = (u.projects || []).length;
+  const btn = document.getElementById('perm-btn-' + username);
+  if (btn) {
+    const badge = btn.querySelector('.badge');
+    if (badge) badge.textContent = count;
+  }
+}
+
+// ── Admin Action Handlers ────────────────────────────────────
+async function submitAddUser() {
+  const name = document.getElementById('nu-name')?.value.trim().toLowerCase();
+  const email = document.getElementById('nu-email')?.value.trim();
+  const dept = document.getElementById('nu-dept')?.value || 'ENG';
+  const role = document.getElementById('nu-role')?.value || 'viewer';
+  const pw = document.getElementById('nu-pw')?.value;
+  
+  if (!name || !pw) return toast('Username and password required', 'er');
+  
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'add',
+        username: name,
+        email: email,
+        workspace_id: dept,
+        role: role,
+        password: pw
+      })
+    });
+    if (r && r.ok) {
+      toast('✔ User added successfully', 'ok');
+      toggleAddUserCard();
+      const updatedUsers = await apiFetch('/api/users');
+      if (updatedUsers) {
+        _ADMIN_DATA.users = updatedUsers;
+        renderAdminTable();
+      }
+    } else {
+      toast((r && r.error) || 'Failed to add user', 'er');
+    }
+  } catch (err) {
+    toast('Error adding user: ' + err.message, 'er');
+  }
+}
+
+async function updUsrEmail(username, email) {
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_email', username: username, email: email })
+    });
+    if (r && r.ok) {
+      const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+      if (u) u.email = email;
+      toast('✔ Email updated', 'ok');
+    } else {
+      toast('Failed to update email', 'er');
+    }
+  } catch (e) {
+    toast('Error updating email: ' + e.message, 'er');
+  }
+}
+
+async function updUsrRole(username, role) {
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_role', username: username, role: role })
+    });
+    if (r && r.ok) {
+      const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+      if (u) u.role = role;
+      toast('✔ Role updated', 'ok');
+    } else {
+      toast((r && r.error) || 'Failed to update role', 'er');
+      renderAdminTable();
+    }
+  } catch (e) {
+    toast('Error updating role: ' + e.message, 'er');
+    renderAdminTable();
+  }
+}
+
+async function updUsrDept(username, dept) {
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_department', username: username, department: dept })
+    });
+    if (r && r.ok) {
+      const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+      if (u) u.primary_workspace = dept;
+      toast('✔ Department updated to ' + dept, 'ok');
+      renderAdminTable();
+    } else {
+      toast((r && r.error) || 'Failed to update department', 'er');
+      renderAdminTable();
+    }
+  } catch (e) {
+    toast('Error updating department: ' + e.message, 'er');
+    renderAdminTable();
+  }
+}
+
+async function delUsr(username) {
+  if (!confirm(`Are you sure you want to delete user "${username}"?\nThis cannot be undone.`)) return;
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete', username: username })
+    });
+    if (r && r.ok) {
+      toast('✔ User deleted', 'wa');
+      _ADMIN_DATA.users = (_ADMIN_DATA.users || []).filter(x => x.username !== username);
+      renderAdminTable();
+    } else {
+      toast((r && r.error) || 'Failed to delete user', 'er');
+    }
+  } catch (e) {
+    toast('Error deleting user: ' + e.message, 'er');
+  }
+}
+
+async function chgPw(username) {
+  const pw = prompt(`Set new password for "${username}" (min 4 characters):`);
+  if (!pw || pw.length < 4) return;
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'change_password', username: username, password: pw })
+    });
+    if (r && r.ok) toast('✔ Password changed', 'ok');
+    else toast((r && r.error) || 'Error changing password', 'er');
+  } catch (e) {
+    toast('Error: ' + e.message, 'er');
+  }
+}
+
+async function runSequenceAudit() {
+  const pid = document.getElementById('audit-proj')?.value;
+  const dtId = document.getElementById('audit-dt')?.value;
+  const resEl = document.getElementById('audit-result');
+  if (!resEl) return;
+  if (!pid || !dtId) {
+    resEl.innerHTML = '<div style="padding:8px 12px;background:#fef08a;color:#854d0e;border-radius:4px;">Please select both Project and Document Type.</div>';
+    return;
+  }
+  resEl.innerHTML = '<div style="color:var(--mu)">Auditing document sequences...</div>';
+  try {
+    const r = await apiFetch('/api/audit-sequence?project_id=' + pid + '&dt_id=' + dtId);
+    if (r && !r.error) {
+      if (r.missing && r.missing.length > 0) {
+        resEl.innerHTML = `
+          <div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">
+            <strong>⚠️ Missing Sequences Found!</strong><br>
+            Expected range: ${r.min} to ${r.max}<br>
+            Missing numbers: ${r.missing.join(', ')}
+          </div>
+        `;
+      } else if (r.min === 0 && r.max === 0) {
+        resEl.innerHTML = '<div style="padding:8px 12px;background:#f1f5f9;color:#475569;border-radius:4px;">No numbered documents found to audit.</div>';
+      } else {
+        resEl.innerHTML = `
+          <div style="padding:10px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:4px;">
+            <strong>✅ 100% Intact.</strong> No missing sequence numbers. Range: ${r.min} to ${r.max}.
+          </div>
+        `;
+      }
+    } else {
+      resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">Error: ${(r && r.error) || 'Unknown error'}</div>`;
+    }
+  } catch (e) {
+    resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">Audit failed: ${e.message}</div>`;
+  }
+}
+
+async function exportUsersCSV() {
+  try {
+    const users = _ADMIN_DATA.users || [];
+    const projects = _ADMIN_DATA.projects || [];
+    if (!users.length || !projects.length) return toast('No user data to export', 'er');
+    
+    const pCodeMap = Object.fromEntries(projects.map(p => [p.id, p.code || p.id]));
+    const pNameMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
+    
+    const projHeaders = projects.map(p => `"${String(p.code || p.id).replace(/"/g, '""')}"`);
+    const headers = [
+      "No.",
+      "Username",
+      "Email",
+      "Department",
+      "Role",
+      ...projHeaders,
+      "Total Assigned Projects",
+      "Document Controller (DC)",
+      "Assigned Projects (Detailed List)"
+    ];
+    
+    const projCounts = Object.fromEntries(projects.map(p => [p.id, 0]));
+    
+    const rows = users.map((u, idx) => {
+      const isGlobal = u.role === 'superadmin' || u.role === 'admin';
+      const uProjs = u.projects || [];
+      const userProjMap = Object.fromEntries(uProjs.map(p => [p.project_id, p]));
+      
+      let assignedCount = 0;
+      const projCols = projects.map(p => {
+        if (isGlobal) {
+          assignedCount++;
+          projCounts[p.id]++;
+          return '"Admin"';
+        }
+        const up = userProjMap[p.id];
+        if (up) {
+          assignedCount++;
+          projCounts[p.id]++;
+          if (u.role === 'editor') return '"Editor"';
+          if (up.is_dc) return '"DC (Viewer)"';
+          return '"Viewer"';
+        }
+        return '"—"';
+      });
+      
+      const deptName = (u.primary_workspace || 'ENG') === 'OM' ? 'Operation & Maintenance' : 'Engineering & Projects';
+      const totalCol = isGlobal ? `"${projects.length} (All)"` : `"${assignedCount}"`;
+      const dcList = isGlobal ? 'Global (Admin)' : (uProjs.filter(p => p.is_dc).map(p => pCodeMap[p.project_id] || p.project_id).join(' | ') || 'No');
+      const projDetailedList = isGlobal ? 'All Projects (Global Access)' : (uProjs.map(p => pNameMap[p.project_id] || p.project_id).join(' | ') || 'None');
+      
+      return [
+        `"${idx + 1}"`,
+        `"${String(u.username||'').replace(/"/g, '""')}"`,
+        `"${String(u.email||'—').replace(/"/g, '""')}"`,
+        `"${deptName}"`,
+        `"${String(u.role||'').toUpperCase()}"`,
+        ...projCols,
+        totalCol,
+        `"${String(dcList).replace(/"/g, '""')}"`,
+        `"${String(projDetailedList).replace(/"/g, '""')}"`
+      ];
+    });
+    
+    const footerProjCounts = projects.map(p => `"${projCounts[p.id]} Users"`);
+    const footerRow = [
+      '""',
+      '"Total Authorized Users Per Project"',
+      '""',
+      '""',
+      '""',
+      ...footerProjCounts,
+      `"${users.length} Total Users"`,
+      '""',
+      '""'
+    ];
+    
+    const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(r => r.join(',')), footerRow.join(',')].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `GasChill_DCR_Users_Matrix_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast('✔ Users Matrix exported to CSV', 'ok');
+  } catch (e) {
+    toast('Export failed: ' + e.message, 'er');
+  }
+}
+
 </script>"""
 
 
@@ -5272,14 +6303,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   </div>
 </div>
 
-<!-- ADMIN MODAL (dashboard) -->
-<div class="overlay hidden" id="admin-modal">
-  <div class="modal" style="max-width:780px">
-    <div class="mhdr"><span>⚙<span class="tb-btn-text"> Admin</span> Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
-    <div class="mbody" id="admin-body"></div>
-    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
-  </div>
-</div>
+
 
 {SHARED_JS}
 <script>
@@ -6344,294 +7368,7 @@ async function delProject(pid,name){{
   else toast((r&&r.error)||'Error','er');
 }}
 
-// ── Admin Panel ─────────────────────────────────────────
-async function openAdmin(){{
-  const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
-  if(!users||!projects)return;
-  const body=document.getElementById('admin-body');body.innerHTML='';
-  // Remove top padding reset if any
-  body.style.paddingTop = '';
-  
-  // Create static header outside of scrolling body
-  let existingUtitle = document.getElementById('admin-utitle');
-  if (existingUtitle) existingUtitle.remove();
-  
-  const utitle=document.createElement('div');
-  utitle.id='admin-utitle';
-  utitle.style.cssText = 'padding:12px 18px; border-bottom:1px solid var(--bd); background:var(--wh, #fff); display:flex; justify-content:space-between; align-items:center;';
-  utitle.innerHTML=`<div><strong style="font-size:13px;color:var(--tx)">👥 Users</strong> <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span></div> <div style="display:flex;gap:8px;align-items:center"><button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">📥 Export Matrix</button><input type="text" placeholder="Search users by name or email..." style="padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 220px; font-weight: normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})"></div>`;
-  
-  body.parentNode.insertBefore(utitle, body);
-  for(const u of users){{
-    const assigned_cached = u.projects || [];
-    const uwrap=document.createElement('div');uwrap.className='urow-wrapper';
-    const row=document.createElement('div');row.className='urow';row.style.display='flex';row.style.gap='8px';row.style.alignItems='center';
-    row.innerHTML=`<span style="flex:1;font-weight:600;min-width:120px">👤 ${{u.username}}</span>
-      <input id="email-${{u.username}}" placeholder="Email (e.g. dc@company.com)" value="${{u.email || ''}}" style="flex:1.5; margin-right: 8px; padding: 4px 6px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px;" oninput="const b=this.parentElement.querySelector('.role-save-btn'); if(b) {{b.style.opacity='1'; b.style.pointerEvents='auto'; b.style.filter='none';}}" onblur="updUsrEmail('${{u.username}}')">
-      ${{u.username!=='admin'?`<button class="btn btn-sc btn-sm" onclick="chgPw('${{u.username}}')">🔑 PW</button>
-        <button class="btn btn-er btn-sm" style="background:transparent;color:var(--er);border-color:transparent;font-size:14px;padding:0 4px" title="Delete User" onclick="if(confirm('Are you sure you want to delete this user?')) delUsr('${{u.username}}')">🗑️</button>`:
-        '<span style="flex:0 0 auto;font-size:10px;color:var(--mu)">(protected)</span>'}}`;
-    if(u.username!=='admin'){{
-      const roleSel=document.createElement('select');
-      roleSel.id='role-'+u.username;
-      roleSel.className='btn btn-sc btn-sm';
-      roleSel.style.cssText='height:auto;padding:4px 8px;outline:none;';
-      roleSel.setAttribute('onchange', "this.nextSibling.style.opacity='1'; this.nextSibling.style.pointerEvents='auto'; this.nextSibling.style.filter='none';");
-      roleSel.innerHTML=['viewer','editor','admin','superadmin'].map(r=>`<option value="${{r}}" ${{u.role===r?'selected':''}}>${{r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}}</option>`).join('');
-      const roleBtn=document.createElement('button');
-      roleBtn.className='btn btn-pr btn-sm role-save-btn';
-      roleBtn.style.cssText='opacity:0.4; pointer-events:none; filter:grayscale(100%); transition:all 0.2s';
-      roleBtn.textContent='Save Role';
-      roleBtn.onclick=()=>updUsrRole(u.username);
-      row.insertBefore(roleSel,row.children[1]||null);
-      row.insertBefore(roleBtn,row.children[2]||null);
-    }}
-    uwrap.appendChild(row);body.appendChild(uwrap);
-    if(u.role!=='superadmin'){{
-      const ad=document.createElement('div');
-      ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
-      ad.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:10px;color:var(--mu)">Project access:</div><div><a href="#" style="font-size:9px;margin-right:8px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on!==\\'1\\') b.click(); }})">Select All</a><a href="#" style="font-size:9px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on===\\'1\\') b.click(); }})">Clear All</a></div></div>';
-      const assigned=assigned_cached;
-      const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:5px';
-      projects.forEach(p=>{{
-        const projAccess = assigned.find(a => a.project_id === p.id);
-        const isOn = !!projAccess;
-        const isDC = isOn && projAccess.is_dc;
-        const btn=document.createElement('button');
-        btn.style.cssText='padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;transition:all .15s;border:2px solid '+(isDC?'#22c55e':(isOn?'#f0a500':'#e2e8f0'))+';background:'+(isOn?'#1a3a5c':'#f8fafc')+';color:'+(isOn?'#fff':'#94a3b8');
-        btn.textContent=p.code + (isDC ? ' (DC)' : '');
-        btn.title=p.name + " | Left-click to assign access. Right-click to set as Project DC";
-        if(isOn)btn.dataset.on='1';
-        
-        btn.onclick=async()=>{{
-          const on=!!btn.dataset.on;
-          btn.dataset.on = on ? '' : '1';
-          const isOn = !on;
-          btn.style.borderColor = isDC?'#22c55e':(isOn?'#f0a500':'#e2e8f0');
-          btn.style.background = isOn?'#1a3a5c':'#f8fafc';
-          btn.style.color = isOn?'#fff':'#94a3b8';
-          btn.textContent = p.code + (isDC ? ' (DC)' : '');
-          try {{
-            await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id,is_dc:false}})}});
-          }} catch(e) {{ openAdmin(); }}
-        }};
-        
-        btn.oncontextmenu = async (e) => {{
-          e.preventDefault();
-          const currIsOn = !!btn.dataset.on;
-          if(!currIsOn) return toast('User must be assigned to project first','wa');
-          await apiFetch('/api/users', {{method:'POST', body:JSON.stringify({{action:'assign',username:u.username,project_id:p.id, is_dc: !isDC}})}});
-          openAdmin(); // Reload to refresh isDC constant state accurately
-        }};
-        
-        pl.appendChild(btn);
-      }});
-      ad.appendChild(pl);uwrap.appendChild(ad);
-    }}
-  }}
-  const at=document.createElement('div');at.className='stitle';at.textContent='➕ Add User';body.appendChild(at);
-  const ar=document.createElement('div');
-  ar.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1.5fr 1fr 1fr auto;gap:8px;align-items:end">
-    <div class="fg"><label>Username</label><input id="nu-name" placeholder="username"></div>
-    <div class="fg"><label>Email</label><input id="nu-email" placeholder="Email"></div>
-    <div class="fg"><label>Role</label><select id="nu-role">
-      <option value="editor">Editor</option><option value="viewer">Viewer</option>
-      <option value="admin">Admin</option></select></div>
-    <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
-    <button class="btn btn-pr btn-sm" onclick="addUsr()">Add</button></div>`;
-  
-  
-  // --- Global Sequence Audit ---
-  const auditCard = document.createElement('div');
-  auditCard.style.cssText = 'margin-top:20px; padding: 15px; border:1px solid var(--bd); border-radius: 8px; background: var(--card, #fff); margin-bottom: 20px;';
-  
-  let projOptions = projects.map(p => `<option value="${{p.id}}">${{p.code}} - ${{p.name}}</option>`).join('');
-  
-  auditCard.innerHTML = `
-    <h3 style="margin-top:0;font-size:14px;color:var(--tx);margin-bottom:4px;">Global Sequence Audit</h3>
-    <p style="font-size:11px;color:var(--mu);margin-bottom:12px;">Detect missing sequence numbers (gaps) in document logs.</p>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-       <select id="audit-proj" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
-          <option value="">Select Project</option>
-          ${{projOptions}}
-       </select>
-       <select id="audit-dt" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
-          <option value="">Select Doc Type</option>
-       </select>
-       <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
-    </div>
-    <div id="audit-result" style="font-size:12px;margin-top:10px;"></div>
-  `;
-  body.appendChild(auditCard);
-  
-  document.getElementById('audit-proj').addEventListener('change', async (e) => {{
-      const pid = e.target.value;
-      const dtSel = document.getElementById('audit-dt');
-      dtSel.innerHTML = '<option value="">Select Doc Type</option>';
-      if(!pid) return;
-      const dts = await apiFetch('/api/doc_types/' + pid);
-      if(dts) {{
-          dtSel.innerHTML += dts.map(d => `<option value="${{d.id}}">${{d.code}} - ${{d.name}}</option>`).join('');
-      }}
-  }});
-  
-  window.runSequenceAudit = async () => {{
-      const pid = document.getElementById('audit-proj').value;
-      const dtId = document.getElementById('audit-dt').value;
-      const resEl = document.getElementById('audit-result');
-      if(!pid || !dtId) {{
-          resEl.innerHTML = '<div style="padding:10px;background:#fef08a;color:#854d0e;border-radius:4px;">Please select both Project and Document Type.</div>';
-          return;
-      }}
-      resEl.innerHTML = '<div style="color:var(--mu)">Auditing...</div>';
-      const r = await apiFetch('/api/audit-sequence?project_id='+pid+'&dt_id='+dtId);
-      if(r && !r.error) {{
-          if(r.missing && r.missing.length > 0) {{
-              resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">
-                 <strong>⚠️ Missing Sequences Found!</strong><br>
-                 Expected range: ${{r.min}} to ${{r.max}}<br>
-                 Missing: ${{r.missing.join(', ')}}
-              </div>`;
-          }} else if(r.min === 0 && r.max === 0) {{
-              resEl.innerHTML = `<div style="padding:10px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;">No numbered documents found to audit.</div>`;
-          }} else {{
-              resEl.innerHTML = `<div style="padding:10px;background:#dcfce3;color:#166534;border:1px solid #86efac;border-radius:4px;">
-                 <strong>✅ 100% Intact.</strong><br>
-                 No missing sequences detected. Range: ${{r.min}} to ${{r.max}}.
-              </div>`;
-          }}
-      }} else {{
-          resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">Error running audit: ${{r?r.error:'Unknown'}}</div>`;
-      }}
-  }};
-
-  body.appendChild(ar);openM('admin-modal');
-}}
-async function addUsr(){{
-  const name=document.getElementById('nu-name')?.value.trim().toLowerCase();
-  const role=document.getElementById('nu-role')?.value;
-  const pw=document.getElementById('nu-pw')?.value;
-  const email=document.getElementById('nu-email')?.value;
-  if(!name||!pw){{toast('Username and password required','er');return;}}
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw,email:email}})}});
-  if(r&&r.ok){{toast('✔ User added','ok');closeM('admin-modal');openAdmin();}}
-  else toast((r&&r.error)||'Error','er');
-}}
-async function delUsr(u){{
-  if(!confirm('Delete user: '+u+'?'))return;
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'delete',username:u}})}});
-  if(r&&r.ok){{toast('Deleted','wa');closeM('admin-modal');openAdmin();}}
-}}
-async function chgPw(u){{
-  const pw=prompt('New password for '+u+':');if(!pw)return;
-  await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
-  toast('✔ Password changed','ok');
-}}
-
-// ── Audit Log ────────────────────────────────────────────────
-async function updUsrEmail(u){{
-  const email=document.getElementById('email-'+u)?.value;
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_email',username:u,email}})}});
-  if(r&&r.ok) toast('Email saved','ok'); else toast('Failed to save email','er');
-}}
-async function updUsrRole(u){{
-  const role=document.getElementById('role-'+u)?.value;
-  if(!role)return;
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_role',username:u,role}})}});
-  if(r&&r.ok){{toast('Role updated','ok');closeM('admin-modal');openAdmin();}}
-  else toast((r&&r.error)||'Role update failed','er');
-}}
-
-async function exportUsersCSV(){{
-  try {{
-    const [users, projects] = await Promise.all([apiFetch('/api/users'), apiFetch('/api/projects')]);
-    if(!users || !projects) return toast('Failed to fetch users or projects', 'er');
-    
-    // Sort projects cleanly by code
-    projects.sort((a,b) => String(a.code || a.id).localeCompare(String(b.code || b.id)));
-    const pCodeMap = Object.fromEntries(projects.map(p => [p.id, p.code || p.id]));
-    const pNameMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
-    
-    const projHeaders = projects.map(p => `"${{String(p.code || p.id).replace(/"/g, '""')}}"`);
-    const headers = [
-      "No.",
-      "Username",
-      "Email",
-      "Role",
-      ...projHeaders,
-      "Total Assigned Projects",
-      "Document Controller (DC)",
-      "Assigned Projects (Detailed List)"
-    ];
-    
-    const projCounts = Object.fromEntries(projects.map(p => [p.id, 0]));
-    
-    const rows = users.map((u, idx) => {{
-      const isGlobal = u.role === 'superadmin' || u.role === 'admin';
-      const uProjs = u.projects || [];
-      const userProjMap = Object.fromEntries(uProjs.map(p => [p.project_id, p]));
-      
-      let assignedCount = 0;
-      const projCols = projects.map(p => {{
-        if (isGlobal) {{
-          assignedCount++;
-          projCounts[p.id]++;
-          return '"Admin"';
-        }}
-        const up = userProjMap[p.id];
-        if (up) {{
-          assignedCount++;
-          projCounts[p.id]++;
-          if (u.role === 'editor') return '"Editor"';
-          if (up.is_dc) return '"DC (Viewer)"';
-          return '"Viewer"';
-        }}
-        return '"—"';
-      }});
-      
-      const totalCol = isGlobal ? `"${{projects.length}} (All)"` : `"${{assignedCount}}"`;
-      const dcList = isGlobal ? 'Global (Admin)' : (uProjs.filter(p => p.is_dc).map(p => pCodeMap[p.project_id] || p.project_id).join(' | ') || 'No');
-      const projDetailedList = isGlobal ? 'All Projects (Global Access)' : (uProjs.map(p => pNameMap[p.project_id] || p.project_id).join(' | ') || 'None');
-      
-      return [
-        `"${{idx + 1}}"`,
-        `"${{String(u.username||'').replace(/"/g, '""')}}"`,
-        `"${{String(u.email||'—').replace(/"/g, '""')}}"`,
-        `"${{String(u.role||'').toUpperCase()}}"`,
-        ...projCols,
-        totalCol,
-        `"${{String(dcList).replace(/"/g, '""')}}"`,
-        `"${{String(projDetailedList).replace(/"/g, '""')}}"`
-      ];
-    }});
-    
-    // Totals Summary Footer
-    const footerProjCounts = projects.map(p => `"${{projCounts[p.id]}} Users"`);
-    const footerRow = [
-      '""',
-      '"Total Authorized Users Per Project"',
-      '""',
-      '""',
-      ...footerProjCounts,
-      `"${{users.length}} Total Users"`,
-      '""',
-      '""'
-    ];
-    
-    const csvContent = "\\uFEFF" + [headers.join(','), ...rows.map(r => r.join(',')), footerRow.join(',')].join('\\r\\n');
-    const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `GasChill_DCR_Users_Matrix_${{new Date().toISOString().slice(0,10)}}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    toast('✔ Users Matrix exported to CSV', 'ok');
-  }} catch(e) {{
-    toast('Export failed: ' + e.message, 'er');
-  }}
-}}
-
+// Admin functions loaded from SHARED_JS
 let _auditOffset=0,_auditHasMore=true;
 const ACTION_COLORS={{
   'ADD':'#166534','EDIT':'#1d4ed8','DELETE':'#991b1b',
@@ -7695,13 +8432,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   </div>
 </div>
 
-<!-- ADMIN MODAL (register page) -->
-<div class="overlay hidden" id="admin-modal">
-  <div class="modal" style="max-width:780px">
-    <div class="mhdr"><span>⚙<span class="tb-btn-text"> Admin</span> Panel</span><button class="xbtn" onclick="closeM('admin-modal')">✕</button></div>
-    <div class="mbody" id="admin-body"></div>
-    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('admin-modal')">Close</button></div>
-  </div>
+
 </div>
 
 {SHARED_JS}
@@ -8645,10 +9376,10 @@ function renderRows(){{
                if(!SC[it.item_status]){{
                  const up=it.item_status.toUpperCase();
                  if(up.includes('CANCELLED')) [bg,fg]=['6c757d','ffffff'];
-                 else if(/^A(-|\s|$)/.test(up) || up.includes('APPROVED')) [bg,fg]=['bbf7d0','166534'];
-                 else if(/^B(-|\s|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
-                 else if(/^C(-|\s|$)/.test(up) || up.includes('REVISE')) [bg,fg]=['fed7aa','9a3412'];
-                 else if(/^D(-|\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
+                 else if(/^A(-|\\s|$)/.test(up) || up.includes('APPROVED')) [bg,fg]=['bbf7d0','166534'];
+                 else if(/^B(-|\\s|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
+                 else if(/^C(-|\\s|$)/.test(up) || up.includes('REVISE')) [bg,fg]=['fed7aa','9a3412'];
+                 else if(/^D(-|\\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
                }}
                stHtml = ` <span class="sbadge" style="background:#${{bg}};color:#${{fg}};font-size:9.5px;padding:1.5px 5px;margin-left:4px;vertical-align:middle" title="${{escHtml(it.item_status)}}">${{escHtml(shortStatus)}}</span>`;
             }}
@@ -10907,290 +11638,7 @@ async function saveAddCol(){{
   closeM('addcol-modal');closeM('col-modal');await loadRecords();toast('✔ Column added','ok');
 }}
 
-// Admin Panel (same as dashboard)
-async function openAdmin(){{
-  const [users,projects]=await Promise.all([apiFetch('/api/users'),apiFetch('/api/projects')]);
-  if(!users||!projects) return;
-  
-  const body=document.getElementById('admin-body'); body.innerHTML='';
-  // Remove top padding reset if any
-  body.style.paddingTop = '';
-  
-  // Create static header outside of scrolling body
-  let existingUtitle = document.getElementById('admin-utitle');
-  if (existingUtitle) existingUtitle.remove();
-  
-  const utitle=document.createElement('div');
-  utitle.id='admin-utitle';
-  utitle.style.cssText = 'padding:12px 18px; border-bottom:1px solid var(--bd); background:var(--wh, #fff); display:flex; justify-content:space-between; align-items:center;';
-  utitle.innerHTML=`<div><strong style="font-size:13px;color:var(--tx)">👥 Users</strong> <span class="badge" style="margin-left:8px;background:var(--pr);color:#fff">${{users.length}}</span></div> <div style="display:flex;gap:8px;align-items:center"><button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">📥 Export Matrix</button><input type="text" placeholder="Search users by name or email..." style="padding: 4px 8px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px; width: 220px; font-weight: normal;" oninput="const q=this.value.toLowerCase(); Array.from(document.querySelectorAll('.urow-wrapper')).forEach(c=>{{c.style.display=c.innerText.toLowerCase().includes(q)?'block':'none';}})"></div>`;
-  
-  body.parentNode.insertBefore(utitle, body);
-  for(const u of users){{
-    const assigned_cached = u.projects || [];
-    const uwrap=document.createElement('div');uwrap.className='urow-wrapper';
-    const row=document.createElement('div');row.className='urow';row.style.display='flex';row.style.gap='8px';row.style.alignItems='center';
-    row.innerHTML=`<span style="flex:1;font-weight:600;min-width:120px">👤 ${{u.username}}</span>
-      <input id="email-${{u.username}}" placeholder="Email (e.g. dc@company.com)" value="${{u.email || ''}}" style="flex:1.5; margin-right: 8px; padding: 4px 6px; font-size: 11px; border: 1px solid var(--bd); border-radius: 4px;" oninput="const b=this.parentElement.querySelector('.role-save-btn'); if(b) {{b.style.opacity='1'; b.style.pointerEvents='auto'; b.style.filter='none';}}" onblur="updUsrEmail('${{u.username}}')">
-      ${{u.username!=='admin'?`<button class="btn btn-sc btn-sm" onclick="chgPw('${{u.username}}')">🔑 PW</button>
-        <button class="btn btn-er btn-sm" style="background:transparent;color:var(--er);border-color:transparent;font-size:14px;padding:0 4px" title="Delete User" onclick="if(confirm('Are you sure you want to delete this user?')) delUsr('${{u.username}}')">🗑️</button>`:
-        '<span style="flex:0 0 auto;font-size:10px;color:var(--mu)">(protected)</span>'}}`;
-    uwrap.appendChild(row);body.appendChild(uwrap);
-    if(u.username!=='admin'){{
-      const roleSel=document.createElement('select');
-      roleSel.id='role-'+u.username;
-      roleSel.className='btn btn-sc btn-sm';
-      roleSel.style.cssText='height:auto;padding:4px 8px;outline:none;';
-      roleSel.setAttribute('onchange', "this.nextSibling.style.opacity='1'; this.nextSibling.style.pointerEvents='auto'; this.nextSibling.style.filter='none';");
-      roleSel.innerHTML=['viewer','editor','admin','superadmin'].map(r=>`<option value="${{r}}" ${{u.role===r?'selected':''}}>${{r==='superadmin'?'Super Admin':r.charAt(0).toUpperCase()+r.slice(1)}}</option>`).join('');
-      const roleBtn=document.createElement('button');
-      roleBtn.className='btn btn-pr btn-sm role-save-btn';
-      roleBtn.style.cssText='opacity:0.4; pointer-events:none; filter:grayscale(100%); transition:all 0.2s';
-      roleBtn.textContent='Save Role';
-      roleBtn.onclick=()=>updUsrRole(u.username);
-      row.insertBefore(roleSel,row.children[1]||null);
-      row.insertBefore(roleBtn,row.children[2]||null);
-    }}
-    if(u.role!=='superadmin'){{
-      const ad=document.createElement('div');ad.style.cssText='padding:4px 10px 10px 32px;border-bottom:1px solid var(--bd);margin-bottom:4px';
-      ad.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:10px;color:var(--mu)">Project access:</div><div><a href="#" style="font-size:9px;margin-right:8px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on!==\\'1\\') b.click(); }})">Select All</a><a href="#" style="font-size:9px;color:var(--pr);text-decoration:none" onclick="event.preventDefault(); Array.from(this.parentElement.parentElement.nextElementSibling.children).forEach(b => {{ if(b.dataset.on===\\'1\\') b.click(); }})">Clear All</a></div></div>';
-      const assigned=assigned_cached;
-      const pl=document.createElement('div');pl.style.cssText='display:flex;flex-wrap:wrap;gap:5px';
-      projects.forEach(p=>{{
-        const projAccess = assigned.find(a => a.project_id === p.id);
-        const isOn = !!projAccess;
-        const isDC = isOn && projAccess.is_dc;
-        const btn=document.createElement('button');
-        btn.style.cssText='padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;transition:all .15s;border:2px solid '+(isDC?'#22c55e':(isOn?'#f0a500':'#e2e8f0'))+';background:'+(isOn?'#1a3a5c':'#f8fafc')+';color:'+(isOn?'#fff':'#94a3b8');
-        btn.textContent=p.code + (isDC ? ' (DC)' : '');
-        btn.title=p.name + " | Left-click to assign access. Right-click to set as Project DC";
-        if(isOn)btn.dataset.on='1';
-        
-        btn.onclick=async()=>{{
-          const on=!!btn.dataset.on;
-          btn.dataset.on = on ? '' : '1';
-          const isOn = !on;
-          btn.style.borderColor = isDC?'#22c55e':(isOn?'#f0a500':'#e2e8f0');
-          btn.style.background = isOn?'#1a3a5c':'#f8fafc';
-          btn.style.color = isOn?'#fff':'#94a3b8';
-          btn.textContent = p.code + (isDC ? ' (DC)' : '');
-          try {{
-            await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:on?'unassign':'assign',username:u.username,project_id:p.id,is_dc:false}})}});
-          }} catch(e) {{ openAdmin(); }}
-        }};
-        
-        btn.oncontextmenu = async (e) => {{
-          e.preventDefault();
-          const currIsOn = !!btn.dataset.on;
-          if(!currIsOn) return toast('User must be assigned to project first','wa');
-          await apiFetch('/api/users', {{method:'POST', body:JSON.stringify({{action:'assign',username:u.username,project_id:p.id, is_dc: !isDC}})}});
-          openAdmin(); // Reload to refresh isDC constant state accurately
-        }};
-        
-        pl.appendChild(btn);
-      }});
-      ad.appendChild(pl);uwrap.appendChild(ad);
-    }}
-  }}
-  const at=document.createElement('div');at.className='stitle';at.textContent='➕ Add User';body.appendChild(at);
-  const ar=document.createElement('div');
-  ar.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1.5fr 1fr 1fr auto;gap:8px;align-items:end">
-    <div class="fg"><label>Username</label><input id="nu-name" placeholder="username"></div>
-    <div class="fg"><label>Email</label><input id="nu-email" placeholder="Email"></div>
-    <div class="fg"><label>Role</label><select id="nu-role">
-      <option value="editor">Editor</option><option value="viewer">Viewer</option>
-      <option value="superadmin">Super Admin</option></select></div>
-    <div class="fg"><label>Password</label><input id="nu-pw" type="password"></div>
-    <button class="btn btn-pr btn-sm" style="margin-bottom:1px" onclick="addUsr()">Add</button></div>`;
-  
-  
-  // --- Global Sequence Audit ---
-  const auditCard = document.createElement('div');
-  auditCard.style.cssText = 'margin-top:20px; padding: 15px; border:1px solid var(--bd); border-radius: 8px; background: var(--card, #fff); margin-bottom: 20px;';
-  
-  let projOptions = projects.map(p => `<option value="${{p.id}}">${{p.code}} - ${{p.name}}</option>`).join('');
-  
-  auditCard.innerHTML = `
-    <h3 style="margin-top:0;font-size:14px;color:var(--tx);margin-bottom:4px;">Global Sequence Audit</h3>
-    <p style="font-size:11px;color:var(--mu);margin-bottom:12px;">Detect missing sequence numbers (gaps) in document logs.</p>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-       <select id="audit-proj" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
-          <option value="">Select Project</option>
-          ${{projOptions}}
-       </select>
-       <select id="audit-dt" class="btn btn-sc btn-sm" style="height:auto;padding:6px 10px;outline:none;min-width:150px;background:var(--wh, #fff);border:1px solid var(--bd);">
-          <option value="">Select Doc Type</option>
-       </select>
-       <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
-    </div>
-    <div id="audit-result" style="font-size:12px;margin-top:10px;"></div>
-  `;
-  body.appendChild(auditCard);
-  
-  document.getElementById('audit-proj').addEventListener('change', async (e) => {{
-      const pid = e.target.value;
-      const dtSel = document.getElementById('audit-dt');
-      dtSel.innerHTML = '<option value="">Select Doc Type</option>';
-      if(!pid) return;
-      const dts = await apiFetch('/api/doc_types/' + pid);
-      if(dts) {{
-          dtSel.innerHTML += dts.map(d => `<option value="${{d.id}}">${{d.code}} - ${{d.name}}</option>`).join('');
-      }}
-  }});
-  
-  window.runSequenceAudit = async () => {{
-      const pid = document.getElementById('audit-proj').value;
-      const dtId = document.getElementById('audit-dt').value;
-      const resEl = document.getElementById('audit-result');
-      if(!pid || !dtId) {{
-          resEl.innerHTML = '<div style="padding:10px;background:#fef08a;color:#854d0e;border-radius:4px;">Please select both Project and Document Type.</div>';
-          return;
-      }}
-      resEl.innerHTML = '<div style="color:var(--mu)">Auditing...</div>';
-      const r = await apiFetch('/api/audit-sequence?project_id='+pid+'&dt_id='+dtId);
-      if(r && !r.error) {{
-          if(r.missing && r.missing.length > 0) {{
-              resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">
-                 <strong>⚠️ Missing Sequences Found!</strong><br>
-                 Expected range: ${{r.min}} to ${{r.max}}<br>
-                 Missing: ${{r.missing.join(', ')}}
-              </div>`;
-          }} else if(r.min === 0 && r.max === 0) {{
-              resEl.innerHTML = `<div style="padding:10px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;">No numbered documents found to audit.</div>`;
-          }} else {{
-              resEl.innerHTML = `<div style="padding:10px;background:#dcfce3;color:#166534;border:1px solid #86efac;border-radius:4px;">
-                 <strong>✅ 100% Intact.</strong><br>
-                 No missing sequences detected. Range: ${{r.min}} to ${{r.max}}.
-              </div>`;
-          }}
-      }} else {{
-          resEl.innerHTML = `<div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">Error running audit: ${{r?r.error:'Unknown'}}</div>`;
-      }}
-  }};
-
-  body.appendChild(ar);openM('admin-modal');
-}}
-async function addUsr(){{
-  const name=document.getElementById('nu-name')?.value.trim().toLowerCase();
-  const role=document.getElementById('nu-role')?.value;
-  const pw=document.getElementById('nu-pw')?.value;
-  const email=document.getElementById('nu-email')?.value || '';
-  if(!name||!pw){{toast('Username and password required','er');return;}}
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'add',username:name,role,password:pw,email:email}})}});
-  if(r&&r.ok){{toast('✔ User added','ok');closeM('admin-modal');openAdmin();}}else toast((r&&r.error)||'Error','er');
-}}
-async function delUsr(u){{if(!confirm('Delete user: '+u+'?'))return;
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'delete',username:u}})}});
-  if(r&&r.ok){{toast('Deleted','wa');closeM('admin-modal');openAdmin();}}
-}}
-async function chgPw(u){{const pw=prompt('New password for '+u+':');if(!pw)return;
-  await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'change_password',username:u,password:pw}})}});
-  toast('✔ Password changed','ok');
-}}
-
-async function updUsrEmail(u){{
-  const email=document.getElementById('email-'+u)?.value;
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_email',username:u,email}})}});
-  if(r&&r.ok) toast('Email saved','ok'); else toast('Failed to save email','er');
-}}
-async function updUsrRole(u){{
-  const role=document.getElementById('role-'+u)?.value;
-  if(!role)return;
-  const r=await apiFetch('/api/users',{{method:'POST',body:JSON.stringify({{action:'update_role',username:u,role}})}});
-  if(r&&r.ok){{toast('Role updated','ok');closeM('admin-modal');openAdmin();}}
-  else toast((r&&r.error)||'Role update failed','er');
-}}
-
-async function exportUsersCSV(){{
-  try {{
-    const [users, projects] = await Promise.all([apiFetch('/api/users'), apiFetch('/api/projects')]);
-    if(!users || !projects) return toast('Failed to fetch users or projects', 'er');
-    
-    // Sort projects cleanly by code
-    projects.sort((a,b) => String(a.code || a.id).localeCompare(String(b.code || b.id)));
-    const pCodeMap = Object.fromEntries(projects.map(p => [p.id, p.code || p.id]));
-    const pNameMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
-    
-    const projHeaders = projects.map(p => `"${{String(p.code || p.id).replace(/"/g, '""')}}"`);
-    const headers = [
-      "No.",
-      "Username",
-      "Email",
-      "Role",
-      ...projHeaders,
-      "Total Assigned Projects",
-      "Document Controller (DC)",
-      "Assigned Projects (Detailed List)"
-    ];
-    
-    const projCounts = Object.fromEntries(projects.map(p => [p.id, 0]));
-    
-    const rows = users.map((u, idx) => {{
-      const isGlobal = u.role === 'superadmin' || u.role === 'admin';
-      const uProjs = u.projects || [];
-      const userProjMap = Object.fromEntries(uProjs.map(p => [p.project_id, p]));
-      
-      let assignedCount = 0;
-      const projCols = projects.map(p => {{
-        if (isGlobal) {{
-          assignedCount++;
-          projCounts[p.id]++;
-          return '"Admin"';
-        }}
-        const up = userProjMap[p.id];
-        if (up) {{
-          assignedCount++;
-          projCounts[p.id]++;
-          if (u.role === 'editor') return '"Editor"';
-          if (up.is_dc) return '"DC (Viewer)"';
-          return '"Viewer"';
-        }}
-        return '"—"';
-      }});
-      
-      const totalCol = isGlobal ? `"${{projects.length}} (All)"` : `"${{assignedCount}}"`;
-      const dcList = isGlobal ? 'Global (Admin)' : (uProjs.filter(p => p.is_dc).map(p => pCodeMap[p.project_id] || p.project_id).join(' | ') || 'No');
-      const projDetailedList = isGlobal ? 'All Projects (Global Access)' : (uProjs.map(p => pNameMap[p.project_id] || p.project_id).join(' | ') || 'None');
-      
-      return [
-        `"${{idx + 1}}"`,
-        `"${{String(u.username||'').replace(/"/g, '""')}}"`,
-        `"${{String(u.email||'—').replace(/"/g, '""')}}"`,
-        `"${{String(u.role||'').toUpperCase()}}"`,
-        ...projCols,
-        totalCol,
-        `"${{String(dcList).replace(/"/g, '""')}}"`,
-        `"${{String(projDetailedList).replace(/"/g, '""')}}"`
-      ];
-    }});
-    
-    // Totals Summary Footer
-    const footerProjCounts = projects.map(p => `"${{projCounts[p.id]}} Users"`);
-    const footerRow = [
-      '""',
-      '"Total Authorized Users Per Project"',
-      '""',
-      '""',
-      ...footerProjCounts,
-      `"${{users.length}} Total Users"`,
-      '""',
-      '""'
-    ];
-    
-    const csvContent = "\\uFEFF" + [headers.join(','), ...rows.map(r => r.join(',')), footerRow.join(',')].join('\\r\\n');
-    const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `GasChill_DCR_Users_Matrix_${{new Date().toISOString().slice(0,10)}}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    toast('✔ Users Matrix exported to CSV', 'ok');
-  }} catch(e) {{
-    toast('Export failed: ' + e.message, 'er');
-  }}
-}}
-
+// Admin functions loaded from SHARED_JS
 function populateExportScope(){{
   const sel=document.getElementById('export-scope');
   if(!sel)return;

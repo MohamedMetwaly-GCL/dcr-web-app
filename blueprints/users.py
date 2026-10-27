@@ -169,15 +169,23 @@ def api_users_action():
                       detail=f"Unassigned project '{pid}' from '{uname}'")
         return jsonify(ok=True)
 
-    if action == "assign_workspace":
-        uname = data.get("username", "")
-        ws_id = data.get("workspace_id", "")
-        ws_role = data.get("role", "viewer")
+    if action in ("assign_workspace", "update_workspace", "update_department"):
+        uname = data.get("username", "").strip().lower()
+        ws_id = data.get("workspace_id") or data.get("department", "")
+        target_user = db.get_user(uname)
+        if not target_user:
+            return jsonify(ok=False, error="User not found"), 404
+        ws_role = data.get("role") or target_user.get("role", "viewer")
         if not is_super:
             if ws_id not in admin_ws:
                 return jsonify(ok=False, error="Cannot assign workspace outside your authority"), 403
             if ws_role == "superadmin":
                 return jsonify(ok=False, error="Cannot grant superadmin"), 403
+            target_workspaces = [w["id"] for w in db.get_user_workspaces(uname)]
+            if not any(w in admin_ws for w in target_workspaces):
+                return jsonify(ok=False, error="Cannot modify user from another department"), 403
+        if hasattr(db, "set_user_primary_workspace"):
+            db.set_user_primary_workspace(uname, ws_id)
         db.assign_user_workspace(uname, ws_id, ws_role)
         db.log_action(u["username"], "WORKSPACE_ASSIGN", detail=f"Assigned workspace '{ws_id}' to '{uname}' (Role: {ws_role})")
         return jsonify(ok=True)
