@@ -1544,7 +1544,15 @@ def get_records_meta(record_ids):
     if not record_ids:
         return []
     return q("""
-        SELECT id, project_id, dt_id, COALESCE(data->>'docNo','') AS doc_no
+        SELECT id, project_id, dt_id,
+               COALESCE(
+                   NULLIF(data->>'docNo', ''),
+                   NULLIF(data->>'nocNo', ''),
+                   NULLIF(data->>'prNo', ''),
+                   NULLIF(data->>'prNumber', ''),
+                   NULLIF(data->>'letterRef', ''),
+                   ''
+               ) AS doc_no
         FROM records
         WHERE id = ANY(%s)
     """, (record_ids,))

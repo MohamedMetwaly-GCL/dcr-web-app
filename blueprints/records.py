@@ -396,11 +396,18 @@ def api_delete_record(rec_id):
         return jsonify(error="Not found"), 404
     pid   = full_row.get("_project_id", "")
     dt_id = full_row.get("_dt_id", "")
-    doc_no = full_row.get("docNo", "")
+    doc_no = (
+        full_row.get("docNo")
+        or full_row.get("nocNo")
+        or full_row.get("prNo")
+        or full_row.get("prNumber")
+        or full_row.get("letterRef")
+        or ""
+    )
     if not can_edit(pid):
         try:
             db.log_action(u.get("username", ""), "ACCESS DENIED", project_id=pid, dt_id=dt_id,
-                          doc_no=doc_no, detail=f"Unauthorized delete attempt on {doc_no}")
+                          doc_no=doc_no, detail=f"Unauthorized delete attempt on {doc_no or rec_id}")
         except Exception:
             pass
         return jsonify(error="Forbidden"), 403
@@ -408,7 +415,7 @@ def api_delete_record(rec_id):
     db.log_action(
         u["username"], "DELETE",
         pid or None, dt_id or None, rec_id,
-        doc_no, detail=f"Deleted: {doc_no}"
+        doc_no, detail=f"Deleted: {doc_no}" if doc_no else f"Deleted record {rec_id}"
     )
     return jsonify(ok=True)
 
@@ -435,15 +442,16 @@ def api_bulk_delete_records():
         return jsonify(error="Forbidden"), 403
 
     deleted = db.delete_records_bulk([r["id"] for r in recs])
-    by_scope = {}
     for r in recs:
-        key = (r.get("project_id") or None, r.get("dt_id") or None)
-        by_scope.setdefault(key, []).append(r.get("doc_no") or r.get("id"))
-    for (pid, dt_id), doc_nos in by_scope.items():
+        pid = r.get("project_id")
+        dt_id = r.get("dt_id")
+        rec_id = r.get("id")
+        doc_no = (r.get("doc_no") or "").strip()
+        detail = f"Deleted: {doc_no}" if doc_no else f"Deleted record {rec_id}"
         db.log_action(
             u["username"], "DELETE",
-            pid, dt_id, None, "",
-            detail=f"Bulk deleted {len(doc_nos)} record(s)"
+            pid, dt_id, rec_id, doc_no,
+            detail=detail
         )
     return jsonify(ok=True, deleted=deleted)
 
