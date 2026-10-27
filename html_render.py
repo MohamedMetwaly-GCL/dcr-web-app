@@ -4167,6 +4167,17 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
             pass
 
     # Render Contract Cards
+    empty_add_btn = (
+        '<button class="tb-btn glow" style="margin-top:14px;padding:8px 18px;font-size:13px;" '
+        'onclick="openM(&#39;new-om-modal&#39;)">➕ Register First Contract / Facility</button>'
+    ) if can_manage else ""
+
+    header_add_btn = (
+        '<button class="tb-btn glow" onclick="openM(&#39;new-om-modal&#39;)" '
+        'style="background:var(--brand-teal);color:#fff;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;border:none;">'
+        '➕ New Contract / Facility</button>'
+    ) if can_manage else ""
+
     cards_html = ""
     for p in accessible_projs:
         p_id = p["id"]
@@ -4177,6 +4188,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
             try: p_data = json.loads(p_data)
             except Exception: p_data = {}
         client = p_data.get("client", "—")
+        del_btn = f'<button type="button" class="pcard-btn pcard-del" title="Delete Contract" onclick="event.preventDefault();event.stopPropagation();delProject(&#39;{p_id}&#39;,&#39;{p_name}&#39;)">🗑️</button>' if can_manage else ''
         
         cards_html += f'''
         <div class="om-card" onclick="window.location='/app?p={p_id}'" title="Open {p_name}">
@@ -4188,7 +4200,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
           <div class="om-card-client">🏢 Client: <strong>{client}</strong></div>
           <div class="om-card-footer">
             <span class="om-card-action">Open Register ➔</span>
-            {f'<button type="button" class="pcard-btn pcard-del" title="Delete Contract" onclick="event.preventDefault();event.stopPropagation();delProject(\'{p_id}\',\'{p_name}\')">🗑️</button>' if can_manage else ''}
+            {del_btn}
           </div>
         </div>
         '''
@@ -4199,7 +4211,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
           <div class="om-empty-icon">⚙️</div>
           <div class="om-empty-title">No Maintenance Contracts Registered Yet</div>
           <div class="om-empty-sub">Register your first client facility or maintenance contract to start logging Work Orders, PPM schedules, and SLA reports.</div>
-          {f'<button class="tb-btn glow" style="margin-top:14px;padding:8px 18px;font-size:13px;" onclick="openM(\'new-om-modal\')">➕ Register First Contract / Facility</button>' if can_manage else ''}
+          {empty_add_btn}
         </div>
         '''
 
@@ -4394,7 +4406,7 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       <input type="text" id="om-search" placeholder="🔍 Search contracts..." oninput="filterOmCards(this.value)" style="padding:6px 12px;border:1px solid var(--bd);border-radius:6px;font-size:12px;background:var(--bg);color:var(--tx);outline:none;min-width:200px;">
-      {f'<button class="tb-btn glow" onclick="openM(\'new-om-modal\')" style="background:var(--brand-teal);color:#fff;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;border:none;">➕ New Contract / Facility</button>' if can_manage else ''}
+      {header_add_btn}
     </div>
   </div>
 
