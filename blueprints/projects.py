@@ -64,6 +64,7 @@ def api_create_project():
     name = data.get("name","").strip()
     code = data.get("code","").strip().upper()
     ws_id = data.get("workspace_id", "ENG").strip()
+    client = data.get("client", "").strip()
     if not pid or not name or not code:
         return jsonify(ok=False, error="ID, name and code required"), 400
     u = current_user()
@@ -71,7 +72,7 @@ def api_create_project():
         admin_ws = db.get_admin_workspaces_for_user(u["username"])
         if ws_id not in admin_ws:
             return jsonify(ok=False, error="Cannot create project in another workspace"), 403
-    db.create_project(pid, name, code, creator=u["username"], workspace_id=ws_id)
+    db.create_project(pid, name, code, creator=u["username"], workspace_id=ws_id, client=client)
     return jsonify(ok=True)
 
 

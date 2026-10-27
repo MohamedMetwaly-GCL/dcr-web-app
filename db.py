@@ -1130,10 +1130,15 @@ def save_project(pid, name, code, extra: dict, workspace_id=None):
            ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data, workspace_id=EXCLUDED.workspace_id""",
         (pid, name, code, jdata, ws_id))
 
-def create_project(pid, name, code, creator=None, workspace_id="ENG"):
+def create_project(pid, name, code, creator=None, workspace_id="ENG", client=None):
     ws_id = workspace_id or "ENG"
-    exe("INSERT INTO projects(id,name,code,data,workspace_id) VALUES(%s,%s,%s,'{}',%s) ON CONFLICT DO NOTHING",
-        (pid, name, code, ws_id))
+    jdata = json.dumps({"client": client}) if client else "{}"
+    exe("""INSERT INTO projects(id,name,code,data,workspace_id)
+           VALUES(%s,%s,%s,%s,%s)
+           ON CONFLICT (id) DO UPDATE SET
+               workspace_id = EXCLUDED.workspace_id,
+               data = COALESCE(projects.data, '{}'::jsonb) || EXCLUDED.data""",
+        (pid, name, code, jdata, ws_id))
     _seed_project(pid, ws_id)
     if creator: assign_project(creator, pid)
 
@@ -1658,8 +1663,8 @@ def get_letter_timeline(pid, record_id):
         "items": items,
     }
 
-def _get_ltr_dashboard_stats_map(project_ids=None):
-    projects = get_projects(project_ids)
+def _get_ltr_dashboard_stats_map(project_ids=None, workspace_id=None):
+    projects = get_projects(project_ids, workspace_id=workspace_id)
     if not projects:
         return {}
     pids = [p["id"] for p in projects]
@@ -1967,10 +1972,10 @@ def remove_list_item(pid, list_name, item):
     invalidate_dashboard_cache(pid)
 
 # ── Fast Dashboard Stats (single query) ──────────────────────
-def get_dashboard_stats(project_ids=None):
+def get_dashboard_stats(project_ids=None, workspace_id=None):
     """One big SQL call — replaces N×M individual queries."""
     import re, json as _json
-    projects = get_projects(project_ids)
+    projects = get_projects(project_ids, workspace_id=workspace_id)
     if not projects:
         return []
 

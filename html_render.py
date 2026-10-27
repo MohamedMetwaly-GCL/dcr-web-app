@@ -3751,6 +3751,7 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
         margin-right: auto !important; /* pushes icons to the right */
     }
 }
+}
 
 
 /* ── Modern User Management & Scoped RBAC Modal ── */
@@ -4141,27 +4142,27 @@ async function openAdmin() {
     });
     
     toolbar.innerHTML = `
-      <div class="admin-toolbar-left">
-        <select id="admin-dept-filter" class="tbl-select" style="padding:5px 8px;font-weight:600;min-width:180px;" onchange="renderAdminTable()">
+      <div class="admin-toolbar-left" style="display:flex;align-items:center;gap:8px;flex:1 1 auto;flex-wrap:wrap;">
+        <input type="text" id="admin-user-search" class="tbl-input" placeholder="🔍 Search by user or email..." style="width:220px;padding:6px 10px;font-size:11.5px;" oninput="renderAdminTable()">
+        <select id="admin-dept-filter" class="tbl-select" style="padding:6px 10px;font-weight:600;min-width:180px;font-size:11.5px;" onchange="renderAdminTable()">
           ${deptOptions}
         </select>
-        <select id="admin-role-filter" class="tbl-select" style="padding:5px 8px;font-weight:600;min-width:110px;" onchange="renderAdminTable()">
+        <select id="admin-role-filter" class="tbl-select" style="padding:6px 10px;font-weight:600;min-width:110px;font-size:11.5px;" onchange="renderAdminTable()">
           <option value="">All Roles</option>
           <option value="superadmin">Super Admin</option>
           <option value="admin">Admin</option>
           <option value="editor">Editor</option>
           <option value="viewer">Viewer</option>
         </select>
-        <input type="text" id="admin-user-search" class="tbl-input" placeholder="Search by user or email..." style="width:200px;" oninput="renderAdminTable()">
       </div>
-      <div class="admin-toolbar-right">
-        <button class="btn btn-pr btn-sm" onclick="toggleAddUserCard()" style="display:inline-flex;align-items:center;gap:4px;">
+      <div class="admin-toolbar-right" style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
+        <button class="btn btn-pr btn-sm" onclick="toggleAddUserCard()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;font-weight:600;">
           <span>➕</span><span>Add User</span>
         </button>
-        <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV">
+        <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
           <span>📥</span><span>Export Matrix</span>
         </button>
-        <button class="btn btn-sc btn-sm" onclick="toggleAuditCard()" title="Detect Sequence Gaps">
+        <button class="btn btn-sc btn-sm" onclick="toggleAuditCard()" title="Detect Sequence Gaps" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
           <span>🔍</span><span>Gap Audit</span>
         </button>
       </div>
@@ -4374,7 +4375,7 @@ function renderAdminTable() {
       <tr id="urow-${escHtml(u.username)}">
         <td>
           <div class="u-name-cell">
-            <span class="u-avatar">${initial}</span>
+            <span class="u-avatar" style="width:30px;height:30px;min-width:30px;border-radius:50%;background:#e0f2fe;color:#0369a1;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;margin-right:10px;flex-shrink:0;border:1px solid #bae6fd;">${initial}</span>
             <span>${escHtml(u.username)}</span>
           </div>
         </td>
@@ -4442,12 +4443,12 @@ function renderPermTable(projects) {
   }
   
   let html = `
-    <table class="perm-table">
+    <table class="perm-table" style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
-        <tr>
-          <th>Project / Contract</th>
-          <th class="perm-check-cell">Access</th>
-          <th class="perm-check-cell">Document Controller (DC)</th>
+        <tr style="background:var(--bg,#f8fafc);border-bottom:2px solid var(--bd,#e2e8f0);">
+          <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Project / Contract</th>
+          <th style="padding:10px 14px;text-align:center;width:90px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Access</th>
+          <th style="padding:10px 14px;text-align:center;width:170px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Document Controller (DC)</th>
         </tr>
       </thead>
       <tbody>
@@ -4460,16 +4461,20 @@ function renderPermTable(projects) {
     const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • Client: ${escHtml(p.client)}</span>` : '';
     
     html += `
-      <tr class="perm-row" data-pid="${escHtml(p.id)}" data-text="${escHtml((p.code + ' ' + p.name + ' ' + (p.client||'')).toLowerCase())}">
-        <td>
-          <div style="font-weight:600;color:var(--tx);">${escHtml(p.code)} <span style="font-weight:400;color:var(--tx-mu, #64748b);">${escHtml(p.name)}</span></div>
+      <tr class="perm-row" data-pid="${escHtml(p.id)}" data-text="${escHtml((p.code + ' ' + p.name + ' ' + (p.client||'')).toLowerCase())}" style="border-bottom:1px solid var(--bd,#f1f5f9);">
+        <td style="padding:10px 14px;">
+          <div style="font-weight:700;color:var(--tx);display:flex;align-items:center;gap:6px;">
+            <span>${escHtml(p.code)}</span>
+            <span style="font-weight:500;color:var(--tx-mu,#64748b);">${escHtml(p.name)}</span>
+            <span class="dept-badge ${p.workspace_id==='OM'?'dept-badge-om':'dept-badge-eng'}" style="font-size:9.5px;padding:1px 6px;">${p.workspace_id==='OM'?'⚙️ O&M':'📐 ENG'}</span>
+          </div>
           ${clientText}
         </td>
-        <td class="perm-check-cell">
-          <input type="checkbox" class="perm-toggle-switch" id="chk-access-${escHtml(p.id)}" ${hasAccess ? 'checked' : ''} onchange="togglePermAccess('${escHtml(username)}', '${escHtml(p.id)}', this.checked)">
+        <td style="padding:10px 14px;text-align:center;width:90px;">
+          <input type="checkbox" class="perm-toggle-switch" id="chk-access-${escHtml(p.id)}" ${hasAccess ? 'checked' : ''} onchange="togglePermAccess('${escHtml(username)}', '${escHtml(p.id)}', this.checked)" style="cursor:pointer;transform:scale(1.2);">
         </td>
-        <td class="perm-check-cell">
-          <input type="checkbox" class="perm-toggle-switch" id="chk-dc-${escHtml(p.id)}" ${isDC ? 'checked' : ''} ${!hasAccess ? 'disabled' : ''} onchange="togglePermDC('${escHtml(username)}', '${escHtml(p.id)}', this.checked)">
+        <td style="padding:10px 14px;text-align:center;width:170px;">
+          <input type="checkbox" class="perm-toggle-switch" id="chk-dc-${escHtml(p.id)}" ${isDC ? 'checked' : ''} ${!hasAccess ? 'disabled' : ''} onchange="togglePermDC('${escHtml(username)}', '${escHtml(p.id)}', this.checked)" style="cursor:pointer;transform:scale(1.2);">
         </td>
       </tr>
     `;
@@ -6639,6 +6644,10 @@ function updateKPIs(d){{
 
 // ── Project Cards ─────────────────────────────────────────
 function renderCards(d,pid){{
+  const activeWs = '{active_ws}';
+  if (Array.isArray(d)) {{
+    d = d.filter(p => !p.workspace_id || p.workspace_id === activeWs);
+  }}
   const g=document.getElementById('pgrid');g.innerHTML='';
   const totalItems=d.length+((ROLE==='superadmin'&&!pid)?1:0);
   const cols=Math.max(4,Math.ceil(totalItems/2));

@@ -237,7 +237,9 @@ def api_counts(pid):
 @app.route("/api/dashboard_stats")
 def api_dashboard_stats():
     u = current_user()
-    stats = db.get_dashboard_stats(project_ids=get_allowed_project_ids(u))
+    ws_id = request.args.get("ws") or request.args.get("workspace_id") or "ENG"
+    allowed = get_allowed_project_ids(u, workspace_id=ws_id)
+    stats = db.get_dashboard_stats(project_ids=allowed, workspace_id=ws_id)
     for s in stats:
         s["can_edit"] = can_edit(s["id"])
     return jsonify(stats)
