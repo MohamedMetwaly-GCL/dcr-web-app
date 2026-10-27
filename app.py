@@ -8,7 +8,6 @@ from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
 from html_render import render_login, render_dashboard, render_register
 from security import validate_username, login_limiter, get_client_ip
 from blueprints.projects import projects_bp
-from blueprints.departments import departments_bp
 from blueprints.doc_types import doc_types_bp
 from blueprints.columns import columns_bp
 from blueprints.records import records_bp
@@ -24,7 +23,6 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
 app.register_blueprint(projects_bp)
-app.register_blueprint(departments_bp)
 app.register_blueprint(doc_types_bp)
 app.register_blueprint(columns_bp)
 app.register_blueprint(records_bp)
@@ -339,8 +337,7 @@ def api_audit():
         actions = sorted(actions + ["FILE_DOWNLOAD"])
     if "DRIVE_LINK_CLICK" not in actions:
         actions = sorted(actions + ["DRIVE_LINK_CLICK"])
-    for sec_act in ["SECURITY_ALERT", "BRUTE_FORCE_BLOCKED", "LOGIN_LOCKOUT", "FILE_REJECTED",
-                    "DEPT_CREATE", "DEPT_EDIT", "DEPT_DELETE", "DEPT_ASSIGN", "DEPT_UNASSIGN", "PROJECT_DEPT_CHANGE"]:
+    for sec_act in ["SECURITY_ALERT", "BRUTE_FORCE_BLOCKED", "LOGIN_LOCKOUT", "FILE_REJECTED"]:
         if sec_act not in actions:
             actions = sorted(actions + [sec_act])
     projects = db.get_projects()

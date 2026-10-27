@@ -31,7 +31,6 @@ def api_projects():
         except: data = {}
         out.append({
             "id": p["id"], "name": p["name"], "code": p["code"],
-            "department_id": p.get("department_id") or (data.get("department_id") if isinstance(data, dict) else None) or "ENG",
             "client": data.get("client","") if isinstance(data,dict) else "",
             "can_edit": can_edit(p["id"])
         })
@@ -64,9 +63,8 @@ def api_create_project():
     code = data.get("code","").strip().upper()
     if not pid or not name or not code:
         return jsonify(ok=False, error="ID, name and code required"), 400
-    dept_id = str(data.get("department_id") or "ENG").strip().upper() or "ENG"
     u = current_user()
-    db.create_project(pid, name, code, creator=u["username"], department_id=dept_id)
+    db.create_project(pid, name, code, creator=u["username"])
     return jsonify(ok=True)
 
 @projects_bp.route("/api/projects/reorder", methods=["POST"])

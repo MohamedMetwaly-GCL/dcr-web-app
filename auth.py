@@ -60,16 +60,6 @@ def get_allowed_project_ids(user=None):
         return [p["id"] for p in db.get_projects()]
     user_projs = db.get_user_projects(u["username"])
     assigned_raw = [p["project_id"] for p in user_projs if p.get("project_id")]
-    try:
-        user_depts = db.get_user_departments(u["username"])
-        head_depts = [ud["department_id"] for ud in user_depts if ud.get("dept_role") == "head" and ud.get("department_id")]
-        if head_depts:
-            for p in db.get_projects():
-                if str(p.get("department_id") or "ENG").upper() in [hd.upper() for hd in head_depts]:
-                    if p["id"] not in assigned_raw:
-                        assigned_raw.append(p["id"])
-    except Exception:
-        pass
     if not assigned_raw:
         return []
     matched_projs = db.get_projects(assigned_raw)
@@ -111,15 +101,6 @@ def has_project_access(username, project_id, role=None):
             return True
         if str(p.get("name", "")).strip().upper() == target:
             return True
-    try:
-        user_depts = db.get_user_departments(username)
-        head_depts = {str(ud["department_id"]).upper() for ud in user_depts if ud.get("dept_role") == "head" and ud.get("department_id")}
-        if head_depts:
-            proj = db.get_project(project_id)
-            if proj and str(proj.get("department_id") or "ENG").upper() in head_depts:
-                return True
-    except Exception:
-        pass
     return False
 
 
@@ -150,39 +131,6 @@ def require_superadmin(fn):
     return wrapper
 
 
-CONFIDENTIALITY_RANKS = {
-    "public": 1,
-    "internal": 2,
-    "confidential": 3,
-    "restricted": 4,
-}
-
-
-def get_user_clearance(user=None):
-    """Return the user's confidentiality clearance level."""
-    u = user or current_user()
-    if not u:
-        return "public"
-    if str(u.get("role", "")).lower() in ("superadmin", "admin"):
-        return "restricted"
-    try:
-        full_u = db.get_user(u["username"])
-        if full_u and full_u.get("confidentiality_clearance"):
-            lvl = str(full_u["confidentiality_clearance"]).strip().lower()
-            if lvl in CONFIDENTIALITY_RANKS:
-                return lvl
-    except Exception:
-        pass
-    return "internal"
-
-
-def can_view_confidentiality(doc_level, user=None):
-    """Return True if user clearance meets or exceeds doc_level."""
-    req_rank = CONFIDENTIALITY_RANKS.get(str(doc_level or "internal").strip().lower(), 2)
-    usr_rank = CONFIDENTIALITY_RANKS.get(get_user_clearance(user), 2)
-    return usr_rank >= req_rank
-
-
 def can_edit(project_id):
     """Return True if the current user has write access to project_id."""
     u = current_user()
@@ -192,13 +140,4 @@ def can_edit(project_id):
         return True
     if u["role"] == "editor":
         return has_project_access(u["username"], project_id, u.get("role"))
-    try:
-        if has_project_access(u["username"], project_id, u.get("role")):
-            proj = db.get_project(project_id)
-            dept_id = str((proj or {}).get("department_id") or "ENG").upper()
-            for ud in db.get_user_departments(u["username"]):
-                if str(ud.get("department_id", "")).upper() == dept_id and ud.get("dept_role") in ("head", "editor"):
-                    return True
-    except Exception:
-        pass
     return False
