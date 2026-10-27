@@ -4843,7 +4843,7 @@ async function exportUsersCSV() {
       '""'
     ];
     
-    const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(r => r.join(',')), footerRow.join(',')].join('\r\n');
+    const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(r => r.join(',')), footerRow.join(',')].join(String.fromCharCode(13, 10));
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
