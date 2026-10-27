@@ -222,6 +222,35 @@ CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_workspace TEXT DEFAULT 'ENG';
 """
 
+DEFAULT_OM_DOC_TYPES = [
+    ("WO", "Work Orders", 0),
+    ("PPM", "Preventive Maintenance", 1),
+    ("CM", "Corrective Maintenance", 2),
+    ("INC", "Incident Reports", 3),
+    ("MR", "Maintenance Requests", 4),
+    ("SLA", "Service Level Reports", 5),
+    ("COR", "Correspondences", 6),
+]
+
+DEFAULT_OM_COLS = [
+    ("docNo", "Document No.", "docno", None, 0, True),
+    ("facility", "Facility / Location", "text", None, 1, True),
+    ("equipment", "Equipment / Asset", "text", None, 2, True),
+    ("title", "Description / Subject", "text", None, 3, True),
+    ("priority", "Priority", "dropdown", "priority", 4, True),
+    ("issuedDate", "Issue Date", "date", None, 5, True),
+    ("targetDate", "Target Completion", "date", None, 6, True),
+    ("actualReplyDate", "Completion Date", "date", None, 7, True),
+    ("status", "Status", "dropdown", "om_status", 8, True),
+    ("remarks", "Remarks / Notes", "text", None, 9, True),
+    ("fileLocation", "Drive Link", "url", None, 10, True),
+]
+
+DEFAULT_OM_LISTS = {
+    "priority": ["Low", "Medium", "High", "Critical"],
+    "om_status": ["Open", "In Progress", "Pending", "Completed", "Closed", "Cancelled"]
+}
+
 DEFAULT_DOC_TYPES = [
     ("DS","Document Submittal",0),("SD","Shop Drawing Submittal",1),
     ("MS","Material Submittal",2),("IR","Inspection Request",3),
@@ -1105,32 +1134,48 @@ def create_project(pid, name, code, creator=None, workspace_id="ENG"):
     ws_id = workspace_id or "ENG"
     exe("INSERT INTO projects(id,name,code,data,workspace_id) VALUES(%s,%s,%s,'{}',%s) ON CONFLICT DO NOTHING",
         (pid, name, code, ws_id))
-    _seed_project(pid)
+    _seed_project(pid, ws_id)
     if creator: assign_project(creator, pid)
 
 def delete_project(pid):
     for tbl in ("records","columns_config","doc_types","dropdown_lists","logos","user_projects","projects"):
         exe(f"DELETE FROM {tbl} WHERE {'id' if tbl=='projects' else 'project_id'}=%s", (pid,))
 
-def _seed_project(pid):
-    for code, name, order in DEFAULT_DOC_TYPES:
-        exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-            (code, pid, name, code, order))
-        for ck, lbl, ct, ln, so, visible in _doc_type_col_specs(code, name):
-            exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
-                   VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
-                (pid, code, ck, lbl, ct, ln, visible, so))
-    for ln, items in DEFAULT_LISTS.items():
-        for i, item in enumerate(items):
-            meta = DEFAULT_STATUS_META.get(item) if ln == "status" else None
-            exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
-                " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
-                " DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
-                (pid, ln, item, i, meta))
-    _ensure_noc_lists(pid)
-    _ensure_ltr_lists(pid)
-    _sync_all_noc_doc_types()
-    _sync_all_ltr_doc_types()
+def _seed_project(pid, workspace_id="ENG"):
+    if str(workspace_id or "").upper() == "OM":
+        for code, name, order in DEFAULT_OM_DOC_TYPES:
+            exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                (code, pid, name, code, order))
+            for ck, lbl, ct, ln, so, visible in DEFAULT_OM_COLS:
+                exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
+                       VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                    (pid, code, ck, lbl, ct, ln, visible, so))
+        for ln, items in DEFAULT_OM_LISTS.items():
+            for i, item in enumerate(items):
+                meta = "pending" if item in ("Open", "In Progress", "Pending") else ("approved" if item in ("Completed", "Closed") else None)
+                exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
+                    " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
+                    " DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
+                    (pid, ln, item, i, meta))
+    else:
+        for code, name, order in DEFAULT_DOC_TYPES:
+            exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                (code, pid, name, code, order))
+            for ck, lbl, ct, ln, so, visible in _doc_type_col_specs(code, name):
+                exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
+                       VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                    (pid, code, ck, lbl, ct, ln, visible, so))
+        for ln, items in DEFAULT_LISTS.items():
+            for i, item in enumerate(items):
+                meta = DEFAULT_STATUS_META.get(item) if ln == "status" else None
+                exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)"
+                    " VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)"
+                    " DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)",
+                    (pid, ln, item, i, meta))
+        _ensure_noc_lists(pid)
+        _ensure_ltr_lists(pid)
+        _sync_all_noc_doc_types()
+        _sync_all_ltr_doc_types()
 
 # ── Logos ─────────────────────────────────────────────────────
 def get_logo(pid, key):

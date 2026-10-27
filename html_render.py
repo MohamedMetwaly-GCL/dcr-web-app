@@ -2725,25 +2725,31 @@ def _workspace_switcher_html(u, active_ws_id=None):
     btn_class = "ws-switcher-btn" if is_multi else "ws-switcher-btn single-ws"
     btn_onclick = 'onclick="toggleWsDropdown(event)"' if is_multi else ''
 
+    sub_map = {
+        "ENG": "EPC & Site Submittals",
+        "OM": "Contracts & Facilities"
+    }
+
     items_html = ""
     if is_multi:
         for ws in workspaces:
             is_active = (ws["id"] == current_id)
             active_class = "active" if is_active else ""
             check_html = '<span class="ws-item-check">✓</span>' if is_active else ""
+            sub_title = sub_map.get(ws["id"], ws.get("name_ar", ""))
             items_html += f'''
             <a href="/?ws={ws['id']}" class="ws-item {active_class}" onclick="selectWorkspace('{ws['id']}', event)">
               <span class="ws-item-icon">{ws.get('icon', '📁')}</span>
               <div class="ws-item-text">
-                <div class="ws-item-title">{ws.get('name_ar', ws['name'])}</div>
-                <div class="ws-item-sub">{ws['name']}</div>
+                <div class="ws-item-title">{ws['name']}</div>
+                <div class="ws-item-sub">{sub_title}</div>
               </div>
               {check_html}
             </a>
             '''
         dropdown_html = f'''
         <div class="ws-dropdown-menu" id="ws-dropdown-menu">
-          <div class="ws-dropdown-header">مساحات العمل المؤسسية</div>
+          <div class="ws-dropdown-header">Enterprise Workspaces</div>
           {items_html}
         </div>
         '''
@@ -2752,9 +2758,9 @@ def _workspace_switcher_html(u, active_ws_id=None):
 
     return f'''
     <div class="ws-switcher" id="ws-switcher">
-      <button class="{btn_class}" {btn_onclick} title="مساحة العمل الحالية: {current_ws.get('name_ar', current_ws['name'])}">
+      <button class="{btn_class}" {btn_onclick} title="Active Workspace: {current_ws.get('name', 'Engineering & Projects')}">
         <span class="ws-icon">{current_ws.get('icon', '📁')}</span>
-        <span class="ws-name">{current_ws.get('name_ar', current_ws['name'])}</span>
+        <span class="ws-name">{current_ws.get('name', 'Engineering & Projects')}</span>
         {arrow_html}
       </button>
       {dropdown_html}
@@ -4130,6 +4136,378 @@ async function login(){{
 
 
 
+
+def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg):
+    role = u["role"] if u else "guest"
+    can_manage = role in ("superadmin", "admin")
+    
+    # Calculate O&M KPIs
+    total_contracts = len(accessible_projs)
+    pids = [p["id"] for p in accessible_projs]
+    
+    total_records = 0
+    completed_records = 0
+    pending_records = 0
+    
+    if pids:
+        try:
+            counts = db.q("""
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(CASE WHEN data->>'status' ILIKE '%complete%' OR data->>'status' ILIKE '%close%' THEN 1 END) as completed,
+                    COUNT(CASE WHEN data->>'status' ILIKE '%open%' OR data->>'status' ILIKE '%progress%' OR data->>'status' ILIKE '%pending%' THEN 1 END) as pending
+                FROM records 
+                WHERE project_id = ANY(%s)
+            """, (pids,), one=True)
+            if counts:
+                total_records = counts.get("total", 0) or 0
+                completed_records = counts.get("completed", 0) or 0
+                pending_records = counts.get("pending", 0) or 0
+        except Exception:
+            pass
+
+    # Render Contract Cards
+    cards_html = ""
+    for p in accessible_projs:
+        p_id = p["id"]
+        p_name = p.get("name", p_id)
+        p_code = p.get("code", p_id)
+        p_data = p.get("data") or {}
+        if isinstance(p_data, str):
+            try: p_data = json.loads(p_data)
+            except Exception: p_data = {}
+        client = p_data.get("client", "—")
+        
+        cards_html += f'''
+        <div class="om-card" onclick="window.location='/app?p={p_id}'" title="Open {p_name}">
+          <div class="om-card-header">
+            <span class="om-code-badge">{p_code}</span>
+            <span class="om-status-badge">Active</span>
+          </div>
+          <div class="om-card-title">{p_name}</div>
+          <div class="om-card-client">🏢 Client: <strong>{client}</strong></div>
+          <div class="om-card-footer">
+            <span class="om-card-action">Open Register ➔</span>
+            {f'<button type="button" class="pcard-btn pcard-del" title="Delete Contract" onclick="event.preventDefault();event.stopPropagation();delProject(\'{p_id}\',\'{p_name}\')">🗑️</button>' if can_manage else ''}
+          </div>
+        </div>
+        '''
+
+    if not cards_html:
+        cards_html = f'''
+        <div class="om-empty-state">
+          <div class="om-empty-icon">⚙️</div>
+          <div class="om-empty-title">No Maintenance Contracts Registered Yet</div>
+          <div class="om-empty-sub">Register your first client facility or maintenance contract to start logging Work Orders, PPM schedules, and SLA reports.</div>
+          {f'<button class="tb-btn glow" style="margin-top:14px;padding:8px 18px;font-size:13px;" onclick="openM(\'new-om-modal\')">➕ Register First Contract / Facility</button>' if can_manage else ''}
+        </div>
+        '''
+
+    return f'''<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DCR — Operation & Maintenance</title>
+{BASE_CSS}
+<style>
+body {{ display:flex; flex-direction:column; min-height:100vh; overflow-x:hidden; background: var(--bg); }}
+.wrap {{ max-width:1480px; margin:0 auto; padding:16px 14px; flex:1; width:100%; }}
+
+/* O&M Header & Action Bar */
+.om-header-bar {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  background: var(--wh);
+  padding: 12px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--bd);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  flex-wrap: wrap;
+  gap: 12px;
+}}
+.om-header-title {{
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--tx);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}}
+.om-header-sub {{
+  font-size: 11px;
+  color: var(--mu);
+  margin-top: 2px;
+}}
+
+/* O&M KPI Cards */
+.om-kpi-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}}
+.om-kpi-card {{
+  background: var(--wh);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}}
+.om-kpi-lbl {{
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mu);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}}
+.om-kpi-val {{
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}}
+.om-kpi-val.success {{ color: #16a34a; }}
+.om-kpi-val.warning {{ color: #d97706; }}
+.om-kpi-val.primary {{ color: var(--brand-teal); }}
+
+/* Contracts Grid */
+.om-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}}
+.om-card {{
+  background: var(--wh);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+}}
+.om-card:hover {{
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+  border-color: var(--brand-teal);
+}}
+.om-card-header {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}}
+.om-code-badge {{
+  background: rgba(0, 180, 166, 0.12);
+  color: var(--brand-teal);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: 'Consolas', monospace;
+}}
+.om-status-badge {{
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+  font-weight: 700;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+}}
+.om-card-title {{
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tx);
+  margin-bottom: 6px;
+  line-height: 1.3;
+}}
+.om-card-client {{
+  font-size: 12px;
+  color: var(--mu);
+  margin-bottom: 14px;
+}}
+.om-card-footer {{
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--bd);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}}
+.om-card-action {{
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand-teal);
+}}
+
+/* Empty State */
+.om-empty-state {{
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 20px;
+  background: var(--wh);
+  border: 1px dashed var(--bd);
+  border-radius: 12px;
+}}
+.om-empty-icon {{ font-size: 38px; margin-bottom: 8px; }}
+.om-empty-title {{ font-size: 16px; font-weight: 700; color: var(--tx); margin-bottom: 4px; }}
+.om-empty-sub {{ font-size: 12px; color: var(--mu); max-width: 480px; margin: 0 auto; }}
+
+body.dark .om-header-bar, body.dark .om-kpi-card, body.dark .om-card, body.dark .om-empty-state {{
+  background: #162132;
+  border-color: #304257;
+  color: #e2e8f0;
+}}
+body.dark .om-kpi-lbl, body.dark .om-header-sub, body.dark .om-card-client {{ color: #94a3b8; }}
+body.dark .om-kpi-val, body.dark .om-card-title, body.dark .om-header-title {{ color: #f1f5f9; }}
+body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; }}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <span style="font-size:20px">📋</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  {ws_switcher_html}
+  {GLOBAL_SEARCH_TRIGGER_HTML}
+  <div class="sp"></div>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
+  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  {btns}
+  <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
+  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
+    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  </span>
+</div>
+
+<div class="wrap">
+  <!-- O&M Header Bar -->
+  <div class="om-header-bar">
+    <div>
+      <div class="om-header-title">⚙️ Operation & Maintenance (O&M)</div>
+      <div class="om-header-sub">Client Maintenance Contracts, Facilities & Service Level Management</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <input type="text" id="om-search" placeholder="🔍 Search contracts..." oninput="filterOmCards(this.value)" style="padding:6px 12px;border:1px solid var(--bd);border-radius:6px;font-size:12px;background:var(--bg);color:var(--tx);outline:none;min-width:200px;">
+      {f'<button class="tb-btn glow" onclick="openM(\'new-om-modal\')" style="background:var(--brand-teal);color:#fff;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;border:none;">➕ New Contract / Facility</button>' if can_manage else ''}
+    </div>
+  </div>
+
+  <!-- O&M KPIs Summary -->
+  <div class="om-kpi-grid">
+    <div class="om-kpi-card">
+      <span class="om-kpi-lbl">Total Facilities & Contracts</span>
+      <span class="om-kpi-val primary">{total_contracts}</span>
+    </div>
+    <div class="om-kpi-card">
+      <span class="om-kpi-lbl">Total Work Orders & Records</span>
+      <span class="om-kpi-val">{total_records}</span>
+    </div>
+    <div class="om-kpi-card">
+      <span class="om-kpi-lbl">Completed / Closed</span>
+      <span class="om-kpi-val success">{completed_records}</span>
+    </div>
+    <div class="om-kpi-card">
+      <span class="om-kpi-lbl">In-Progress / Open</span>
+      <span class="om-kpi-val warning">{pending_records}</span>
+    </div>
+  </div>
+
+  <!-- Contracts Cards Grid -->
+  <div class="om-grid" id="om-contracts-grid">
+    {cards_html}
+  </div>
+</div>
+
+<!-- Modal: New Contract / Facility -->
+<div id="new-om-modal" class="overlay hidden" onclick="if(event.target===this)closeM('new-om-modal')">
+  <div class="modal" style="max-width:480px">
+    <div class="mhdr">
+      <span>➕ Register New O&M Contract / Facility</span>
+      <button class="xbtn" onclick="closeM('new-om-modal')">✕</button>
+    </div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Contract / Facility ID (Internal ID):</label>
+        <input type="text" id="om-new-id" placeholder="e.g. OM-CFC-01" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Facility / Contract Name:</label>
+        <input type="text" id="om-new-name" placeholder="e.g. CFC District Cooling Maintenance" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Contract Short Code:</label>
+        <input type="text" id="om-new-code" placeholder="e.g. OM01" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Client Name:</label>
+        <input type="text" id="om-new-client" placeholder="e.g. Al-Futtaim" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+        <button class="tb-btn" onclick="closeM('new-om-modal')">Cancel</button>
+        <button class="tb-btn glow" onclick="submitNewOmContract()" style="background:var(--brand-teal);color:#fff;font-weight:700">Save Contract</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{SHARED_JS}
+{ABOUT_MODAL_HTML}
+{AI_DRAWER_COMPONENT}
+<script>
+function filterOmCards(q) {{
+  const query = (q || '').trim().toLowerCase();
+  const cards = document.querySelectorAll('.om-card');
+  cards.forEach(card => {{
+    const text = card.textContent.toLowerCase();
+    card.style.display = text.includes(query) ? '' : 'none';
+  }});
+}}
+
+async function submitNewOmContract() {{
+  const id = document.getElementById('om-new-id').value.trim().toUpperCase();
+  const name = document.getElementById('om-new-name').value.trim();
+  const code = document.getElementById('om-new-code').value.trim().toUpperCase();
+  const client = document.getElementById('om-new-client').value.trim();
+  
+  if (!id || !name || !code) {{
+    alert('Please enter Contract ID, Name, and Code.');
+    return;
+  }}
+  
+  try {{
+    const res = await apiFetch('/api/projects/create', {{
+      method: 'POST',
+      body: JSON.stringify({{ id, name, code, workspace_id: 'OM', client }})
+    }});
+    if (res && res.ok) {{
+      window.location = '/?ws=OM';
+    }} else {{
+      alert((res && res.error) || 'Failed to create contract');
+    }}
+  }} catch(e) {{
+    alert('Error creating contract: ' + e.message);
+  }}
+}}
+
+async function delProject(pid, pname) {{
+  if (!confirm('Are you sure you want to delete contract: ' + pname + '? All work orders and documents inside will be deleted.')) return;
+  try {{
+    const r = await apiFetch('/api/projects/delete/' + encodeURIComponent(pid), {{ method: 'POST' }});
+    if (r && r.ok) window.location.reload();
+    else alert((r && r.error) || 'Delete failed');
+  }} catch(e) {{
+    alert(e.message);
+  }}
+}}
+</script>
+</body></html>'''
+
 def render_dashboard(u, active_ws_id=None):
     btns, uname, rlbl, rbg = _user_info_html(u)
     role = u["role"] if u else "guest"
@@ -4148,6 +4526,9 @@ def render_dashboard(u, active_ws_id=None):
         accessible_projs = []
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
     ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
+
+    if active_ws == "OM":
+        return _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg)
 
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -6981,7 +7362,6 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   <span class="topbar-title-full" style="font-weight:700;font-size:14px;letter-spacing:.3px">Document Control Register</span>
   <span class="topbar-title-short" style="font-weight:800;font-size:13px;letter-spacing:.35px">DCR</span>
   
-  {ws_switcher_html}
   {GLOBAL_SEARCH_TRIGGER_HTML}
 
   <div style="flex:1"></div>
