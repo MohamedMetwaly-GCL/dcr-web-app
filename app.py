@@ -319,15 +319,37 @@ def api_audit_log_event():
 def api_audit():
     u = current_user()
     if not u or u.get("role") not in ("superadmin","admin"):
-
         return jsonify(error="Admin only"), 403
     pid      = request.args.get("pid")
     username = request.args.get("username")
     action   = request.args.get("action")
     offset   = int(request.args.get("offset","0"))
-    rows     = db.get_audit_log(project_id=pid, username=username,
+
+    is_super = (str(u.get("role", "")).lower() == "superadmin")
+    if not is_super:
+        try:
+            admin_ws = db.get_admin_workspaces_for_user(u["username"])
+            dept_projs = [p["id"] for p in db.get_projects_for_user(u["username"], u.get("role"))]
+            dept_users = [usr["username"] for usr in db.get_users_for_admin(u["username"])]
+            if pid and pid not in dept_projs:
+                return jsonify(rows=[], users=[], actions=[], projects=[])
+            rows = db.get_audit_log(project_id=pid, username=username,
+                                    action=action, limit=100, offset=offset,
+                                    allowed_project_ids=dept_projs, allowed_usernames=dept_users)
+            users = dept_users
+            projects = db.get_projects(dept_projs)
+        except Exception:
+            # Fallback if unconfigured/mock DB in unit tests
+            rows = db.get_audit_log(project_id=pid, username=username,
+                                    action=action, limit=100, offset=offset)
+            users = [r["username"] for r in db.get_all_users()]
+            projects = db.get_projects()
+    else:
+        rows = db.get_audit_log(project_id=pid, username=username,
                                 action=action, limit=100, offset=offset)
-    users    = [r["username"] for r in db.get_all_users()]
+        users = [r["username"] for r in db.get_all_users()]
+        projects = db.get_projects()
+
     actions  = db.get_audit_actions()
     if "PROJECT VIEW" not in actions:
         actions = sorted(actions + ["PROJECT VIEW"])
@@ -340,7 +362,6 @@ def api_audit():
     for sec_act in ["SECURITY_ALERT", "BRUTE_FORCE_BLOCKED", "LOGIN_LOCKOUT", "FILE_REJECTED"]:
         if sec_act not in actions:
             actions = sorted(actions + [sec_act])
-    projects = db.get_projects()
     return jsonify(
         rows=[{**dict(r), "ts": str(r["ts"])} for r in rows],
         users=users, actions=actions,

@@ -198,6 +198,28 @@ CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_proj ON audit_log(project_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(username, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, ts DESC);
+
+CREATE TABLE IF NOT EXISTS workspaces (
+    id         TEXT PRIMARY KEY,
+    code       TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
+    name_ar    TEXT NOT NULL,
+    icon       TEXT DEFAULT '📁',
+    type       TEXT NOT NULL DEFAULT 'engineering',
+    sort_order INTEGER DEFAULT 0,
+    is_active  BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS user_workspaces (
+    username     TEXT NOT NULL,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    role         TEXT NOT NULL DEFAULT 'viewer',
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (username, workspace_id)
+);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS workspace_id TEXT DEFAULT 'ENG';
+CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_workspace TEXT DEFAULT 'ENG';
 """
 
 DEFAULT_DOC_TYPES = [
@@ -525,6 +547,7 @@ def init():
                 logger.warning("db_schema_note error=%s", e)
     ensure_audit_schema()
     _ensure_admin()
+    _ensure_workspaces()
     _cleanup_custom_columns()
     _global_rename_filelocation()
     _sync_all_noc_doc_types()
@@ -535,6 +558,33 @@ def _ensure_admin():
     if not r or r["c"] == 0:
         exe("INSERT INTO users(username,pw_hash,role) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
             ("admin", hash_pw("admin123"), "superadmin"))
+
+def _ensure_workspaces():
+    try:
+        exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active)
+               VALUES('ENG', 'ENG', 'Engineering & Projects', 'المشروعات الهندسية', '🏗️', 'engineering', 1, TRUE)
+               ON CONFLICT (id) DO NOTHING""")
+        exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active)
+               VALUES('OM', 'OM', 'Operation & Maintenance', 'الصيانة والتشغيل', '⚙️', 'om', 2, TRUE)
+               ON CONFLICT (id) DO NOTHING""")
+        exe("UPDATE projects SET workspace_id = 'ENG' WHERE workspace_id IS NULL OR workspace_id = ''")
+        exe("""
+            INSERT INTO user_workspaces (username, workspace_id, role)
+            SELECT username, 'ENG', 
+                   CASE WHEN role = 'superadmin' THEN 'admin' ELSE role END
+            FROM users
+            WHERE username NOT IN (SELECT username FROM user_workspaces WHERE workspace_id = 'ENG')
+            ON CONFLICT DO NOTHING
+        """)
+        exe("""
+            INSERT INTO user_workspaces (username, workspace_id, role)
+            SELECT username, 'OM', 'admin'
+            FROM users
+            WHERE role = 'superadmin'
+            ON CONFLICT DO NOTHING
+        """)
+    except Exception as e:
+        logger.warning("_ensure_workspaces note: %s", e)
 
 # ── Auth ──────────────────────────────────────────────────────
 def hash_pw(pw: str) -> str:
@@ -572,15 +622,18 @@ def get_user(username):
     return q("SELECT * FROM users WHERE username=%s", (username,), one=True)
 
 def get_all_users():
-    return q("SELECT username, role, email FROM users ORDER BY username")
+    return q("SELECT username, role, email, COALESCE(primary_workspace, 'ENG') as primary_workspace FROM users ORDER BY username")
 
-def add_user(username, pw, role="viewer", email=None):
-    exe("INSERT INTO users(username,pw_hash,role,email) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-        (username, hash_pw(pw), role, email))
+def add_user(username, pw, role="viewer", email=None, primary_workspace="ENG"):
+    ws = primary_workspace or "ENG"
+    exe("INSERT INTO users(username,pw_hash,role,email,primary_workspace) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+        (username, hash_pw(pw), role, email, ws))
+    assign_user_workspace(username, ws, role)
 
 def delete_user(username):
     exe("DELETE FROM sessions WHERE username=%s", (username,))
     exe("DELETE FROM user_projects WHERE username=%s", (username,))
+    exe("DELETE FROM user_workspaces WHERE username=%s", (username,))
     exe("DELETE FROM users WHERE username=%s", (username,))
 
 def change_pw(username, new_pw):
@@ -599,6 +652,136 @@ def set_user_email(username, email):
 
 def set_user_project_dc(username, project_id, is_dc):
     exe("UPDATE user_projects SET is_dc=%s WHERE username=%s AND project_id=%s", (is_dc, username, project_id))
+
+# ── Workspaces & Modular Scoping ──────────────────────────────
+def get_workspaces(active_only=True):
+    where = "WHERE is_active = TRUE" if active_only else ""
+    return q(f"SELECT id, code, name, name_ar, icon, type, sort_order, is_active FROM workspaces {where} ORDER BY sort_order, id")
+
+def get_workspace(ws_id):
+    if not ws_id: return None
+    return q("SELECT id, code, name, name_ar, icon, type, sort_order, is_active FROM workspaces WHERE id=%s", (ws_id,), one=True)
+
+def create_workspace(ws_id, code, name, name_ar, icon="📁", ws_type="general", sort_order=0):
+    exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active)
+           VALUES(%s, %s, %s, %s, %s, %s, %s, TRUE)
+           ON CONFLICT(id) DO UPDATE SET code=EXCLUDED.code, name=EXCLUDED.name,
+           name_ar=EXCLUDED.name_ar, icon=EXCLUDED.icon, type=EXCLUDED.type, sort_order=EXCLUDED.sort_order""",
+        (ws_id, code, name, name_ar, icon, ws_type, sort_order))
+
+def get_user_workspaces(username):
+    """Return all workspaces accessible to a user, with their role in each."""
+    u = get_user(username)
+    if not u:
+        return []
+    role = str(u.get("role", "")).strip().lower()
+    if role == "superadmin":
+        all_ws = get_workspaces(active_only=True)
+        return [{**ws, "user_role": "admin", "is_superadmin": True} for ws in all_ws]
+
+    rows = q("""
+        SELECT w.id, w.code, w.name, w.name_ar, w.icon, w.type, w.sort_order, w.is_active,
+               COALESCE(uw.role, u.role, 'viewer') as user_role,
+               FALSE as is_superadmin
+        FROM workspaces w
+        LEFT JOIN user_workspaces uw ON w.id = uw.workspace_id AND uw.username = %s
+        LEFT JOIN users u ON u.username = %s
+        WHERE w.is_active = TRUE
+          AND (uw.username IS NOT NULL OR u.primary_workspace = w.id OR (w.id = 'ENG' AND uw.role IS NULL))
+        ORDER BY w.sort_order, w.id
+    """, (username, username))
+    return rows
+
+def is_user_workspace_admin(username, workspace_id=None):
+    """Check if user is admin of a specific workspace, or admin of ANY workspace."""
+    u = get_user(username)
+    if not u:
+        return False
+    if str(u.get("role", "")).strip().lower() == "superadmin":
+        return True
+
+    if workspace_id:
+        row = q("SELECT role FROM user_workspaces WHERE username=%s AND workspace_id=%s", (username, workspace_id), one=True)
+        if row and row.get("role") in ("admin", "superadmin"):
+            return True
+        if u.get("role") == "admin" and (u.get("primary_workspace") == workspace_id or (workspace_id == "ENG" and not u.get("primary_workspace"))):
+            return True
+        return False
+    else:
+        if str(u.get("role", "")).strip().lower() == "admin":
+            return True
+        row = q("SELECT 1 FROM user_workspaces WHERE username=%s AND role IN ('admin', 'superadmin') LIMIT 1", (username,), one=True)
+        return bool(row)
+
+def get_admin_workspaces_for_user(username):
+    """Return workspace IDs where this user has admin role."""
+    u = get_user(username)
+    if not u:
+        return []
+    if str(u.get("role", "")).strip().lower() == "superadmin":
+        return [w["id"] for w in get_workspaces(active_only=True)]
+
+    ws_ids = set()
+    if str(u.get("role", "")).strip().lower() == "admin":
+        pw = u.get("primary_workspace") or "ENG"
+        ws_ids.add(pw)
+    rows = q("SELECT workspace_id FROM user_workspaces WHERE username=%s AND role IN ('admin', 'superadmin')", (username,))
+    for r in rows:
+        ws_ids.add(r["workspace_id"])
+    return list(ws_ids)
+
+def assign_user_workspace(username, workspace_id, role="viewer"):
+    role = str(role or "viewer").strip().lower()
+    if role not in ("admin", "editor", "viewer"):
+        role = "viewer"
+    exe("""INSERT INTO user_workspaces(username, workspace_id, role)
+           VALUES(%s, %s, %s)
+           ON CONFLICT (username, workspace_id) DO UPDATE SET role = EXCLUDED.role""",
+        (username, workspace_id, role))
+
+def remove_user_workspace(username, workspace_id):
+    exe("DELETE FROM user_workspaces WHERE username=%s AND workspace_id=%s", (username, workspace_id))
+
+def set_user_primary_workspace(username, ws_id):
+    exe("UPDATE users SET primary_workspace=%s WHERE username=%s", (ws_id, username))
+
+def get_users_for_admin(admin_username):
+    """
+    If admin_username is superadmin: returns all users.
+    If admin_username is a Department Admin: returns only users belonging to the admin's workspace(s),
+    excluding superadmins.
+    """
+    u = get_user(admin_username)
+    if not u:
+        return []
+    if str(u.get("role", "")).strip().lower() == "superadmin":
+        return q("""
+            SELECT u.username, u.role, u.email, COALESCE(u.primary_workspace, 'ENG') as primary_workspace,
+                   COALESCE(
+                       (SELECT json_agg(json_build_object('workspace_id', uw.workspace_id, 'role', uw.role))
+                        FROM user_workspaces uw WHERE uw.username = u.username), '[]'::json
+                   ) as workspaces
+            FROM users u
+            ORDER BY u.username
+        """)
+
+    admin_ws = get_admin_workspaces_for_user(admin_username)
+    if not admin_ws:
+        return []
+
+    rows = q("""
+        SELECT DISTINCT u.username, u.role, u.email, COALESCE(u.primary_workspace, 'ENG') as primary_workspace,
+               COALESCE(
+                   (SELECT json_agg(json_build_object('workspace_id', uw.workspace_id, 'role', uw.role))
+                    FROM user_workspaces uw WHERE uw.username = u.username), '[]'::json
+               ) as workspaces
+        FROM users u
+        LEFT JOIN user_workspaces uw ON u.username = uw.username
+        WHERE u.role != 'superadmin'
+          AND (uw.workspace_id = ANY(%s) OR u.primary_workspace = ANY(%s))
+        ORDER BY u.username
+    """, (admin_ws, admin_ws))
+    return rows
 
 # ── Sessions ──────────────────────────────────────────────────
 SESSION_TTL = 8 * 3600
@@ -809,17 +992,27 @@ def _project_scope_clause(column, pid=None, project_ids=None):
     return f"WHERE {column} IN ({ph})", ids
 
 # ── Projects ──────────────────────────────────────────────────
-def get_projects(project_ids=None):
+def get_projects(project_ids=None, workspace_id=None):
     order_sql = """ORDER BY
         CASE WHEN (data->>'dashboard_order') ~ '^-?[0-9]+$' THEN (data->>'dashboard_order')::int ELSE 999999 END,
         id"""
     ids = _clean_project_ids(project_ids)
-    if ids is None:
-        return q(f"SELECT * FROM projects {order_sql}")
-    if not ids:
-        return []
-    ph = ",".join(["%s"] * len(ids))
-    return q(f"SELECT * FROM projects WHERE (id IN ({ph}) OR code IN ({ph}) OR name IN ({ph})) {order_sql}", ids + ids + ids)
+    where_clauses = []
+    params = []
+
+    if workspace_id:
+        where_clauses.append("COALESCE(workspace_id, 'ENG') = %s")
+        params.append(workspace_id)
+
+    if ids is not None:
+        if not ids:
+            return []
+        ph = ",".join(["%s"] * len(ids))
+        where_clauses.append(f"(id IN ({ph}) OR code IN ({ph}) OR name IN ({ph}))")
+        params.extend(ids + ids + ids)
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    return q(f"SELECT * FROM projects {where_sql} {order_sql}", tuple(params))
 
 
 def reorder_projects(order):
@@ -836,15 +1029,22 @@ def reorder_projects(order):
         data["dashboard_order"] = i
         exe("UPDATE projects SET data=%s::jsonb WHERE id=%s", (json.dumps(data), pid))
 
-def get_projects_for_user(username, role=None):
+def get_projects_for_user(username, role=None, workspace_id=None):
     user_role = str(role or "").strip().lower()
-    if user_role in ("superadmin", "admin"):
-        return get_projects()
+    if user_role == "superadmin":
+        return get_projects(workspace_id=workspace_id)
+    if user_role == "admin":
+        admin_ws = get_admin_workspaces_for_user(username)
+        if workspace_id:
+            if workspace_id in admin_ws:
+                return get_projects(workspace_id=workspace_id)
+        else:
+            return get_projects(workspace_id=workspace_id)
     user_projs = get_user_projects(username)
     pids = [p["project_id"] for p in user_projs if p.get("project_id")]
     if not pids:
         return []
-    return get_projects(pids)
+    return get_projects(pids, workspace_id=workspace_id)
 
 def get_project(pid):
     r = q("SELECT * FROM projects WHERE id=%s", (pid,), one=True)
@@ -884,11 +1084,11 @@ def get_expected_reply_rule(pid, dt_id=None):
         from utils import DEFAULT_EXPECTED_REPLY_RULE
         return dict(DEFAULT_EXPECTED_REPLY_RULE)
 
-def save_project(pid, name, code, extra: dict):
+def save_project(pid, name, code, extra: dict, workspace_id=None):
     if isinstance(extra, dict):
         extra.pop("id", None); extra.pop("name", None); extra.pop("code", None)
     extra = extra or {}
-    current = q("SELECT data FROM projects WHERE id=%s", (pid,), one=True)
+    current = q("SELECT data, workspace_id FROM projects WHERE id=%s", (pid,), one=True)
     current_data = current.get("data") if current else {}
     if isinstance(current_data, str):
         try: current_data = json.loads(current_data)
@@ -896,13 +1096,15 @@ def save_project(pid, name, code, extra: dict):
     if isinstance(current_data, dict) and "dashboard_order" in current_data and "dashboard_order" not in extra:
         extra["dashboard_order"] = current_data.get("dashboard_order")
     jdata = json.dumps(extra)
-    exe("""INSERT INTO projects(id,name,code,data) VALUES(%s,%s,%s,%s::jsonb)
-           ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data""",
-        (pid, name, code, jdata))
+    ws_id = workspace_id or (current.get("workspace_id") if current else "ENG") or "ENG"
+    exe("""INSERT INTO projects(id,name,code,data,workspace_id) VALUES(%s,%s,%s,%s::jsonb,%s)
+           ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data, workspace_id=EXCLUDED.workspace_id""",
+        (pid, name, code, jdata, ws_id))
 
-def create_project(pid, name, code, creator=None):
-    exe("INSERT INTO projects(id,name,code,data) VALUES(%s,%s,%s,'{}') ON CONFLICT DO NOTHING",
-        (pid, name, code))
+def create_project(pid, name, code, creator=None, workspace_id="ENG"):
+    ws_id = workspace_id or "ENG"
+    exe("INSERT INTO projects(id,name,code,data,workspace_id) VALUES(%s,%s,%s,'{}',%s) ON CONFLICT DO NOTHING",
+        (pid, name, code, ws_id))
     _seed_project(pid)
     if creator: assign_project(creator, pid)
 
@@ -2491,14 +2693,24 @@ def log_action(username, action, project_id=None, dt_id=None, record_id=None,
                      action, project_id, dt_id, record_id, e)
 
 def get_audit_log(project_id=None, username=None, action=None,
-                  limit=200, offset=0):
+                  limit=200, offset=0, allowed_project_ids=None, allowed_usernames=None):
     """Fetch audit entries with optional filters."""
     conditions = []
     params = []
     if project_id:
         conditions.append("project_id=%s"); params.append(project_id)
+    elif allowed_project_ids is not None:
+        if not allowed_project_ids:
+            return []
+        conditions.append("project_id = ANY(%s)"); params.append(list(allowed_project_ids))
+
     if username:
         conditions.append("username=%s"); params.append(username)
+    elif allowed_usernames is not None:
+        if not allowed_usernames:
+            return []
+        conditions.append("username = ANY(%s)"); params.append(list(allowed_usernames))
+
     if action:
         conditions.append("action=%s"); params.append(action)
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""

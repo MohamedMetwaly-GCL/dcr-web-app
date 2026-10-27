@@ -31,10 +31,13 @@ def current_user():
     Reads the dcr_token cookie and validates it against the sessions table.
     Called on every request that needs to know who the caller is.
     """
-    token = request.cookies.get("dcr_token")
-    if not token:
+    try:
+        token = request.cookies.get("dcr_token")
+        if not token:
+            return None
+        return db.get_session(token)
+    except RuntimeError:
         return None
-    return db.get_session(token)
 
 
 def require_login(fn):
@@ -114,6 +117,34 @@ def can_view_project(project_id, user=None):
     return has_project_access(u["username"], project_id, u.get("role"))
 
 
+def is_superadmin(user=None):
+    """Return True if the current or specified user is a superadmin."""
+    u = user or current_user()
+    if not u:
+        return False
+    return str(u.get("role", "")).strip().lower() == "superadmin"
+
+
+def is_workspace_admin(username, workspace_id=None):
+    """Return True if the user is superadmin or admin of the given workspace (or any workspace if None)."""
+    if not username:
+        return False
+    return db.is_user_workspace_admin(username, workspace_id)
+
+
+def has_workspace_access(username, workspace_id):
+    """Return True if user can access this workspace."""
+    if not username or not workspace_id:
+        return False
+    u = db.get_user(username)
+    if not u:
+        return False
+    if str(u.get("role", "")).strip().lower() == "superadmin":
+        return True
+    workspaces = db.get_user_workspaces(username)
+    return any(w.get("id") == workspace_id for w in workspaces)
+
+
 def require_superadmin(fn):
     """Decorator: allow only users with role == 'superadmin'."""
     @wraps(fn)
@@ -126,6 +157,24 @@ def require_superadmin(fn):
                                   detail=f"Unauthorized superadmin attempt on {request.path}")
                 except Exception:
                     pass
+            return jsonify(error="Forbidden"), 403
+        return fn(*a, **kw)
+    return wrapper
+
+
+def require_admin(fn):
+    """Decorator: allow superadmin or any department admin."""
+    @wraps(fn)
+    def wrapper(*a, **kw):
+        u = current_user()
+        if not u:
+            return jsonify(error="LOGIN_REQUIRED"), 403
+        if not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
+            try:
+                db.log_action(u.get("username", ""), "ACCESS DENIED",
+                              detail=f"Unauthorized admin attempt on {request.path}")
+            except Exception:
+                pass
             return jsonify(error="Forbidden"), 403
         return fn(*a, **kw)
     return wrapper
