@@ -169,6 +169,23 @@ def api_users_action():
                       detail=f"Unassigned project '{pid}' from '{uname}'")
         return jsonify(ok=True)
 
+    if action == "update_workspaces":
+        uname = data.get("username", "").strip().lower()
+        ws_ids = data.get("workspaces", [])
+        if not isinstance(ws_ids, list) or not ws_ids:
+            return jsonify(ok=False, error="User must belong to at least one department"), 400
+        if not is_super:
+            return jsonify(ok=False, error="Superadmin only"), 403
+        target_user = db.get_user(uname)
+        if not target_user:
+            return jsonify(ok=False, error="User not found"), 404
+        if target_user.get("role") == "superadmin" or uname == "admin":
+            return jsonify(ok=False, error="Cannot modify superadmin workspaces"), 400
+
+        db.set_user_workspaces(uname, ws_ids, target_user.get("role", "viewer"))
+        db.log_action(u["username"], "WORKSPACE_UPDATE", detail=f"Updated departments for '{uname}' to {ws_ids}")
+        return jsonify(ok=True)
+
     if action in ("assign_workspace", "update_workspace", "update_department"):
         uname = data.get("username", "").strip().lower()
         ws_id = data.get("workspace_id") or data.get("department", "")

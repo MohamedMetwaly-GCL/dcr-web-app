@@ -201,6 +201,80 @@ class TestStep4UserManagement(unittest.TestCase):
             db.get_project = orig_get_proj
             db.get_user = orig_get_user
 
+    def test_06_refinements_and_deprovisioning(self):
+        """Verify 8 refinements: All Departments badge, O&M label, Checkboxes, No DC column, OM Audit modal."""
+        # 1. Verify DC column is removed from perm table header
+        self.assertNotIn('Document Controller (DC)', SHARED_JS)
+        self.assertIn('async function toggleUserDept', SHARED_JS)
+        self.assertIn('dept-checkboxes', SHARED_JS)
+        self.assertIn('🌐 All Departments', SHARED_JS)
+        self.assertIn('Operation & Maintenance (O&M)', SHARED_JS)
+
+        # 2. Verify backend update_workspaces action
+        orig_current_user = auth.current_user
+        orig_bp_current_user = users_bp.current_user
+        orig_is_super = users_bp.is_superadmin
+        orig_set_ws = getattr(db, 'set_user_workspaces', None)
+        orig_get_user = db.get_user
+
+        mock_super = {'username': 'admin', 'role': 'superadmin'}
+        auth.current_user = lambda: mock_super
+        users_bp.current_user = lambda: mock_super
+        users_bp.is_superadmin = lambda u: True
+        db.get_user = lambda u: {'username': 'sakr', 'role': 'editor', 'primary_workspace': 'ENG'}
+
+        captured = {}
+        def mock_set_workspaces(uname, ws_list, role):
+            captured['set'] = (uname, ws_list, role)
+            return True
+        db.set_user_workspaces = mock_set_workspaces
+
+        try:
+            with app.app.test_request_context(
+                '/api/users',
+                method='POST',
+                data=json.dumps({
+                    'action': 'update_workspaces',
+                    'username': 'sakr',
+                    'workspaces': ['ENG']
+                }),
+                content_type='application/json'
+            ):
+                resp = users_bp.api_users_action()
+                res_obj = resp[0] if isinstance(resp, tuple) else resp
+                data = res_obj.get_json() if hasattr(res_obj, 'get_json') else res_obj
+                self.assertTrue(data.get('ok'))
+                self.assertEqual(captured.get('set'), ('sakr', ['ENG'], 'editor'))
+        finally:
+            auth.current_user = orig_current_user
+            users_bp.current_user = orig_bp_current_user
+            users_bp.is_superadmin = orig_is_super
+            db.get_user = orig_get_user
+            if orig_set_ws:
+                db.set_user_workspaces = orig_set_ws
+
+    def test_07_om_dashboard_defaults_and_audit(self):
+        """Verify O&M admin defaults to OM dashboard and sees Audit Log modal."""
+        orig_get_user_ws = getattr(db, 'get_user_workspaces', None)
+        orig_get_projs_user = getattr(db, 'get_projects_for_user', None)
+
+        mock_om_admin = {'username': 'om_manager', 'role': 'admin', 'primary_workspace': 'OM'}
+        db.get_user_workspaces = lambda u: [{'id': 'OM', 'code': 'O&M', 'name': 'Operation & Maintenance (O&M)', 'user_role': 'admin'}]
+        db.get_projects_for_user = lambda u, r, workspace_id=None: [{'id': 'OM_FAC_1', 'name': 'CFC Cooling', 'code': 'CFC01', 'workspace_id': 'OM'}]
+
+        try:
+            # When active_ws_id is None, it should default to OM because om_manager primary_workspace is OM
+            html = render_dashboard(mock_om_admin, active_ws_id=None)
+            self.assertIn('id="om-audit-modal"', html)
+            self.assertIn('openOmAuditModal()', html)
+            self.assertIn('Audit Log', html)
+            self.assertIn('Operation & Maintenance (O&M)', html)
+        finally:
+            if orig_get_user_ws:
+                db.get_user_workspaces = orig_get_user_ws
+            if orig_get_projs_user:
+                db.get_projects_for_user = orig_get_projs_user
+
 
 if __name__ == '__main__':
     unittest.main()

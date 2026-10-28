@@ -2727,7 +2727,7 @@ def _workspace_switcher_html(u, active_ws_id=None):
 
     sub_map = {
         "ENG": "EPC & Site Submittals",
-        "OM": "Contracts & Facilities"
+        "OM": "Facilities & Maintenance Contracts"
     }
 
     items_html = ""
@@ -4138,7 +4138,8 @@ async function openAdmin() {
     let deptOptions = '<option value="">All Departments</option>';
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.id === 'OM' ? '⚙️' : '📐';
-      deptOptions += `<option value="${w.id}">${icon} ${escHtml(w.name)} (${w.id})</option>`;
+      const label = w.id === 'OM' ? 'Operation & Maintenance (O&M)' : (w.name || 'Engineering & Projects');
+      deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
     });
     
     toolbar.innerHTML = `
@@ -4177,7 +4178,8 @@ async function openAdmin() {
     
     let addDeptOptions = '';
     (_ADMIN_DATA.workspaces || []).forEach(w => {
-      addDeptOptions += `<option value="${w.id}">${w.id === 'OM' ? '⚙️' : '📐'} ${escHtml(w.name)} (${w.id})</option>`;
+      const label = w.id === 'OM' ? 'Operation & Maintenance (O&M)' : (w.name || 'Engineering & Projects');
+      addDeptOptions += `<option value="${w.id}">${w.id === 'OM' ? '⚙️' : '📐'} ${label}</option>`;
     });
     
     addCard.innerHTML = `
@@ -4286,7 +4288,14 @@ function renderAdminTable() {
   const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
   
   const filteredUsers = (_ADMIN_DATA.users || []).filter(u => {
-    if (deptVal && (u.primary_workspace || 'ENG') !== deptVal) return false;
+    if (deptVal) {
+      if (u.role === 'superadmin') {
+        // Superadmin has access to all departments
+      } else {
+        const userWs = (u.workspaces && u.workspaces.length > 0) ? u.workspaces.map(w => w.workspace_id) : [u.primary_workspace || 'ENG'];
+        if (!userWs.includes(deptVal)) return false;
+      }
+    }
     if (roleVal && u.role !== roleVal) return false;
     if (searchVal) {
       const un = (u.username || '').toLowerCase();
@@ -4323,21 +4332,40 @@ function renderAdminTable() {
     const initial = (u.username || '?').charAt(0).toUpperCase();
     const assignedCount = (u.projects || []).length;
     const wsId = u.primary_workspace || 'ENG';
-    const isOM = wsId === 'OM';
-    const deptBadgeClass = isOM ? 'dept-badge-om' : 'dept-badge-eng';
-    const deptIcon = isOM ? '⚙️' : '📐';
-    const deptLabel = isOM ? 'O&M' : 'Engineering';
-    
-    // Department column: if superadmin and not protected, allow quick dropdown change
+    const isSuperAdminUser = (u.role === 'superadmin' || isProtected);
+    const userWsIds = (u.workspaces && u.workspaces.length > 0)
+      ? u.workspaces.map(w => w.workspace_id)
+      : [u.primary_workspace || 'ENG'];
+    const hasEng = userWsIds.includes('ENG');
+    const hasOm = userWsIds.includes('OM');
+
+    // Department column: Checkboxes for Superadmin, clear badges for others
     let deptCol = '';
-    if (isSuper && !isProtected) {
-      let wsOpts = '';
-      (_ADMIN_DATA.workspaces || []).forEach(w => {
-        wsOpts += `<option value="${w.id}" ${wsId === w.id ? 'selected' : ''}>${w.id === 'OM' ? '⚙️' : '📐'} ${w.id}</option>`;
-      });
-      deptCol = `<select class="tbl-select" onchange="updUsrDept('${escHtml(u.username)}', this.value)" title="Change primary department">${wsOpts}</select>`;
+    if (isSuperAdminUser) {
+      deptCol = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;">🌐 All Departments</span>';
+    } else if (isSuper) {
+      deptCol = `
+        <div class="dept-checkboxes" style="display:flex;flex-direction:column;gap:3px;font-size:11px;">
+          <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;">
+            <input type="checkbox" id="dept-eng-${escHtml(u.username)}" ${hasEng ? 'checked' : ''}
+                   onchange="toggleUserDept('${escHtml(u.username)}', 'ENG', this.checked)">
+            <span>📐 Engineering</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;">
+            <input type="checkbox" id="dept-om-${escHtml(u.username)}" ${hasOm ? 'checked' : ''}
+                   onchange="toggleUserDept('${escHtml(u.username)}', 'OM', this.checked)">
+            <span>⚙️ O&M</span>
+          </label>
+        </div>
+      `;
     } else {
-      deptCol = `<span class="dept-badge ${deptBadgeClass}">${deptIcon} ${deptLabel}</span>`;
+      if (hasEng && hasOm) {
+        deptCol = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:600;">🌐 All Departments</span>';
+      } else if (hasOm) {
+        deptCol = '<span class="dept-badge dept-badge-om">⚙️ O&M</span>';
+      } else {
+        deptCol = '<span class="dept-badge dept-badge-eng">📐 Engineering</span>';
+      }
     }
     
     // Role column:
@@ -4392,31 +4420,85 @@ function renderAdminTable() {
 }
 
 // ── Scoped Permissions Modal ─────────────────────────────────
+async function toggleUserDept(username, changedWs, isChecked) {
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  if (!u) return;
+  const currentWs = (u.workspaces && u.workspaces.length > 0)
+    ? u.workspaces.map(w => w.workspace_id)
+    : [u.primary_workspace || 'ENG'];
+  
+  let newWs = new Set(currentWs);
+  if (isChecked) {
+    newWs.add(changedWs);
+  } else {
+    newWs.delete(changedWs);
+  }
+  
+  if (newWs.size === 0) {
+    toast('User must belong to at least one department', 'wa');
+    renderAdminTable();
+    return;
+  }
+  
+  const wsArray = Array.from(newWs);
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_workspaces',
+        username: username,
+        workspaces: wsArray
+      })
+    });
+    if (r && r.ok) {
+      u.workspaces = wsArray.map(w => ({ workspace_id: w, role: u.role || 'viewer' }));
+      if (!wsArray.includes(u.primary_workspace)) {
+        u.primary_workspace = wsArray[0];
+      }
+      if (!isChecked && u.projects) {
+        const removedPids = _ADMIN_DATA.projects.filter(p => (p.workspace_id || 'ENG') === changedWs).map(p => p.id);
+        u.projects = u.projects.filter(p => !removedPids.includes(p.project_id));
+      }
+      toast('✔ Department updated', 'ok');
+      renderAdminTable();
+    } else {
+      toast((r && r.error) || 'Failed to update department', 'er');
+      renderAdminTable();
+    }
+  } catch (err) {
+    toast('Error updating department: ' + err.message, 'er');
+    renderAdminTable();
+  }
+}
+
 function openPermissionsModal(username) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   if (!u) return toast('User not found', 'er');
   window._ACTIVE_PERM_USER = username;
   
-  const userDept = u.primary_workspace || 'ENG';
-  const isOM = userDept === 'OM';
-  const deptName = isOM ? 'Operation & Maintenance' : 'Engineering & Projects';
-  const deptIcon = isOM ? '⚙️' : '📐';
+  const allowedWs = (u.workspaces && u.workspaces.length > 0)
+    ? u.workspaces.map(w => w.workspace_id)
+    : [u.primary_workspace || 'ENG'];
+  
+  const hasEng = allowedWs.includes('ENG');
+  const hasOm = allowedWs.includes('OM');
+  let deptBadge = '';
+  if (hasEng && hasOm) {
+    deptBadge = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:600;">🌐 All Departments</span>';
+  } else if (hasOm) {
+    deptBadge = '<span class="dept-badge dept-badge-om">⚙️ Operation & Maintenance (O&M)</span>';
+  } else {
+    deptBadge = '<span class="dept-badge dept-badge-eng">📐 Engineering & Projects</span>';
+  }
   
   document.getElementById('perm-title').innerHTML = `⚙️ Project / Contract Permissions — <strong>${escHtml(u.username)}</strong>`;
-  document.getElementById('perm-subtitle').innerHTML = `<span class="dept-badge ${isOM ? 'dept-badge-om' : 'dept-badge-eng'}">${deptIcon} ${deptName}</span> <span style="margin-left:6px;color:var(--mu);">Scoped to user's assigned department</span>`;
+  document.getElementById('perm-subtitle').innerHTML = `${deptBadge} <span style="margin-left:6px;color:var(--mu);">Scoped strictly to user's assigned department(s)</span>`;
   
-  // Scoped project filtering: projects belonging to user's department
-  const allowedWs = (u.workspaces && u.workspaces.length > 0) ? u.workspaces.map(w => w.workspace_id) : [userDept];
-  const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
-  
+  // Filter projects strictly to user's assigned departments (No cross-department leakage)
   let scopedProjects = _ADMIN_DATA.projects.filter(p => {
     const pWs = p.workspace_id || 'ENG';
-    return allowedWs.includes(pWs) || (isSuper && allowedWs.length === 0);
+    return allowedWs.includes(pWs);
   });
-  
-  if (scopedProjects.length === 0) {
-    scopedProjects = _ADMIN_DATA.projects;
-  }
   
   window._ACTIVE_PERM_PROJECTS = scopedProjects;
   
@@ -4447,8 +4529,7 @@ function renderPermTable(projects) {
       <thead>
         <tr style="background:var(--bg,#f8fafc);border-bottom:2px solid var(--bd,#e2e8f0);">
           <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Project / Contract</th>
-          <th style="padding:10px 14px;text-align:center;width:90px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Access</th>
-          <th style="padding:10px 14px;text-align:center;width:170px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Document Controller (DC)</th>
+          <th style="padding:10px 14px;text-align:center;width:100px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Access</th>
         </tr>
       </thead>
       <tbody>
@@ -4457,8 +4538,8 @@ function renderPermTable(projects) {
   projects.forEach(p => {
     const access = assignedMap[p.id];
     const hasAccess = !!access;
-    const isDC = hasAccess && !!access.is_dc;
     const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • Client: ${escHtml(p.client)}</span>` : '';
+    const isOm = p.workspace_id === 'OM';
     
     html += `
       <tr class="perm-row" data-pid="${escHtml(p.id)}" data-text="${escHtml((p.code + ' ' + p.name + ' ' + (p.client||'')).toLowerCase())}" style="border-bottom:1px solid var(--bd,#f1f5f9);">
@@ -4466,15 +4547,12 @@ function renderPermTable(projects) {
           <div style="font-weight:700;color:var(--tx);display:flex;align-items:center;gap:6px;">
             <span>${escHtml(p.code)}</span>
             <span style="font-weight:500;color:var(--tx-mu,#64748b);">${escHtml(p.name)}</span>
-            <span class="dept-badge ${p.workspace_id==='OM'?'dept-badge-om':'dept-badge-eng'}" style="font-size:9.5px;padding:1px 6px;">${p.workspace_id==='OM'?'⚙️ O&M':'📐 ENG'}</span>
+            <span class="dept-badge ${isOm?'dept-badge-om':'dept-badge-eng'}" style="font-size:9.5px;padding:1px 6px;">${isOm?'⚙️ O&M':'📐 ENG'}</span>
           </div>
           ${clientText}
         </td>
-        <td style="padding:10px 14px;text-align:center;width:90px;">
+        <td style="padding:10px 14px;text-align:center;width:100px;">
           <input type="checkbox" class="perm-toggle-switch" id="chk-access-${escHtml(p.id)}" ${hasAccess ? 'checked' : ''} onchange="togglePermAccess('${escHtml(username)}', '${escHtml(p.id)}', this.checked)" style="cursor:pointer;transform:scale(1.2);">
-        </td>
-        <td style="padding:10px 14px;text-align:center;width:170px;">
-          <input type="checkbox" class="perm-toggle-switch" id="chk-dc-${escHtml(p.id)}" ${isDC ? 'checked' : ''} ${!hasAccess ? 'disabled' : ''} onchange="togglePermDC('${escHtml(username)}', '${escHtml(p.id)}', this.checked)" style="cursor:pointer;transform:scale(1.2);">
         </td>
       </tr>
     `;
@@ -4494,11 +4572,6 @@ function filterPermProjects(query) {
 }
 
 async function togglePermAccess(username, pid, enable) {
-  const dcChk = document.getElementById('chk-dc-' + pid);
-  if (dcChk) {
-    dcChk.disabled = !enable;
-    if (!enable) dcChk.checked = false;
-  }
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   const statusEl = document.getElementById('perm-save-status');
   if (statusEl) statusEl.textContent = 'Saving...';
@@ -4788,8 +4861,7 @@ async function exportUsersCSV() {
       "Role",
       ...projHeaders,
       "Total Assigned Projects",
-      "Document Controller (DC)",
-      "Assigned Projects (Detailed List)"
+            "Assigned Projects (Detailed List)"
     ];
     
     const projCounts = Object.fromEntries(projects.map(p => [p.id, 0]));
@@ -4830,8 +4902,7 @@ async function exportUsersCSV() {
         `"${String(u.role||'').toUpperCase()}"`,
         ...projCols,
         totalCol,
-        `"${String(dcList).replace(/"/g, '""')}"`,
-        `"${String(projDetailedList).replace(/"/g, '""')}"`
+                `"${String(projDetailedList).replace(/"/g, '""')}"`
       ];
     });
     
@@ -4844,7 +4915,6 @@ async function exportUsersCSV() {
       '""',
       ...footerProjCounts,
       `"${users.length} Total Users"`,
-      '""',
       '""'
     ];
     
@@ -5214,6 +5284,12 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
         '➕ New Contract / Facility</button>'
     ) if can_manage else ""
 
+    audit_btn = (
+        '<button class="tb-btn" onclick="openOmAuditModal()" '
+        'style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;font-size:12px;font-weight:600;background:var(--wh);border:1px solid var(--bd);border-radius:6px;cursor:pointer;color:var(--tx);">'
+        '<span>📜</span><span>Audit Log</span></button>'
+    ) if can_manage else ""
+
     cards_html = ""
     for p in accessible_projs:
         p_id = p["id"]
@@ -5442,6 +5518,7 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       <input type="text" id="om-search" placeholder="🔍 Search contracts..." oninput="filterOmCards(this.value)" style="padding:6px 12px;border:1px solid var(--bd);border-radius:6px;font-size:12px;background:var(--bg);color:var(--tx);outline:none;min-width:200px;">
+      {audit_btn}
       {header_add_btn}
     </div>
   </div>
@@ -5504,6 +5581,53 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
   </div>
 </div>
 
+<!-- Modal: Scoped O&M Audit Log -->
+<div id="om-audit-modal" class="overlay hidden" onclick="if(event.target===this)closeM('om-audit-modal')">
+  <div class="modal" style="max-width:1100px; width:95%; max-height:90vh; display:flex; flex-direction:column;">
+    <div class="mhdr" style="padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:16px;">📜</span>
+        <strong style="font-size:14px;">O&M Activity & Audit Log</strong>
+        <span class="dept-badge dept-badge-om" style="margin-left:6px;">⚙️ O&M Department</span>
+      </div>
+      <button class="xbtn" onclick="closeM('om-audit-modal')">✕</button>
+    </div>
+    <div style="padding:10px 18px; background:var(--surface); border-bottom:1px solid var(--bd); display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <select id="om-aud-pid" onchange="loadOmAudit()" style="padding:6px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);">
+        <option value="">All Contracts / Facilities</option>
+      </select>
+      <select id="om-aud-user" onchange="loadOmAudit()" style="padding:6px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);">
+        <option value="">All Users</option>
+      </select>
+      <select id="om-aud-action" onchange="loadOmAudit()" style="padding:6px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);">
+        <option value="">All Actions</option>
+      </select>
+      <button class="tb-btn" onclick="loadOmAudit()" style="margin-left:auto; padding:6px 12px; font-size:12px;">🔄 Refresh</button>
+    </div>
+    <div class="mbody" style="padding:0; overflow:auto; flex:1;">
+      <table class="user-tbl" id="om-aud-tbl" style="width:100%; border-collapse:collapse; font-size:11.5px;">
+        <thead>
+          <tr style="background:var(--bg); position:sticky; top:0; z-index:10; border-bottom:1px solid var(--bd);">
+            <th style="padding:8px 12px; width:140px;">Time</th>
+            <th style="padding:8px 12px; width:100px;">User</th>
+            <th style="padding:8px 12px; width:120px;">Action</th>
+            <th style="padding:8px 12px; width:150px;">Contract / Facility</th>
+            <th style="padding:8px 12px; width:120px;">Doc / Ref</th>
+            <th style="padding:8px 12px;">Details</th>
+          </tr>
+        </thead>
+        <tbody id="om-aud-tbody">
+          <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--mu);">Loading logs...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="mfoot" style="padding:10px 18px; display:flex; justify-content:space-between; align-items:center;">
+      <span id="om-aud-count" style="font-size:11px; color:var(--mu);">0 events</span>
+      <button class="btn btn-sc" onclick="closeM('om-audit-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 {SHARED_JS}
 {ABOUT_MODAL_HTML}
 {AI_DRAWER_COMPONENT}
@@ -5553,6 +5677,78 @@ async function delProject(pid, pname) {{
     alert(e.message);
   }}
 }}
+
+let _omAuditLoaded = false;
+async function openOmAuditModal() {{
+  openM('om-audit-modal');
+  if (!_omAuditLoaded) {{
+    await loadOmAudit();
+    _omAuditLoaded = true;
+  }}
+}}
+
+async function loadOmAudit() {{
+  const tbody = document.getElementById('om-aud-tbody');
+  const countEl = document.getElementById('om-aud-count');
+  const pid = document.getElementById('om-aud-pid')?.value || '';
+  const user = document.getElementById('om-aud-user')?.value || '';
+  const action = document.getElementById('om-aud-action')?.value || '';
+  
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">Loading logs...</td></tr>';
+  
+  try {{
+    const params = new URLSearchParams();
+    if (pid) params.append('pid', pid);
+    if (user) params.append('username', user);
+    if (action) params.append('action', action);
+    
+    const r = await apiFetch('/api/audit?' + params.toString());
+    if (!r) return;
+    
+    const pidSel = document.getElementById('om-aud-pid');
+    if (pidSel && pidSel.options.length <= 1 && r.projects) {{
+      r.projects.forEach(p => {{
+        pidSel.innerHTML += '<option value="' + escHtml(p.id) + '">' + escHtml(p.code || p.id) + ' - ' + escHtml(p.name) + '</option>';
+      }});
+    }}
+    const userSel = document.getElementById('om-aud-user');
+    if (userSel && userSel.options.length <= 1 && r.users) {{
+      r.users.forEach(usr => {{
+        userSel.innerHTML += '<option value="' + escHtml(usr) + '">' + escHtml(usr) + '</option>';
+      }});
+    }}
+    const actSel = document.getElementById('om-aud-action');
+    if (actSel && actSel.options.length <= 1 && r.actions) {{
+      r.actions.forEach(a => {{
+        actSel.innerHTML += '<option value="' + escHtml(a) + '">' + escHtml(a) + '</option>';
+      }});
+    }}
+    
+    const rows = r.rows || [];
+    if (countEl) countEl.textContent = rows.length + ' event(s)';
+    
+    if (rows.length === 0) {{
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">No audit logs found.</td></tr>';
+      return;
+    }}
+    
+    let html = '';
+    rows.forEach(row => {{
+      const dt = row.created_at ? new Date(row.created_at).toLocaleString('en-GB') : '—';
+      html += '<tr style="border-bottom:1px solid var(--bd);">';
+      html += '<td style="padding:8px 12px;font-family:monospace;font-size:10.5px;color:var(--mu);">' + escHtml(dt) + '</td>';
+      html += '<td style="padding:8px 12px;font-weight:600;">' + escHtml(row.username || '—') + '</td>';
+      html += '<td style="padding:8px 12px;"><span class="badge" style="background:#f1f5f9;color:#334155;font-weight:600;">' + escHtml(row.action || '—') + '</span></td>';
+      html += '<td style="padding:8px 12px;color:var(--tx);">' + escHtml(row.project_id || '—') + '</td>';
+      html += '<td style="padding:8px 12px;color:var(--mu);font-family:monospace;">' + escHtml(row.document_id || '—') + '</td>';
+      html += '<td style="padding:8px 12px;color:var(--tx);">' + escHtml(row.detail || '—') + '</td>';
+      html += '</tr>';
+    }});
+    if (tbody) tbody.innerHTML = html;
+  }} catch(e) {{
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#ef4444;">Error loading audit log: ' + escHtml(e.message) + '</td></tr>';
+  }}
+}}
 </script>
 </body></html>'''
 
@@ -5560,14 +5756,20 @@ def render_dashboard(u, active_ws_id=None):
     btns, uname, rlbl, rbg = _user_info_html(u)
     role = u["role"] if u else "guest"
     audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;, this)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
-    active_ws = active_ws_id or "ENG"
-    try:
-        user_ws = db.get_user_workspaces(u["username"]) if u else []
-        ws_ids = [w["id"] for w in user_ws]
-        if ws_ids and active_ws not in ws_ids:
+    user_ws = db.get_user_workspaces(u["username"]) if u else []
+    ws_ids = [w["id"] for w in user_ws]
+    if not active_ws_id:
+        pw = u.get("primary_workspace") if u else None
+        if pw and pw in ws_ids:
+            active_ws = pw
+        elif ws_ids:
             active_ws = ws_ids[0]
-    except Exception:
-        pass
+        else:
+            active_ws = "ENG"
+    elif active_ws_id not in ws_ids and ws_ids:
+        active_ws = ws_ids[0]
+    else:
+        active_ws = active_ws_id
     try:
         accessible_projs = db.get_projects_for_user(u["username"], u.get("role"), workspace_id=active_ws) if u else []
     except Exception:

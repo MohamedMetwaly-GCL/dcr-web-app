@@ -592,17 +592,16 @@ def _ensure_workspaces():
     try:
         exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active)
                VALUES('ENG', 'ENG', 'Engineering & Projects', 'المشروعات الهندسية', '🏗️', 'engineering', 1, TRUE)
-               ON CONFLICT (id) DO NOTHING""")
+               ON CONFLICT (id) DO UPDATE SET code = 'ENG', name = 'Engineering & Projects'""")
         exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active)
-               VALUES('OM', 'OM', 'Operation & Maintenance', 'الصيانة والتشغيل', '⚙️', 'om', 2, TRUE)
-               ON CONFLICT (id) DO NOTHING""")
+               VALUES('OM', 'O&M', 'Operation & Maintenance (O&M)', 'الصيانة والتشغيل', '⚙️', 'om', 2, TRUE)
+               ON CONFLICT (id) DO UPDATE SET code = 'O&M', name = 'Operation & Maintenance (O&M)'""")
         exe("UPDATE projects SET workspace_id = 'ENG' WHERE workspace_id IS NULL OR workspace_id = ''")
         exe("""
             INSERT INTO user_workspaces (username, workspace_id, role)
-            SELECT username, 'ENG', 
-                   CASE WHEN role = 'superadmin' THEN 'admin' ELSE role END
+            SELECT username, 'ENG', 'admin'
             FROM users
-            WHERE username NOT IN (SELECT username FROM user_workspaces WHERE workspace_id = 'ENG')
+            WHERE role = 'superadmin'
             ON CONFLICT DO NOTHING
         """)
         exe("""
@@ -611,6 +610,44 @@ def _ensure_workspaces():
             FROM users
             WHERE role = 'superadmin'
             ON CONFLICT DO NOTHING
+        """)
+        exe("""
+            INSERT INTO user_workspaces (username, workspace_id, role)
+            SELECT username, COALESCE(primary_workspace, 'ENG'), 
+                   CASE WHEN role = 'superadmin' THEN 'admin' ELSE role END
+            FROM users
+            WHERE username NOT IN (SELECT username FROM user_workspaces)
+            ON CONFLICT DO NOTHING
+        """)
+        # Cleanup: Non-superadmin users who only belong to ENG (or have ENG primary) and have NO OM projects
+        # should NOT have orphaned OM workspace (resolving the case of sakr)
+        exe("""
+            DELETE FROM user_workspaces
+            WHERE workspace_id = 'OM'
+              AND username IN (
+                  SELECT u.username FROM users u
+                  LEFT JOIN user_projects up ON u.username = up.username
+                  LEFT JOIN projects p ON up.project_id = p.id AND p.workspace_id = 'OM'
+                  WHERE u.role != 'superadmin'
+                    AND (u.primary_workspace = 'ENG' OR u.primary_workspace IS NULL)
+                  GROUP BY u.username
+                  HAVING COUNT(p.id) = 0
+              )
+        """)
+        # Cleanup: Non-superadmin users whose primary_workspace is OM and have no ENG projects
+        # should not have errant ENG workspace
+        exe("""
+            DELETE FROM user_workspaces
+            WHERE workspace_id = 'ENG'
+              AND username IN (
+                  SELECT u.username FROM users u
+                  LEFT JOIN user_projects up ON u.username = up.username
+                  LEFT JOIN projects p ON up.project_id = p.id AND (p.workspace_id = 'ENG' OR p.workspace_id IS NULL)
+                  WHERE u.role != 'superadmin'
+                    AND u.primary_workspace = 'OM'
+                  GROUP BY u.username
+                  HAVING COUNT(p.id) = 0
+              )
         """)
     except Exception as e:
         logger.warning("_ensure_workspaces note: %s", e)
@@ -716,7 +753,7 @@ def get_user_workspaces(username):
         LEFT JOIN user_workspaces uw ON w.id = uw.workspace_id AND uw.username = %s
         LEFT JOIN users u ON u.username = %s
         WHERE w.is_active = TRUE
-          AND (uw.username IS NOT NULL OR u.primary_workspace = w.id OR (w.id = 'ENG' AND uw.role IS NULL))
+          AND (uw.username IS NOT NULL OR u.primary_workspace = w.id)
         ORDER BY w.sort_order, w.id
     """, (username, username))
     return rows
@@ -774,6 +811,48 @@ def remove_user_workspace(username, workspace_id):
 def set_user_primary_workspace(username, ws_id):
     exe("UPDATE users SET primary_workspace=%s WHERE username=%s", (ws_id, username))
 
+def set_user_workspaces(username, workspace_ids, default_role="viewer"):
+    """
+    Synchronize user's assigned workspaces.
+    - Adds newly assigned workspaces.
+    - Deletes revoked workspaces.
+    - Cascades deletion of user_projects for revoked workspaces.
+    - Updates primary_workspace if current primary was revoked.
+    """
+    ws_ids = [str(w).strip().upper() for w in workspace_ids if str(w).strip()]
+    if not ws_ids:
+        return False
+
+    u = get_user(username)
+    if not u:
+        return False
+
+    curr_primary = u.get("primary_workspace") or "ENG"
+    if curr_primary not in ws_ids:
+        new_primary = ws_ids[0]
+        exe("UPDATE users SET primary_workspace=%s WHERE username=%s", (new_primary, username))
+
+    for wid in ws_ids:
+        exe("""
+            INSERT INTO user_workspaces (username, workspace_id, role)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (username, workspace_id) DO NOTHING
+        """, (username, wid, default_role))
+
+    exe("""
+        DELETE FROM user_workspaces
+        WHERE username=%s AND NOT (workspace_id = ANY(%s))
+    """, (username, ws_ids))
+
+    exe("""
+        DELETE FROM user_projects
+        WHERE username=%s
+          AND project_id IN (
+              SELECT id FROM projects WHERE NOT (workspace_id = ANY(%s))
+          )
+    """, (username, ws_ids))
+    return True
+
 def get_users_for_admin(admin_username):
     """
     If admin_username is superadmin: returns all users.
@@ -799,15 +878,20 @@ def get_users_for_admin(admin_username):
         return []
 
     rows = q("""
-        SELECT DISTINCT u.username, u.role, u.email, COALESCE(u.primary_workspace, 'ENG') as primary_workspace,
+        SELECT u.username, u.role, u.email, COALESCE(u.primary_workspace, 'ENG') as primary_workspace,
                COALESCE(
                    (SELECT json_agg(json_build_object('workspace_id', uw.workspace_id, 'role', uw.role))
                     FROM user_workspaces uw WHERE uw.username = u.username), '[]'::json
                ) as workspaces
         FROM users u
-        LEFT JOIN user_workspaces uw ON u.username = uw.username
         WHERE u.role != 'superadmin'
-          AND (uw.workspace_id = ANY(%s) OR u.primary_workspace = ANY(%s))
+          AND (
+              u.primary_workspace = ANY(%s)
+              OR EXISTS (
+                  SELECT 1 FROM user_workspaces uw2
+                  WHERE uw2.username = u.username AND uw2.workspace_id = ANY(%s)
+              )
+          )
         ORDER BY u.username
     """, (admin_ws, admin_ws))
     return rows
@@ -1067,8 +1151,12 @@ def get_projects_for_user(username, role=None, workspace_id=None):
         if workspace_id:
             if workspace_id in admin_ws:
                 return get_projects(workspace_id=workspace_id)
+            return []
         else:
-            return get_projects(workspace_id=workspace_id)
+            all_projs = []
+            for aws in admin_ws:
+                all_projs.extend(get_projects(workspace_id=aws))
+            return all_projs
     user_projs = get_user_projects(username)
     pids = [p["project_id"] for p in user_projs if p.get("project_id")]
     if not pids:
