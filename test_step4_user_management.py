@@ -356,5 +356,87 @@ class TestStep4UserManagement(unittest.TestCase):
                 db.set_user_project_doc_types = orig_set_doc_types
 
 
+    def test_09_om_admin_assigns_om_project_and_12h_audit(self):
+        """Verify department admin can assign projects in their own department, and 12h clock."""
+        # 1. Check 12-hour clock format in html_render
+        import html_render
+        import inspect
+        self.assertIn("hour12:true", inspect.getsource(html_render._render_om_dashboard).replace(" ", ""))
+
+        # 2. Test O&M admin assigning an OM project
+        orig_current_user = auth.current_user
+        orig_bp_current_user = users_bp.current_user
+        orig_is_super = users_bp.is_superadmin
+        orig_admin_ws = db.get_admin_workspaces_for_user
+        orig_get_proj = db.get_project
+        orig_assign_p = db.assign_project
+        orig_is_ws_admin = getattr(db, 'is_user_workspace_admin', None)
+        db.is_user_workspace_admin = lambda u, ws=None: True
+
+        mock_om_admin = {'username': 'a.raffat', 'role': 'admin', 'primary_workspace': 'OM'}
+        auth.current_user = lambda: mock_om_admin
+        users_bp.current_user = lambda: mock_om_admin
+        users_bp.is_superadmin = lambda u: False
+        db.get_admin_workspaces_for_user = lambda u: ['OM']
+
+        captured = {}
+        def mock_get_proj(pid):
+            if pid == '02' or pid == 'CFC':
+                return {'id': '02', 'name': 'CFC', 'code': 'CFC', 'workspace_id': 'OM'}
+            return {'id': 'PEM-058', 'name': 'CFC Plant', 'code': 'PEM-058', 'workspace_id': 'ENG'}
+
+        def mock_assign(uname, pid, is_dc=False):
+            captured['assigned'] = (uname, pid, is_dc)
+            return True
+
+        db.get_project = mock_get_proj
+        db.assign_project = mock_assign
+
+        try:
+            # Assigning OM project should succeed
+            with app.app.test_request_context(
+                '/api/users',
+                method='POST',
+                data=json.dumps({
+                    'action': 'assign',
+                    'username': 'cfo',
+                    'project_id': '02',
+                    'is_dc': False
+                }),
+                content_type='application/json'
+            ):
+                resp = users_bp.api_users_action()
+                res_obj = resp[0] if isinstance(resp, tuple) else resp
+                data = res_obj.get_json() if hasattr(res_obj, 'get_json') else res_obj
+                self.assertTrue(data.get('ok'))
+                self.assertEqual(captured.get('assigned'), ('cfo', '02', False))
+
+            # Assigning ENG project by OM admin should be blocked with 403
+            with app.app.test_request_context(
+                '/api/users',
+                method='POST',
+                data=json.dumps({
+                    'action': 'assign',
+                    'username': 'cfo',
+                    'project_id': 'PEM-058',
+                    'is_dc': False
+                }),
+                content_type='application/json'
+            ):
+                resp = users_bp.api_users_action()
+                res_obj = resp[0] if isinstance(resp, tuple) else resp
+                status_code = resp[1] if isinstance(resp, tuple) else (getattr(resp, 'status_code', 200))
+                self.assertEqual(status_code, 403)
+        finally:
+            auth.current_user = orig_current_user
+            users_bp.current_user = orig_bp_current_user
+            users_bp.is_superadmin = orig_is_super
+            db.get_admin_workspaces_for_user = orig_admin_ws
+            db.get_project = orig_get_proj
+            db.assign_project = orig_assign_p
+            if orig_is_ws_admin:
+                db.is_user_workspace_admin = orig_is_ws_admin
+
+
 if __name__ == '__main__':
     unittest.main()

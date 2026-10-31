@@ -6087,7 +6087,7 @@ async function loadOmAudit() {{
     rows.forEach(row => {{
       const rawTs = row.ts || row.created_at;
       const ts = new Date(rawTs);
-      const dt = (!rawTs || isNaN(ts.getTime())) ? '—' : (ts.toLocaleDateString('en-GB') + ' ' + ts.toLocaleTimeString('en-GB', {{hour:'2-digit', minute:'2-digit'}}));
+      const dt = (!rawTs || isNaN(ts.getTime())) ? '—' : (ts.toLocaleDateString('en-GB') + ' ' + ts.toLocaleTimeString('en-US', {{hour:'2-digit', minute:'2-digit', hour12:true}}));
       html += '<tr style="border-bottom:1px solid var(--bd);">';
       html += '<td style="padding:8px 12px;font-family:monospace;font-size:10.5px;color:var(--mu);">' + escHtml(dt) + '</td>';
       html += '<td style="padding:8px 12px;font-weight:600;">' + escHtml(row.username || '—') + '</td>';
@@ -8093,7 +8093,7 @@ async function loadAudit(reset=false){{
       const tr=document.createElement('tr');
       tr.className=i%2===0?'':'alt';
       const ts=new Date(r.ts);
-      const tsStr=ts.toLocaleDateString('en-GB')+' '+ts.toLocaleTimeString('en-GB',{{hour:'2-digit',minute:'2-digit'}});
+      const tsStr=ts.toLocaleDateString('en-GB')+' '+ts.toLocaleTimeString('en-US',{{hour:'2-digit',minute:'2-digit',hour12:true}});
       const actionColor=ACTION_COLORS[r.action]||'#374151';
       const actionBg=
         (r.action==='ADD'||r.action==='USER_CREATE'||r.action==='IMPORT_EXCEL'||r.action==='IMPORT_PROJECT') ? '#bbf7d0' :

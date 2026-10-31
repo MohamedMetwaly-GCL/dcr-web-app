@@ -148,7 +148,9 @@ def api_users_action():
         is_dc = data.get("is_dc", False)
         if not is_super:
             proj = db.get_project(pid)
-            if not proj or proj.get("workspace_id", "ENG") not in admin_ws:
+            proj_ws = str(proj.get("workspace_id") or "ENG").upper() if proj else "ENG"
+            admin_ws_upper = [str(w).upper() for w in admin_ws]
+            if not proj or proj_ws not in admin_ws_upper:
                 return jsonify(ok=False, error="Cannot assign project from another department"), 403
 
         db.assign_project(uname, pid, is_dc)
@@ -163,7 +165,9 @@ def api_users_action():
         pid = data.get("project_id", "")
         if not is_super:
             proj = db.get_project(pid)
-            if not proj or proj.get("workspace_id", "ENG") not in admin_ws:
+            proj_ws = str(proj.get("workspace_id") or "ENG").upper() if proj else "ENG"
+            admin_ws_upper = [str(w).upper() for w in admin_ws]
+            if not proj or proj_ws not in admin_ws_upper:
                 return jsonify(ok=False, error="Cannot unassign project from another department"), 403
 
         db.unassign_project(uname, pid)
@@ -201,7 +205,9 @@ def api_users_action():
             return jsonify(ok=False, error="Username and project_id required"), 400
         if not is_super:
             proj = db.get_project(pid)
-            if not proj or proj.get("workspace_id", "ENG") not in admin_ws:
+            proj_ws = str(proj.get("workspace_id") or "ENG").upper() if proj else "ENG"
+            admin_ws_upper = [str(w).upper() for w in admin_ws]
+            if not proj or proj_ws not in admin_ws_upper:
                 return jsonify(ok=False, error="Cannot modify project outside your department"), 403
         target_user = db.get_user(uname)
         if not target_user:

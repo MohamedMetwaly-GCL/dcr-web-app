@@ -768,16 +768,17 @@ def is_user_workspace_admin(username, workspace_id=None):
         return True
 
     if workspace_id:
-        row = q("SELECT role FROM user_workspaces WHERE username=%s AND workspace_id=%s", (username, workspace_id), one=True)
-        if row and row.get("role") in ("admin", "superadmin"):
+        ws_upper = str(workspace_id).strip().upper()
+        row = q("SELECT role FROM user_workspaces WHERE username=%s AND UPPER(workspace_id)=%s", (username, ws_upper), one=True)
+        if row and str(row.get("role", "")).strip().lower() in ("admin", "superadmin"):
             return True
-        if u.get("role") == "admin" and (u.get("primary_workspace") == workspace_id or (workspace_id == "ENG" and not u.get("primary_workspace"))):
+        if str(u.get("role", "")).strip().lower() in ("admin", "superadmin") and ((u.get("primary_workspace") or "ENG").upper() == ws_upper or (ws_upper == "ENG" and not u.get("primary_workspace"))):
             return True
         return False
     else:
-        if str(u.get("role", "")).strip().lower() == "admin":
+        if str(u.get("role", "")).strip().lower() in ("admin", "superadmin"):
             return True
-        row = q("SELECT 1 FROM user_workspaces WHERE username=%s AND role IN ('admin', 'superadmin') LIMIT 1", (username,), one=True)
+        row = q("SELECT 1 FROM user_workspaces WHERE username=%s AND LOWER(role) IN ('admin', 'superadmin') LIMIT 1", (username,), one=True)
         return bool(row)
 
 def get_admin_workspaces_for_user(username):
@@ -786,15 +787,16 @@ def get_admin_workspaces_for_user(username):
     if not u:
         return []
     if str(u.get("role", "")).strip().lower() == "superadmin":
-        return [w["id"] for w in get_workspaces(active_only=True)]
+        return [str(w["id"]).upper() for w in get_workspaces(active_only=True)]
 
     ws_ids = set()
-    if str(u.get("role", "")).strip().lower() == "admin":
-        pw = u.get("primary_workspace") or "ENG"
+    if str(u.get("role", "")).strip().lower() in ("admin", "superadmin"):
+        pw = (u.get("primary_workspace") or "ENG").upper()
         ws_ids.add(pw)
-    rows = q("SELECT workspace_id FROM user_workspaces WHERE username=%s AND role IN ('admin', 'superadmin')", (username,))
+    rows = q("SELECT workspace_id FROM user_workspaces WHERE username=%s AND LOWER(role) IN ('admin', 'superadmin')", (username,))
     for r in rows:
-        ws_ids.add(r["workspace_id"])
+        if r.get("workspace_id"):
+            ws_ids.add(str(r["workspace_id"]).upper())
     return list(ws_ids)
 
 def assign_user_workspace(username, workspace_id, role="viewer"):
@@ -1234,9 +1236,10 @@ def get_project(pid):
         try: data = json.loads(data)
         except: data = {}
     if not isinstance(data, dict): data = {}
+    ws_id = r.get("workspace_id") or data.get("workspace_id") or "ENG"
     # Never let data override the core fields
-    data.pop("id", None); data.pop("name", None); data.pop("code", None)
-    return {"id": r["id"], "name": r["name"], "code": r["code"], **data}
+    data.pop("id", None); data.pop("name", None); data.pop("code", None); data.pop("workspace_id", None)
+    return {"id": r["id"], "name": r["name"], "code": r["code"], "workspace_id": ws_id, **data}
 
 def update_project_settings(pid, settings_dict):
     r = q("SELECT data FROM projects WHERE id=%s", (pid,), one=True)
