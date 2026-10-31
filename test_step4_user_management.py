@@ -5,7 +5,7 @@ import os
 
 os.environ['SECRET_KEY'] = 'test_secret_key_12345678901234567890123456789012'
 
-from html_render import render_dashboard, render_register, SHARED_JS, BASE_CSS
+from html_render import render_dashboard, render_register, SHARED_JS, BASE_CSS, AI_DRAWER_COMPONENT
 import blueprints.users as users_bp
 import auth
 import db
@@ -274,6 +274,86 @@ class TestStep4UserManagement(unittest.TestCase):
                 db.get_user_workspaces = orig_get_user_ws
             if orig_get_projs_user:
                 db.get_projects_for_user = orig_get_projs_user
+
+
+    def test_08_phase2_per_department_roles_and_doc_types(self):
+        """Verify per-department roles, doc types permissions, and O&M audit formatting."""
+        # 1. Check UI elements exist in SHARED_JS
+        self.assertIn('async function updUsrWsRole', SHARED_JS)
+        self.assertIn('async function toggleDocTypesPanel', SHARED_JS)
+        self.assertIn('onDocTypeCheckboxChange', SHARED_JS)
+        self.assertIn('DCR O&M Assistant', AI_DRAWER_COMPONENT)
+        self.assertIn('resolveActiveWorkspace', AI_DRAWER_COMPONENT)
+
+        # 2. Test update_workspace_role endpoint
+        orig_current_user = auth.current_user
+        orig_bp_current_user = users_bp.current_user
+        orig_is_super = users_bp.is_superadmin
+        orig_set_ws_role = getattr(db, 'set_user_workspace_role', None)
+        orig_set_doc_types = getattr(db, 'set_user_project_doc_types', None)
+        orig_get_user = db.get_user
+
+        mock_super = {'username': 'admin', 'role': 'superadmin'}
+        auth.current_user = lambda: mock_super
+        users_bp.current_user = lambda: mock_super
+        users_bp.is_superadmin = lambda u: True
+        db.get_user = lambda u: {'username': 'ceo', 'role': 'viewer', 'primary_workspace': 'ENG'}
+
+        captured = {}
+        def mock_set_ws_role(uname, ws_id, role):
+            captured['ws_role'] = (uname, ws_id, role)
+            return True
+        db.set_user_workspace_role = mock_set_ws_role
+
+        def mock_set_dt_perm(uname, pid, dts):
+            captured['dt_perm'] = (uname, pid, dts)
+            return True
+        db.set_user_project_doc_types = mock_set_dt_perm
+
+        try:
+            with app.app.test_request_context(
+                '/api/users',
+                method='POST',
+                data=json.dumps({
+                    'action': 'update_workspace_role',
+                    'username': 'ceo',
+                    'workspace_id': 'OM',
+                    'role': 'editor'
+                }),
+                content_type='application/json'
+            ):
+                resp = users_bp.api_users_action()
+                res_obj = resp[0] if isinstance(resp, tuple) else resp
+                data = res_obj.get_json() if hasattr(res_obj, 'get_json') else res_obj
+                self.assertTrue(data.get('ok'))
+                self.assertEqual(captured.get('ws_role'), ('ceo', 'OM', 'editor'))
+
+            # Test set_doc_type_permissions endpoint
+            with app.app.test_request_context(
+                '/api/users',
+                method='POST',
+                data=json.dumps({
+                    'action': 'set_doc_type_permissions',
+                    'username': 'ceo',
+                    'project_id': 'PEM-058',
+                    'doc_types': ['MS', 'SD']
+                }),
+                content_type='application/json'
+            ):
+                resp = users_bp.api_users_action()
+                res_obj = resp[0] if isinstance(resp, tuple) else resp
+                data = res_obj.get_json() if hasattr(res_obj, 'get_json') else res_obj
+                self.assertTrue(data.get('ok'))
+                self.assertEqual(captured.get('dt_perm'), ('ceo', 'PEM-058', ['MS', 'SD']))
+        finally:
+            auth.current_user = orig_current_user
+            users_bp.current_user = orig_bp_current_user
+            users_bp.is_superadmin = orig_is_super
+            db.get_user = orig_get_user
+            if orig_set_ws_role:
+                db.set_user_workspace_role = orig_set_ws_role
+            if orig_set_doc_types:
+                db.set_user_project_doc_types = orig_set_doc_types
 
 
 if __name__ == '__main__':

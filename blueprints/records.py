@@ -13,7 +13,7 @@ import uuid
 from flask import Blueprint, jsonify, request
 
 import db
-from auth import current_user, can_edit, can_view_project, get_allowed_project_ids
+from auth import current_user, can_edit, can_view_project, get_allowed_project_ids, is_superadmin
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 
 records_bp = Blueprint("records", __name__)
@@ -242,6 +242,19 @@ def api_search_global():
 
 @records_bp.route("/api/records/<pid>/<dt_id>")
 def api_records(pid, dt_id):
+    u = current_user()
+    if not u:
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_view_project(pid, u):
+        return jsonify(error="Forbidden"), 403
+    if not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
+        allowed_dts = db.get_user_project_doc_types(u["username"], pid)
+        if allowed_dts is not None:
+            allowed_set = {str(x).upper() for x in allowed_dts}
+            dt_obj = db.get_doc_type(pid, dt_id)
+            dt_code = str(dt_obj.get("code") or "").upper() if dt_obj else ""
+            if str(dt_id).upper() not in allowed_set and dt_code not in allowed_set:
+                return jsonify(error="Document type access denied"), 403
     search  = request.args.get("search","")
     is_pr   = _is_pr_doc_type(pid, dt_id)
     records = db.get_records(pid, dt_id, search=search, search_pr_items=is_pr)
@@ -340,6 +353,14 @@ def api_save_record(pid, dt_id):
                 pass
         return jsonify(error="LOGIN_REQUIRED"), 403
     u      = current_user()
+    if not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
+        allowed_dts = db.get_user_project_doc_types(u["username"], pid)
+        if allowed_dts is not None:
+            allowed_set = {str(x).upper() for x in allowed_dts}
+            dt_obj = db.get_doc_type(pid, dt_id)
+            dt_code = str(dt_obj.get("code") or "").upper() if dt_obj else ""
+            if str(dt_id).upper() not in allowed_set and dt_code not in allowed_set:
+                return jsonify(error="Document type access denied"), 403
     uname  = u["username"] if u else "unknown"
     data   = request.get_json(silent=True) or {}
     rec_id = data.pop("_id", None)

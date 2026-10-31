@@ -649,6 +649,7 @@ def _ensure_workspaces():
                   HAVING COUNT(p.id) = 0
               )
         """)
+        exe("ALTER TABLE user_projects ADD COLUMN IF NOT EXISTS allowed_doc_types JSONB DEFAULT NULL")
     except Exception as e:
         logger.warning("_ensure_workspaces note: %s", e)
 
@@ -805,6 +806,27 @@ def assign_user_workspace(username, workspace_id, role="viewer"):
            ON CONFLICT (username, workspace_id) DO UPDATE SET role = EXCLUDED.role""",
         (username, workspace_id, role))
 
+def get_user_workspace_role(username, workspace_id):
+    """Return user's specific role in workspace_id, falling back to users.role or 'viewer'."""
+    u = get_user(username)
+    if not u:
+        return "viewer"
+    if str(u.get("role", "")).strip().lower() == "superadmin":
+        return "admin"
+    row = q("SELECT role FROM user_workspaces WHERE username=%s AND workspace_id=%s", (username, workspace_id), one=True)
+    if row and row.get("role"):
+        return str(row["role"]).strip().lower()
+    return str(u.get("role") or "viewer").strip().lower()
+
+def set_user_workspace_role(username, workspace_id, role):
+    role = str(role or "viewer").strip().lower()
+    if role not in ("admin", "editor", "viewer"):
+        role = "viewer"
+    exe("""INSERT INTO user_workspaces(username, workspace_id, role)
+           VALUES(%s, %s, %s)
+           ON CONFLICT (username, workspace_id) DO UPDATE SET role = EXCLUDED.role""",
+        (username, workspace_id, role))
+
 def remove_user_workspace(username, workspace_id):
     exe("DELETE FROM user_workspaces WHERE username=%s AND workspace_id=%s", (username, workspace_id))
 
@@ -920,16 +942,57 @@ def cleanup_sessions():
 
 # ── User ↔ Project ────────────────────────────────────────────
 def get_user_projects(username):
-    # Returns a list of dicts: {"project_id": "...", "is_dc": True/False}
-    return [{"project_id": r["project_id"], "is_dc": r.get("is_dc", False)} for r in
-            q("SELECT project_id, is_dc FROM user_projects WHERE username=%s", (username,))]
+    # Returns a list of dicts: {"project_id": "...", "is_dc": True/False, "allowed_doc_types": [...]}
+    return [{"project_id": r["project_id"], "is_dc": r.get("is_dc", False), "allowed_doc_types": r.get("allowed_doc_types")} for r in
+            q("SELECT project_id, is_dc, allowed_doc_types FROM user_projects WHERE username=%s", (username,))]
 
 def get_all_user_projects():
-    rows = q("SELECT username, project_id, is_dc FROM user_projects")
+    rows = q("SELECT username, project_id, is_dc, allowed_doc_types FROM user_projects")
     res = {}
     for r in rows:
-        res.setdefault(r["username"], []).append({"project_id": r["project_id"], "is_dc": r.get("is_dc", False)})
+        res.setdefault(r["username"], []).append({
+            "project_id": r["project_id"],
+            "is_dc": r.get("is_dc", False),
+            "allowed_doc_types": r.get("allowed_doc_types")
+        })
     return res
+
+def set_user_project_doc_types(username, project_id, allowed_doc_types):
+    if allowed_doc_types is not None and not isinstance(allowed_doc_types, list):
+        allowed_doc_types = None
+    if isinstance(allowed_doc_types, list):
+        allowed_val = json.dumps([str(x) for x in allowed_doc_types])
+    else:
+        allowed_val = None
+
+    if allowed_val is not None:
+        exe("""
+            UPDATE user_projects 
+            SET allowed_doc_types = %s::jsonb 
+            WHERE username=%s AND project_id=%s
+        """, (allowed_val, username, project_id))
+    else:
+        exe("""
+            UPDATE user_projects 
+            SET allowed_doc_types = NULL 
+            WHERE username=%s AND project_id=%s
+        """, (username, project_id))
+    return True
+
+def get_user_project_doc_types(username, project_id):
+    row = q("SELECT allowed_doc_types FROM user_projects WHERE username=%s AND project_id=%s",
+            (username, project_id), one=True)
+    if not row or row.get("allowed_doc_types") is None:
+        return None
+    val = row["allowed_doc_types"]
+    if isinstance(val, str):
+        try:
+            val = json.loads(val)
+        except Exception:
+            return None
+    if isinstance(val, list):
+        return [str(x) for x in val]
+    return None
 
 def assign_project(username, project_id, is_dc=False):
     exe("INSERT INTO user_projects(username,project_id,is_dc) VALUES(%s,%s,%s) ON CONFLICT (username,project_id) DO UPDATE SET is_dc=EXCLUDED.is_dc",

@@ -2205,8 +2205,38 @@ function resolveActiveProjectScope() {
   return null;
 }
 
+function resolveActiveWorkspace() {
+  const urlParams = new URLSearchParams(window.location.search);
+  return (urlParams.get('ws') || localStorage.getItem('dcr_active_workspace') || 'ENG').toUpperCase();
+}
+
 function updateAiScopeBadge() {
   const scopeEl = document.getElementById('ai-drawer-active-scope');
+  const titleEl = document.querySelector('.ai-drawer-title');
+  const chipsEl = document.querySelector('.ai-quick-chips');
+  const activeWs = resolveActiveWorkspace();
+  const isOM = activeWs === 'OM';
+
+  if (titleEl) {
+    titleEl.textContent = isOM ? 'DCR O&M Assistant' : (activeWs === 'ENG' ? 'DCR Engineering Assistant' : `DCR ${activeWs} Assistant`);
+  }
+
+  if (chipsEl) {
+    if (isOM) {
+      chipsEl.innerHTML = `
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the summary of maintenance contracts, facilities, and active work orders?')">⚡ Maintenance Summary</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all open or pending Work Orders (WO) and maintenance requests.')">📌 Open Work Orders</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show Preventive Maintenance (PPM) schedule and SLA compliance status.')">📊 PPM & SLA Status</button>
+      `;
+    } else {
+      chipsEl.innerHTML = `
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all overdue submittals and their delay days.')">📌 Overdue Submittals</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the total approved cost for Notice of Change (NOCs) and list the approved items?')">💵 Approved NOCs Total</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Provide a complete status breakdown of documents across the project registers.')">📊 Status Summary</button>
+      `;
+    }
+  }
+
   if (!scopeEl) return;
   const pid = resolveActiveProjectScope();
   if (pid) {
@@ -2218,7 +2248,7 @@ function updateAiScopeBadge() {
     }
     scopeEl.textContent = 'Active Project: ' + projName;
   } else {
-    scopeEl.textContent = 'Scope: All Authorized Projects (Global)';
+    scopeEl.textContent = isOM ? 'Scope: O&M Contracts & Facilities' : 'Scope: All Authorized Projects (Global)';
   }
 }
 
@@ -2441,6 +2471,7 @@ async function sendAiPrompt(promptText) {
       body: JSON.stringify({
         prompt: text,
         project_id: pid || null,
+        workspace_id: resolveActiveWorkspace(),
         history: (_aiAssistantState.messages || [])
           .slice(0, -1)
           .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -4339,44 +4370,81 @@ function renderAdminTable() {
     const hasEng = userWsIds.includes('ENG');
     const hasOm = userWsIds.includes('OM');
 
-    // Department column: Checkboxes for Superadmin, clear badges for others
+    // Department & per-department role column (Fully dynamic for ANY department!)
+    const uWsList = (u.workspaces && u.workspaces.length > 0)
+      ? u.workspaces
+      : [{ workspace_id: (u.primary_workspace || 'ENG'), role: (u.role || 'viewer') }];
+    const wsMap = Object.fromEntries(uWsList.map(item => [item.workspace_id, item.role]));
+
     let deptCol = '';
+    let roleCol = '';
+
     if (isSuperAdminUser) {
       deptCol = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;">🌐 All Departments</span>';
-    } else if (isSuper) {
-      deptCol = `
-        <div class="dept-checkboxes" style="display:flex;flex-direction:column;gap:3px;font-size:11px;">
-          <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;">
-            <input type="checkbox" id="dept-eng-${escHtml(u.username)}" ${hasEng ? 'checked' : ''}
-                   onchange="toggleUserDept('${escHtml(u.username)}', 'ENG', this.checked)">
-            <span>📐 Engineering</span>
-          </label>
-          <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;">
-            <input type="checkbox" id="dept-om-${escHtml(u.username)}" ${hasOm ? 'checked' : ''}
-                   onchange="toggleUserDept('${escHtml(u.username)}', 'OM', this.checked)">
-            <span>⚙️ O&M</span>
-          </label>
-        </div>
-      `;
-    } else {
-      if (hasEng && hasOm) {
-        deptCol = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:600;">🌐 All Departments</span>';
-      } else if (hasOm) {
-        deptCol = '<span class="dept-badge dept-badge-om">⚙️ O&M</span>';
-      } else {
-        deptCol = '<span class="dept-badge dept-badge-eng">📐 Engineering</span>';
-      }
-    }
-    
-    // Role column:
-    let roleCol = '';
-    if (isProtected) {
       roleCol = '<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;">Super Admin</span>';
     } else {
-      const roles = ['viewer', 'editor', 'admin'];
-      if (isSuper) roles.push('superadmin');
-      let roleOpts = roles.map(r => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${r === 'superadmin' ? 'Super Admin' : r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('');
-      roleCol = `<select class="tbl-select" onchange="updUsrRole('${escHtml(u.username)}', this.value)">${roleOpts}</select>`;
+      const availableWorkspaces = _ADMIN_DATA.workspaces || [];
+      const adminWsList = (_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.workspaces || []).map(w => w.id || w.workspace_id);
+      
+      let deptLines = [];
+      let roleLines = [];
+
+      availableWorkspaces.forEach(w => {
+        const isAssigned = (w.id in wsMap);
+        const wsRole = wsMap[w.id] || 'viewer';
+        const icon = w.id === 'OM' ? '⚙️' : (w.icon || '📁');
+        const name = w.id === 'OM' ? 'O&M' : (w.name || w.id);
+        const canManageThisWs = isSuper || adminWsList.includes(w.id);
+
+        if (isSuper) {
+          // Superadmin can check/uncheck department AND choose role per department
+          deptLines.push(`
+            <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;font-size:11px;">
+              <input type="checkbox" id="dept-${w.id}-${escHtml(u.username)}" ${isAssigned ? 'checked' : ''}
+                     onchange="toggleUserDept('${escHtml(u.username)}', '${w.id}', this.checked)">
+              <span>${icon} ${escHtml(name)}</span>
+            </label>
+          `);
+          
+          if (isAssigned) {
+            roleLines.push(`
+              <div style="display:flex;align-items:center;gap:4px;font-size:11px;">
+                <span style="font-size:10px;color:var(--mu);min-width:32px;">${w.id}:</span>
+                <select class="tbl-select" style="padding:2px 6px;font-size:10.5px;height:24px;"
+                        onchange="updUsrWsRole('${escHtml(u.username)}', '${w.id}', this.value)">
+                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
+                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
+                  <option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>
+                </select>
+              </div>
+            `);
+          }
+        } else if (canManageThisWs) {
+          // Department Admin can change role in their own department only
+          if (isAssigned) {
+            deptLines.push(`<span class="dept-badge ${w.id==='OM'?'dept-badge-om':'dept-badge-eng'}">${icon} ${escHtml(name)}</span>`);
+            roleLines.push(`
+              <div style="display:flex;align-items:center;gap:4px;font-size:11px;">
+                <span style="font-size:10px;color:var(--mu);min-width:32px;">${w.id}:</span>
+                <select class="tbl-select" style="padding:2px 6px;font-size:10.5px;height:24px;"
+                        onchange="updUsrWsRole('${escHtml(u.username)}', '${w.id}', this.value)">
+                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
+                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
+                </select>
+              </div>
+            `);
+          }
+        } else {
+          // Department outside admin scope: show read-only
+          if (isAssigned) {
+            deptLines.push(`<span class="dept-badge" style="background:#f1f5f9;color:#64748b;font-size:9.5px;">${icon} ${escHtml(name)}</span>`);
+            roleLines.push(`<span style="font-size:10px;color:var(--mu);padding:2px 0;">${w.id}: ${escHtml(wsRole.toUpperCase())}</span>`);
+          }
+        }
+      });
+
+      deptCol = `<div class="dept-checkboxes" style="display:flex;flex-direction:column;gap:4px;">${deptLines.join('') || '<span style="color:var(--mu);font-size:11px;">None</span>'}</div>`;
+      roleCol = `<div style="display:flex;flex-direction:column;gap:4px;">${roleLines.join('') || '<span style="color:var(--mu);font-size:11px;">—</span>'}</div>`;
     }
     
     // Email column
@@ -4420,6 +4488,38 @@ function renderAdminTable() {
 }
 
 // ── Scoped Permissions Modal ─────────────────────────────────
+async function updUsrWsRole(username, wsId, role) {
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_workspace_role',
+        username: username,
+        workspace_id: wsId,
+        role: role
+      })
+    });
+    if (r && r.ok) {
+      const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+      if (u) {
+        if (!u.workspaces) u.workspaces = [];
+        const existing = u.workspaces.find(w => w.workspace_id === wsId);
+        if (existing) existing.role = role;
+        else u.workspaces.push({ workspace_id: wsId, role: role });
+        if ((u.primary_workspace || 'ENG') === wsId) u.role = role;
+      }
+      toast('✔ Role updated for ' + wsId, 'ok');
+      renderAdminTable();
+    } else {
+      toast((r && r.error) || 'Failed to update role', 'er');
+      renderAdminTable();
+    }
+  } catch (err) {
+    toast('Error updating role: ' + err.message, 'er');
+    renderAdminTable();
+  }
+}
+
 async function toggleUserDept(username, changedWs, isChecked) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   if (!u) return;
@@ -4529,7 +4629,8 @@ function renderPermTable(projects) {
       <thead>
         <tr style="background:var(--bg,#f8fafc);border-bottom:2px solid var(--bd,#e2e8f0);">
           <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Project / Contract</th>
-          <th style="padding:10px 14px;text-align:center;width:100px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Access</th>
+          <th style="padding:10px 14px;text-align:center;width:90px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Access</th>
+          <th style="padding:10px 14px;text-align:center;width:160px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Document Types</th>
         </tr>
       </thead>
       <tbody>
@@ -4541,6 +4642,11 @@ function renderPermTable(projects) {
     const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • Client: ${escHtml(p.client)}</span>` : '';
     const isOm = p.workspace_id === 'OM';
     
+    const allowedDts = (access && access.allowed_doc_types) || null;
+    const dtLabel = (allowedDts && allowedDts.length > 0) ? `${allowedDts.length} types` : 'All';
+    const dtBadgeBg = (allowedDts && allowedDts.length > 0) ? '#fef3c7' : '#e0f2fe';
+    const dtBadgeColor = (allowedDts && allowedDts.length > 0) ? '#92400e' : '#0369a1';
+
     html += `
       <tr class="perm-row" data-pid="${escHtml(p.id)}" data-text="${escHtml((p.code + ' ' + p.name + ' ' + (p.client||'')).toLowerCase())}" style="border-bottom:1px solid var(--bd,#f1f5f9);">
         <td style="padding:10px 14px;">
@@ -4551,8 +4657,32 @@ function renderPermTable(projects) {
           </div>
           ${clientText}
         </td>
-        <td style="padding:10px 14px;text-align:center;width:100px;">
+        <td style="padding:10px 14px;text-align:center;width:90px;">
           <input type="checkbox" class="perm-toggle-switch" id="chk-access-${escHtml(p.id)}" ${hasAccess ? 'checked' : ''} onchange="togglePermAccess('${escHtml(username)}', '${escHtml(p.id)}', this.checked)" style="cursor:pointer;transform:scale(1.2);">
+        </td>
+        <td style="padding:10px 14px;text-align:center;width:160px;">
+          ${hasAccess ? `
+            <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(p.id)}" onclick="toggleDocTypesPanel('${escHtml(p.id)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
+              <span>📄</span>
+              <span id="dt-badge-${escHtml(p.id)}" style="background:${dtBadgeBg};color:${dtBadgeColor};padding:1px 5px;border-radius:4px;font-weight:600;">${dtLabel}</span>
+              <span>▾</span>
+            </button>
+          ` : '<span style="color:var(--mu);font-size:11px;">—</span>'}
+        </td>
+      </tr>
+      <tr id="dt-box-${escHtml(p.id)}" class="perm-dt-box" style="display:none;background:#f8fafc;border-bottom:2px solid var(--bd,#e2e8f0);">
+        <td colspan="3" style="padding:10px 18px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:11px;font-weight:700;color:var(--tx);">Allowed Document Types for ${escHtml(p.name)}:</span>
+            <div style="font-size:11px;display:flex;gap:8px;">
+              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();selectAllDocTypes('${escHtml(p.id)}')">Select All</a>
+              <span style="color:var(--bd);">|</span>
+              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();clearAllDocTypes('${escHtml(p.id)}')">Clear All</a>
+            </div>
+          </div>
+          <div id="dt-chips-${escHtml(p.id)}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <span style="color:var(--mu);font-size:11px;">Loading document types...</span>
+          </div>
         </td>
       </tr>
     `;
@@ -4560,6 +4690,103 @@ function renderPermTable(projects) {
   
   html += `</tbody></table>`;
   body.innerHTML = html;
+}
+
+window._PROJECT_DOC_TYPES_CACHE = {};
+
+async function toggleDocTypesPanel(pid) {
+  const box = document.getElementById('dt-box-' + pid);
+  if (!box) return;
+  const isHidden = box.style.display === 'none';
+  box.style.display = isHidden ? 'table-row' : 'none';
+  if (!isHidden) return;
+
+  const chipsDiv = document.getElementById('dt-chips-' + pid);
+  if (!chipsDiv) return;
+
+  if (!window._PROJECT_DOC_TYPES_CACHE[pid]) {
+    chipsDiv.innerHTML = '<span style="color:var(--mu);font-size:11px;">Loading document types...</span>';
+    const dts = await apiFetch('/api/doc_types/' + pid + '?all=1');
+    window._PROJECT_DOC_TYPES_CACHE[pid] = dts || [];
+  }
+
+  const allDts = window._PROJECT_DOC_TYPES_CACHE[pid] || [];
+  const username = window._ACTIVE_PERM_USER;
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  const pAccess = (u && u.projects ? u.projects.find(p => p.project_id === pid) : null);
+  const allowed = (pAccess && pAccess.allowed_doc_types) ? pAccess.allowed_doc_types.map(x => String(x).toUpperCase()) : null;
+
+  if (allDts.length === 0) {
+    chipsDiv.innerHTML = '<span style="color:var(--mu);font-size:11px;">No document types configured for this project.</span>';
+    return;
+  }
+
+  let html = '';
+  allDts.forEach(d => {
+    const isChecked = !allowed || allowed.includes(String(d.id).toUpperCase()) || allowed.includes(String(d.code).toUpperCase());
+    html += `
+      <label style="display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--bd);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;user-select:none;">
+        <input type="checkbox" class="dt-chk-${escHtml(pid)}" value="${escHtml(d.id)}" data-code="${escHtml(d.code)}" ${isChecked ? 'checked' : ''} onchange="onDocTypeCheckboxChange('${escHtml(pid)}')">
+        <strong>${escHtml(d.code)}</strong>
+        <span style="color:var(--mu);font-size:10px;">${escHtml(d.name)}</span>
+      </label>
+    `;
+  });
+  chipsDiv.innerHTML = html;
+}
+
+async function onDocTypeCheckboxChange(pid) {
+  const username = window._ACTIVE_PERM_USER;
+  if (!username) return;
+  const allChks = Array.from(document.querySelectorAll('.dt-chk-' + pid));
+  const total = allChks.length;
+  const checkedChks = allChks.filter(c => c.checked);
+  const checkedCount = checkedChks.length;
+
+  let docTypesPayload = null;
+  if (checkedCount < total) {
+    docTypesPayload = checkedChks.map(c => c.value);
+  }
+
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  if (u && u.projects) {
+    const pAccess = u.projects.find(p => p.project_id === pid);
+    if (pAccess) pAccess.allowed_doc_types = docTypesPayload;
+  }
+
+  const badgeEl = document.getElementById('dt-badge-' + pid);
+  if (badgeEl) {
+    const label = docTypesPayload ? `${docTypesPayload.length} types` : 'All';
+    badgeEl.textContent = label;
+    badgeEl.style.background = docTypesPayload ? '#fef3c7' : '#e0f2fe';
+    badgeEl.style.color = docTypesPayload ? '#92400e' : '#0369a1';
+  }
+
+  try {
+    await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'set_doc_type_permissions',
+        username: username,
+        project_id: pid,
+        doc_types: docTypesPayload
+      })
+    });
+  } catch (err) {
+    toast('Error saving document type permissions: ' + err.message, 'er');
+  }
+}
+
+async function selectAllDocTypes(pid) {
+  const chks = document.querySelectorAll('.dt-chk-' + pid);
+  chks.forEach(c => c.checked = true);
+  await onDocTypeCheckboxChange(pid);
+}
+
+async function clearAllDocTypes(pid) {
+  const chks = document.querySelectorAll('.dt-chk-' + pid);
+  chks.forEach(c => c.checked = false);
+  await onDocTypeCheckboxChange(pid);
 }
 
 function filterPermProjects(query) {
@@ -5734,7 +5961,9 @@ async function loadOmAudit() {{
     
     let html = '';
     rows.forEach(row => {{
-      const dt = row.created_at ? new Date(row.created_at).toLocaleString('en-GB') : '—';
+      const rawTs = row.ts || row.created_at;
+      const ts = new Date(rawTs);
+      const dt = (!rawTs || isNaN(ts.getTime())) ? '—' : (ts.toLocaleDateString('en-GB') + ' ' + ts.toLocaleTimeString('en-GB', {{hour:'2-digit', minute:'2-digit'}}));
       html += '<tr style="border-bottom:1px solid var(--bd);">';
       html += '<td style="padding:8px 12px;font-family:monospace;font-size:10.5px;color:var(--mu);">' + escHtml(dt) + '</td>';
       html += '<td style="padding:8px 12px;font-weight:600;">' + escHtml(row.username || '—') + '</td>';
@@ -7814,6 +8043,15 @@ def render_register(u, proj, active_ws_id=None):
     ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
 
     dts       = db.get_doc_types(pid)
+    try:
+        from auth import is_superadmin
+        if u and not is_superadmin(u) and not (hasattr(db, 'is_user_workspace_admin') and db.is_user_workspace_admin(u.get('username'))):
+            allowed_dts = db.get_user_project_doc_types(u['username'], pid) if hasattr(db, 'get_user_project_doc_types') else None
+            if allowed_dts is not None:
+                allowed_set = {str(x).upper() for x in allowed_dts}
+                dts = [d for d in dts if str(d['id']).upper() in allowed_set or str(d.get('code', '')).upper() in allowed_set]
+    except Exception:
+        pass
     logo_l    = db.get_logo(pid,"logo_left")
     logo_r    = db.get_logo(pid,"logo_right")
     logo_html = ""

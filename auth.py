@@ -59,9 +59,32 @@ def get_allowed_project_ids(user=None, workspace_id=None):
     u = user or current_user()
     if not u:
         return []
-    if u["role"] in ("superadmin", "admin"):
+    if is_superadmin(u):
         return [p["id"] for p in db.get_projects(workspace_id=workspace_id)]
-    user_projs = db.get_user_projects(u["username"])
+
+    # Check if user is admin of the requested workspace:
+    if workspace_id:
+        if db.is_user_workspace_admin(u.get("username"), workspace_id):
+            return [p["id"] for p in db.get_projects(workspace_id=workspace_id)]
+    else:
+        # Check if user is admin in any workspace
+        admin_ws = db.get_admin_workspaces_for_user(u.get("username")) if hasattr(db, "get_admin_workspaces_for_user") else []
+        if admin_ws:
+            all_projs = []
+            for aws in admin_ws:
+                all_projs.extend([p["id"] for p in db.get_projects(workspace_id=aws)])
+            user_projs = db.get_user_projects(u.get("username"))
+            assigned_raw = [p["project_id"] for p in user_projs if p.get("project_id")]
+            if assigned_raw:
+                matched = db.get_projects(assigned_raw)
+                for p in matched:
+                    if p["id"] not in all_projs:
+                        all_projs.append(p["id"])
+            return all_projs
+        elif u.get("role") in ("superadmin", "admin"):
+            return [p["id"] for p in db.get_projects(workspace_id=workspace_id)]
+
+    user_projs = db.get_user_projects(u.get("username"))
     assigned_raw = [p["project_id"] for p in user_projs if p.get("project_id")]
     if not assigned_raw:
         return []
@@ -185,8 +208,21 @@ def can_edit(project_id):
     u = current_user()
     if not u:
         return False
-    if u["role"] in ("superadmin", "admin"):
+    if is_superadmin(u):
         return True
-    if u["role"] == "editor":
-        return has_project_access(u["username"], project_id, u.get("role"))
-    return False
+    proj = db.get_project(project_id)
+    if not proj:
+        return False
+    ws_id = proj.get("workspace_id") or "ENG"
+
+    # Workspace Admin check
+    if db.is_user_workspace_admin(u.get("username"), ws_id):
+        return True
+
+    # User must have access to the project
+    if not has_project_access(u.get("username"), project_id, u.get("role")):
+        return False
+
+    # Check user's role in this specific workspace
+    ws_role = db.get_user_workspace_role(u.get("username"), ws_id) if hasattr(db, "get_user_workspace_role") else (u.get("role") or "viewer")
+    return ws_role in ("editor", "admin", "superadmin")

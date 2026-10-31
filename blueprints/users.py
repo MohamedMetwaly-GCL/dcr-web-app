@@ -152,6 +152,8 @@ def api_users_action():
                 return jsonify(ok=False, error="Cannot assign project from another department"), 403
 
         db.assign_project(uname, pid, is_dc)
+        if "doc_types" in data:
+            db.set_user_project_doc_types(uname, pid, data.get("doc_types"))
         db.log_action(u["username"], "PROJECT_ASSIGN", project_id=pid,
                       detail=f"Assigned project '{pid}' to '{uname}' (DC: {is_dc})")
         return jsonify(ok=True)
@@ -167,6 +169,48 @@ def api_users_action():
         db.unassign_project(uname, pid)
         db.log_action(u["username"], "PROJECT_UNASSIGN", project_id=pid,
                       detail=f"Unassigned project '{pid}' from '{uname}'")
+        return jsonify(ok=True)
+
+    if action == "update_workspace_role":
+        uname = data.get("username", "").strip().lower()
+        ws_id = data.get("workspace_id", "").strip().upper()
+        ws_role = data.get("role", "viewer").strip().lower()
+        if not uname or not ws_id:
+            return jsonify(ok=False, error="Username and workspace_id required"), 400
+        target_user = db.get_user(uname)
+        if not target_user:
+            return jsonify(ok=False, error="User not found"), 404
+        if target_user.get("role") == "superadmin" or uname == "admin":
+            return jsonify(ok=False, error="Cannot modify superadmin"), 400
+        if not is_super:
+            if ws_id not in admin_ws:
+                return jsonify(ok=False, error="Cannot modify department outside your authority"), 403
+            if ws_role in ("admin", "superadmin"):
+                return jsonify(ok=False, error="Cannot grant admin privileges"), 403
+
+        db.set_user_workspace_role(uname, ws_id, ws_role)
+        db.log_action(u["username"], "WORKSPACE_ROLE_UPDATE",
+                      detail=f"Updated role of '{uname}' in '{ws_id}' to '{ws_role}'")
+        return jsonify(ok=True)
+
+    if action == "set_doc_type_permissions":
+        uname = data.get("username", "").strip().lower()
+        pid = data.get("project_id", "").strip()
+        doc_types = data.get("doc_types")
+        if not uname or not pid:
+            return jsonify(ok=False, error="Username and project_id required"), 400
+        if not is_super:
+            proj = db.get_project(pid)
+            if not proj or proj.get("workspace_id", "ENG") not in admin_ws:
+                return jsonify(ok=False, error="Cannot modify project outside your department"), 403
+        target_user = db.get_user(uname)
+        if not target_user:
+            return jsonify(ok=False, error="User not found"), 404
+
+        db.set_user_project_doc_types(uname, pid, doc_types)
+        dt_desc = "ALL" if doc_types is None else (", ".join(str(d) for d in doc_types) if doc_types else "NONE")
+        db.log_action(u["username"], "DOC_TYPE_PERM_UPDATE", project_id=pid,
+                      detail=f"Updated allowed doc types for '{uname}' on '{pid}': {dt_desc}")
         return jsonify(ok=True)
 
     if action == "update_workspaces":

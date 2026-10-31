@@ -21,7 +21,17 @@ doc_types_bp = Blueprint("doc_types", __name__)
 
 @doc_types_bp.route("/api/doc_types/<pid>")
 def api_doc_types(pid):
-    return jsonify(db.get_doc_types(pid))
+    from auth import current_user, is_superadmin
+    u = current_user()
+    dts = db.get_doc_types(pid)
+    if request.args.get("all") == "1":
+        return jsonify(dts)
+    if u and not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
+        allowed_dts = db.get_user_project_doc_types(u["username"], pid)
+        if allowed_dts is not None:
+            allowed_set = {str(x).upper() for x in allowed_dts}
+            dts = [d for d in dts if str(d["id"]).upper() in allowed_set or str(d.get("code", "")).upper() in allowed_set]
+    return jsonify(dts)
 
 @doc_types_bp.route("/api/doc_types/<pid>", methods=["POST"])
 def api_add_doc_type(pid):

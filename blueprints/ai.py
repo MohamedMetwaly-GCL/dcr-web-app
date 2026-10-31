@@ -1332,16 +1332,28 @@ def api_ai_query():
         except Exception:
             pass
 
+        ws_id = data.get("workspace_id")
+        if not ws_id and active_pid:
+            p_obj = db.get_project(active_pid)
+            if p_obj:
+                ws_id = p_obj.get("workspace_id")
+        if not ws_id:
+            ws_id = "ENG"
+        ws_id = str(ws_id).strip().upper()
+
         try:
-            user_allowed = get_allowed_project_ids(u)
+            user_allowed = get_allowed_project_ids(u, workspace_id=ws_id)
         except Exception:
             user_allowed = []
 
         if not user_allowed and active_pid:
-            user_allowed = [active_pid]
+            p_obj = db.get_project(active_pid)
+            if p_obj and (p_obj.get("workspace_id") or "ENG").upper() == ws_id:
+                user_allowed = [active_pid]
 
         if not user_allowed:
-            return jsonify(reply="You do not have access to any projects in the system."), 200
+            ws_label = "Operation & Maintenance (O&M)" if ws_id == "OM" else ("Engineering & Projects" if ws_id == "ENG" else ws_id)
+            return jsonify(reply=f"You do not have access to any projects/contracts in {ws_label}."), 200
 
         target_pids = user_allowed
 
@@ -1354,21 +1366,67 @@ def api_ai_query():
         is_greeting = any(g == p_clean or p_clean.startswith(g) for g in greeting_words) and len(prompt.split()) <= 4
 
         if is_greeting:
-            reply = (
-                "أهلاً بك يا باشمهندس! 👋 أنا مساعدك الذكي لنظام مراقبة وثائق ومشاريع جازشيل (DCR).\n\n"
-                "أنا جاهز لمساعدتك فوراً في:\n"
-                "- 📋 استعراض واعتمادات سجلات الـ (MS) والشوب درونج (SD).\n"
-                "- ⏰ متابعة الوثائق المتأخرة (Overdue Submittals).\n"
-                "- 💰 مراجعة أوامر التغيير والمطالبات (NOC).\n\n"
-                "تفضل بسؤالي عن أي مشروع أو معدة أو مستند!"
-            )
+            if ws_id == "OM":
+                reply = (
+                    "أهلاً بك يا باشمهندس! 👋 أنا مساعدك الذكي لقسم التشغيل والصيانة (O&M).\n\n"
+                    "أنا جاهز لمساعدتك فوراً في:\n"
+                    "- ⚙️ متابعة أوامر العمل (Work Orders) وطلبات الصيانة (MR).\n"
+                    "- 📅 جداول الصيانة الوقائية (PPM) والإصلاحات الطارئة (CM).\n"
+                    "- 📊 تقارير مستوى الخدمة (SLA) ومعدلات الإنجاز بالعقود والمحطات.\n\n"
+                    "تفضل بسؤالي عن أي عقد صيانة أو أمر عمل!"
+                )
+            else:
+                reply = (
+                    "أهلاً بك يا باشمهندس! 👋 أنا مساعدك الذكي لنظام مراقبة وثائق ومشاريع جازشيل (DCR).\n\n"
+                    "أنا جاهز لمساعدتك فوراً في:\n"
+                    "- 📋 استعراض واعتمادات سجلات الـ (MS) والشوب درونج (SD).\n"
+                    "- ⏰ متابعة الوثائق المتأخرة (Overdue Submittals).\n"
+                    "- 💰 مراجعة أوامر التغيير والمطالبات (NOC).\n\n"
+                    "تفضل بسؤالي عن أي مشروع أو معدة أو مستند!"
+                )
             return jsonify(reply=reply), 200
+
+        custom_inst = None
+        if ws_id == "OM":
+            projs_info = db.get_projects(target_pids)
+            p_lines = "\n".join([f"- '{p.get('code', p['id'])}': {p.get('name', p['id'])}" for p in projs_info])
+            custom_inst = (
+                "You are the DCR Operation & Maintenance (O&M) AI Assistant for Gas Chill facilities and maintenance contracts. "
+                "You assist maintenance managers, engineers, and facility coordinators by querying maintenance registers "
+                "using the provided tools: search_submittals, get_project_summary, get_noc_financials, get_overdue_submittals, and get_document_history.\n\n"
+                "Document types in the O&M register include:\n"
+                "- 'WO': Work Orders (أوامر العمل والصيانة).\n"
+                "- 'PPM': Preventive Maintenance (الصيانة الوقائية والجدولة الدورية).\n"
+                "- 'CM': Corrective Maintenance (الصيانة العلاجية وإصلاح الأعطال الطارئة).\n"
+                "- 'INC': Incident Reports (بلاغات الحوادث والأعطال الجسيمة).\n"
+                "- 'MR': Maintenance Requests (طلبات الصيانة الواردة من العملاء).\n"
+                "- 'SLA': Service Level Agreements & Reports (تقارير مستوى الخدمة والالتزام التعاقدي).\n"
+                "- 'COR': Correspondence (المراسلات والخطابات الرسمية للصيانة).\n\n"
+                f"Contracts and facilities currently accessible in this O&M workspace:\n{p_lines}\n\n"
+                "Guidelines:\n"
+                "1. Focus exclusively on Operation & Maintenance facilities, client contracts, PPM schedules, and Work Orders.\n"
+                "2. When the user asks for summaries or totals, only summarize the O&M contracts listed above.\n"
+                "3. Never refer to EPC construction projects (e.g. EKH, Eastmain, etc.) when operating in this O&M context.\n"
+                "4. Respond in professional Egyptian engineering Arabic when queried in Arabic."
+            )
+        elif ws_id != "ENG":
+            ws_obj = db.get_workspace(ws_id) if hasattr(db, "get_workspace") else None
+            ws_title = ws_obj.get("name", ws_id) if ws_obj else ws_id
+            projs_info = db.get_projects(target_pids)
+            p_lines = "\n".join([f"- '{p.get('code', p['id'])}': {p.get('name', p['id'])}" for p in projs_info])
+            custom_inst = (
+                f"You are the DCR {ws_title} AI Assistant for Gas Chill. "
+                f"You assist users in the {ws_title} department by querying project registers.\n\n"
+                f"Projects/Contracts currently accessible in this workspace:\n{p_lines}\n\n"
+                "Only report data belonging to this department."
+            )
 
         # Run the Tool-Augmented Gemini Agent Controller with full authorized scope
         reply, err, _ = _call_gemini_agent(
             prompt,
             target_pids,
             history=history,
+            custom_instruction=custom_inst,
             active_project_id=active_pid,
         )
 
