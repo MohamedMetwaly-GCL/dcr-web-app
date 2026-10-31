@@ -5998,9 +5998,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     ) if can_manage else ""
 
     audit_btn = (
-        '<button class="tb-btn" onclick="openOmAuditModal()" '
-        'style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;font-size:12px;font-weight:600;background:var(--wh);border:1px solid var(--bd);border-radius:6px;cursor:pointer;color:var(--tx);">'
-        '<span>📜</span><span>Audit Log</span></button>'
+        '<button class="tbtn" onclick="showOmTab(&#39;audit&#39;, this)">📜 Audit Log</button>'
     ) if can_manage else ""
 
     cards_html = ""
@@ -6350,6 +6348,67 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
       </div>
     </div>
   </div>
+
+  <!-- TAB PANE: AUDIT LOG -->
+  <div id="tab-om-audit" class="tab-pane" style="display:none;">
+    <div class="panel">
+      <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span>📜 Activity & Audit Log — {ws_name}</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="tbtn" onclick="loadOmAudit(true)">🔄 Refresh</button>
+        </div>
+      </div>
+      <!-- Filters -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <select id="om-aud-pid" onchange="loadOmAudit(true)"
+          style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;min-width:160px;background:var(--bg);color:var(--tx)">
+          <option value="">All Contracts / Facilities</option>
+        </select>
+        <select id="om-aud-user" onchange="loadOmAudit(true)"
+          style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;background:var(--bg);color:var(--tx)">
+          <option value="">All Users</option>
+        </select>
+        <select id="om-aud-action" onchange="loadOmAudit(true)"
+          style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;background:var(--bg);color:var(--tx)">
+          <option value="">All Actions</option>
+        </select>
+      </div>
+      <!-- Table -->
+      <style>
+        #om-aud-tbl th{{position:sticky;top:0;z-index:15;background:var(--brand-navy,#1a2f4e);color:#fff;overflow:visible;box-shadow:0 1px 0 rgba(0,0,0,.15);padding:8px 10px}}
+        body.dark #om-aud-tbl th{{background:#1e3a5f;color:#e2e8f0;box-shadow:0 1px 0 rgba(255,255,255,.08)}}
+        #om-aud-tbl td{{padding:6px 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+      </style>
+      <div style="overflow:auto;max-height:calc(100vh - 270px);border:1px solid var(--bd);border-radius:var(--rd);background:var(--wh)">
+        <table class="dt-tbl" id="om-aud-tbl" style="min-width:1050px;width:100%;table-layout:fixed">
+          <thead><tr>
+            <th style="width:130px">Time</th>
+            <th style="width:90px">User</th>
+            <th style="width:95px">Action</th>
+            <th style="width:130px">Contract / Facility</th>
+            <th style="width:110px">Document</th>
+            <th style="width:90px">Field</th>
+            <th style="width:120px">Old Value</th>
+            <th style="width:120px">New Value</th>
+            <th style="width:160px">Detail</th>
+            <th style="width:105px">IP Address</th>
+            <th style="width:125px">Device</th>
+          </tr></thead>
+          <tbody id="om-aud-tbody">
+            <tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">Loading logs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="om-aud-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--mu)">
+        <span id="om-aud-count"></span>
+        <div style="display:flex;gap:8px">
+          <button id="om-aud-prev" class="tbtn" onclick="omAuditPage(-1)" disabled>← Prev</button>
+          <span id="om-aud-page" style="padding:5px 10px;font-size:11px">Page 1</span>
+          <button id="om-aud-next" class="tbtn" onclick="omAuditPage(1)">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Modal: New Contract / Facility -->
@@ -6384,53 +6443,6 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
   </div>
 </div>
 
-<!-- Modal: Scoped O&M Audit Log -->
-<div id="om-audit-modal" class="overlay hidden" onclick="if(event.target===this)closeM('om-audit-modal')">
-  <div class="modal" style="max-width:1100px; width:95%; max-height:90vh; display:flex; flex-direction:column;">
-    <div class="mhdr" style="padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span style="font-size:16px;">📜</span>
-        <strong style="font-size:14px;">O&M Activity & Audit Log</strong>
-        <span class="dept-badge dept-badge-om" style="margin-left:6px;">⚙️ O&M Department</span>
-      </div>
-      <button class="xbtn" onclick="closeM('om-audit-modal')">✕</button>
-    </div>
-    <div style="padding:10px 18px; background:var(--surface); border-bottom:1px solid var(--bd); display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-      <select id="om-aud-pid" onchange="loadOmAudit()" style="padding:6px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);">
-        <option value="">All Contracts / Facilities</option>
-      </select>
-      <select id="om-aud-user" onchange="loadOmAudit()" style="padding:6px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);">
-        <option value="">All Users</option>
-      </select>
-      <select id="om-aud-action" onchange="loadOmAudit()" style="padding:6px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);">
-        <option value="">All Actions</option>
-      </select>
-      <button class="tb-btn" onclick="loadOmAudit()" style="margin-left:auto; padding:6px 12px; font-size:12px;">🔄 Refresh</button>
-    </div>
-    <div class="mbody" style="padding:0; overflow:auto; flex:1;">
-      <table class="user-tbl" id="om-aud-tbl" style="width:100%; border-collapse:collapse; font-size:11.5px;">
-        <thead>
-          <tr style="background:var(--bg); position:sticky; top:0; z-index:10; border-bottom:1px solid var(--bd);">
-            <th style="padding:8px 12px; width:140px;">Time</th>
-            <th style="padding:8px 12px; width:100px;">User</th>
-            <th style="padding:8px 12px; width:120px;">Action</th>
-            <th style="padding:8px 12px; width:150px;">Contract / Facility</th>
-            <th style="padding:8px 12px; width:120px;">Doc / Ref</th>
-            <th style="padding:8px 12px;">Details</th>
-          </tr>
-        </thead>
-        <tbody id="om-aud-tbody">
-          <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--mu);">Loading logs...</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="mfoot" style="padding:10px 18px; display:flex; justify-content:space-between; align-items:center;">
-      <span id="om-aud-count" style="font-size:11px; color:var(--mu);">0 events</span>
-      <button class="btn btn-sc" onclick="closeM('om-audit-modal')">Close</button>
-    </div>
-  </div>
-</div>
-
 {SHARED_JS}
 {ABOUT_MODAL_HTML}
 {SPOTLIGHT_MODAL_COMPONENT}
@@ -6440,7 +6452,7 @@ function showOmTab(tabName, btn) {{
   document.querySelectorAll('.psel-bar .tbtn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   
-  const panes = ['overview', 'daily-digest', 'executive', 'overdue', 'analytics'];
+  const panes = ['overview', 'daily-digest', 'executive', 'overdue', 'analytics', 'audit'];
   panes.forEach(p => {{
     const el = document.getElementById('tab-om-' + p);
     if (el) el.style.display = (p === tabName) ? 'block' : 'none';
@@ -6450,6 +6462,7 @@ function showOmTab(tabName, btn) {{
   else if (tabName === 'executive') loadOmExecutiveReport();
   else if (tabName === 'overdue') loadOmOverdue();
   else if (tabName === 'analytics') loadOmAnalytics();
+  else if (tabName === 'audit') loadOmAudit();
 }}
 
 async function loadOmDailyDigest() {{
@@ -6647,78 +6660,139 @@ async function delProject(pid, pname) {{
   }}
 }}
 
-let _omAuditLoaded = false;
-async function openOmAuditModal() {{
-  openM('om-audit-modal');
-  if (!_omAuditLoaded) {{
-    await loadOmAudit();
-    _omAuditLoaded = true;
-  }}
-}}
+let _omAuditOffset = 0;
+let _omAuditHasMore = false;
+let _omAuditProjMap = {{}};
 
-async function loadOmAudit() {{
+async function loadOmAudit(reset=false) {{
+  if (reset) _omAuditOffset = 0;
   const tbody = document.getElementById('om-aud-tbody');
   const countEl = document.getElementById('om-aud-count');
   const pid = document.getElementById('om-aud-pid')?.value || '';
   const user = document.getElementById('om-aud-user')?.value || '';
   const action = document.getElementById('om-aud-action')?.value || '';
+  const ws = document.body.getAttribute('data-workspace') || 'OM';
   
-  if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">Loading logs...</td></tr>';
+  const params = new URLSearchParams();
+  if (pid) params.set('pid', pid);
+  if (user) params.set('username', user);
+  if (action) params.set('action', action);
+  params.set('offset', _omAuditOffset);
+  params.set('workspace_id', ws);
   
-  try {{
-    const params = new URLSearchParams();
-    if (pid) params.append('pid', pid);
-    if (user) params.append('username', user);
-    if (action) params.append('action', action);
-    
-    const r = await apiFetch('/api/audit?' + params.toString());
-    if (!r) return;
-    
-    const pidSel = document.getElementById('om-aud-pid');
-    if (pidSel && pidSel.options.length <= 1 && r.projects) {{
-      r.projects.forEach(p => {{
-        pidSel.innerHTML += '<option value="' + escHtml(p.id) + '">' + escHtml(p.code || p.id) + ' - ' + escHtml(p.name) + '</option>';
-      }});
-    }}
-    const userSel = document.getElementById('om-aud-user');
-    if (userSel && userSel.options.length <= 1 && r.users) {{
-      r.users.forEach(usr => {{
-        userSel.innerHTML += '<option value="' + escHtml(usr) + '">' + escHtml(usr) + '</option>';
-      }});
-    }}
-    const actSel = document.getElementById('om-aud-action');
-    if (actSel && actSel.options.length <= 1 && r.actions) {{
-      r.actions.forEach(a => {{
-        actSel.innerHTML += '<option value="' + escHtml(a) + '">' + escHtml(a) + '</option>';
-      }});
-    }}
-    
-    const rows = r.rows || [];
-    if (countEl) countEl.textContent = rows.length + ' event(s)';
-    
-    if (rows.length === 0) {{
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">No audit logs found.</td></tr>';
-      return;
-    }}
-    
-    let html = '';
-    rows.forEach(row => {{
-      const rawTs = row.ts || row.created_at;
-      const ts = new Date(rawTs);
-      const dt = (!rawTs || isNaN(ts.getTime())) ? '—' : (ts.toLocaleDateString('en-GB') + ' ' + ts.toLocaleTimeString('en-US', {{hour:'2-digit', minute:'2-digit', hour12:true}}));
-      html += '<tr style="border-bottom:1px solid var(--bd);">';
-      html += '<td style="padding:8px 12px;font-family:monospace;font-size:10.5px;color:var(--mu);">' + escHtml(dt) + '</td>';
-      html += '<td style="padding:8px 12px;font-weight:600;">' + escHtml(row.username || '—') + '</td>';
-      html += '<td style="padding:8px 12px;"><span class="badge" style="background:#f1f5f9;color:#334155;font-weight:600;">' + escHtml(row.action || '—') + '</span></td>';
-      html += '<td style="padding:8px 12px;color:var(--tx);">' + escHtml(row.project_id || '—') + '</td>';
-      html += '<td style="padding:8px 12px;color:var(--mu);font-family:monospace;">' + escHtml(row.document_id || '—') + '</td>';
-      html += '<td style="padding:8px 12px;color:var(--tx);">' + escHtml(row.detail || '—') + '</td>';
-      html += '</tr>';
-    }});
-    if (tbody) tbody.innerHTML = html;
-  }} catch(e) {{
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#ef4444;">Error loading audit log: ' + escHtml(e.message) + '</td></tr>';
+  if (tbody && (reset || _omAuditOffset === 0)) {{
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">Loading logs...</td></tr>';
   }}
+
+  try {{
+    const data = await apiFetch('/api/audit?' + params.toString());
+    if (!data) return;
+    
+    // Populate dropdown filters on first load or reset
+    if (reset || _omAuditOffset === 0) {{
+      _omAuditProjMap = {{}};
+      (data.projects || []).forEach(p => {{ _omAuditProjMap[p.id] = p.name || p.code || p.id; }});
+
+      const pSel = document.getElementById('om-aud-pid');
+      if (pSel) {{
+        const curPid = pSel.value;
+        pSel.innerHTML = '<option value="">All Contracts / Facilities</option>' +
+          (data.projects || []).map(p => `<option value="${{p.id}}"${{p.id === curPid ? ' selected' : ''}}>${{p.code ? p.code + ' — ' : ''}}${{p.name}}</option>`).join('');
+      }}
+
+      const uSel = document.getElementById('om-aud-user');
+      if (uSel) {{
+        const curU = uSel.value;
+        uSel.innerHTML = '<option value="">All Users</option>' +
+          (data.users || []).map(u => `<option value="${{u}}"${{u === curU ? ' selected' : ''}}>${{u}}</option>`).join('');
+      }}
+
+      const aSel = document.getElementById('om-aud-action');
+      if (aSel) {{
+        const curA = aSel.value;
+        aSel.innerHTML = '<option value="">All Actions</option>' +
+          (data.actions || []).map(a => `<option value="${{a}}"${{a === curA ? ' selected' : ''}}>${{a}}</option>`).join('');
+      }}
+    }} else if (data.projects) {{
+      (data.projects || []).forEach(p => {{ _omAuditProjMap[p.id] = p.name || p.code || p.id; }});
+    }}
+
+    const rows = data.rows || [];
+    _omAuditHasMore = rows.length === 100;
+
+    if (!rows.length) {{
+      if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
+    }} else {{
+      const _dash = '<span style="color:var(--mu);opacity:0.4">—</span>';
+      const _val = (v) => {{
+        if (v === null || v === undefined) return _dash;
+        const s = String(v).trim();
+        return s ? s : _dash;
+      }};
+
+      let html = '';
+      rows.forEach((r, i) => {{
+        const rawTs = r.ts || r.created_at;
+        const ts = new Date(rawTs);
+        const tsStr = (!rawTs || isNaN(ts.getTime())) ? '—' : (ts.toLocaleDateString('en-GB') + ' ' + ts.toLocaleTimeString('en-US', {{hour:'2-digit', minute:'2-digit', hour12:true}}));
+        
+        const actionBg =
+          (r.action === 'ADD' || r.action === 'USER_CREATE' || r.action === 'IMPORT_EXCEL' || r.action === 'IMPORT_PROJECT') ? '#bbf7d0' :
+          (r.action === 'EDIT' || r.action === 'PROJECT_ASSIGN' || r.action === 'USER_EDIT') ? '#dbeafe' :
+          (r.action === 'DELETE' || r.action === 'USER_DELETE' || r.action === 'LOGIN_FAIL' || r.action === 'ACCESS DENIED' || r.action === 'EXPORT_PDF' || r.action === 'SECURITY_ALERT' || r.action === 'BRUTE_FORCE_BLOCKED' || r.action === 'LOGIN_LOCKOUT' || r.action === 'FILE_REJECTED') ? '#fee2e2' :
+          (r.action === 'PROJECT VIEW' || r.action === 'TAB_VIEW' || r.action === 'DOC_VIEW' || r.action === 'DRIVE_LINK_CLICK') ? '#e0f2fe' :
+          (r.action === 'FILE_DOWNLOAD') ? '#f3e8ff' :
+          (r.action === 'AI QUERY') ? '#ede9fe' :
+          (r.action === 'SEARCH') ? '#fef3c7' :
+          (r.action === 'EXPORT_EXCEL' || r.action === 'PASSWORD_CHANGE') ? '#f3e8ff' : '#f1f5f9';
+          
+        const actionColor =
+          (r.action === 'ADD' || r.action === 'USER_CREATE' || r.action === 'IMPORT_EXCEL') ? '#166534' :
+          (r.action === 'EDIT' || r.action === 'PROJECT_ASSIGN' || r.action === 'USER_EDIT') ? '#1e40af' :
+          (r.action === 'DELETE' || r.action === 'USER_DELETE' || r.action === 'LOGIN_FAIL' || r.action === 'ACCESS DENIED') ? '#991b1b' :
+          '#374151';
+
+        const projRaw = _omAuditProjMap[r.project_id] || r.project_id || '';
+        const projDisplay = _val(projRaw);
+        const docDisplay = (r.doc_no || r.document_id) ? `<span style="color:var(--pr);font-weight:600">${{escHtml(r.doc_no || r.document_id)}}</span>` : _dash;
+        const oldDisplay = r.old_value ? `<span style="color:#dc2626">${{escHtml(r.old_value)}}</span>` : _dash;
+        const newDisplay = r.new_value ? `<span style="color:#166534">${{escHtml(r.new_value)}}</span>` : _dash;
+        const ipDisplay = r.ip_address ? `<span style="font-family:monospace;color:var(--mu);font-size:9.5px">${{escHtml(r.ip_address)}}</span>` : _dash;
+        const devDisplay = (r.device || r.user_agent) ? `<span style="color:var(--tx);font-size:9.5px">${{escHtml(r.device || r.user_agent)}}</span>` : _dash;
+
+        html += `<tr class="${{i % 2 === 0 ? '' : 'alt'}}">
+          <td style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
+          <td style="font-weight:600;font-size:11px">${{escHtml(r.username || '')}}</td>
+          <td><span style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{escHtml(r.action || '')}}</span></td>
+          <td style="font-size:10px;color:var(--mu)" title="${{escHtml(r.project_id || '')}}">${{projDisplay}}</td>
+          <td style="font-size:11px" title="${{escHtml(r.doc_no || r.document_id || '')}}">${{docDisplay}}</td>
+          <td style="font-size:10px;color:var(--mu)" title="${{escHtml(r.field_name || '')}}">${{_val(r.field_name)}}</td>
+          <td style="font-size:10px" title="${{escHtml(r.old_value || '')}}">${{oldDisplay}}</td>
+          <td style="font-size:10px" title="${{escHtml(r.new_value || '')}}">${{newDisplay}}</td>
+          <td style="font-size:10px;color:var(--mu)" title="${{escHtml(r.detail || '')}}">${{_val(r.detail)}}</td>
+          <td style="font-size:10px" title="${{escHtml(r.ip_address || '')}}">${{ipDisplay}}</td>
+          <td style="font-size:10px" title="${{escHtml(r.device || r.user_agent || '')}}">${{devDisplay}}</td>
+        </tr>`;
+      }});
+      if (tbody) tbody.innerHTML = html;
+    }}
+
+    const page = Math.floor(_omAuditOffset / 100) + 1;
+    if (countEl) countEl.textContent = `Showing ${{rows.length}} entries`;
+    const pEl = document.getElementById('om-aud-page');
+    if (pEl) pEl.textContent = `Page ${{page}}`;
+    const prevBtn = document.getElementById('om-aud-prev');
+    if (prevBtn) prevBtn.disabled = _omAuditOffset === 0;
+    const nextBtn = document.getElementById('om-aud-next');
+    if (nextBtn) nextBtn.disabled = !_omAuditHasMore;
+  }} catch(e) {{
+    if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:#ef4444;">Error loading audit log: ' + escHtml(e.message) + '</td></tr>';
+  }}
+}}
+
+function omAuditPage(dir) {{
+  _omAuditOffset = Math.max(0, _omAuditOffset + dir * 100);
+  loadOmAudit();
 }}
 </script>
 </body></html>'''

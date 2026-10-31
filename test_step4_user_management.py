@@ -265,8 +265,8 @@ class TestStep4UserManagement(unittest.TestCase):
         try:
             # When active_ws_id is None, it should default to OM because om_manager primary_workspace is OM
             html = render_dashboard(mock_om_admin, active_ws_id=None)
-            self.assertIn('id="om-audit-modal"', html)
-            self.assertIn('openOmAuditModal()', html)
+            self.assertIn('id="tab-om-audit"', html)
+            self.assertIn('showOmTab(&#39;audit&#39;', html)
             self.assertIn('Audit Log', html)
             self.assertIn('Operation & Maintenance (O&M)', html)
         finally:

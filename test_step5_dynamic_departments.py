@@ -24,10 +24,11 @@ class TestDynamicDepartmentsAndDashboard(unittest.TestCase):
         """Global Search (SPOTLIGHT) and Unified Navigation Toolbar are embedded in _render_om_dashboard."""
         mock_user = {"username": "a.raffat", "role": "admin", "primary_workspace": "OM"}
         accessible_projs = [{"id": "02", "name": "CFC District Cooling", "code": "02", "workspace_id": "OM"}]
-        html = html_render._render_om_dashboard(
-            mock_user, accessible_projs, ws_switcher_html="<div>WS</div>",
-            btns="", uname="a.raffat", rlbl="Admin", rbg="#10b981", active_ws="OM"
-        )
+        with patch.object(db, 'get_workspace', return_value={"id": "OM", "code": "OM", "name": "Operation & Maintenance (O&M)", "icon": "⚙️", "name_ar": "الصيانة والتشغيل"}):
+            html = html_render._render_om_dashboard(
+                mock_user, accessible_projs, ws_switcher_html="<div>WS</div>",
+                btns="", uname="a.raffat", rlbl="Admin", rbg="#10b981", active_ws="OM"
+            )
         # Global search modal and trigger must be present
         self.assertIn('id="spotlight-modal"', html)
         self.assertIn('openGlobalSearch()', html)
@@ -39,13 +40,20 @@ class TestDynamicDepartmentsAndDashboard(unittest.TestCase):
         self.assertIn('⚠️ Overdue', html)
         self.assertIn('📋 Executive', html)
         self.assertIn('🌟 Daily Digest', html)
+        self.assertIn('📜 Audit Log', html)
         
-        # Tab panes must be present
+        # In-page tab panes must be present (including Audit Log!)
         self.assertIn('id="tab-om-overview"', html)
         self.assertIn('id="tab-om-daily-digest"', html)
         self.assertIn('id="tab-om-executive"', html)
         self.assertIn('id="tab-om-overdue"', html)
         self.assertIn('id="tab-om-analytics"', html)
+        self.assertIn('id="tab-om-audit"', html)
+        
+        # Old popup modal must NOT be present
+        self.assertNotIn('id="om-audit-modal"', html)
+        self.assertIn('showOmTab(&#39;audit&#39;, this)', html)
+        self.assertIn('omAuditPage', html)
 
     def test_02_register_exposes_columns_and_lists_to_department_admin(self):
         """Department Admin (role=admin) can see Columns, Lists, and Holidays in Register toolbar."""
@@ -71,6 +79,7 @@ class TestDynamicDepartmentsAndDashboard(unittest.TestCase):
             with patch("auth.current_user", return_value={"username": "a.raffat", "role": "admin"}), \
                  patch("blueprints.records.current_user", return_value={"username": "a.raffat", "role": "admin"}), \
                  patch("db.get_projects_for_user", return_value=[{"id": "02", "code": "02", "name": "CFC"}]) as mock_gp, \
+                 patch("db.log_action"), \
                  patch("db.q", return_value=[]):
                 resp = records_mod.api_search_global()
                 mock_gp.assert_called_with("a.raffat", role="admin", workspace_id="OM")
@@ -136,6 +145,24 @@ class TestDynamicDepartmentsAndDashboard(unittest.TestCase):
             self.assertIn('Quality Assurance', html)
             self.assertIn('🛡️', html)
             self.assertIn('showOmTab', html)
+            self.assertIn('id="tab-om-audit"', html)
+
+    def test_07_audit_api_scopes_to_workspace(self):
+        """api_audit scopes to workspace when workspace_id is provided."""
+        with app.test_request_context("/api/audit?workspace_id=OM"):
+            with patch("auth.current_user", return_value={"username": "a.raffat", "role": "admin"}), \
+                 patch("app.current_user", return_value={"username": "a.raffat", "role": "admin"}), \
+                 patch("db.get_admin_workspaces_for_user", return_value=["OM"]), \
+                 patch("db.get_projects_for_user", return_value=[{"id": "02", "name": "CFC", "code": "02"}]) as mock_gpu, \
+                 patch("db.get_users_for_admin", return_value=[{"username": "a.raffat"}]), \
+                 patch("db.get_audit_log", return_value=[]), \
+                 patch("db.get_projects", return_value=[{"id": "02", "name": "CFC", "code": "02"}]), \
+                 patch("db.get_audit_actions", return_value=[]):
+                client = self.client
+                # Invoke route
+                resp = client.get("/api/audit?workspace_id=OM")
+                self.assertEqual(resp.status_code, 200)
+                mock_gpu.assert_called_with("a.raffat", "admin", workspace_id="OM")
 
 
 if __name__ == "__main__":

@@ -334,12 +334,13 @@ def api_audit():
     username = request.args.get("username")
     action   = request.args.get("action")
     offset   = int(request.args.get("offset","0"))
+    ws_filter = request.args.get("workspace_id")
 
     is_super = (str(u.get("role", "")).lower() == "superadmin")
     if not is_super:
         try:
             admin_ws = db.get_admin_workspaces_for_user(u["username"])
-            dept_projs = [p["id"] for p in db.get_projects_for_user(u["username"], u.get("role"))]
+            dept_projs = [p["id"] for p in db.get_projects_for_user(u["username"], u.get("role"), workspace_id=ws_filter)]
             dept_users = [usr["username"] for usr in db.get_users_for_admin(u["username"])]
             if pid and pid not in dept_projs:
                 return jsonify(rows=[], users=[], actions=[], projects=[])
@@ -355,10 +356,26 @@ def api_audit():
             users = [r["username"] for r in db.get_all_users()]
             projects = db.get_projects()
     else:
-        rows = db.get_audit_log(project_id=pid, username=username,
-                                action=action, limit=100, offset=offset)
-        users = [r["username"] for r in db.get_all_users()]
-        projects = db.get_projects()
+        if ws_filter:
+            try:
+                ws_projs = [p["id"] for p in db.get_projects(workspace_id=ws_filter)]
+                if pid and pid not in ws_projs:
+                    return jsonify(rows=[], users=[], actions=[], projects=[])
+                rows = db.get_audit_log(project_id=pid, username=username,
+                                        action=action, limit=100, offset=offset,
+                                        allowed_project_ids=ws_projs)
+                users = [r["username"] for r in db.get_all_users()]
+                projects = db.get_projects(project_ids=ws_projs)
+            except Exception:
+                rows = db.get_audit_log(project_id=pid, username=username,
+                                        action=action, limit=100, offset=offset)
+                users = [r["username"] for r in db.get_all_users()]
+                projects = db.get_projects()
+        else:
+            rows = db.get_audit_log(project_id=pid, username=username,
+                                    action=action, limit=100, offset=offset)
+            users = [r["username"] for r in db.get_all_users()]
+            projects = db.get_projects()
 
     actions  = db.get_audit_actions()
     if "PROJECT VIEW" not in actions:
