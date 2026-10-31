@@ -2206,8 +2206,26 @@ function resolveActiveProjectScope() {
 }
 
 function resolveActiveWorkspace() {
+  const sw = document.getElementById('ws-switcher');
+  if (sw && sw.dataset && sw.dataset.activeWs) {
+    const ws = sw.dataset.activeWs.toUpperCase();
+    try { localStorage.setItem('dcr_active_workspace', ws); } catch(e){}
+    return ws;
+  }
+  const bodyWs = document.body && document.body.dataset && document.body.dataset.workspace;
+  if (bodyWs) {
+    const ws = bodyWs.toUpperCase();
+    try { localStorage.setItem('dcr_active_workspace', ws); } catch(e){}
+    return ws;
+  }
   const urlParams = new URLSearchParams(window.location.search);
-  return (urlParams.get('ws') || localStorage.getItem('dcr_active_workspace') || 'ENG').toUpperCase();
+  const wsParam = urlParams.get('ws');
+  if (wsParam) {
+    const ws = wsParam.toUpperCase();
+    try { localStorage.setItem('dcr_active_workspace', ws); } catch(e){}
+    return ws;
+  }
+  return (localStorage.getItem('dcr_active_workspace') || 'ENG').toUpperCase();
 }
 
 function updateAiScopeBadge() {
@@ -2219,6 +2237,13 @@ function updateAiScopeBadge() {
 
   if (titleEl) {
     titleEl.textContent = isOM ? 'DCR O&M Assistant' : (activeWs === 'ENG' ? 'DCR Engineering Assistant' : `DCR ${activeWs} Assistant`);
+  }
+
+  const promptInput = document.getElementById('ai-prompt-input');
+  if (promptInput) {
+    promptInput.placeholder = isOM 
+      ? 'Ask about work orders, PPM schedules, maintenance requests, SLA...' 
+      : 'Ask about submittals, NOCs, costs, or document statuses...';
   }
 
   if (chipsEl) {
@@ -2277,6 +2302,14 @@ function openAiDrawer() {
     backdrop.style.display = 'block';
   }
   _aiAssistantState.isOpen = true;
+
+  const currentWs = resolveActiveWorkspace();
+  if (_aiAssistantState.currentWs && _aiAssistantState.currentWs !== currentWs) {
+    _aiAssistantState.messages = [];
+    const chatBody = document.getElementById('ai-chat-body');
+    if (chatBody) chatBody.innerHTML = '';
+  }
+  _aiAssistantState.currentWs = currentWs;
 
   updateAiScopeBadge();
 
@@ -2375,15 +2408,28 @@ function toggleAiDrawer() {
 }
 
 function initAiWelcomeMessage() {
-  const welcomeText = 
-    "Hello! I am your **DCR Engineering AI Assistant** powered by Gemini Flash.\n\n" +
-    "I have real-time, read-only access to your authorized project registers and can help you with:\n" +
-    "- 📌 **Overdue submittals** and delay days\n" +
-    "- 💵 **Notice of Change (NOC)** cost totals and approvals\n" +
-    "- 📊 **Register status breakdowns** (Approved, Under Review, Rejected)\n" +
-    "- 🔍 **Specific document numbers** or disciplines\n\n" +
-    "*How can I assist you today?*";
-  
+  const activeWs = resolveActiveWorkspace();
+  const isOM = activeWs === 'OM';
+  let welcomeText = '';
+  if (isOM) {
+    welcomeText = 
+      "Hello! I am your **DCR Operation & Maintenance (O&M) AI Assistant** powered by Gemini Flash.\n\n" +
+      "I have real-time, read-only access to your maintenance contracts, facilities, and registers:\n" +
+      "- ⚙️ **Work Orders (WO)** and Maintenance Requests (MR)\n" +
+      "- 📅 **Preventive Maintenance (PPM)** schedules & Corrective Maintenance (CM)\n" +
+      "- 📊 **SLA Compliance & Service Reports**\n" +
+      "- 🔍 **Contract submittals & incident logs**\n\n" +
+      "*How can I assist you with your maintenance contracts today?*";
+  } else {
+    welcomeText = 
+      "Hello! I am your **DCR Engineering AI Assistant** powered by Gemini Flash.\n\n" +
+      "I have real-time, read-only access to your authorized project registers and can help you with:\n" +
+      "- 📌 **Overdue submittals** and delay days\n" +
+      "- 💵 **Notice of Change (NOC)** cost totals and approvals\n" +
+      "- 📊 **Register status breakdowns** (Approved, Under Review, Rejected)\n" +
+      "- 🔍 **Specific document numbers** or disciplines\n\n" +
+      "*How can I assist you today?*";
+  }
   appendAiMessage('assistant', welcomeText);
 }
 
@@ -2788,7 +2834,7 @@ def _workspace_switcher_html(u, active_ws_id=None):
         dropdown_html = ""
 
     return f'''
-    <div class="ws-switcher" id="ws-switcher">
+    <div class="ws-switcher" id="ws-switcher" data-active-ws="{current_id}">
       <button class="{btn_class}" {btn_onclick} title="Active Workspace: {current_ws.get('name', 'Engineering & Projects')}">
         <span class="ws-icon">{current_ws.get('icon', '📁')}</span>
         <span class="ws-name">{current_ws.get('name', 'Engineering & Projects')}</span>
@@ -4096,6 +4142,13 @@ function selectWorkspace(wsId,e){
     window.location.href=u.toString();
   }
 }
+(function(){
+  try {
+    const sw = document.getElementById('ws-switcher');
+    const ws = (sw && sw.dataset && sw.dataset.activeWs) || (document.body && document.body.dataset && document.body.dataset.workspace);
+    if (ws) localStorage.setItem('dcr_active_workspace', ws.toUpperCase());
+  } catch(e){}
+})();
 if(localStorage.getItem('dcr_dark'))applyDarkMode(true);
 function toast(msg,type=''){
   const t=document.getElementById('toast');
@@ -4399,18 +4452,20 @@ function renderAdminTable() {
         if (isSuper) {
           // Superadmin can check/uncheck department AND choose role per department
           deptLines.push(`
-            <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;font-size:11px;">
-              <input type="checkbox" id="dept-${w.id}-${escHtml(u.username)}" ${isAssigned ? 'checked' : ''}
-                     onchange="toggleUserDept('${escHtml(u.username)}', '${w.id}', this.checked)">
-              <span>${icon} ${escHtml(name)}</span>
-            </label>
+            <div style="height:26px;display:flex;align-items:center;">
+              <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;font-size:11px;">
+                <input type="checkbox" id="dept-${w.id}-${escHtml(u.username)}" ${isAssigned ? 'checked' : ''}
+                       onchange="toggleUserDept('${escHtml(u.username)}', '${w.id}', this.checked)">
+                <span>${icon} ${escHtml(name)}</span>
+              </label>
+            </div>
           `);
           
           if (isAssigned) {
             roleLines.push(`
-              <div style="display:flex;align-items:center;gap:4px;font-size:11px;">
-                <span style="font-size:10px;color:var(--mu);min-width:32px;">${w.id}:</span>
-                <select class="tbl-select" style="padding:2px 6px;font-size:10.5px;height:24px;"
+              <div style="height:26px;display:flex;align-items:center;gap:4px;font-size:11px;">
+                <span style="font-size:10px;font-weight:600;color:var(--mu);min-width:32px;">${w.id}:</span>
+                <select class="tbl-select" style="padding:1px 6px;font-size:10.5px;height:22px;"
                         onchange="updUsrWsRole('${escHtml(u.username)}', '${w.id}', this.value)">
                   <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
                   <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
@@ -4418,15 +4473,26 @@ function renderAdminTable() {
                 </select>
               </div>
             `);
+          } else {
+            roleLines.push(`
+              <div style="height:26px;display:flex;align-items:center;gap:4px;font-size:11px;opacity:0.35;">
+                <span style="font-size:10px;min-width:32px;color:var(--mu);">${w.id}:</span>
+                <span style="font-size:11px;color:var(--mu);">—</span>
+              </div>
+            `);
           }
         } else if (canManageThisWs) {
           // Department Admin can change role in their own department only
           if (isAssigned) {
-            deptLines.push(`<span class="dept-badge ${w.id==='OM'?'dept-badge-om':'dept-badge-eng'}">${icon} ${escHtml(name)}</span>`);
+            deptLines.push(`
+              <div style="height:26px;display:flex;align-items:center;">
+                <span class="dept-badge ${w.id==='OM'?'dept-badge-om':'dept-badge-eng'}">${icon} ${escHtml(name)}</span>
+              </div>
+            `);
             roleLines.push(`
-              <div style="display:flex;align-items:center;gap:4px;font-size:11px;">
-                <span style="font-size:10px;color:var(--mu);min-width:32px;">${w.id}:</span>
-                <select class="tbl-select" style="padding:2px 6px;font-size:10.5px;height:24px;"
+              <div style="height:26px;display:flex;align-items:center;gap:4px;font-size:11px;">
+                <span style="font-size:10px;font-weight:600;color:var(--mu);min-width:32px;">${w.id}:</span>
+                <select class="tbl-select" style="padding:1px 6px;font-size:10.5px;height:22px;"
                         onchange="updUsrWsRole('${escHtml(u.username)}', '${w.id}', this.value)">
                   <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
                   <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
@@ -4437,14 +4503,37 @@ function renderAdminTable() {
         } else {
           // Department outside admin scope: show read-only
           if (isAssigned) {
-            deptLines.push(`<span class="dept-badge" style="background:#f1f5f9;color:#64748b;font-size:9.5px;">${icon} ${escHtml(name)}</span>`);
-            roleLines.push(`<span style="font-size:10px;color:var(--mu);padding:2px 0;">${w.id}: ${escHtml(wsRole.toUpperCase())}</span>`);
+            deptLines.push(`
+              <div style="height:26px;display:flex;align-items:center;">
+                <span class="dept-badge" style="background:#f1f5f9;color:#64748b;font-size:9.5px;">${icon} ${escHtml(name)}</span>
+              </div>
+            `);
+            roleLines.push(`
+              <div style="height:26px;display:flex;align-items:center;font-size:10px;color:var(--mu);">
+                ${w.id}: ${escHtml(wsRole.toUpperCase())}
+              </div>
+            `);
           }
         }
       });
 
-      deptCol = `<div class="dept-checkboxes" style="display:flex;flex-direction:column;gap:4px;">${deptLines.join('') || '<span style="color:var(--mu);font-size:11px;">None</span>'}</div>`;
-      roleCol = `<div style="display:flex;flex-direction:column;gap:4px;">${roleLines.join('') || '<span style="color:var(--mu);font-size:11px;">—</span>'}</div>`;
+      if (isSuper) {
+        const allAssigned = availableWorkspaces.length > 0 && availableWorkspaces.every(w => w.id in wsMap);
+        deptCol = `
+          <div class="dept-checkboxes" style="display:flex;flex-direction:column;gap:0;">
+            ${deptLines.join('')}
+            <div style="margin-top:2px;font-size:10px;">
+              <a href="#" onclick="toggleAllDepts('${escHtml(u.username)}', ${!allAssigned}, event)" style="color:var(--pr);text-decoration:none;font-weight:600;">
+                ${allAssigned ? '✖ Clear All' : '🌐 Select All'}
+              </a>
+            </div>
+          </div>
+        `;
+        roleCol = `<div style="display:flex;flex-direction:column;gap:0;">${roleLines.join('')}</div>`;
+      } else {
+        deptCol = `<div class="dept-checkboxes" style="display:flex;flex-direction:column;gap:0;">${deptLines.join('') || '<span style="color:var(--mu);font-size:11px;">None</span>'}</div>`;
+        roleCol = `<div style="display:flex;flex-direction:column;gap:0;">${roleLines.join('') || '<span style="color:var(--mu);font-size:11px;">—</span>'}</div>`;
+      }
     }
     
     // Email column
@@ -4520,6 +4609,40 @@ async function updUsrWsRole(username, wsId, role) {
   }
 }
 
+
+async function toggleAllDepts(username, selectAll, e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  if (!u) return;
+  const availableWorkspaces = _ADMIN_DATA.workspaces || [];
+  let wsArray = [];
+  if (selectAll) {
+    wsArray = availableWorkspaces.map(w => w.id);
+  } else {
+    wsArray = [u.primary_workspace || 'ENG'];
+  }
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_workspaces',
+        username: username,
+        workspaces: wsArray
+      })
+    });
+    if (r && r.ok) {
+      const oldRoleMap = Object.fromEntries((u.workspaces || []).map(w => [w.workspace_id, w.role]));
+      u.workspaces = wsArray.map(w => ({ workspace_id: w, role: oldRoleMap[w] || u.role || 'viewer' }));
+      toast(selectAll ? '✔ Assigned to All Departments' : '✔ Reset to default department', 'ok');
+      renderAdminTable();
+    } else {
+      toast((r && r.error) || 'Failed to update', 'er');
+    }
+  } catch(err) {
+    toast('Error: ' + err.message, 'er');
+  }
+}
+
 async function toggleUserDept(username, changedWs, isChecked) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   if (!u) return;
@@ -4551,7 +4674,8 @@ async function toggleUserDept(username, changedWs, isChecked) {
       })
     });
     if (r && r.ok) {
-      u.workspaces = wsArray.map(w => ({ workspace_id: w, role: u.role || 'viewer' }));
+      const oldRoleMap = Object.fromEntries((u.workspaces || []).map(w => [w.workspace_id, w.role]));
+      u.workspaces = wsArray.map(w => ({ workspace_id: w, role: oldRoleMap[w] || u.role || 'viewer' }));
       if (!wsArray.includes(u.primary_workspace)) {
         u.primary_workspace = wsArray[0];
       }
@@ -5718,7 +5842,7 @@ body.dark .om-kpi-val, body.dark .om-card-title, body.dark .om-header-title {{ c
 body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; }}
 </style>
 </head>
-<body>
+<body data-workspace="OM">
 <div id="topbar">
   <span style="font-size:20px">📋</span>
   <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
@@ -6434,7 +6558,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 .del-pbtn:hover{{background:#fef2f2}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-</head><body>
+</head><body data-workspace="{active_ws}">
 
 <div id="ld">
   <div class="spin"></div>
@@ -8553,7 +8677,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   #sbar {{ padding: 1px 8px !important; font-size: 8px !important; line-height: 1.1 !important; }}
   #sbar-center {{ display: none !important; }}
 }}
-</style></head><body>
+</style></head><body data-workspace="{active_ws}">
 
 <div id="topbar">
   <span class="topbar-mark" style="font-size:20px">📋</span>
