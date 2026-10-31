@@ -2826,13 +2826,18 @@ def _workspace_switcher_html(u, active_ws_id=None):
             is_active = (ws["id"] == current_id)
             active_class = "active" if is_active else ""
             check_html = '<span class="ws-item-check">✓</span>' if is_active else ""
-            sub_title = ws.get("description") or sub_map.get(ws["id"], ws.get("name_ar", ""))
+            raw_sub = ws.get("description")
+            if raw_sub is not None:
+                sub_title = str(raw_sub).strip()
+            else:
+                sub_title = sub_map.get(ws["id"], ws.get("name_ar", ""))
+            sub_title_html = f'<div class="ws-item-sub">{sub_title}</div>' if sub_title else ''
             items_html += f'''
             <a href="/?ws={ws['id']}" class="ws-item {active_class}" onclick="selectWorkspace('{ws['id']}', event)">
               <span class="ws-item-icon">{ws.get('icon', '📁')}</span>
               <div class="ws-item-text">
                 <div class="ws-item-title">{ws['name']}</div>
-                <div class="ws-item-sub">{sub_title}</div>
+                {sub_title_html}
               </div>
               {check_html}
             </a>
@@ -4588,6 +4593,33 @@ async function submitDepartmentForm() {
   }
 }
 
+function refreshAdminDeptDropdowns() {
+  const filter = document.getElementById('admin-dept-filter');
+  if (filter) {
+    const curVal = filter.value;
+    let deptOptions = '<option value="">All Departments</option>';
+    (_ADMIN_DATA.workspaces || []).forEach(w => {
+      const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
+      const label = w.name || w.code || w.id;
+      deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+    });
+    filter.innerHTML = deptOptions;
+    if (curVal) filter.value = curVal;
+  }
+  const nuDept = document.getElementById('nu-dept');
+  if (nuDept) {
+    const curVal = nuDept.value;
+    let addDeptOptions = '';
+    (_ADMIN_DATA.workspaces || []).forEach(w => {
+      const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
+      const label = w.name || w.code || w.id;
+      addDeptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+    });
+    nuDept.innerHTML = addDeptOptions;
+    if (curVal) nuDept.value = curVal;
+  }
+}
+
 function renderDepartmentsTable() {
   const deptsView = document.getElementById('admin-view-depts');
   if (!deptsView) return;
@@ -4601,7 +4633,8 @@ function renderDepartmentsTable() {
     const isOm = w.id === 'OM';
     const pCount = projects.filter(p => (p.workspace_id || 'ENG') === w.id).length;
     const icon = w.icon || (isOm ? '⚙️' : (isEng ? '🏗️' : '📁'));
-    const desc = w.description || (isEng ? 'EPC & Site Submittals' : (isOm ? 'Facilities & Maintenance Contracts' : '—'));
+    const rawDesc = (w.description !== undefined && w.description !== null) ? String(w.description).trim() : '';
+    const descDisplay = rawDesc ? escHtml(rawDesc) : '<span style="color:var(--mu);font-style:italic;">—</span>';
     
     rowsHtml += `
       <tr>
@@ -4613,7 +4646,7 @@ function renderDepartmentsTable() {
           </div>
         </td>
         <td style="font-family:monospace;font-weight:800;color:var(--brand-teal);font-size:12.5px;">${escHtml(w.code || w.id)}</td>
-        <td style="font-size:11.5px;color:var(--mu);max-width:280px;">${escHtml(desc)}</td>
+        <td style="font-size:11.5px;color:var(--mu);max-width:280px;">${descDisplay}</td>
         <td style="text-align:center;"><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-weight:700;">${pCount} ${isOm ? 'Contracts' : 'Projects'}</span></td>
         <td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;">Active</span></td>
         <td>
@@ -5986,7 +6019,11 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     ws_icon = ws_obj.get("icon") or "⚙️"
     ws_code = ws_obj.get("code") or active_ws
     ws_name_ar = ws_obj.get("name_ar") or ""
-    ws_desc = ws_obj.get("description") or ""
+    raw_ws_desc = ws_obj.get("description")
+    if raw_ws_desc is not None:
+        ws_desc = str(raw_ws_desc).strip()
+    else:
+        ws_desc = ws_name_ar or ("Facilities & Maintenance Contracts" if active_ws == "OM" else "")
 
     # Calculate Universal Dynamic KPIs
     total_contracts = len(accessible_projs)
@@ -6378,7 +6415,7 @@ body.dark .tbtn.active {{
   <div class="om-header-bar">
     <div>
       <div class="om-header-title">{ws_icon} {ws_name}</div>
-      <div class="om-header-sub">{ws_desc if ws_desc else (ws_name_ar if ws_name_ar else 'Client Maintenance Contracts, Facilities & Service Level Management')}</div>
+      {f'<div class="om-header-sub">{ws_desc}</div>' if ws_desc else ''}
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       {header_add_btn}

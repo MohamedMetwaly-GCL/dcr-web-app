@@ -598,8 +598,8 @@ def _ensure_workspaces():
         exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active, description)
                VALUES('OM', 'O&M', 'Operation & Maintenance (O&M)', 'الصيانة والتشغيل', '⚙️', 'om', 2, TRUE, 'Facilities & Maintenance Contracts')
                ON CONFLICT (id) DO UPDATE SET code = 'O&M', name = 'Operation & Maintenance (O&M)'""")
-        exe("UPDATE workspaces SET description = 'EPC & Site Submittals' WHERE id = 'ENG' AND (description IS NULL OR description = '')")
-        exe("UPDATE workspaces SET description = 'Facilities & Maintenance Contracts' WHERE id = 'OM' AND (description IS NULL OR description = '')")
+        exe("UPDATE workspaces SET description = 'EPC & Site Submittals' WHERE id = 'ENG' AND description IS NULL")
+        exe("UPDATE workspaces SET description = 'Facilities & Maintenance Contracts' WHERE id = 'OM' AND description IS NULL")
         exe("UPDATE projects SET workspace_id = 'ENG' WHERE workspace_id IS NULL OR workspace_id = ''")
         exe("""
             INSERT INTO user_workspaces (username, workspace_id, role)
