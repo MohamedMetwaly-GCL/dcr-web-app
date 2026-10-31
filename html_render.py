@@ -2826,7 +2826,7 @@ def _workspace_switcher_html(u, active_ws_id=None):
             is_active = (ws["id"] == current_id)
             active_class = "active" if is_active else ""
             check_html = '<span class="ws-item-check">✓</span>' if is_active else ""
-            sub_title = sub_map.get(ws["id"], ws.get("name_ar", ""))
+            sub_title = ws.get("description") or sub_map.get(ws["id"], ws.get("name_ar", ""))
             items_html += f'''
             <a href="/?ws={ws['id']}" class="ws-item {active_class}" onclick="selectWorkspace('{ws['id']}', event)">
               <span class="ws-item-icon">{ws.get('icon', '📁')}</span>
@@ -4441,63 +4441,131 @@ function switchAdminTab(tab) {
   }
 }
 
-function toggleAddDeptCard(show) {
+const DEPT_ICONS = [
+  { icon: '🏗️', label: 'Engineering' },
+  { icon: '⚙️', label: 'O&M' },
+  { icon: '🛡️', label: 'QA / HSE' },
+  { icon: '📋', label: 'Contracts' },
+  { icon: '⚡', label: 'MEP / Power' },
+  { icon: '🏢', label: 'Facility' },
+  { icon: '💼', label: 'Management' },
+  { icon: '📦', label: 'Procurement' },
+  { icon: '🔬', label: 'Technical' },
+  { icon: '👥', label: 'HR' },
+  { icon: '💰', label: 'Finance' },
+  { icon: '💻', label: 'IT' },
+  { icon: '🔧', label: 'Workshop' },
+  { icon: '🎯', label: 'Planning' },
+  { icon: '📁', label: 'General' }
+];
+
+function selectDeptIcon(emoji) {
+  const inp = document.getElementById('dept-inp-icon');
+  if (inp) inp.value = emoji;
+  highlightDeptIconPill(emoji);
+}
+
+function highlightDeptIconPill(emoji) {
+  document.querySelectorAll('.dept-icon-pill').forEach(el => {
+    if (el.getAttribute('data-icon') === emoji) {
+      el.style.borderColor = 'var(--brand-teal)';
+      el.style.background = 'rgba(0, 180, 166, 0.12)';
+      el.style.color = 'var(--brand-teal)';
+      el.style.fontWeight = '700';
+    } else {
+      el.style.borderColor = 'var(--bd)';
+      el.style.background = 'var(--wh)';
+      el.style.color = 'var(--tx)';
+      el.style.fontWeight = '500';
+    }
+  });
+}
+
+function toggleAddDeptCard(show, reset=false) {
   const card = document.getElementById('dept-edit-card');
   if (!card) return;
-  if (typeof show === 'boolean') {
-    card.style.display = show ? 'block' : 'none';
+  const isVisible = card.style.display === 'block';
+  const shouldShow = (typeof show === 'boolean') ? show : !isVisible;
+  
+  if (shouldShow) {
+    card.style.display = 'block';
+    if (reset || !document.getElementById('dept-form-mode')?.value || document.getElementById('dept-form-mode')?.value === 'add') {
+      document.getElementById('dept-form-mode').value = 'add';
+      const titleEl = document.getElementById('dept-form-title');
+      if (titleEl) titleEl.innerHTML = '<span>➕ Add New Department (إضافة قسم جديد)</span>';
+      const submitLbl = document.getElementById('dept-submit-lbl');
+      if (submitLbl) submitLbl.textContent = 'Save Department (حفظ القسم)';
+      
+      const idInp = document.getElementById('dept-inp-id');
+      if (idInp) idInp.value = '';
+      const codeInp = document.getElementById('dept-inp-code');
+      if (codeInp) codeInp.value = '';
+      const nameInp = document.getElementById('dept-inp-name');
+      if (nameInp) nameInp.value = '';
+      const arInp = document.getElementById('dept-inp-name-ar');
+      if (arInp) arInp.value = '';
+      const descInp = document.getElementById('dept-inp-desc');
+      if (descInp) descInp.value = '';
+      const iconInp = document.getElementById('dept-inp-icon');
+      if (iconInp) iconInp.value = '📁';
+      highlightDeptIconPill('📁');
+      codeInp?.focus();
+    }
   } else {
-    card.style.display = card.style.display === 'none' ? 'block' : 'none';
-  }
-  if (card.style.display === 'block') {
-    const idInp = document.getElementById('dept-inp-id');
-    if (idInp && !idInp.disabled) idInp.focus();
+    card.style.display = 'none';
   }
 }
 
 function editDepartment(wsId) {
   const w = (_ADMIN_DATA.workspaces || []).find(x => x.id === wsId);
   if (!w) return;
-  toggleAddDeptCard(true);
+  toggleAddDeptCard(true, false);
   const titleEl = document.getElementById('dept-form-title');
-  if (titleEl) titleEl.textContent = '✏️ Edit Department: ' + (w.name || w.id);
+  if (titleEl) titleEl.innerHTML = '<span>✏️ Edit Department: ' + escHtml(w.name || w.id) + '</span>';
+  const submitLbl = document.getElementById('dept-submit-lbl');
+  if (submitLbl) submitLbl.textContent = 'Update Department (حفظ التعديلات)';
   const modeEl = document.getElementById('dept-form-mode');
   if (modeEl) modeEl.value = 'update';
+  
   const idInp = document.getElementById('dept-inp-id');
-  if (idInp) {
-    idInp.value = w.id;
-    idInp.disabled = true;
-  }
+  if (idInp) idInp.value = w.id;
   const codeInp = document.getElementById('dept-inp-code');
   if (codeInp) codeInp.value = w.code || w.id;
   const nameInp = document.getElementById('dept-inp-name');
   if (nameInp) nameInp.value = w.name || '';
   const arInp = document.getElementById('dept-inp-name-ar');
   if (arInp) arInp.value = w.name_ar || '';
+  const descInp = document.getElementById('dept-inp-desc');
+  if (descInp) descInp.value = w.description || '';
   const iconInp = document.getElementById('dept-inp-icon');
-  if (iconInp) iconInp.value = w.icon || '📁';
-  const typeInp = document.getElementById('dept-inp-type');
-  if (typeInp) typeInp.value = w.type || 'general';
+  const ic = w.icon || '📁';
+  if (iconInp) iconInp.value = ic;
+  highlightDeptIconPill(ic);
+  nameInp?.focus();
 }
 
 async function submitDepartmentForm() {
   const mode = (document.getElementById('dept-form-mode')?.value) || 'add';
-  const id = (document.getElementById('dept-inp-id')?.value || '').trim().toUpperCase();
-  const code = (document.getElementById('dept-inp-code')?.value || '').trim().toUpperCase() || id;
+  const code = (document.getElementById('dept-inp-code')?.value || '').trim().toUpperCase();
+  let id = (document.getElementById('dept-inp-id')?.value || '').trim().toUpperCase();
   const name = (document.getElementById('dept-inp-name')?.value || '').trim();
   const name_ar = (document.getElementById('dept-inp-name-ar')?.value || '').trim();
+  const description = (document.getElementById('dept-inp-desc')?.value || '').trim();
   const icon = (document.getElementById('dept-inp-icon')?.value || '').trim() || '📁';
-  const type = (document.getElementById('dept-inp-type')?.value) || 'general';
 
-  if (!id || !name) {
-    alert('Please enter Department ID and English Name.');
+  if (!code || !name) {
+    alert('Please enter Department Code and English Name.');
     return;
+  }
+
+  if (mode === 'add' || !id) {
+    id = code.replace(/[^A-Z0-9_]/g, '') || code;
   }
 
   try {
     const payload = {
       action: mode === 'update' ? 'update' : 'add',
-      id, code, name, name_ar, icon, type
+      id, code, name, name_ar, description, icon, type: 'general'
     };
     const res = await apiFetch('/api/workspaces', {
       method: 'POST',
@@ -4520,21 +4588,6 @@ async function submitDepartmentForm() {
   }
 }
 
-function refreshAdminDeptDropdowns() {
-  const deptFilter = document.getElementById('admin-dept-filter');
-  const addDeptSel = document.getElementById('nu-dept');
-  let deptOptions = '<option value="">All Departments</option>';
-  let addDeptOptions = '';
-  (_ADMIN_DATA.workspaces || []).forEach(w => {
-    const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-    const label = w.name || w.code || w.id;
-    deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
-    addDeptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
-  });
-  if (deptFilter) deptFilter.innerHTML = deptOptions;
-  if (addDeptSel) addDeptSel.innerHTML = addDeptOptions;
-}
-
 function renderDepartmentsTable() {
   const deptsView = document.getElementById('admin-view-depts');
   if (!deptsView) return;
@@ -4544,23 +4597,23 @@ function renderDepartmentsTable() {
   
   let rowsHtml = '';
   workspaces.forEach(w => {
-    const wsProjs = projects.filter(p => (p.workspace_id || 'ENG') === w.id);
-    const pCount = wsProjs.length;
     const isEng = w.id === 'ENG';
     const isOm = w.id === 'OM';
-    const icon = w.icon || (isOm ? '⚙️' : (isEng ? '📐' : '📁'));
+    const pCount = projects.filter(p => (p.workspace_id || 'ENG') === w.id).length;
+    const icon = w.icon || (isOm ? '⚙️' : (isEng ? '🏗️' : '📁'));
+    const desc = w.description || (isEng ? 'EPC & Site Submittals' : (isOm ? 'Facilities & Maintenance Contracts' : '—'));
     
     rowsHtml += `
       <tr>
-        <td style="font-weight:700;display:flex;align-items:center;gap:8px;">
-          <span style="font-size:18px;">${escHtml(icon)}</span>
+        <td style="font-weight:700;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:20px;width:28px;text-align:center;">${escHtml(icon)}</span>
           <div>
-            <div style="color:var(--tx);font-size:12.5px;">${escHtml(w.name || w.id)}</div>
-            <div style="font-size:10.5px;color:var(--mu);">${escHtml(w.name_ar || '')}</div>
+            <div style="color:var(--tx);font-size:13px;font-weight:700;">${escHtml(w.name || w.id)}</div>
+            <div style="font-size:11px;color:var(--mu);">${escHtml(w.name_ar || '')}</div>
           </div>
         </td>
-        <td style="font-family:monospace;font-weight:700;color:var(--pr);">${escHtml(w.code || w.id)}</td>
-        <td><span class="badge" style="background:#f1f5f9;color:#475569;font-weight:600;text-transform:uppercase;font-size:10px;">${escHtml(w.type || 'general')}</span></td>
+        <td style="font-family:monospace;font-weight:800;color:var(--brand-teal);font-size:12.5px;">${escHtml(w.code || w.id)}</td>
+        <td style="font-size:11.5px;color:var(--mu);max-width:280px;">${escHtml(desc)}</td>
         <td style="text-align:center;"><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-weight:700;">${pCount} ${isOm ? 'Contracts' : 'Projects'}</span></td>
         <td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;">Active</span></td>
         <td>
@@ -4576,73 +4629,101 @@ function renderDepartmentsTable() {
       </tr>
     `;
   });
+
+  const paletteHtml = DEPT_ICONS.map(item => `
+    <button type="button" class="dept-icon-pill" data-icon="${item.icon}" onclick="selectDeptIcon('${item.icon}')"
+      style="padding:4px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--wh);cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:4px;transition:all 0.15s;font-family:inherit;">
+      <span>${item.icon}</span><span>${item.label}</span>
+    </button>
+  `).join('');
   
   deptsView.innerHTML = `
-    <div class="admin-toolbar" style="border-bottom:1px solid var(--bd);">
+    <div class="admin-toolbar" style="border-bottom:1px solid var(--bd);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;">
       <div style="display:flex;flex-direction:column;">
-        <span style="font-weight:700;font-size:13px;color:var(--tx);">🏢 Enterprise Departments & Workspaces</span>
-        <span style="font-size:11px;color:var(--mu);">Configure departments, workspaces, display names, and icons across the platform</span>
+        <span style="font-weight:700;font-size:13.5px;color:var(--tx);">🏢 Enterprise Departments & Workspaces</span>
+        <span style="font-size:11px;color:var(--mu);">Configure company departments, codes, descriptions, and icons across the platform</span>
       </div>
       <div>
-        <button class="btn btn-pr btn-sm" onclick="toggleAddDeptCard()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;font-weight:600;">
+        <button class="btn btn-pr btn-sm" onclick="toggleAddDeptCard(true, true)" style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;font-weight:700;background:var(--brand-teal);color:#fff;">
           <span>➕</span><span>Add Department</span>
         </button>
       </div>
     </div>
     
     <!-- Add / Edit Department Card -->
-    <div id="dept-edit-card" class="add-user-card" style="display:none;margin:14px 18px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <strong id="dept-form-title" style="font-size:13px;color:var(--tx);">➕ Add New Department</strong>
-        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAddDeptCard(false);">Close ✕</a>
+    <div id="dept-edit-card" class="add-user-card" style="display:none;margin:14px 18px;background:var(--wh);border:1.5px solid var(--brand-teal);border-radius:10px;padding:16px 20px;box-shadow:0 4px 14px rgba(0,0,0,0.06);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--bd);padding-bottom:8px;">
+        <strong id="dept-form-title" style="font-size:13.5px;color:var(--tx);font-weight:800;display:flex;align-items:center;gap:6px;">
+          <span>➕ Add New Department (إضافة قسم جديد)</span>
+        </strong>
+        <a href="#" style="font-size:12px;color:var(--mu);text-decoration:none;font-weight:600;" onclick="event.preventDefault();toggleAddDeptCard(false);">Close ✕</a>
       </div>
       <input type="hidden" id="dept-form-mode" value="add">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;margin-bottom:12px;">
-        <div class="fg" style="margin:0;">
-          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Department ID (Unique Key)</label>
-          <input id="dept-inp-id" class="tbl-input" placeholder="e.g. QA, PROC" style="text-transform:uppercase;">
+      <input type="hidden" id="dept-inp-id" value="">
+      
+      <!-- Row 1: Code (compact), English Name (flexible), Arabic Name (flexible) -->
+      <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="fg" style="margin:0;width:120px;flex:0 0 120px;">
+          <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
+            Code (كود القسم) <span style="color:#ef4444">*</span>
+          </label>
+          <input id="dept-inp-code" class="tbl-input" placeholder="e.g. O&M, HSE" style="font-weight:700;text-transform:uppercase;font-family:monospace;letter-spacing:0.5px;width:100%;">
         </div>
-        <div class="fg" style="margin:0;">
-          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Display Code</label>
-          <input id="dept-inp-code" class="tbl-input" placeholder="e.g. QA, PROC">
+        <div class="fg" style="margin:0;flex:1.2;min-width:200px;">
+          <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
+            Name in English (اسم القسم بالإنجليزي) <span style="color:#ef4444">*</span>
+          </label>
+          <input id="dept-inp-name" class="tbl-input" placeholder="e.g. Quality Assurance & Control" style="width:100%;">
         </div>
-        <div class="fg" style="margin:0;">
-          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Name (English)</label>
-          <input id="dept-inp-name" class="tbl-input" placeholder="e.g. Quality Assurance">
-        </div>
-        <div class="fg" style="margin:0;">
-          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Name (Arabic)</label>
-          <input id="dept-inp-name-ar" class="tbl-input" placeholder="e.g. توكيد ومراقبة الجودة" dir="rtl">
-        </div>
-        <div class="fg" style="margin:0;">
-          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Icon (Emoji)</label>
-          <input id="dept-inp-icon" class="tbl-input" placeholder="🏢" value="🏢" style="max-width:80px;text-align:center;font-size:14px;">
-        </div>
-        <div class="fg" style="margin:0;">
-          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Type</label>
-          <select id="dept-inp-type" class="tbl-select" style="width:100%;">
-            <option value="general">General</option>
-            <option value="engineering">Engineering</option>
-            <option value="om">Maintenance & Operation</option>
-            <option value="procurement">Procurement</option>
-            <option value="quality">Quality</option>
-          </select>
+        <div class="fg" style="margin:0;flex:1.2;min-width:200px;">
+          <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
+            Name in Arabic (اسم القسم بالعربي)
+          </label>
+          <input id="dept-inp-name-ar" class="tbl-input" placeholder="e.g. توكيد ومراقبة الجودة" dir="rtl" style="width:100%;">
         </div>
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;">
-        <button class="btn btn-sc btn-sm" onclick="toggleAddDeptCard(false)">Cancel</button>
-        <button class="btn btn-pr btn-sm" onclick="submitDepartmentForm()" style="padding:6px 14px;font-weight:700;">💾 Save Department</button>
+
+      <!-- Row 2: Subtitle / Description (التعريف البسيط) -->
+      <div style="display:flex;gap:12px;margin-bottom:12px;">
+        <div class="fg" style="margin:0;flex:1;">
+          <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
+            Subtitle / Description (التعريف البسيط أسفل اسم القسم في القوائم والشاشات)
+          </label>
+          <input id="dept-inp-desc" class="tbl-input" placeholder="e.g. Facilities & Maintenance Contracts" style="width:100%;">
+        </div>
+      </div>
+
+      <!-- Row 3: Icon Selection (Input + 1-Click Quick Palette) -->
+      <div style="margin-bottom:14px;background:var(--bg);padding:10px 14px;border-radius:8px;border:1px solid var(--bd);">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label style="font-size:11px;font-weight:700;color:var(--tx);margin:0;">Icon (أيقونة القسم):</label>
+            <input id="dept-inp-icon" class="tbl-input" placeholder="🏢" value="📁" style="width:55px;text-align:center;font-size:18px;padding:3px 6px;">
+          </div>
+          <span style="font-size:11px;color:var(--mu);">اضغط على أي أيقونة جاهزة أو اكتب أي رمز تريده:</span>
+        </div>
+        <div id="dept-icon-palette" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          ${paletteHtml}
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
+        <button class="btn btn-sc btn-sm" onclick="toggleAddDeptCard(false)">Cancel (إلغاء)</button>
+        <button class="btn btn-pr btn-sm" onclick="submitDepartmentForm()" style="padding:7px 18px;font-weight:700;background:var(--brand-teal);color:#fff;">
+          <span>💾</span> <span id="dept-submit-lbl">Save Department (حفظ القسم)</span>
+        </button>
       </div>
     </div>
 
     <!-- Table of Workspaces -->
-    <div class="user-tbl-wrap" style="margin:14px 18px;">
-      <table class="user-tbl">
+    <div class="user-tbl-wrap" style="margin:14px 18px;border:1px solid var(--bd);border-radius:8px;overflow-x:auto;">
+      <table class="user-tbl" style="width:100%;">
         <thead>
           <tr>
             <th style="padding:10px 14px;">Department / Workspace</th>
             <th style="padding:10px 14px;">Code</th>
-            <th style="padding:10px 14px;">Type</th>
+            <th style="padding:10px 14px;">Subtitle / Description</th>
             <th style="padding:10px 14px;text-align:center;">Projects / Contracts</th>
             <th style="padding:10px 14px;text-align:center;">Status</th>
             <th style="padding:10px 14px;">Actions</th>
@@ -5905,6 +5986,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     ws_icon = ws_obj.get("icon") or "⚙️"
     ws_code = ws_obj.get("code") or active_ws
     ws_name_ar = ws_obj.get("name_ar") or ""
+    ws_desc = ws_obj.get("description") or ""
 
     # Calculate Universal Dynamic KPIs
     total_contracts = len(accessible_projs)
@@ -5950,12 +6032,14 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
                 GROUP BY dt.code, dt.name
                 ORDER BY count DESC, dt.code
             """, (pids,))
-            doc_types_breakdown = dt_rows or []
+            doc_types_breakdown = dt_rows if isinstance(dt_rows, list) else []
         except Exception:
             doc_types_breakdown = []
 
     dt_cards_html = ""
     for dt in doc_types_breakdown:
+        if not isinstance(dt, dict):
+            continue
         dt_c = dt.get("code") or dt.get("name") or "DOC"
         dt_n = dt.get("name") or dt_c
         cnt = dt.get("count") or 0
@@ -6200,6 +6284,75 @@ body.dark .om-header-bar, body.dark .om-kpi-card, body.dark .om-card, body.dark 
 body.dark .om-kpi-lbl, body.dark .om-header-sub, body.dark .om-card-client {{ color: #94a3b8; }}
 body.dark .om-kpi-val, body.dark .om-card-title, body.dark .om-header-title {{ color: #f1f5f9; }}
 body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; }}
+
+/* ── Toolbar & Tabs Styling matching Engineering ── */
+.psel-bar {{
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--wh);
+  padding: 5px 8px;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.07);
+  border: 1px solid var(--bd);
+  margin-bottom: 12px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}}
+.psel-bar select, .psel-bar input {{
+  padding: 4px 8px;
+  border: 1.5px solid var(--bd);
+  border-radius: var(--rd);
+  font-family: inherit;
+  font-size: 11.5px;
+  outline: none;
+}}
+.tbtn {{
+  padding: 5px 10px;
+  border: 1.5px solid var(--bd);
+  border-radius: var(--rd);
+  background: var(--wh);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: all .15s ease;
+  color: var(--tx);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}}
+.tbtn:hover {{
+  background: var(--bg);
+  border-color: var(--brand-teal);
+  color: var(--brand-teal);
+}}
+.tbtn.active {{
+  background: var(--brand-navy) !important;
+  color: #fff !important;
+  border-color: var(--brand-navy) !important;
+  box-shadow: 0 2px 6px rgba(26,47,78,.25) !important;
+}}
+body.dark .psel-bar {{
+  background: #162132;
+  border-color: #304257;
+}}
+body.dark .tbtn {{
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: #334155;
+}}
+body.dark .tbtn:hover {{
+  border-color: var(--brand-teal);
+  color: #5eead4;
+}}
+body.dark .tbtn.active {{
+  background: var(--brand-teal) !important;
+  color: #fff !important;
+  border-color: var(--brand-teal) !important;
+}}
 </style>
 </head>
 <body data-workspace="{active_ws}">
@@ -6225,7 +6378,7 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
   <div class="om-header-bar">
     <div>
       <div class="om-header-title">{ws_icon} {ws_name}</div>
-      <div class="om-header-sub">{ws_name_ar if ws_name_ar else 'Client Maintenance Contracts, Facilities & Service Level Management'}</div>
+      <div class="om-header-sub">{ws_desc if ws_desc else (ws_name_ar if ws_name_ar else 'Client Maintenance Contracts, Facilities & Service Level Management')}</div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       {header_add_btn}
@@ -6233,10 +6386,11 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
   </div>
 
   <!-- Unified Navigation Toolbar -->
-  <div class="psel-bar" style="margin-bottom:16px;display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;background:var(--wh);padding:8px 14px;border-radius:8px;border:1px solid var(--bd);">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <input type="text" id="om-search" placeholder="🔍 Search in {ws_name}..." oninput="filterOmCards(this.value)" style="padding:6px 12px;border:1px solid var(--bd);border-radius:6px;font-size:12px;background:var(--bg);color:var(--tx);outline:none;min-width:220px;">
+  <div class="psel-bar">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <input type="text" id="om-search" placeholder="🔍 Search in {ws_name}..." oninput="filterOmCards(this.value)" style="min-width:220px;">
     </div>
+    <div class="sp" style="flex:1"></div>
     <div style="display:flex;gap:4px;flex-wrap:nowrap;justify-content:flex-end;">
       <button class="tbtn active" onclick="showOmTab('overview', this)">📊 Overview</button>
       <button class="tbtn" onclick="showOmTab('analytics', this)">📈 Analytics</button>

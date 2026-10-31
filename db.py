@@ -200,16 +200,18 @@ CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(username, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, ts DESC);
 
 CREATE TABLE IF NOT EXISTS workspaces (
-    id         TEXT PRIMARY KEY,
-    code       TEXT NOT NULL UNIQUE,
-    name       TEXT NOT NULL,
-    name_ar    TEXT NOT NULL,
-    icon       TEXT DEFAULT '📁',
-    type       TEXT NOT NULL DEFAULT 'engineering',
-    sort_order INTEGER DEFAULT 0,
-    is_active  BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    id          TEXT PRIMARY KEY,
+    code        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    name_ar     TEXT NOT NULL,
+    icon        TEXT DEFAULT '📁',
+    type        TEXT NOT NULL DEFAULT 'engineering',
+    description TEXT DEFAULT '',
+    sort_order  INTEGER DEFAULT 0,
+    is_active   BOOLEAN DEFAULT TRUE,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
 CREATE TABLE IF NOT EXISTS user_workspaces (
     username     TEXT NOT NULL,
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -590,12 +592,14 @@ def _ensure_admin():
 
 def _ensure_workspaces():
     try:
-        exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active)
-               VALUES('ENG', 'ENG', 'Engineering & Projects', 'المشروعات الهندسية', '🏗️', 'engineering', 1, TRUE)
+        exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active, description)
+               VALUES('ENG', 'ENG', 'Engineering & Projects', 'المشروعات الهندسية', '🏗️', 'engineering', 1, TRUE, 'EPC & Site Submittals')
                ON CONFLICT (id) DO UPDATE SET code = 'ENG', name = 'Engineering & Projects'""")
-        exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active)
-               VALUES('OM', 'O&M', 'Operation & Maintenance (O&M)', 'الصيانة والتشغيل', '⚙️', 'om', 2, TRUE)
+        exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active, description)
+               VALUES('OM', 'O&M', 'Operation & Maintenance (O&M)', 'الصيانة والتشغيل', '⚙️', 'om', 2, TRUE, 'Facilities & Maintenance Contracts')
                ON CONFLICT (id) DO UPDATE SET code = 'O&M', name = 'Operation & Maintenance (O&M)'""")
+        exe("UPDATE workspaces SET description = 'EPC & Site Submittals' WHERE id = 'ENG' AND (description IS NULL OR description = '')")
+        exe("UPDATE workspaces SET description = 'Facilities & Maintenance Contracts' WHERE id = 'OM' AND (description IS NULL OR description = '')")
         exe("UPDATE projects SET workspace_id = 'ENG' WHERE workspace_id IS NULL OR workspace_id = ''")
         exe("""
             INSERT INTO user_workspaces (username, workspace_id, role)
@@ -694,20 +698,21 @@ def set_user_project_dc(username, project_id, is_dc):
 # ── Workspaces & Modular Scoping ──────────────────────────────
 def get_workspaces(active_only=True):
     where = "WHERE is_active = TRUE" if active_only else ""
-    return q(f"SELECT id, code, name, name_ar, icon, type, sort_order, is_active FROM workspaces {where} ORDER BY sort_order, id")
+    return q(f"SELECT id, code, name, name_ar, icon, type, sort_order, is_active, COALESCE(description, '') as description FROM workspaces {where} ORDER BY sort_order, id")
 
 def get_workspace(ws_id):
     if not ws_id: return None
-    return q("SELECT id, code, name, name_ar, icon, type, sort_order, is_active FROM workspaces WHERE id=%s", (ws_id,), one=True)
+    return q("SELECT id, code, name, name_ar, icon, type, sort_order, is_active, COALESCE(description, '') as description FROM workspaces WHERE id=%s", (ws_id,), one=True)
 
-def create_workspace(ws_id, code, name, name_ar, icon="📁", ws_type="general", sort_order=0):
-    exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active)
-           VALUES(%s, %s, %s, %s, %s, %s, %s, TRUE)
+def create_workspace(ws_id, code, name, name_ar, icon="📁", ws_type="general", sort_order=0, description=""):
+    exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active, description)
+           VALUES(%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
            ON CONFLICT(id) DO UPDATE SET code=EXCLUDED.code, name=EXCLUDED.name,
-           name_ar=EXCLUDED.name_ar, icon=EXCLUDED.icon, type=EXCLUDED.type, sort_order=EXCLUDED.sort_order""",
-        (ws_id, code, name, name_ar, icon, ws_type, sort_order))
+           name_ar=EXCLUDED.name_ar, icon=EXCLUDED.icon, type=EXCLUDED.type, sort_order=EXCLUDED.sort_order,
+           description=EXCLUDED.description""",
+        (ws_id, code, name, name_ar, icon, ws_type, sort_order, description or ''))
 
-def update_workspace(ws_id, code=None, name=None, name_ar=None, icon=None, sort_order=None, is_active=None):
+def update_workspace(ws_id, code=None, name=None, name_ar=None, icon=None, sort_order=None, is_active=None, description=None):
     fields = []
     params = []
     if code is not None:
@@ -728,6 +733,9 @@ def update_workspace(ws_id, code=None, name=None, name_ar=None, icon=None, sort_
     if is_active is not None:
         fields.append("is_active = %s")
         params.append(bool(is_active))
+    if description is not None:
+        fields.append("description = %s")
+        params.append(description)
     if not fields:
         return
     params.append(ws_id)

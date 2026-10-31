@@ -106,7 +106,7 @@ class TestDynamicDepartmentsAndDashboard(unittest.TestCase):
                 raw_resp = resp[0] if isinstance(resp, tuple) else resp
                 data = json.loads(raw_resp.get_data(as_text=True))
                 self.assertTrue(data.get("ok"))
-                mock_cw.assert_called_with("QA", "QA", "Quality Assurance", "توكيد الجودة", "🛡️", "general", 0)
+                mock_cw.assert_called_with("QA", "QA", "Quality Assurance", "توكيد الجودة", "🛡️", "general", 0, description="")
 
         # Superadmin can update workspace
         with app.test_request_context("/api/workspaces", method="POST", json={
@@ -120,7 +120,7 @@ class TestDynamicDepartmentsAndDashboard(unittest.TestCase):
                 raw_resp = resp[0] if isinstance(resp, tuple) else resp
                 data = json.loads(raw_resp.get_data(as_text=True))
                 self.assertTrue(data.get("ok"))
-                mock_uw.assert_called_with("OM", code="O&M", name="Operation & Maintenance (O&M)", name_ar=None, icon="⚙️", sort_order=None, is_active=None)
+                mock_uw.assert_called_with("OM", code="O&M", name="Operation & Maintenance (O&M)", name_ar=None, icon="⚙️", sort_order=None, is_active=None, description=None)
 
     def test_05_admin_modal_tab_navigation(self):
         """Admin modal JS includes switchAdminTab, renderDepartmentsTable, and editDepartment."""

@@ -9,6 +9,7 @@ Handles users/admin endpoints:
   POST /api/change_password          -- user changing own password
 """
 from flask import Blueprint, jsonify, request
+import re
 
 import db
 from auth import (
@@ -285,10 +286,12 @@ def api_workspaces():
         action = data.get("action", "add")
         
         if action in ("add", "save"):
-            ws_id = str(data.get("id") or "").strip().upper()
-            code = str(data.get("code") or ws_id).strip().upper()
+            code = str(data.get("code") or data.get("id") or "").strip().upper()
+            raw_id = str(data.get("id") or code).strip().upper()
+            ws_id = re.sub(r'[^A-Z0-9_]', '', raw_id) or raw_id
             name = str(data.get("name") or "").strip()
             name_ar = str(data.get("name_ar") or "").strip()
+            description = str(data.get("description") or "").strip()
             icon = str(data.get("icon") or "📁").strip()
             ws_type = str(data.get("type") or "general").strip()
             try:
@@ -297,9 +300,9 @@ def api_workspaces():
                 sort_order = 0
             
             if not ws_id or not name:
-                return jsonify(error="Department ID and Name are required"), 400
+                return jsonify(error="Department Code/ID and Name are required"), 400
                 
-            db.create_workspace(ws_id, code, name, name_ar, icon, ws_type, sort_order)
+            db.create_workspace(ws_id, code, name, name_ar, icon, ws_type, sort_order, description=description)
             db.log_action(u["username"], "WORKSPACE_CREATE" if action == "add" else "WORKSPACE_UPDATE", detail=f"Managed workspace {ws_id} ({name})")
             return jsonify(ok=True)
             
@@ -310,13 +313,14 @@ def api_workspaces():
             code = str(data.get("code") or "").strip().upper() if data.get("code") else None
             name = str(data.get("name") or "").strip() if data.get("name") else None
             name_ar = str(data.get("name_ar") or "").strip() if data.get("name_ar") is not None else None
+            description = str(data.get("description") or "").strip() if "description" in data else None
             icon = str(data.get("icon") or "").strip() if data.get("icon") else None
             sort_order = None
             if "sort_order" in data and data["sort_order"] is not None:
                 try: sort_order = int(data["sort_order"])
                 except: pass
             is_active = data.get("is_active")
-            db.update_workspace(ws_id, code=code, name=name, name_ar=name_ar, icon=icon, sort_order=sort_order, is_active=is_active)
+            db.update_workspace(ws_id, code=code, name=name, name_ar=name_ar, icon=icon, sort_order=sort_order, is_active=is_active, description=description)
             db.log_action(u["username"], "WORKSPACE_UPDATE", detail=f"Updated workspace {ws_id} ({name or ''})")
             return jsonify(ok=True)
             
