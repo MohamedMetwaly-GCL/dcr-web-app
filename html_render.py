@@ -824,13 +824,24 @@ function closeGlobalSearch() {
   if (modal) modal.classList.add('hidden');
 }
 
+function _slGetActiveWorkspace() {
+  return document.body.getAttribute('data-workspace') ||
+         document.getElementById('ws-switcher')?.getAttribute('data-active-ws') ||
+         new URLSearchParams(window.location.search).get('ws') ||
+         '';
+}
+
 function getSpotlightFilterParams() {
   const pFilter = document.getElementById('spotlight-project-filter')?.value || 'ALL';
   const sFilter = document.getElementById('spotlight-status-filter')?.value || 'ALL';
   const dFrom = document.getElementById('spotlight-date-from')?.value || '';
   const dTo = document.getElementById('spotlight-date-to')?.value || '';
+  const activeWs = _slGetActiveWorkspace();
 
   let params = '';
+  if (activeWs) {
+    params += '&workspace_id=' + encodeURIComponent(activeWs);
+  }
   if (pFilter && pFilter !== 'ALL') {
     params += '&project_id=' + encodeURIComponent(pFilter);
   }
@@ -913,14 +924,16 @@ async function updateSpotlightContext() {
 
   if (projSelect && projSelect.options.length <= 1) {
     try {
-      let projs = (typeof _ACCESSIBLE_PROJECTS !== 'undefined' && Array.isArray(_ACCESSIBLE_PROJECTS) && _ACCESSIBLE_PROJECTS.length > 0)
+      const activeWs = _slGetActiveWorkspace();
+      const wsParam = activeWs ? ('?workspace_id=' + encodeURIComponent(activeWs)) : '';
+      let projs = (typeof _ACCESSIBLE_PROJECTS !== 'undefined' && Array.isArray(_ACCESSIBLE_PROJECTS) && _ACCESSIBLE_PROJECTS.length > 0 && !activeWs)
         ? _ACCESSIBLE_PROJECTS
         : null;
       if (!projs) {
-        projs = await apiFetch('/api/projects');
+        projs = await apiFetch('/api/projects' + wsParam);
       }
       if (Array.isArray(projs) && projs.length > 0) {
-        projSelect.innerHTML = '<option value="ALL">All Projects</option>';
+        projSelect.innerHTML = '<option value="ALL">All ' + (activeWs === 'OM' ? 'Contracts / Facilities' : 'Projects') + '</option>';
         projs.forEach(p => {
           const opt = document.createElement('option');
           opt.value = p.id || p.code;
@@ -4215,14 +4228,40 @@ async function openAdmin() {
     const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
     const userRole = (_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.role) || '';
     
+    // Tab Navigation for Super Admin
+    if (isSuper) {
+      const tabNav = document.createElement('div');
+      tabNav.id = 'admin-tab-nav';
+      tabNav.style.cssText = 'display:flex;gap:4px;padding:8px 18px 0;background:var(--surface);border-bottom:1px solid var(--bd);';
+      tabNav.innerHTML = `
+        <button id="admin-tab-btn-users" class="tb-btn active" onclick="switchAdminTab('users')" style="padding:6px 14px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--pr);background:transparent;cursor:pointer;color:var(--tx);border-radius:0;">
+          👥 Users & Access Control
+        </button>
+        <button id="admin-tab-btn-depts" class="tb-btn" onclick="switchAdminTab('depts')" style="padding:6px 14px;font-size:12px;font-weight:600;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:var(--mu);border-radius:0;">
+          🏢 Departments & Workspaces
+        </button>
+      `;
+      body.appendChild(tabNav);
+    }
+
+    const usersView = document.createElement('div');
+    usersView.id = 'admin-view-users';
+    usersView.style.display = 'block';
+
+    const deptsView = document.createElement('div');
+    deptsView.id = 'admin-view-depts';
+    deptsView.style.display = 'none';
+    body.appendChild(usersView);
+    body.appendChild(deptsView);
+    
     // 1. Top Toolbar (Search, Department Filter, Role Filter, Actions)
     const toolbar = document.createElement('div');
     toolbar.className = 'admin-toolbar';
     
     let deptOptions = '<option value="">All Departments</option>';
     (_ADMIN_DATA.workspaces || []).forEach(w => {
-      const icon = w.id === 'OM' ? '⚙️' : '📐';
-      const label = w.id === 'OM' ? 'Operation & Maintenance (O&M)' : (w.name || 'Engineering & Projects');
+      const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
+      const label = w.name || w.code || w.id;
       deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
     });
     
@@ -4252,7 +4291,7 @@ async function openAdmin() {
         </button>
       </div>
     `;
-    body.appendChild(toolbar);
+    usersView.appendChild(toolbar);
     
     // 2. Collapsible Add User Card
     const addCard = document.createElement('div');
@@ -4262,8 +4301,9 @@ async function openAdmin() {
     
     let addDeptOptions = '';
     (_ADMIN_DATA.workspaces || []).forEach(w => {
-      const label = w.id === 'OM' ? 'Operation & Maintenance (O&M)' : (w.name || 'Engineering & Projects');
-      addDeptOptions += `<option value="${w.id}">${w.id === 'OM' ? '⚙️' : '📐'} ${label}</option>`;
+      const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
+      const label = w.name || w.code || w.id;
+      addDeptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
     });
     
     addCard.innerHTML = `
@@ -4285,7 +4325,7 @@ async function openAdmin() {
         <button class="btn btn-pr btn-sm" onclick="submitAddUser()" style="height:30px;padding:0 12px;">Create</button>
       </div>
     `;
-    body.appendChild(addCard);
+    usersView.appendChild(addCard);
     
     // 3. Collapsible Sequence Gap Audit Card
     const auditCard = document.createElement('div');
@@ -4312,7 +4352,7 @@ async function openAdmin() {
       </div>
       <div id="audit-result" style="font-size:11px;margin-top:10px;"></div>
     `;
-    body.appendChild(auditCard);
+    usersView.appendChild(auditCard);
     
     // Wire audit project change
     const auditProjSel = auditCard.querySelector('#audit-proj');
@@ -4334,7 +4374,7 @@ async function openAdmin() {
     const tblWrap = document.createElement('div');
     tblWrap.className = 'user-tbl-wrap';
     tblWrap.id = 'admin-user-tbl-wrap';
-    body.appendChild(tblWrap);
+    usersView.appendChild(tblWrap);
     
     renderAdminTable();
     openM('admin-modal');
@@ -4360,6 +4400,260 @@ function toggleAuditCard() {
   if (card) {
     card.style.display = card.style.display === 'none' ? 'block' : 'none';
   }
+}
+
+function switchAdminTab(tab) {
+  const usersView = document.getElementById('admin-view-users');
+  const deptsView = document.getElementById('admin-view-depts');
+  const btnUsers = document.getElementById('admin-tab-btn-users');
+  const btnDepts = document.getElementById('admin-tab-btn-depts');
+  const countBadge = document.getElementById('admin-user-count');
+  
+  if (tab === 'users') {
+    if (usersView) usersView.style.display = 'block';
+    if (deptsView) deptsView.style.display = 'none';
+    if (btnUsers) {
+      btnUsers.style.borderBottom = '2px solid var(--pr)';
+      btnUsers.style.fontWeight = '700';
+      btnUsers.style.color = 'var(--tx)';
+    }
+    if (btnDepts) {
+      btnDepts.style.borderBottom = '2px solid transparent';
+      btnDepts.style.fontWeight = '600';
+      btnDepts.style.color = 'var(--mu)';
+    }
+    if (countBadge) countBadge.textContent = (_ADMIN_DATA.users || []).length;
+  } else if (tab === 'depts') {
+    if (usersView) usersView.style.display = 'none';
+    if (deptsView) deptsView.style.display = 'block';
+    if (btnDepts) {
+      btnDepts.style.borderBottom = '2px solid var(--pr)';
+      btnDepts.style.fontWeight = '700';
+      btnDepts.style.color = 'var(--tx)';
+    }
+    if (btnUsers) {
+      btnUsers.style.borderBottom = '2px solid transparent';
+      btnUsers.style.fontWeight = '600';
+      btnUsers.style.color = 'var(--mu)';
+    }
+    if (countBadge) countBadge.textContent = (_ADMIN_DATA.workspaces || []).length;
+    renderDepartmentsTable();
+  }
+}
+
+function toggleAddDeptCard(show) {
+  const card = document.getElementById('dept-edit-card');
+  if (!card) return;
+  if (typeof show === 'boolean') {
+    card.style.display = show ? 'block' : 'none';
+  } else {
+    card.style.display = card.style.display === 'none' ? 'block' : 'none';
+  }
+  if (card.style.display === 'block') {
+    const idInp = document.getElementById('dept-inp-id');
+    if (idInp && !idInp.disabled) idInp.focus();
+  }
+}
+
+function editDepartment(wsId) {
+  const w = (_ADMIN_DATA.workspaces || []).find(x => x.id === wsId);
+  if (!w) return;
+  toggleAddDeptCard(true);
+  const titleEl = document.getElementById('dept-form-title');
+  if (titleEl) titleEl.textContent = '✏️ Edit Department: ' + (w.name || w.id);
+  const modeEl = document.getElementById('dept-form-mode');
+  if (modeEl) modeEl.value = 'update';
+  const idInp = document.getElementById('dept-inp-id');
+  if (idInp) {
+    idInp.value = w.id;
+    idInp.disabled = true;
+  }
+  const codeInp = document.getElementById('dept-inp-code');
+  if (codeInp) codeInp.value = w.code || w.id;
+  const nameInp = document.getElementById('dept-inp-name');
+  if (nameInp) nameInp.value = w.name || '';
+  const arInp = document.getElementById('dept-inp-name-ar');
+  if (arInp) arInp.value = w.name_ar || '';
+  const iconInp = document.getElementById('dept-inp-icon');
+  if (iconInp) iconInp.value = w.icon || '📁';
+  const typeInp = document.getElementById('dept-inp-type');
+  if (typeInp) typeInp.value = w.type || 'general';
+}
+
+async function submitDepartmentForm() {
+  const mode = (document.getElementById('dept-form-mode')?.value) || 'add';
+  const id = (document.getElementById('dept-inp-id')?.value || '').trim().toUpperCase();
+  const code = (document.getElementById('dept-inp-code')?.value || '').trim().toUpperCase() || id;
+  const name = (document.getElementById('dept-inp-name')?.value || '').trim();
+  const name_ar = (document.getElementById('dept-inp-name-ar')?.value || '').trim();
+  const icon = (document.getElementById('dept-inp-icon')?.value || '').trim() || '📁';
+  const type = (document.getElementById('dept-inp-type')?.value) || 'general';
+
+  if (!id || !name) {
+    alert('Please enter Department ID and English Name.');
+    return;
+  }
+
+  try {
+    const payload = {
+      action: mode === 'update' ? 'update' : 'add',
+      id, code, name, name_ar, icon, type
+    };
+    const res = await apiFetch('/api/workspaces', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    if (res && res.ok) {
+      toast('✔ Department saved successfully!', 'ok');
+      toggleAddDeptCard(false);
+      const updatedWs = await apiFetch('/api/workspaces');
+      if (updatedWs) {
+        _ADMIN_DATA.workspaces = updatedWs;
+        renderDepartmentsTable();
+        refreshAdminDeptDropdowns();
+      }
+    } else {
+      alert((res && res.error) || 'Failed to save department');
+    }
+  } catch(e) {
+    alert('Error saving department: ' + e.message);
+  }
+}
+
+function refreshAdminDeptDropdowns() {
+  const deptFilter = document.getElementById('admin-dept-filter');
+  const addDeptSel = document.getElementById('nu-dept');
+  let deptOptions = '<option value="">All Departments</option>';
+  let addDeptOptions = '';
+  (_ADMIN_DATA.workspaces || []).forEach(w => {
+    const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
+    const label = w.name || w.code || w.id;
+    deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+    addDeptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+  });
+  if (deptFilter) deptFilter.innerHTML = deptOptions;
+  if (addDeptSel) addDeptSel.innerHTML = addDeptOptions;
+}
+
+function renderDepartmentsTable() {
+  const deptsView = document.getElementById('admin-view-depts');
+  if (!deptsView) return;
+  
+  const workspaces = _ADMIN_DATA.workspaces || [];
+  const projects = _ADMIN_DATA.projects || [];
+  
+  let rowsHtml = '';
+  workspaces.forEach(w => {
+    const wsProjs = projects.filter(p => (p.workspace_id || 'ENG') === w.id);
+    const pCount = wsProjs.length;
+    const isEng = w.id === 'ENG';
+    const isOm = w.id === 'OM';
+    const icon = w.icon || (isOm ? '⚙️' : (isEng ? '📐' : '📁'));
+    
+    rowsHtml += `
+      <tr>
+        <td style="font-weight:700;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">${escHtml(icon)}</span>
+          <div>
+            <div style="color:var(--tx);font-size:12.5px;">${escHtml(w.name || w.id)}</div>
+            <div style="font-size:10.5px;color:var(--mu);">${escHtml(w.name_ar || '')}</div>
+          </div>
+        </td>
+        <td style="font-family:monospace;font-weight:700;color:var(--pr);">${escHtml(w.code || w.id)}</td>
+        <td><span class="badge" style="background:#f1f5f9;color:#475569;font-weight:600;text-transform:uppercase;font-size:10px;">${escHtml(w.type || 'general')}</span></td>
+        <td style="text-align:center;"><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-weight:700;">${pCount} ${isOm ? 'Contracts' : 'Projects'}</span></td>
+        <td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;">Active</span></td>
+        <td>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="uact-btn" onclick="editDepartment('${escHtml(w.id)}')" title="Edit Department Details">
+              <span>✏️</span><span>Edit</span>
+            </button>
+            <a href="/?ws=${encodeURIComponent(w.id)}" class="uact-btn" style="text-decoration:none;" title="Open Department Dashboard">
+              <span>👁️</span><span>Open</span>
+            </a>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+  
+  deptsView.innerHTML = `
+    <div class="admin-toolbar" style="border-bottom:1px solid var(--bd);">
+      <div style="display:flex;flex-direction:column;">
+        <span style="font-weight:700;font-size:13px;color:var(--tx);">🏢 Enterprise Departments & Workspaces</span>
+        <span style="font-size:11px;color:var(--mu);">Configure departments, workspaces, display names, and icons across the platform</span>
+      </div>
+      <div>
+        <button class="btn btn-pr btn-sm" onclick="toggleAddDeptCard()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;font-weight:600;">
+          <span>➕</span><span>Add Department</span>
+        </button>
+      </div>
+    </div>
+    
+    <!-- Add / Edit Department Card -->
+    <div id="dept-edit-card" class="add-user-card" style="display:none;margin:14px 18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong id="dept-form-title" style="font-size:13px;color:var(--tx);">➕ Add New Department</strong>
+        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAddDeptCard(false);">Close ✕</a>
+      </div>
+      <input type="hidden" id="dept-form-mode" value="add">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;margin-bottom:12px;">
+        <div class="fg" style="margin:0;">
+          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Department ID (Unique Key)</label>
+          <input id="dept-inp-id" class="tbl-input" placeholder="e.g. QA, PROC" style="text-transform:uppercase;">
+        </div>
+        <div class="fg" style="margin:0;">
+          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Display Code</label>
+          <input id="dept-inp-code" class="tbl-input" placeholder="e.g. QA, PROC">
+        </div>
+        <div class="fg" style="margin:0;">
+          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Name (English)</label>
+          <input id="dept-inp-name" class="tbl-input" placeholder="e.g. Quality Assurance">
+        </div>
+        <div class="fg" style="margin:0;">
+          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Name (Arabic)</label>
+          <input id="dept-inp-name-ar" class="tbl-input" placeholder="e.g. توكيد ومراقبة الجودة" dir="rtl">
+        </div>
+        <div class="fg" style="margin:0;">
+          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Icon (Emoji)</label>
+          <input id="dept-inp-icon" class="tbl-input" placeholder="🏢" value="🏢" style="max-width:80px;text-align:center;font-size:14px;">
+        </div>
+        <div class="fg" style="margin:0;">
+          <label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Type</label>
+          <select id="dept-inp-type" class="tbl-select" style="width:100%;">
+            <option value="general">General</option>
+            <option value="engineering">Engineering</option>
+            <option value="om">Maintenance & Operation</option>
+            <option value="procurement">Procurement</option>
+            <option value="quality">Quality</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-sc btn-sm" onclick="toggleAddDeptCard(false)">Cancel</button>
+        <button class="btn btn-pr btn-sm" onclick="submitDepartmentForm()" style="padding:6px 14px;font-weight:700;">💾 Save Department</button>
+      </div>
+    </div>
+
+    <!-- Table of Workspaces -->
+    <div class="user-tbl-wrap" style="margin:14px 18px;">
+      <table class="user-tbl">
+        <thead>
+          <tr>
+            <th style="padding:10px 14px;">Department / Workspace</th>
+            <th style="padding:10px 14px;">Code</th>
+            <th style="padding:10px 14px;">Type</th>
+            <th style="padding:10px 14px;text-align:center;">Projects / Contracts</th>
+            <th style="padding:10px 14px;text-align:center;">Status</th>
+            <th style="padding:10px 14px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function renderAdminTable() {
@@ -5594,25 +5888,40 @@ async function login(){{
 
 
 
-def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg):
+def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="OM"):
     role = u["role"] if u else "guest"
     can_manage = role in ("superadmin", "admin")
     
-    # Calculate O&M KPIs
+    try:
+        ws_obj = db.get_workspace(active_ws) if hasattr(db, 'get_workspace') else None
+    except Exception:
+        ws_obj = None
+    if not ws_obj:
+        ws_obj = {
+            "id": active_ws, "code": active_ws, "name": "Operation & Maintenance (O&M)" if active_ws == "OM" else f"{active_ws} Department",
+            "icon": "⚙️" if active_ws == "OM" else "📁", "name_ar": "الصيانة والتشغيل" if active_ws == "OM" else ""
+        }
+    ws_name = ws_obj.get("name") or "Operation & Maintenance (O&M)"
+    ws_icon = ws_obj.get("icon") or "⚙️"
+    ws_code = ws_obj.get("code") or active_ws
+    ws_name_ar = ws_obj.get("name_ar") or ""
+
+    # Calculate Universal Dynamic KPIs
     total_contracts = len(accessible_projs)
     pids = [p["id"] for p in accessible_projs]
     
     total_records = 0
     completed_records = 0
     pending_records = 0
+    overdue_records = 0
     
     if pids:
         try:
             counts = db.q("""
                 SELECT 
                     COUNT(*) as total,
-                    COUNT(CASE WHEN data->>'status' ILIKE '%complete%' OR data->>'status' ILIKE '%close%' THEN 1 END) as completed,
-                    COUNT(CASE WHEN data->>'status' ILIKE '%open%' OR data->>'status' ILIKE '%progress%' OR data->>'status' ILIKE '%pending%' THEN 1 END) as pending
+                    COUNT(CASE WHEN data->>'status' ILIKE '%complete%' OR data->>'status' ILIKE '%close%' OR data->>'status' ILIKE '%approved%' THEN 1 END) as completed,
+                    COUNT(CASE WHEN data->>'status' ILIKE '%open%' OR data->>'status' ILIKE '%progress%' OR data->>'status' ILIKE '%pending%' OR data->>'status' ILIKE '%review%' THEN 1 END) as pending
                 FROM records 
                 WHERE project_id = ANY(%s)
             """, (pids,), one=True)
@@ -5622,6 +5931,59 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
                 pending_records = counts.get("pending", 0) or 0
         except Exception:
             pass
+        try:
+            overdue_list = db.get_overdue_records(project_ids=pids)
+            overdue_records = len(overdue_list) if overdue_list else 0
+        except Exception:
+            overdue_records = 0
+
+    # Dynamic Doc Types Breakdown
+    doc_types_breakdown = []
+    if pids:
+        try:
+            dt_rows = db.q("""
+                SELECT dt.code, dt.name, COUNT(r.id) as count,
+                       COUNT(CASE WHEN r.data->>'status' ILIKE '%complete%' OR r.data->>'status' ILIKE '%close%' OR r.data->>'status' ILIKE '%approved%' THEN 1 END) as completed
+                FROM doc_types dt
+                LEFT JOIN records r ON r.project_id = dt.project_id AND UPPER(r.dt_id) = UPPER(dt.id)
+                WHERE dt.project_id = ANY(%s)
+                GROUP BY dt.code, dt.name
+                ORDER BY count DESC, dt.code
+            """, (pids,))
+            doc_types_breakdown = dt_rows or []
+        except Exception:
+            doc_types_breakdown = []
+
+    dt_cards_html = ""
+    for dt in doc_types_breakdown:
+        dt_c = dt.get("code") or dt.get("name") or "DOC"
+        dt_n = dt.get("name") or dt_c
+        cnt = dt.get("count") or 0
+        cmp = dt.get("completed") or 0
+        pct = round((cmp / cnt) * 100) if cnt else 0
+        dt_cards_html += f'''
+        <div style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="badge" style="background:rgba(0,180,166,0.12);color:var(--brand-teal);font-weight:700;font-size:11px;font-family:monospace;">{dt_c}</span>
+              <span style="font-weight:600;font-size:12px;color:var(--tx);">{dt_n}</span>
+            </div>
+            <div style="font-size:10px;color:var(--mu);margin-top:2px;">{cmp} of {cnt} completed ({pct}%)</div>
+          </div>
+          <div style="font-size:16px;font-weight:800;color:var(--tx);font-family:monospace;">{cnt}</div>
+        </div>
+        '''
+
+    doc_breakdown_section = f'''
+    <div style="margin-bottom:20px;">
+      <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+        <span>📄</span><span>Active Document Registers & Submittals</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;">
+        {dt_cards_html}
+      </div>
+    </div>
+    ''' if dt_cards_html else ""
 
     # Render Contract Cards
     empty_add_btn = (
@@ -5680,7 +6042,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
 
     return f'''<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR — Operation & Maintenance</title>
+<title>DCR — {ws_name}</title>
 {BASE_CSS}
 <style>
 body {{ display:flex; flex-direction:column; min-height:100vh; overflow-x:hidden; background: var(--bg); }}
@@ -5842,7 +6204,7 @@ body.dark .om-kpi-val, body.dark .om-card-title, body.dark .om-header-title {{ c
 body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; }}
 </style>
 </head>
-<body data-workspace="OM">
+<body data-workspace="{active_ws}">
 <div id="topbar">
   <span style="font-size:20px">📋</span>
   <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
@@ -5861,42 +6223,132 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
 </div>
 
 <div class="wrap">
-  <!-- O&M Header Bar -->
+  <!-- Dynamic Department Header Bar -->
   <div class="om-header-bar">
     <div>
-      <div class="om-header-title">⚙️ Operation & Maintenance (O&M)</div>
-      <div class="om-header-sub">Client Maintenance Contracts, Facilities & Service Level Management</div>
+      <div class="om-header-title">{ws_icon} {ws_name}</div>
+      <div class="om-header-sub">{ws_name_ar if ws_name_ar else 'Client Maintenance Contracts, Facilities & Service Level Management'}</div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
-      <input type="text" id="om-search" placeholder="🔍 Search contracts..." oninput="filterOmCards(this.value)" style="padding:6px 12px;border:1px solid var(--bd);border-radius:6px;font-size:12px;background:var(--bg);color:var(--tx);outline:none;min-width:200px;">
-      {audit_btn}
       {header_add_btn}
     </div>
   </div>
 
-  <!-- O&M KPIs Summary -->
-  <div class="om-kpi-grid">
-    <div class="om-kpi-card">
-      <span class="om-kpi-lbl">Total Facilities & Contracts</span>
-      <span class="om-kpi-val primary">{total_contracts}</span>
+  <!-- Unified Navigation Toolbar -->
+  <div class="psel-bar" style="margin-bottom:16px;display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;background:var(--wh);padding:8px 14px;border-radius:8px;border:1px solid var(--bd);">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <input type="text" id="om-search" placeholder="🔍 Search in {ws_name}..." oninput="filterOmCards(this.value)" style="padding:6px 12px;border:1px solid var(--bd);border-radius:6px;font-size:12px;background:var(--bg);color:var(--tx);outline:none;min-width:220px;">
     </div>
-    <div class="om-kpi-card">
-      <span class="om-kpi-lbl">Total Work Orders & Records</span>
-      <span class="om-kpi-val">{total_records}</span>
-    </div>
-    <div class="om-kpi-card">
-      <span class="om-kpi-lbl">Completed / Closed</span>
-      <span class="om-kpi-val success">{completed_records}</span>
-    </div>
-    <div class="om-kpi-card">
-      <span class="om-kpi-lbl">In-Progress / Open</span>
-      <span class="om-kpi-val warning">{pending_records}</span>
+    <div style="display:flex;gap:4px;flex-wrap:nowrap;justify-content:flex-end;">
+      <button class="tbtn active" onclick="showOmTab('overview', this)">📊 Overview</button>
+      <button class="tbtn" onclick="showOmTab('analytics', this)">📈 Analytics</button>
+      <button class="tbtn" onclick="showOmTab('overdue', this)">⚠️ Overdue</button>
+      <button class="tbtn" onclick="showOmTab('executive', this)">📋 Executive</button>
+      <button class="tbtn" onclick="showOmTab('daily-digest', this)">🌟 Daily Digest</button>
+      {audit_btn}
     </div>
   </div>
 
-  <!-- Contracts Cards Grid -->
-  <div class="om-grid" id="om-contracts-grid">
-    {cards_html}
+  <!-- TAB PANE: OVERVIEW -->
+  <div id="tab-om-overview" class="tab-pane active">
+    <!-- Universal KPIs Summary -->
+    <div class="om-kpi-grid">
+      <div class="om-kpi-card">
+        <span class="om-kpi-lbl">Total Facilities & Contracts</span>
+        <span class="om-kpi-val primary">{total_contracts}</span>
+      </div>
+      <div class="om-kpi-card">
+        <span class="om-kpi-lbl">Total Work Orders & Records</span>
+        <span class="om-kpi-val">{total_records}</span>
+      </div>
+      <div class="om-kpi-card">
+        <span class="om-kpi-lbl">Completed / Closed</span>
+        <span class="om-kpi-val success">{completed_records}</span>
+      </div>
+      <div class="om-kpi-card">
+        <span class="om-kpi-lbl">In-Progress / Open</span>
+        <span class="om-kpi-val warning">{pending_records}</span>
+      </div>
+      <div class="om-kpi-card">
+        <span class="om-kpi-lbl">Overdue Items</span>
+        <span class="om-kpi-val" style="color:{'#ef4444' if overdue_records > 0 else 'var(--tx)'};">{overdue_records}</span>
+      </div>
+    </div>
+
+    <!-- Dynamic Configured Document Registers Breakdown -->
+    {doc_breakdown_section}
+
+    <!-- Contracts Cards Grid -->
+    <div class="om-grid" id="om-contracts-grid">
+      {cards_html}
+    </div>
+  </div>
+
+  <!-- TAB PANE: DAILY DIGEST -->
+  <div id="tab-om-daily-digest" class="tab-pane" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">🌟 Daily Digest & Activity Stream</div>
+      <div>
+        <input type="date" id="om-digest-date" style="padding:5px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);" onchange="loadOmDailyDigest()">
+      </div>
+    </div>
+    <div id="om-daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+      <div style="color:var(--mu);font-size:14px;">Loading Daily Digest...</div>
+    </div>
+  </div>
+
+  <!-- TAB PANE: EXECUTIVE SUMMARY -->
+  <div id="tab-om-executive" class="tab-pane" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">📋 Executive Summary & SLA Metrics</div>
+      <button class="tb-btn" onclick="loadOmExecutiveReport()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+    </div>
+    <div id="om-exec-content" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:18px;">
+      <div style="color:var(--mu);font-size:14px;">Loading Executive Report...</div>
+    </div>
+  </div>
+
+  <!-- TAB PANE: OVERDUE -->
+  <div id="tab-om-overdue" class="tab-pane" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">⚠️ Overdue Actions & Records</div>
+      <button class="tb-btn" onclick="loadOmOverdue()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+    </div>
+    <div id="om-overdue-content" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;overflow-x:auto;">
+      <table class="user-tbl" id="om-overdue-tbl" style="width:100%;">
+        <thead>
+          <tr>
+            <th style="padding:10px 14px;">Contract / Project</th>
+            <th style="padding:10px 14px;">Doc / Ref</th>
+            <th style="padding:10px 14px;">Title / Subject</th>
+            <th style="padding:10px 14px;">Target Date</th>
+            <th style="padding:10px 14px;">Status</th>
+            <th style="padding:10px 14px;">Delay</th>
+          </tr>
+        </thead>
+        <tbody id="om-overdue-tbody">
+          <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">Loading overdue records...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB PANE: ANALYTICS -->
+  <div id="tab-om-analytics" class="tab-pane" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">📈 Operational Analytics & Turnaround</div>
+      <button class="tb-btn" onclick="loadOmAnalytics()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;">
+      <div class="panel" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">📊 Aging & Turnaround Analysis</div>
+        <div id="om-aging-chart">Loading...</div>
+      </div>
+      <div class="panel" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">📈 Monthly Volume Trend</div>
+        <div id="om-trend-chart">Loading...</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -5981,8 +6433,173 @@ body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; 
 
 {SHARED_JS}
 {ABOUT_MODAL_HTML}
+{SPOTLIGHT_MODAL_COMPONENT}
 {AI_DRAWER_COMPONENT}
 <script>
+function showOmTab(tabName, btn) {{
+  document.querySelectorAll('.psel-bar .tbtn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  
+  const panes = ['overview', 'daily-digest', 'executive', 'overdue', 'analytics'];
+  panes.forEach(p => {{
+    const el = document.getElementById('tab-om-' + p);
+    if (el) el.style.display = (p === tabName) ? 'block' : 'none';
+  }});
+
+  if (tabName === 'daily-digest') loadOmDailyDigest();
+  else if (tabName === 'executive') loadOmExecutiveReport();
+  else if (tabName === 'overdue') loadOmOverdue();
+  else if (tabName === 'analytics') loadOmAnalytics();
+}}
+
+async function loadOmDailyDigest() {{
+  const container = document.getElementById('om-daily-digest-content');
+  if (!container) return;
+  const dateInput = document.getElementById('om-digest-date');
+  const dVal = dateInput ? dateInput.value : '';
+  container.innerHTML = '<div style="color:var(--mu);font-size:14px;padding:20px;">Loading Daily Digest...</div>';
+  try {{
+    const ws = document.body.getAttribute('data-workspace') || 'OM';
+    const qs = '?workspace_id=' + encodeURIComponent(ws) + (dVal ? '&date=' + encodeURIComponent(dVal) : '');
+    const r = await apiFetch('/api/daily_digest/all' + qs);
+    if (!r) {{ container.innerHTML = '<div style="color:red;padding:20px;">Failed to load digest.</div>'; return; }}
+    
+    let html = '';
+    html += '<div class="panel" style="border-top:4px solid #3b82f6;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#1e40af;font-size:15px;font-weight:700;margin-bottom:8px;">📥 Received (' + (r.received||[]).length + ')</div>';
+    if ((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:12px;font-style:italic;">No records received.</div>';
+    (r.received||[]).forEach(doc => {{
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+    }});
+    html += '</div>';
+
+    html += '<div class="panel" style="border-top:4px solid #22c55e;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#166534;font-size:15px;font-weight:700;margin-bottom:8px;">✅ Closed / Completed (' + (r.replied||[]).length + ')</div>';
+    if ((r.replied||[]).length === 0) html += '<div style="color:var(--mu);font-size:12px;font-style:italic;">No records completed.</div>';
+    (r.replied||[]).forEach(doc => {{
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+    }});
+    html += '</div>';
+    container.innerHTML = html;
+  }} catch(e) {{
+    container.innerHTML = '<div style="color:red;padding:20px;">Error: ' + escHtml(e.message) + '</div>';
+  }}
+}}
+
+async function loadOmExecutiveReport() {{
+  const container = document.getElementById('om-exec-content');
+  if (!container) return;
+  container.innerHTML = '<div style="color:var(--mu);font-size:14px;padding:20px;">Loading Executive Report...</div>';
+  try {{
+    const ws = document.body.getAttribute('data-workspace') || 'OM';
+    const r = await apiFetch('/api/executive_summary?workspace_id=' + encodeURIComponent(ws));
+    if (!r || !r.summary) {{
+      container.innerHTML = '<div style="color:var(--mu);padding:20px;">No executive data available.</div>';
+      return;
+    }}
+    const s = r.summary;
+    let html = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--tx);">${{s.total}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Total Records</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#16a34a;">${{s.approved}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Completed / Closed</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#d97706;">${{s.pending}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">In-Progress / Open</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#ef4444;">${{s.overdue}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Overdue</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--brand-teal);">${{s.completion_pct}}%</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Completion Rate</div></div>
+      </div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--tx);">Facility / Contract Status Breakdown</div>
+      <table class="user-tbl" style="width:100%;border:1px solid var(--bd);border-radius:6px;">
+        <thead><tr><th style="padding:8px 12px;">Code</th><th style="padding:8px 12px;">Contract / Project</th><th style="padding:8px 12px;">Total Records</th><th style="padding:8px 12px;">Completed</th><th style="padding:8px 12px;">% Done</th><th style="padding:8px 12px;">Overdue</th></tr></thead>
+        <tbody>
+    `;
+    (r.projects || []).forEach(p => {{
+      html += `<tr>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${{escHtml(p.code||'')}}</td>
+        <td style="padding:8px 12px;font-weight:600;">${{escHtml(p.name||'')}}</td>
+        <td style="padding:8px 12px;">${{p.total}}</td>
+        <td style="padding:8px 12px;color:#16a34a;font-weight:600;">${{p.approved}}</td>
+        <td style="padding:8px 12px;"><div style="display:flex;align-items:center;gap:6px;"><div style="flex:1;height:6px;background:var(--bd);border-radius:3px;overflow:hidden;"><div style="width:${{p.pct}}%;height:100%;background:#16a34a;"></div></div><span style="font-size:10.5px;font-weight:700;">${{p.pct}}%</span></div></td>
+        <td style="padding:8px 12px;color:${{p.overdue>0?'#ef4444':'var(--mu)'}};font-weight:${{p.overdue>0?700:400}};">${{p.overdue}}</td>
+      </tr>`;
+    }});
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }} catch(e) {{
+    container.innerHTML = '<div style="color:red;padding:20px;">Error: ' + escHtml(e.message) + '</div>';
+  }}
+}}
+
+async function loadOmOverdue() {{
+  const tbody = document.getElementById('om-overdue-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--mu);">Loading overdue records...</td></tr>';
+  try {{
+    const ws = document.body.getAttribute('data-workspace') || 'OM';
+    const list = await apiFetch('/api/analytics/overdue?workspace_id=' + encodeURIComponent(ws)) || [];
+    if (!list.length) {{
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#16a34a;font-weight:600;">🎉 No overdue records found across contracts!</td></tr>';
+      return;
+    }}
+    let html = '';
+    list.forEach(r => {{
+      html += `
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">${{escHtml(r.project_name || r.project_id || '—')}}</td>
+          <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${{escHtml(r.doc_no || r.id || '—')}}</td>
+          <td style="padding:8px 12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${{escHtml(r.title || r.subject || '—')}}</td>
+          <td style="padding:8px 12px;color:var(--mu);">${{escHtml(r.target_date || '—')}}</td>
+          <td style="padding:8px 12px;"><span class="badge" style="background:#fee2e2;color:#991b1b;font-weight:600;">${{escHtml(r.status || 'Pending')}}</span></td>
+          <td style="padding:8px 12px;color:#ef4444;font-weight:700;">+${{r.days_overdue || 0}}d</td>
+        </tr>
+      `;
+    }});
+    tbody.innerHTML = html;
+  }} catch(e) {{
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:red;">Error: ' + escHtml(e.message) + '</td></tr>';
+  }}
+}}
+
+async function loadOmAnalytics() {{
+  const agingEl = document.getElementById('om-aging-chart');
+  const trendEl = document.getElementById('om-trend-chart');
+  if (!agingEl || !trendEl) return;
+  try {{
+    const ws = document.body.getAttribute('data-workspace') || 'OM';
+    const [aging, trend] = await Promise.all([
+      apiFetch('/api/analytics/aging?workspace_id=' + encodeURIComponent(ws)),
+      apiFetch('/api/analytics/trend?workspace_id=' + encodeURIComponent(ws))
+    ]);
+    
+    let agingHtml = '<div style="display:flex;flex-direction:column;gap:8px;">';
+    (aging || []).forEach(b => {{
+      agingHtml += `
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
+            <span>${{escHtml(b.bucket || b.label || '')}}</span>
+            <strong>${{b.count || 0}} items</strong>
+          </div>
+          <div style="height:8px;background:var(--bd);border-radius:4px;overflow:hidden;">
+            <div style="width:${{Math.min(100, (b.pct || (b.count*10)))}}%;height:100%;background:var(--pr);"></div>
+          </div>
+        </div>
+      `;
+    }});
+    agingHtml += '</div>';
+    agingEl.innerHTML = (aging && aging.length) ? agingHtml : '<div style="color:var(--mu);font-size:12px;">No aging data available.</div>';
+
+    let trendHtml = '<div style="display:flex;flex-direction:column;gap:8px;">';
+    (trend || []).slice(-6).forEach(t => {{
+      trendHtml += `
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd);font-size:11px;">
+          <span>${{escHtml(t.month || t.period || '')}}</span>
+          <span style="font-weight:700;">${{t.total || t.count || 0}} records</span>
+        </div>
+      `;
+    }});
+    trendHtml += '</div>';
+    trendEl.innerHTML = (trend && trend.length) ? trendHtml : '<div style="color:var(--mu);font-size:12px;">No trend data available.</div>';
+  }} catch(e) {{
+    agingEl.innerHTML = '<div style="color:red;">Error loading analytics</div>';
+  }}
+}}
+
 function filterOmCards(q) {{
   const query = (q || '').trim().toLowerCase();
   const cards = document.querySelectorAll('.om-card');
@@ -6004,12 +6621,13 @@ async function submitNewOmContract() {{
   }}
   
   try {{
+    const currentWs = document.body.getAttribute('data-workspace') || 'OM';
     const res = await apiFetch('/api/projects/create', {{
       method: 'POST',
-      body: JSON.stringify({{ id, name, code, workspace_id: 'OM', client }})
+      body: JSON.stringify({{ id, name, code, workspace_id: currentWs, client }})
     }});
     if (res && res.ok) {{
-      window.location = '/?ws=OM';
+      window.location = '/?ws=' + encodeURIComponent(currentWs);
     }} else {{
       alert((res && res.error) || 'Failed to create contract');
     }}
@@ -6130,8 +6748,8 @@ def render_dashboard(u, active_ws_id=None):
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
     ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
 
-    if active_ws == "OM":
-        return _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg)
+    if active_ws != "ENG":
+        return _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws)
 
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -8207,11 +8825,11 @@ def render_register(u, proj, active_ws_id=None):
         f'<span>{dt["code"]}</span><span class="tcnt" id="cnt-{dt["id"]}">0</span></button>'
         for dt in dts)
 
-    _sa_only = role == 'superadmin'
-    _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _sa_only else ''
-    _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _sa_only else ''
-    _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _sa_only else ''
-    _color_btn = "<button class='tool-btn purple' onclick='openProjectSettings()'>🎨 Status Colors</button>" if role in ('admin', 'superadmin') else ''
+    _can_manage_proj = role in ('superadmin', 'admin') or (hasattr(db, 'is_user_workspace_admin') and db.is_user_workspace_admin(u.get('username'), proj.get('workspace_id', 'ENG')))
+    _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _can_manage_proj else ''
+    _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _can_manage_proj else ''
+    _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _can_manage_proj else ''
+    _color_btn = "<button class='tool-btn purple' onclick='openProjectSettings()'>🎨 Status Colors</button>" if _can_manage_proj else ''
     edit_btns = (f'<button class="tool-btn" onclick="addRecord()">➕ Add</button>'
                  f'{_col_btn}'
                  f'{_hol_btn}'

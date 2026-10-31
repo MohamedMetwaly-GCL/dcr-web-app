@@ -707,6 +707,33 @@ def create_workspace(ws_id, code, name, name_ar, icon="📁", ws_type="general",
            name_ar=EXCLUDED.name_ar, icon=EXCLUDED.icon, type=EXCLUDED.type, sort_order=EXCLUDED.sort_order""",
         (ws_id, code, name, name_ar, icon, ws_type, sort_order))
 
+def update_workspace(ws_id, code=None, name=None, name_ar=None, icon=None, sort_order=None, is_active=None):
+    fields = []
+    params = []
+    if code is not None:
+        fields.append("code = %s")
+        params.append(code)
+    if name is not None:
+        fields.append("name = %s")
+        params.append(name)
+    if name_ar is not None:
+        fields.append("name_ar = %s")
+        params.append(name_ar)
+    if icon is not None:
+        fields.append("icon = %s")
+        params.append(icon)
+    if sort_order is not None:
+        fields.append("sort_order = %s")
+        params.append(sort_order)
+    if is_active is not None:
+        fields.append("is_active = %s")
+        params.append(bool(is_active))
+    if not fields:
+        return
+    params.append(ws_id)
+    sql = f"UPDATE workspaces SET {', '.join(fields)} WHERE id = %s"
+    exe(sql, tuple(params))
+
 def get_user_workspaces(username):
     """Return all workspaces accessible to a user, with their role in each."""
     u = get_user(username)

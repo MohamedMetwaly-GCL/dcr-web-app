@@ -837,7 +837,8 @@ def api_daily_digest(pid):
         projects_to_check = []
         if pid == "all":
             from auth import get_allowed_project_ids
-            projects_to_check = get_allowed_project_ids(u)
+            ws = request.args.get("workspace_id") or request.args.get("ws")
+            projects_to_check = get_allowed_project_ids(u, workspace_id=ws)
         else:
             if not can_view_project(pid): return jsonify(error="Forbidden"), 403
             all_projs = db.get_projects()

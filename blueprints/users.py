@@ -271,13 +271,61 @@ def api_user_projects(username):
     return jsonify(db.get_user_projects(username))
 
 
-@users_bp.route("/api/workspaces")
+@users_bp.route("/api/workspaces", methods=["GET", "POST"])
 @require_login
 def api_workspaces():
     u = current_user()
     if not u:
         return jsonify(error="LOGIN_REQUIRED"), 403
-    workspaces = db.get_user_workspaces(u["username"])
+
+    if request.method == "POST":
+        if not is_superadmin(u):
+            return jsonify(error="Only Super Admin can manage departments"), 403
+        data = request.get_json(silent=True) or {}
+        action = data.get("action", "add")
+        
+        if action in ("add", "save"):
+            ws_id = str(data.get("id") or "").strip().upper()
+            code = str(data.get("code") or ws_id).strip().upper()
+            name = str(data.get("name") or "").strip()
+            name_ar = str(data.get("name_ar") or "").strip()
+            icon = str(data.get("icon") or "📁").strip()
+            ws_type = str(data.get("type") or "general").strip()
+            try:
+                sort_order = int(data.get("sort_order") or 0)
+            except (ValueError, TypeError):
+                sort_order = 0
+            
+            if not ws_id or not name:
+                return jsonify(error="Department ID and Name are required"), 400
+                
+            db.create_workspace(ws_id, code, name, name_ar, icon, ws_type, sort_order)
+            db.log_action(u["username"], "WORKSPACE_CREATE" if action == "add" else "WORKSPACE_UPDATE", detail=f"Managed workspace {ws_id} ({name})")
+            return jsonify(ok=True)
+            
+        elif action == "update":
+            ws_id = str(data.get("id") or "").strip().upper()
+            if not ws_id:
+                return jsonify(error="Department ID is required"), 400
+            code = str(data.get("code") or "").strip().upper() if data.get("code") else None
+            name = str(data.get("name") or "").strip() if data.get("name") else None
+            name_ar = str(data.get("name_ar") or "").strip() if data.get("name_ar") is not None else None
+            icon = str(data.get("icon") or "").strip() if data.get("icon") else None
+            sort_order = None
+            if "sort_order" in data and data["sort_order"] is not None:
+                try: sort_order = int(data["sort_order"])
+                except: pass
+            is_active = data.get("is_active")
+            db.update_workspace(ws_id, code=code, name=name, name_ar=name_ar, icon=icon, sort_order=sort_order, is_active=is_active)
+            db.log_action(u["username"], "WORKSPACE_UPDATE", detail=f"Updated workspace {ws_id} ({name or ''})")
+            return jsonify(ok=True)
+            
+        return jsonify(error="Unknown action"), 400
+
+    if is_superadmin(u):
+        workspaces = db.get_workspaces(active_only=False)
+    else:
+        workspaces = db.get_user_workspaces(u["username"])
     return jsonify(workspaces)
 
 

@@ -87,38 +87,21 @@ def api_search_global():
     except (ValueError, TypeError):
         limit = 300
 
-    role = str(u.get("role", "")).strip().lower()
-    is_admin = role in ("admin", "superadmin", "super_admin")
+    ws_filter = str(request.args.get("workspace_id", "")).strip() or None
+    user_projs = db.get_projects_for_user(u.get("username", ""), role=u.get("role"), workspace_id=ws_filter)
 
-    if is_admin:
-        all_projects = db.get_projects()
-        allowed_scope = set()
-        for p in all_projects:
-            if p.get("id"):
-                allowed_scope.add(p["id"])
-            if p.get("code"):
-                allowed_scope.add(p["code"])
-            if p.get("name"):
-                allowed_scope.add(p["name"])
-        allowed_list = list(allowed_scope)
-        user_scope = "all"
-    else:
-        user_projects = db.get_user_projects(u.get("username", ""))
-        assigned_ids = [p["project_id"] for p in user_projects if p.get("project_id")]
-        if not assigned_ids:
-            return jsonify(query=q_str, total_found=0, user_scope="filtered", results=[])
+    allowed_scope = set()
+    for p in user_projs:
+        if p.get("id"):
+            allowed_scope.add(p["id"])
+        if p.get("code"):
+            allowed_scope.add(p["code"])
+        if p.get("name"):
+            allowed_scope.add(p["name"])
+    allowed_list = list(allowed_scope)
 
-        user_projects_info = db.get_projects(assigned_ids)
-        allowed_scope = set(assigned_ids)
-        for p in user_projects_info:
-            if p.get("id"):
-                allowed_scope.add(p["id"])
-            if p.get("code"):
-                allowed_scope.add(p["code"])
-            if p.get("name"):
-                allowed_scope.add(p["name"])
-        allowed_list = list(allowed_scope)
-        user_scope = "filtered"
+    is_sa = str(u.get("role", "")).strip().lower() == "superadmin"
+    user_scope = "all" if is_sa and not ws_filter else "filtered"
 
     if not allowed_list or len(q_str) < 2:
         return jsonify(query=q_str, total_found=0, user_scope=user_scope, results=[])
@@ -181,8 +164,8 @@ def api_search_global():
             COALESCE(p.code, '') AS project_code,
             COALESCE(p.name, '') AS project_name,
             r.dt_id,
-            COALESCE(r.data->>'docNo', r.data->>'nocNo', '') AS doc_no,
-            COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', '') AS title,
+            COALESCE(r.data->>'docNo', r.data->>'nocNo', r.data->>'woNo', r.data->>'refNo', '') AS doc_no,
+            COALESCE(r.data->>'title', r.data->>'nocSubject', r.data->>'subject', r.data->>'description', '') AS title,
             COALESCE(r.data->>'status', r.data->>'partBStatus', r.data->>'partDStatus', '') AS status,
             COALESCE(r.data->>'driveLink', r.data->>'fileLocation', '') AS drive_link,
             COALESCE(r.data->>'issuedDate', r.data->>'partAIssueDate', r.data->>'actualReply', r.data->>'actualReplyDate', r.data->>'date', '') AS doc_date,

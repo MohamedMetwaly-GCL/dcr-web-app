@@ -49,7 +49,8 @@ def api_records_range(pid, dt_id):
 def api_executive_summary():
     """One-page executive summary data."""
     u = current_user()
-    allowed_ids = get_allowed_project_ids(u)
+    ws = request.args.get("workspace_id") or request.args.get("ws")
+    allowed_ids = get_allowed_project_ids(u, workspace_id=ws)
     stats  = db.get_dashboard_stats(project_ids=allowed_ids)
     aging  = db.get_aging_report(project_ids=allowed_ids)
     quality= db.get_quality_report(project_ids=allowed_ids)
