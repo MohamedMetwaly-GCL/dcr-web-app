@@ -619,36 +619,7 @@ def _ensure_workspaces():
             WHERE username NOT IN (SELECT username FROM user_workspaces)
             ON CONFLICT DO NOTHING
         """)
-        # Cleanup: Non-superadmin users who only belong to ENG (or have ENG primary) and have NO OM projects
-        # should NOT have orphaned OM workspace (resolving the case of sakr)
-        exe("""
-            DELETE FROM user_workspaces
-            WHERE workspace_id = 'OM'
-              AND username IN (
-                  SELECT u.username FROM users u
-                  LEFT JOIN user_projects up ON u.username = up.username
-                  LEFT JOIN projects p ON up.project_id = p.id AND p.workspace_id = 'OM'
-                  WHERE u.role != 'superadmin'
-                    AND (u.primary_workspace = 'ENG' OR u.primary_workspace IS NULL)
-                  GROUP BY u.username
-                  HAVING COUNT(p.id) = 0
-              )
-        """)
-        # Cleanup: Non-superadmin users whose primary_workspace is OM and have no ENG projects
-        # should not have errant ENG workspace
-        exe("""
-            DELETE FROM user_workspaces
-            WHERE workspace_id = 'ENG'
-              AND username IN (
-                  SELECT u.username FROM users u
-                  LEFT JOIN user_projects up ON u.username = up.username
-                  LEFT JOIN projects p ON up.project_id = p.id AND (p.workspace_id = 'ENG' OR p.workspace_id IS NULL)
-                  WHERE u.role != 'superadmin'
-                    AND u.primary_workspace = 'OM'
-                  GROUP BY u.username
-                  HAVING COUNT(p.id) = 0
-              )
-        """)
+
         exe("ALTER TABLE user_projects ADD COLUMN IF NOT EXISTS allowed_doc_types JSONB DEFAULT NULL")
     except Exception as e:
         logger.warning("_ensure_workspaces note: %s", e)
