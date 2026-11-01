@@ -294,10 +294,17 @@ def api_workspaces():
             description = str(data.get("description") or "").strip()
             icon = str(data.get("icon") or "📁").strip()
             ws_type = str(data.get("type") or "general").strip()
-            try:
-                sort_order = int(data.get("sort_order") or 0)
-            except (ValueError, TypeError):
-                sort_order = 0
+            sort_order = 0
+            if "sort_order" in data and data["sort_order"] is not None:
+                try: sort_order = int(data["sort_order"])
+                except: sort_order = 0
+            elif action == "add":
+                try:
+                    max_order = db.q("SELECT COALESCE(MAX(sort_order), 0) as m FROM workspaces", one=True)
+                    if max_order and isinstance(max_order, dict) and max_order.get("m"):
+                        sort_order = int(max_order["m"]) + 1
+                except Exception:
+                    sort_order = 0
             
             if not ws_id or not name:
                 return jsonify(error="Department Code/ID and Name are required"), 400

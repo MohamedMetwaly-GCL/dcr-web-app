@@ -600,6 +600,19 @@ def _ensure_workspaces():
                ON CONFLICT (id) DO UPDATE SET code = 'O&M', name = 'Operation & Maintenance (O&M)'""")
         exe("UPDATE workspaces SET description = 'EPC & Site Submittals' WHERE id = 'ENG' AND description IS NULL")
         exe("UPDATE workspaces SET description = 'Facilities & Maintenance Contracts' WHERE id = 'OM' AND description IS NULL")
+        exe("UPDATE workspaces SET sort_order = 1 WHERE id = 'ENG'")
+        exe("UPDATE workspaces SET sort_order = 2 WHERE id = 'OM'")
+        exe("""
+            WITH ranked AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY created_at, id) + 2 as new_order
+                FROM workspaces
+                WHERE id NOT IN ('ENG', 'OM')
+            )
+            UPDATE workspaces w
+            SET sort_order = r.new_order
+            FROM ranked r
+            WHERE w.id = r.id AND (w.sort_order IS NULL OR w.sort_order <= 2)
+        """)
         exe("UPDATE projects SET workspace_id = 'ENG' WHERE workspace_id IS NULL OR workspace_id = ''")
         exe("""
             INSERT INTO user_workspaces (username, workspace_id, role)

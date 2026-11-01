@@ -4593,6 +4593,175 @@ async function submitDepartmentForm() {
   }
 }
 
+async function moveDepartmentOrder(wsId, dir) {
+  const workspaces = _ADMIN_DATA.workspaces || [];
+  const idx = workspaces.findIndex(x => x.id === wsId);
+  if (idx < 0) return;
+  const targetIdx = idx + dir;
+  if (targetIdx < 0 || targetIdx >= workspaces.length) return;
+  
+  const currentWs = workspaces[idx];
+  const targetWs = workspaces[targetIdx];
+  
+  const currentOrder = currentWs.sort_order || (idx + 1);
+  const targetOrder = targetWs.sort_order || (targetIdx + 1);
+  const newCurrentOrder = (currentOrder === targetOrder) ? (dir > 0 ? targetOrder + 1 : targetOrder - 1) : targetOrder;
+  const newTargetOrder = currentOrder;
+
+  try {
+    await apiFetch('/api/workspaces', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update', id: currentWs.id, sort_order: newCurrentOrder })
+    });
+    await apiFetch('/api/workspaces', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update', id: targetWs.id, sort_order: newTargetOrder })
+    });
+    const updatedWs = await apiFetch('/api/workspaces');
+    if (updatedWs) {
+      _ADMIN_DATA.workspaces = updatedWs;
+      renderDepartmentsTable();
+      refreshAdminDeptDropdowns();
+      toast('✔ Department order updated', 'ok');
+    }
+  } catch (err) {
+    toast('Error reordering: ' + err.message, 'er');
+  }
+}
+
+function openUserDeptsModal(username) {
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  if (!u) return toast('User not found', 'er');
+  
+  let modal = document.getElementById('user-depts-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'user-depts-modal';
+    modal.className = 'overlay';
+    document.body.appendChild(modal);
+  }
+  
+  const workspaces = _ADMIN_DATA.workspaces || [];
+  const uWsList = (u.workspaces && u.workspaces.length > 0)
+    ? u.workspaces
+    : [{ workspace_id: (u.primary_workspace || 'ENG'), role: (u.role || 'viewer') }];
+  const wsMap = Object.fromEntries(uWsList.map(item => [item.workspace_id, item.role]));
+  
+  let rowsHtml = '';
+  workspaces.forEach(w => {
+    const isAssigned = (w.id in wsMap);
+    const wsRole = wsMap[w.id] || 'viewer';
+    const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '🏗️' : '📁'));
+    const name = w.name || w.id;
+    const desc = w.description || w.name_ar || '';
+    
+    rowsHtml += `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid var(--bd);border-radius:8px;background:var(--wh);margin-bottom:8px;transition:all 0.15s;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;user-select:none;margin:0;">
+          <input type="checkbox" id="modal-dept-chk-${w.id}" ${isAssigned ? 'checked' : ''}
+                 onchange="toggleModalUserDept('${escHtml(username)}', '${w.id}', this.checked)"
+                 style="width:16px;height:16px;accent-color:var(--brand-teal);cursor:pointer;">
+          <span style="font-size:20px;width:24px;text-align:center;">${icon}</span>
+          <div>
+            <div style="font-weight:700;font-size:13px;color:var(--tx);">${escHtml(name)} <span style="font-family:monospace;color:var(--brand-teal);font-size:11px;">(${escHtml(w.code || w.id)})</span></div>
+            ${desc ? `<div style="font-size:11px;color:var(--mu);">${escHtml(desc)}</div>` : ''}
+          </div>
+        </label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;color:var(--mu);font-weight:600;">Role:</span>
+          <select id="modal-dept-role-${w.id}" class="tbl-select" style="padding:4px 8px;font-size:11.5px;font-weight:600;min-width:95px;"
+                  onchange="updUsrWsRole('${escHtml(username)}', '${w.id}', this.value)"
+                  ${!isAssigned ? 'disabled style="opacity:0.4;"' : ''}>
+            <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
+            <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
+            <option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+        </div>
+      </div>
+    `;
+  });
+
+  modal.innerHTML = `
+    <div class="modal" style="max-width:540px;width:95%;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.18);" onclick="event.stopPropagation();">
+      <div class="mhdr" style="padding:14px 20px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🏢</span>
+          <div>
+            <div style="font-weight:800;font-size:14px;color:var(--tx);">Department Access & Roles — ${escHtml(username)}</div>
+            <div style="font-size:11px;color:var(--mu);">Assign company departments and define access level for this user</div>
+          </div>
+        </div>
+        <button class="xbtn" onclick="closeUserDeptsModal()">✕</button>
+      </div>
+      
+      <div style="padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11.5px;font-weight:600;color:var(--tx);">Company Departments (${workspaces.length})</span>
+        <div style="display:flex;gap:10px;">
+          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', true)" style="font-size:11px;padding:3px 8px;">Select All</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', false)" style="font-size:11px;padding:3px 8px;">Clear All</button>
+        </div>
+      </div>
+
+      <div style="padding:16px 20px;max-height:420px;overflow-y:auto;">
+        ${rowsHtml}
+      </div>
+
+      <div style="padding:12px 20px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;align-items:center;background:var(--bg);border-bottom-left-radius:12px;border-bottom-right-radius:12px;">
+        <button class="btn btn-pr btn-sm" onclick="closeUserDeptsModal()" style="padding:6px 20px;font-weight:700;background:var(--brand-teal);color:#fff;">
+          Done (إتمام)
+        </button>
+      </div>
+    </div>
+  `;
+  
+  modal.style.display = 'flex';
+  modal.onclick = (e) => { if (e.target === modal) closeUserDeptsModal(); };
+}
+
+function closeUserDeptsModal() {
+  const modal = document.getElementById('user-depts-modal');
+  if (modal) modal.style.display = 'none';
+  renderAdminTable();
+}
+
+async function toggleModalUserDept(username, wsId, isChecked) {
+  const roleSelect = document.getElementById('modal-dept-role-' + wsId);
+  if (roleSelect) {
+    roleSelect.disabled = !isChecked;
+    roleSelect.style.opacity = isChecked ? '1' : '0.4';
+  }
+  await toggleUserDept(username, wsId, isChecked);
+}
+
+async function modalToggleAllDepts(username, selectAll) {
+  await toggleAllDepts(username, selectAll);
+  openUserDeptsModal(username);
+}
+
+async function updUsrAllDeptsRole(username, role) {
+  if (!role) return;
+  const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+  if (!u) return;
+  const workspaces = _ADMIN_DATA.workspaces || [];
+  for (const w of workspaces) {
+    await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_workspace_role',
+        username: username,
+        workspace_id: w.id,
+        role: role
+      })
+    });
+  }
+  if (u.workspaces) {
+    u.workspaces.forEach(w => w.role = role);
+  }
+  u.role = role;
+  toast('✔ All department roles updated to ' + role, 'ok');
+  renderAdminTable();
+}
+
 function refreshAdminDeptDropdowns() {
   const filter = document.getElementById('admin-dept-filter');
   if (filter) {
@@ -4628,7 +4797,7 @@ function renderDepartmentsTable() {
   const projects = _ADMIN_DATA.projects || [];
   
   let rowsHtml = '';
-  workspaces.forEach(w => {
+  workspaces.forEach((w, idx) => {
     const isEng = w.id === 'ENG';
     const isOm = w.id === 'OM';
     const pCount = projects.filter(p => (p.workspace_id || 'ENG') === w.id).length;
@@ -4650,7 +4819,9 @@ function renderDepartmentsTable() {
         <td style="text-align:center;"><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-weight:700;">${pCount} ${isOm ? 'Contracts' : 'Projects'}</span></td>
         <td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;">Active</span></td>
         <td>
-          <div style="display:flex;gap:6px;align-items:center;">
+          <div style="display:flex;gap:4px;align-items:center;">
+            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', -1)" title="Move Up" ${idx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▲</button>
+            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', 1)" title="Move Down" ${idx === workspaces.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▼</button>
             <button class="uact-btn" onclick="editDepartment('${escHtml(w.id)}')" title="Edit Department Details">
               <span>✏️</span><span>Edit</span>
             </button>
@@ -4831,12 +5002,7 @@ function renderAdminTable() {
     const hasEng = userWsIds.includes('ENG');
     const hasOm = userWsIds.includes('OM');
 
-    // Department & per-department role column (Fully dynamic for ANY department!)
-    const uWsList = (u.workspaces && u.workspaces.length > 0)
-      ? u.workspaces
-      : [{ workspace_id: (u.primary_workspace || 'ENG'), role: (u.role || 'viewer') }];
-    const wsMap = Object.fromEntries(uWsList.map(item => [item.workspace_id, item.role]));
-
+    // Department & per-department role column (Compact Responsive Badges)
     let deptCol = '';
     let roleCol = '';
 
@@ -4846,101 +5012,83 @@ function renderAdminTable() {
     } else {
       const availableWorkspaces = _ADMIN_DATA.workspaces || [];
       const adminWsList = (_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.workspaces || []).map(w => w.id || w.workspace_id);
-      
-      let deptLines = [];
-      let roleLines = [];
+      const assignedWorkspaces = availableWorkspaces.filter(w => (w.id in wsMap));
+      const allAssigned = (availableWorkspaces.length > 0 && assignedWorkspaces.length === availableWorkspaces.length);
 
-      availableWorkspaces.forEach(w => {
-        const isAssigned = (w.id in wsMap);
-        const wsRole = wsMap[w.id] || 'viewer';
-        const icon = w.id === 'OM' ? '⚙️' : (w.icon || '📁');
-        const name = w.id === 'OM' ? 'O&M' : (w.name || w.id);
-        const canManageThisWs = isSuper || adminWsList.includes(w.id);
-
-        if (isSuper) {
-          // Superadmin can check/uncheck department AND choose role per department
-          deptLines.push(`
-            <div style="height:26px;display:flex;align-items:center;">
-              <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;font-size:11px;">
-                <input type="checkbox" id="dept-${w.id}-${escHtml(u.username)}" ${isAssigned ? 'checked' : ''}
-                       onchange="toggleUserDept('${escHtml(u.username)}', '${w.id}', this.checked)">
-                <span>${icon} ${escHtml(name)}</span>
-              </label>
-            </div>
-          `);
-          
-          if (isAssigned) {
-            roleLines.push(`
-              <div style="height:26px;display:flex;align-items:center;gap:4px;font-size:11px;">
-                <span style="font-size:10px;font-weight:600;color:var(--mu);min-width:32px;">${w.id}:</span>
-                <select class="tbl-select" style="padding:1px 6px;font-size:10.5px;height:22px;"
-                        onchange="updUsrWsRole('${escHtml(u.username)}', '${w.id}', this.value)">
-                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
-                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
-                  <option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>
-                </select>
-              </div>
-            `);
-          } else {
-            roleLines.push(`
-              <div style="height:26px;display:flex;align-items:center;gap:4px;font-size:11px;opacity:0.35;">
-                <span style="font-size:10px;min-width:32px;color:var(--mu);">${w.id}:</span>
-                <span style="font-size:11px;color:var(--mu);">—</span>
-              </div>
-            `);
-          }
-        } else if (canManageThisWs) {
-          // Department Admin can change role in their own department only
-          if (isAssigned) {
-            deptLines.push(`
-              <div style="height:26px;display:flex;align-items:center;">
-                <span class="dept-badge ${w.id==='OM'?'dept-badge-om':'dept-badge-eng'}">${icon} ${escHtml(name)}</span>
-              </div>
-            `);
-            roleLines.push(`
-              <div style="height:26px;display:flex;align-items:center;gap:4px;font-size:11px;">
-                <span style="font-size:10px;font-weight:600;color:var(--mu);min-width:32px;">${w.id}:</span>
-                <select class="tbl-select" style="padding:1px 6px;font-size:10.5px;height:22px;"
-                        onchange="updUsrWsRole('${escHtml(u.username)}', '${w.id}', this.value)">
-                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
-                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
-                </select>
-              </div>
-            `);
-          }
-        } else {
-          // Department outside admin scope: show read-only
-          if (isAssigned) {
-            deptLines.push(`
-              <div style="height:26px;display:flex;align-items:center;">
-                <span class="dept-badge" style="background:#f1f5f9;color:#64748b;font-size:9.5px;">${icon} ${escHtml(name)}</span>
-              </div>
-            `);
-            roleLines.push(`
-              <div style="height:26px;display:flex;align-items:center;font-size:10px;color:var(--mu);">
-                ${w.id}: ${escHtml(wsRole.toUpperCase())}
-              </div>
-            `);
-          }
-        }
-      });
-
-      if (isSuper) {
-        const allAssigned = availableWorkspaces.length > 0 && availableWorkspaces.every(w => w.id in wsMap);
+      if (allAssigned) {
+        const commonRole = wsMap[availableWorkspaces[0]?.id] || 'viewer';
+        const isUniform = availableWorkspaces.every(w => wsMap[w.id] === commonRole);
         deptCol = `
-          <div class="dept-checkboxes" style="display:flex;flex-direction:column;gap:0;">
-            ${deptLines.join('')}
-            <div style="margin-top:2px;font-size:10px;">
-              <a href="#" onclick="toggleAllDepts('${escHtml(u.username)}', ${!allAssigned}, event)" style="color:var(--pr);text-decoration:none;font-weight:600;">
-                ${allAssigned ? '✖ Clear All' : '🌐 Select All'}
-              </a>
-            </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;display:inline-flex;align-items:center;gap:4px;">
+              <span>🌐 All Departments</span>
+              <span style="font-size:10px;background:rgba(55,48,163,0.15);padding:1px 5px;border-radius:4px;">${availableWorkspaces.length}</span>
+            </span>
+            ${isSuper ? `
+              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="Manage department assignments">
+                <span>✏️</span><span>Edit</span>
+              </button>
+            ` : ''}
           </div>
         `;
-        roleCol = `<div style="display:flex;flex-direction:column;gap:0;">${roleLines.join('')}</div>`;
+        roleCol = `
+          <div style="display:flex;align-items:center;gap:4px;">
+            ${isSuper ? `
+              <select class="tbl-select" style="padding:2px 6px;font-size:11px;height:24px;font-weight:600;"
+                      onchange="updUsrAllDeptsRole('${escHtml(u.username)}', this.value)">
+                <option value="viewer" ${isUniform && commonRole === 'viewer' ? 'selected' : ''}>All as Viewer</option>
+                <option value="editor" ${isUniform && commonRole === 'editor' ? 'selected' : ''}>All as Editor</option>
+                <option value="admin" ${isUniform && commonRole === 'admin' ? 'selected' : ''}>All as Admin</option>
+                ${!isUniform ? '<option value="" selected disabled>Mixed Roles</option>' : ''}
+              </select>
+            ` : `<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:600;">${escHtml(commonRole.toUpperCase())}</span>`}
+          </div>
+        `;
+      } else if (assignedWorkspaces.length === 0) {
+        deptCol = `
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="color:var(--mu);font-size:11px;font-style:italic;">No Departments</span>
+            ${isSuper ? `
+              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="padding:2px 7px;font-size:10.5px;color:var(--brand-teal);border-color:var(--brand-teal);font-weight:700;">
+                <span>➕ Assign</span>
+              </button>
+            ` : ''}
+          </div>
+        `;
+        roleCol = '<span style="color:var(--mu);font-size:11px;">—</span>';
       } else {
-        deptCol = `<div class="dept-checkboxes" style="display:flex;flex-direction:column;gap:0;">${deptLines.join('') || '<span style="color:var(--mu);font-size:11px;">None</span>'}</div>`;
-        roleCol = `<div style="display:flex;flex-direction:column;gap:0;">${roleLines.join('') || '<span style="color:var(--mu);font-size:11px;">—</span>'}</div>`;
+        const pills = assignedWorkspaces.map(w => {
+          const wsRole = wsMap[w.id] || 'viewer';
+          const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '🏗️' : '📁'));
+          const code = w.code || w.id;
+          const canManageThisWs = isSuper || adminWsList.includes(w.id);
+
+          return `
+            <span class="dept-role-pill" style="display:inline-flex;align-items:center;gap:4px;background:var(--wh);border:1px solid var(--bd);padding:2px 6px;border-radius:6px;font-size:11px;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+              <span style="font-weight:700;color:var(--tx);font-family:monospace;">${icon} ${escHtml(code)}:</span>
+              ${canManageThisWs ? `
+                <select class="tbl-select" style="padding:0 3px;font-size:10.5px;height:20px;font-weight:600;color:var(--brand-teal);border:none;background:transparent;cursor:pointer;"
+                        onchange="updUsrWsRole('${escHtml(u.username)}', '${w.id}', this.value)">
+                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
+                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
+                  ${isSuper ? `<option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>` : ''}
+                </select>
+              ` : `<strong style="font-size:10px;text-transform:uppercase;color:var(--mu);">${wsRole}</strong>`}
+            </span>
+          `;
+        }).join('');
+
+        deptCol = `
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            ${pills}
+            ${isSuper ? `
+              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;font-size:10px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="Add or remove departments for ${escHtml(u.username)}">
+                <span>➕/✏️</span>
+              </button>
+            ` : ''}
+          </div>
+        `;
+        roleCol = `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${assignedWorkspaces.length} ${assignedWorkspaces.length === 1 ? 'Dept' : 'Depts'}</span>`;
       }
     }
     
@@ -6106,16 +6254,30 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     </div>
     ''' if dt_cards_html else ""
 
+    is_om = (active_ws == "OM")
+    add_btn_lbl = "➕ New Contract / Facility" if is_om else "➕ New Project / Register"
+    empty_btn_lbl = "➕ Register First Contract / Facility" if is_om else "➕ Register First Project / Register"
+    empty_icon = "⚙️" if is_om else ws_icon
+    empty_title = "No Maintenance Contracts Registered Yet" if is_om else f"No Projects or Registers Registered Yet in {ws_name}"
+    empty_sub = (
+        "Register your first client facility or maintenance contract to start logging Work Orders, PPM schedules, and SLA reports."
+        if is_om else
+        f"Register your first project, contract, or register in {ws_name} to start logging documents and tracking records."
+    )
+    kpi_contracts_lbl = "Total Facilities & Contracts" if is_om else "Total Projects & Registers"
+    kpi_records_lbl = "Total Work Orders & Records" if is_om else "Total Registered Records"
+    breakdown_lbl = "Active Document Registers & Submittals" if is_om else "Configured Registers & Document Types"
+
     # Render Contract Cards
     empty_add_btn = (
-        '<button class="tb-btn glow" style="margin-top:14px;padding:8px 18px;font-size:13px;" '
-        'onclick="openM(&#39;new-om-modal&#39;)">➕ Register First Contract / Facility</button>'
+        f'<button class="tb-btn glow" style="margin-top:14px;padding:8px 18px;font-size:13px;" '
+        f'onclick="openM(&#39;new-om-modal&#39;)">{empty_btn_lbl}</button>'
     ) if can_manage else ""
 
     header_add_btn = (
-        '<button class="tb-btn glow" onclick="openM(&#39;new-om-modal&#39;)" '
-        'style="background:var(--brand-teal);color:#fff;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;border:none;">'
-        '➕ New Contract / Facility</button>'
+        f'<button class="tb-btn glow" onclick="openM(&#39;new-om-modal&#39;)" '
+        f'style="background:var(--brand-teal);color:#fff;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;border:none;">'
+        f'{add_btn_lbl}</button>'
     ) if can_manage else ""
 
     audit_btn = (
@@ -6152,9 +6314,9 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     if not cards_html:
         cards_html = f'''
         <div class="om-empty-state">
-          <div class="om-empty-icon">⚙️</div>
-          <div class="om-empty-title">No Maintenance Contracts Registered Yet</div>
-          <div class="om-empty-sub">Register your first client facility or maintenance contract to start logging Work Orders, PPM schedules, and SLA reports.</div>
+          <div class="om-empty-icon">{empty_icon}</div>
+          <div class="om-empty-title">{empty_title}</div>
+          <div class="om-empty-sub">{empty_sub}</div>
           {empty_add_btn}
         </div>
         '''
@@ -6443,11 +6605,11 @@ body.dark .tbtn.active {{
     <!-- Universal KPIs Summary -->
     <div class="om-kpi-grid">
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Total Facilities & Contracts</span>
+        <span class="om-kpi-lbl">{kpi_contracts_lbl}</span>
         <span class="om-kpi-val primary">{total_contracts}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Total Work Orders & Records</span>
+        <span class="om-kpi-lbl">{kpi_records_lbl}</span>
         <span class="om-kpi-val">{total_records}</span>
       </div>
       <div class="om-kpi-card">
@@ -6602,33 +6764,33 @@ body.dark .tbtn.active {{
   </div>
 </div>
 
-<!-- Modal: New Contract / Facility -->
+<!-- Modal: New Contract / Facility / Project -->
 <div id="new-om-modal" class="overlay hidden" onclick="if(event.target===this)closeM('new-om-modal')">
   <div class="modal" style="max-width:480px">
     <div class="mhdr">
-      <span>➕ Register New O&M Contract / Facility</span>
+      <span>{f'➕ Register New O&M Contract / Facility' if is_om else f'➕ Register New Project / Register ({ws_name})'}</span>
       <button class="xbtn" onclick="closeM('new-om-modal')">✕</button>
     </div>
     <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Contract / Facility ID (Internal ID):</label>
-        <input type="text" id="om-new-id" placeholder="e.g. OM-CFC-01" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Contract / Facility ID (Internal ID):' if is_om else 'Project / Register ID (Internal ID):'}</label>
+        <input type="text" id="om-new-id" placeholder="{f'e.g. OM-CFC-01' if is_om else f'e.g. {ws_code}-01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Facility / Contract Name:</label>
-        <input type="text" id="om-new-name" placeholder="e.g. CFC District Cooling Maintenance" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Facility / Contract Name:' if is_om else 'Project / Register Name:'}</label>
+        <input type="text" id="om-new-name" placeholder="{f'e.g. CFC District Cooling Maintenance' if is_om else f'e.g. Annual Procurement Plan / Vendor Register'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Contract Short Code:</label>
-        <input type="text" id="om-new-code" placeholder="e.g. OM01" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Contract Short Code:' if is_om else 'Short Code / Identifier:'}</label>
+        <input type="text" id="om-new-code" placeholder="{f'e.g. OM01' if is_om else f'e.g. {ws_code}01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Client Name:</label>
-        <input type="text" id="om-new-client" placeholder="e.g. Al-Futtaim" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Client Name:' if is_om else 'Client / Entity / Department:'}</label>
+        <input type="text" id="om-new-client" placeholder="{f'e.g. Al-Futtaim' if is_om else 'e.g. Internal / GasChill'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
         <button class="tb-btn" onclick="closeM('new-om-modal')">Cancel</button>
-        <button class="tb-btn glow" onclick="submitNewOmContract()" style="background:var(--brand-teal);color:#fff;font-weight:700">Save Contract</button>
+        <button class="tb-btn glow" onclick="submitNewOmContract()" style="background:var(--brand-teal);color:#fff;font-weight:700">{f'Save Contract' if is_om else 'Save Project'}</button>
       </div>
     </div>
   </div>
