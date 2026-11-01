@@ -5006,6 +5006,11 @@ function renderAdminTable() {
     let deptCol = '';
     let roleCol = '';
 
+    const uWsList = (u.workspaces && u.workspaces.length > 0)
+      ? u.workspaces
+      : [{ workspace_id: (u.primary_workspace || 'ENG'), role: (u.role || 'viewer') }];
+    const wsMap = Object.fromEntries(uWsList.map(item => [item.workspace_id, item.role]));
+
     if (isSuperAdminUser) {
       deptCol = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;">🌐 All Departments</span>';
       roleCol = '<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;">Super Admin</span>';
