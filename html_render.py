@@ -10088,11 +10088,11 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
               <th style="padding:7px 8px;width:75px">Size</th>
               <th style="padding:7px 8px;width:230px">Matched Record (Doc No.)</th>
               <th style="padding:7px 8px;width:170px">Status / Progress</th>
-              <th style="padding:7px 4px;width:24px"></th>
+              <th style="padding:7px 4px;width:32px;text-align:center"></th>
             </tr>
           </thead>
           <tbody id="batch-drv-tbody">
-            <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" above to queue files.</td></tr>
+            <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" above to queue files.</td></tr>
           </tbody>
         </table>
       </div>
@@ -12880,54 +12880,6 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       fldBtn.title='Upload an uncompressed folder of files for this document';
       fldBtn.onclick=()=>folderInp.click();
 
-      folderInp.onchange=async()=>{{
-        const fls=Array.from(folderInp.files||[]);
-        if(!fls.length)return;
-        const subName=row?.docNo||row?.nocNo||(fls[0].webkitRelativePath?fls[0].webkitRelativePath.split('/')[0]:'Document_Files');
-        upBtn.disabled=true;fldBtn.disabled=true;
-        progWrap.style.display='flex';
-        progBarInner.style.width='0%';
-        progTxt.style.color='#475569';
-        progTxt.textContent=`Starting folder upload (${{fls.length}} files)...`;
-        state.activeDriveUploads=(state.activeDriveUploads||0)+1;
-        try{{
-          let lastRes=null;
-          for(let fi=0;fi<fls.length;fi++){{
-            const f=fls[fi];
-            lastRes=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
-              const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-              const overall=Math.round(((fi+(total>0?done/total:0))/fls.length)*100);
-              progBarInner.style.width=overall+'%';
-              progTxt.textContent=`Uploading file ${{fi+1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
-            }},{{subfolder_name:subName,link_as_folder:true}});
-          }}
-          if(lastRes&&lastRes.pending){{
-            lastRes.is_folder=true;lastRes.folder_name=subName;lastRes.file_count=fls.length;
-            state.pendingDriveAttachments[s.key]=lastRes;
-            renderSlotInfo(null,lastRes);
-            progTxt.textContent=`✓ Uploaded ${{fls.length}} files — click Save to finish`;
-          }}else if(lastRes&&lastRes.attachment){{
-            cur[s.key]=lastRes.attachment;
-            if(row){{
-              row.attachments=lastRes.attachments||row.attachments||{{}};
-              if(!row.fileLocation&&lastRes.attachment.url)row.fileLocation=lastRes.attachment.url;
-            }}
-            renderSlotInfo(lastRes.attachment,null);
-            progTxt.textContent=`✓ Attached folder (${{fls.length}} files)`;
-            renderRows();
-            toast(`Folder uploaded and linked (${{fls.length}} files)`,'ok');
-          }}
-        }}catch(e){{
-          progTxt.style.color='#dc2626';
-          progTxt.textContent='✕ Upload failed: '+(e.message||e);
-          toast('Upload failed: '+(e.message||e),'er');
-        }}finally{{
-          state.activeDriveUploads=Math.max(0,(state.activeDriveUploads||1)-1);
-          upBtn.disabled=false;fldBtn.disabled=false;
-          folderInp.value='';
-        }}
-      }};
-
       progWrap.style.cssText='width:100%;display:none;flex-direction:column;gap:5px;background:#f8fafc;padding:8px 10px;border-radius:6px;border:1px solid #cbd5e1;box-sizing:border-box;margin-top:4px';
       const progHdr=document.createElement('div');
       progHdr.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px';
@@ -12939,9 +12891,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       progHdr.appendChild(slotStopBtn);
       progWrap.insertBefore(progHdr,progWrap.firstChild);
 
+      let slotAbortCtrl=null;
       let cancelSlotUpload=false;
       slotStopBtn.onclick=()=>{{
         cancelSlotUpload=true;
+        if(slotAbortCtrl)try{{slotAbortCtrl.abort();}}catch(_e){{}}
         slotStopBtn.disabled=true;
         slotStopBtn.textContent='Stopping...';
       }};
@@ -12949,6 +12903,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       const origFileChange = fileInp.onchange;
       fileInp.onchange = async () => {{
         cancelSlotUpload=false;
+        slotAbortCtrl=new AbortController();
         slotStopBtn.disabled=false;slotStopBtn.textContent='⏹ Stop';
         upBtn.style.display='none';fldBtn.style.display='none';
         try {{
@@ -12956,6 +12911,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         }} finally {{
           upBtn.style.display='';fldBtn.style.display='';
           progWrap.style.display='none';
+          slotAbortCtrl=null;
         }}
       }};
 
@@ -12964,6 +12920,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         if(!fls.length) return;
         const subName = row?.docNo || row?.nocNo || (fls[0].webkitRelativePath ? fls[0].webkitRelativePath.split('/')[0] : 'Document_Files');
         cancelSlotUpload = false;
+        slotAbortCtrl = new AbortController();
         slotStopBtn.disabled = false; slotStopBtn.textContent = '⏹ Stop';
         upBtn.style.display = 'none'; fldBtn.style.display = 'none';
         progWrap.style.display = 'flex';
@@ -12985,10 +12942,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
               const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
               progBarInner.style.width = overall + '%';
               progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
-            }}, {{subfolder_name: subName, link_as_folder: true}});
+            }}, {{subfolder_name: subName, link_as_folder: true, signal: slotAbortCtrl.signal}});
             uploadedCount++;
           }}
-          if(uploadedCount > 0) {{
+          if(!cancelSlotUpload && uploadedCount > 0) {{
             if(lastRes && lastRes.pending) {{
               lastRes.is_folder = true; lastRes.folder_name = subName; lastRes.file_count = uploadedCount;
               state.pendingDriveAttachments[s.key] = lastRes;
@@ -13005,12 +12962,17 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             }}
           }}
         }} catch(e) {{
-          toast('Folder upload error: ' + (e.message || e), 'er');
+          if(e.name === 'AbortError' || cancelSlotUpload) {{
+            toast('Folder upload stopped', 'wa');
+          }} else {{
+            toast('Folder upload error: ' + (e.message || e), 'er');
+          }}
         }} finally {{
           state.activeDriveUploads = Math.max(0, (state.activeDriveUploads || 1) - 1);
           upBtn.style.display = ''; fldBtn.style.display = '';
           progWrap.style.display = 'none';
           folderInp.value = '';
+          slotAbortCtrl = null;
         }}
       }};
 
@@ -13033,17 +12995,20 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   secBody.insertBefore(wrap,secBody.firstChild);
 }}
 
-async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,onProgress,useProxyRef){{
+async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,onProgress,useProxyRef,signal){{
+  if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
   const end=Math.min(offset+chunkSize,file.size);
   const blob=file.slice(offset,end);
   const contentRange=`bytes ${{offset}}-${{end-1}}/${{file.size}}`;
   for(let attempt=0;attempt<5;attempt++){{
+    if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
     try{{
       if(!useProxyRef.proxy){{
         const r=await fetch(sessionUrl,{{
           method:'PUT',
           headers:{{'Content-Range':contentRange}},
-          body:blob
+          body:blob,
+          signal:signal
         }});
         if(r.status===308){{
           const rng=r.headers.get('Range')||'';
@@ -13061,6 +13026,7 @@ async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,
         throw new Error('Drive upload error ('+r.status+'): '+errTxt.slice(0,160));
       }}
     }}catch(directErr){{
+      if(directErr.name==='AbortError'||(signal&&signal.aborted))throw directErr;
       if(!useProxyRef.proxy && attempt===0){{
         useProxyRef.proxy=true;
       }}else if(!useProxyRef.proxy){{
@@ -13069,10 +13035,12 @@ async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,
       }}
     }}
     if(useProxyRef.proxy){{
+      if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
       const pr=await fetch('/api/drive/upload-chunk',{{
         method:'POST',
         headers:{{'X-Upload-Ticket':ticket,'X-Content-Range':contentRange}},
-        body:blob
+        body:blob,
+        signal:signal
       }});
       const pj=await pr.json().catch(()=>({{}}));
       if(!pr.ok)throw new Error(pj.error||('Chunk upload failed ('+pr.status+')'));
@@ -13089,9 +13057,12 @@ async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,
 }}
 
 async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
+  const signal=extraOpts.signal||null;
+  if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
   const sessRes=await fetch('/api/drive/upload-session',{{
     method:'POST',
     headers:{{'Content-Type':'application/json'}},
+    signal:signal,
     body:JSON.stringify({{
       project_id:PID,
       dt_id:state.tab,
@@ -13112,7 +13083,8 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
   const useProxyRef={{proxy:false}};
   let offset=0, fileId='';
   while(offset<file.size){{
-    const step=await _sendDriveChunkWithRetry(sess.session_url,sess.upload_ticket,file,offset,chunkSize,onProgress,useProxyRef);
+    if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
+    const step=await _sendDriveChunkWithRetry(sess.session_url,sess.upload_ticket,file,offset,chunkSize,onProgress,useProxyRef,signal);
     if(step.done){{fileId=step.fileId;break;}}
     offset=step.offset;
   }}
@@ -13130,10 +13102,12 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
       folder_name:extraOpts.subfolder_name||''
     }};
   }}
+  if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
   onProgress(file.size,file.size,'Linking file to record...');
   const cmpRes=await fetch('/api/drive/upload-complete',{{
     method:'POST',
     headers:{{'Content-Type':'application/json'}},
+    signal:signal,
     body:JSON.stringify({{
       upload_ticket:sess.upload_ticket,
       file_id:fileId,
@@ -13224,21 +13198,25 @@ function updateBatchControlsState(){{
   const pending=q.filter(it=>it.recordId&&it.status!=='done').length;
   const done=q.filter(it=>it.status==='done').length;
   const err=q.filter(it=>it.status==='error').length;
+  const cancelled=q.filter(it=>it.status==='cancelled').length;
 
   const sumEl=document.getElementById('batch-drv-summary');
   if(sumEl){{
     if(!q.length){{
-      sumEl.textContent='Files are matched to records automatically by Document No.';
+      sumEl.textContent='Files or folders are matched to records automatically by Document No.';
     }}else{{
-      sumEl.textContent=`Queued ${{q.length}} file(s) — ${{matched}} matched (${{done}} uploaded, ${{pending}} ready${{err?`, ${{err}} failed`:''}}).`;
+      sumEl.textContent=`Queued ${{q.length}} item(s) — ${{matched}} matched (${{done}} done, ${{pending}} pending${{err?`, ${{err}} failed`:''}}${{cancelled?`, ${{cancelled}} cancelled`:''}}).`;
     }}
   }}
 
   const stBtn=document.getElementById('batch-drv-start-btn');
-  if(stBtn&&!state.batchRunning){{
-    if(pending>0){{
+  if(stBtn){{
+    if(state.batchRunning){{
+      stBtn.disabled=true;
+      stBtn.textContent='⏳ Uploading in progress...';
+    }}else if(pending>0){{
       stBtn.disabled=false;
-      stBtn.textContent=(done>0)?`🚀 Upload Remaining (${{pending}} file${{pending>1?'s':''}})`:'🚀 Start Sequential Upload';
+      stBtn.textContent=(done>0)?`🚀 Upload Remaining (${{pending}} item${{pending>1?'s':''}})`:'🚀 Start Sequential Upload';
     }}else if(done>0&&done===matched&&matched>0){{
       stBtn.disabled=true;
       stBtn.textContent='✓ All Done';
@@ -13249,11 +13227,27 @@ function updateBatchControlsState(){{
   }}
 }}
 
+function updateBatchOverallProgress(){{
+  const q=state.batchQueue||[];
+  const matched=q.filter(it=>it.recordId);
+  const done=q.filter(it=>it.status==='done').length;
+  const total=matched.length||1;
+  const ovBar=document.getElementById('batch-drv-overall-bar');
+  const ovPct=document.getElementById('batch-drv-overall-pct');
+  const ovTxt=document.getElementById('batch-drv-overall-txt');
+  const pct=Math.min(100,Math.round((done/total)*100));
+  if(ovBar)ovBar.style.width=pct+'%';
+  if(ovPct)ovPct.textContent=pct+'%';
+  if(ovTxt)ovTxt.textContent=`Completed ${{done}} of ${{total}} item(s)`;
+}}
+
 function openBatchDriveUpload(){{
   if(!CAN_EDIT){{toast('Edit permission required','wa');return;}}
   state.batchQueue=[];
   state.batchRunning=false;
   state.batchCancel=false;
+  state.batchCurrentItem=null;
+  state.batchCurrentAbort=null;
   populateBatchDatalist();
   const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
   const slotWrap=document.getElementById('batch-drv-slot-wrap');
@@ -13263,6 +13257,8 @@ function openBatchDriveUpload(){{
   radios.forEach(r=>{{r.checked=(r.value==='submission');r.disabled=false;}});
   const inp=document.getElementById('batch-drv-input');
   if(inp)inp.value='';
+  const finp=document.getElementById('batch-drv-folder-input');
+  if(finp)finp.value='';
   const ov=document.getElementById('batch-drv-overall');
   if(ov)ov.style.display='none';
   onBatchSlotChange('submission');
@@ -13277,6 +13273,7 @@ function closeBatchDriveUpload(){{
   if(state.batchRunning){{
     if(!confirm('Uploads are currently in progress. Stop the queue and close?'))return;
     state.batchCancel=true;
+    if(state.batchCurrentAbort)try{{state.batchCurrentAbort.abort();}}catch(_e){{}}
   }}
   closeM('batch-drive-modal');
 }}
@@ -13306,9 +13303,8 @@ function onBatchFilesSelected(fileList){{
   const recs=state.recs||[];
   const arr=Array.from(fileList);
   const curQ = state.batchQueue || [];
-  const startIdx = curQ.length;
-  const newItems=arr.map((file,idx)=>({{
-    idx:startIdx + idx,
+  const newItems=arr.map(file=>({{
+    id:'bq_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
     isFolder:false,
     file:file,
     recordId:extractDocNoFromFilename(file.name,recs),
@@ -13334,13 +13330,12 @@ function onBatchFolderSelected(fileList){{
   }});
 
   const curQ = state.batchQueue || [];
-  const startIdx = curQ.length;
-  const newItems=Object.keys(groups).map((fName,idx)=>{{
+  const newItems=Object.keys(groups).map(fName=>{{
     const files=groups[fName];
     const totalSize=files.reduce((sum,f)=>sum+(f.size||0),0);
     const recId=extractDocNoFromFilename(fName,recs);
     return {{
-      idx:startIdx + idx,
+      id:'bq_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
       isFolder:true,
       folderName:fName,
       file:{{name:'📁 '+fName, size:totalSize}},
@@ -13349,7 +13344,7 @@ function onBatchFolderSelected(fileList){{
       recordId:recId,
       status:'ready',
       pct:0,
-      msg:`Ready (${{files.length}} uncompressed files)`
+      msg:`Ready (${{files.length}} files)`
     }};
   }});
   state.batchQueue = [...curQ, ...newItems];
@@ -13363,13 +13358,14 @@ function renderBatchDriveTable(){{
   if(!tbody)return;
   const q=state.batchQueue||[];
   if(!q.length){{
-    tbody.innerHTML='<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" above to queue files.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" or "Select Folder" above to queue items.</td></tr>';
     return;
   }}
   const recs=state.recs||[];
   tbody.innerHTML='';
   q.forEach((item,i)=>{{
     const tr=document.createElement('tr');
+    tr.id='batch-drv-tr-'+item.id;
     tr.style.borderBottom='1px solid var(--bd)';
     const tdIdx=document.createElement('td');tdIdx.style.padding='6px 8px';tdIdx.textContent=String(i+1);
     const tdName=document.createElement('td');tdName.style.cssText='padding:6px 8px;font-weight:600;word-break:break-all';tdName.textContent=item.file.name;
@@ -13380,11 +13376,14 @@ function renderBatchDriveTable(){{
     recWrap.style.cssText='position:relative;display:flex;align-items:center;width:100%';
 
     const inp=document.createElement('input');
+    inp.id='batch-drv-inp-'+item.id;
     inp.setAttribute('list','batch-drv-datalist');
     inp.setAttribute('autocomplete','off');
     inp.style.cssText='width:100%;padding:4px 22px 4px 6px;font-size:11px;border-radius:4px;outline:none;transition:all .15s;border:1px solid '+(item.recordId?'#16a34a':'#f59e0b')+';background:'+(item.recordId?'#f0fdf4':'#fff');
     inp.placeholder='🔍 Search Doc No or Title...';
-    inp.disabled=state.batchRunning||item.status==='done';
+    // CRITICAL: Only disable input for the active uploading item or finished items!
+    // Waiting, error, or cancelled items REMAIN FULLY EDITABLE even when queue is running!
+    inp.disabled=(item.status==='uploading'||item.status==='done');
 
     const curRec=recs.find(r=>r._id===item.recordId);
     if(curRec){{
@@ -13398,7 +13397,7 @@ function renderBatchDriveTable(){{
 
     const clrBtn=document.createElement('button');
     clrBtn.type='button';
-    clrBtn.style.cssText='position:absolute;right:4px;background:transparent;border:none;color:#94a3b8;font-size:11px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1;display:'+(item.recordId&&!state.batchRunning&&item.status!=='done'?'block':'none');
+    clrBtn.style.cssText='position:absolute;right:4px;background:transparent;border:none;color:#94a3b8;font-size:11px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1;display:'+(item.recordId&&item.status!=='uploading'&&item.status!=='done'?'block':'none');
     clrBtn.textContent='✕';
     clrBtn.title='Clear matched record';
     clrBtn.onclick=(e)=>{{
@@ -13438,7 +13437,13 @@ function renderBatchDriveTable(){{
         inp.title=dn+t;
         inp.style.borderColor='#16a34a';
         inp.style.backgroundColor='#f0fdf4';
-        clrBtn.style.display=(state.batchRunning||item.status==='done')?'none':'block';
+        clrBtn.style.display=(item.status==='uploading'||item.status==='done')?'none':'block';
+        if(item.status==='cancelled'||item.status==='error'){{
+          item.status='ready';
+          item.msg='Ready';
+          const stCell=document.getElementById('batch-drv-st-'+item.id);
+          if(stCell)updateBatchRowStatusCell(stCell,item);
+        }}
       }}else{{
         item.recordId='';
         inp.title='No matching record found';
@@ -13456,23 +13461,12 @@ function renderBatchDriveTable(){{
     tdRec.appendChild(recWrap);
 
     const tdSt=document.createElement('td');tdSt.style.padding='6px 8px';
-    tdSt.id='batch-drv-st-'+i;
+    tdSt.id='batch-drv-st-'+item.id;
     updateBatchRowStatusCell(tdSt,item);
 
     const tdAct=document.createElement('td');tdAct.style.padding='6px 4px';tdAct.style.textAlign='center';
-    if(!state.batchRunning && item.status!=='done'){{
-      const rmBtn=document.createElement('button');
-      rmBtn.type='button';rmBtn.textContent='✕';rmBtn.title='Remove item from queue';
-      rmBtn.style.cssText='border:none;background:transparent;color:#94a3b8;font-size:12px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1';
-      rmBtn.onmouseenter=()=>rmBtn.style.color='#dc2626';
-      rmBtn.onmouseleave=()=>rmBtn.style.color='#94a3b8';
-      rmBtn.onclick=()=>{{
-        state.batchQueue.splice(i,1);
-        renderBatchDriveTable();
-        updateBatchControlsState();
-      }};
-      tdAct.appendChild(rmBtn);
-    }}
+    tdAct.id='batch-drv-act-'+item.id;
+    renderBatchRowActionCell(tdAct,item);
 
     tr.appendChild(tdIdx);tr.appendChild(tdName);tr.appendChild(tdSize);tr.appendChild(tdRec);tr.appendChild(tdSt);tr.appendChild(tdAct);
     tbody.appendChild(tr);
@@ -13481,7 +13475,7 @@ function renderBatchDriveTable(){{
 
 function updateBatchRowStatusCell(td,item){{
   if(!td)return;
-  const color=item.status==='done'?'#16a34a':(item.status==='error'?'#dc2626':(item.status==='uploading'?'#0284c7':'#64748b'));
+  const color=item.status==='done'?'#16a34a':(item.status==='error'?'#dc2626':(item.status==='uploading'?'#0284c7':(item.status==='cancelled'?'#e11d48':'#64748b')));
   td.innerHTML=`<div style="display:flex;flex-direction:column;gap:3px">
     <div style="font-size:10px;font-weight:700;color:${{color}}">${{escHtml(item.msg||item.status)}}</div>
     <div style="width:100%;height:5px;background:#e2e8f0;border-radius:3px;overflow:hidden">
@@ -13490,101 +13484,215 @@ function updateBatchRowStatusCell(td,item){{
   </div>`;
 }}
 
+function renderBatchRowActionCell(tdAct,item){{
+  if(!tdAct)return;
+  tdAct.innerHTML='';
+  if(item.status==='done'){{
+    const ok=document.createElement('span');
+    ok.textContent='✓';
+    ok.style.cssText='color:#16a34a;font-weight:700;font-size:13px';
+    tdAct.appendChild(ok);
+  }}else if(item.status==='uploading'){{
+    const cnBtn=document.createElement('button');
+    cnBtn.type='button';
+    cnBtn.textContent='⏹';
+    cnBtn.title='Cancel this item and proceed to next';
+    cnBtn.style.cssText='border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;padding:2px 6px;line-height:1';
+    cnBtn.onclick=()=>{{
+      if(state.batchCurrentItem===item && state.batchCurrentAbort){{
+        item.status='cancelled';
+        item.msg='⏹ Cancelled';
+        const stCell=document.getElementById('batch-drv-st-'+item.id);
+        if(stCell)updateBatchRowStatusCell(stCell,item);
+        renderBatchRowActionCell(tdAct,item);
+        try{{state.batchCurrentAbort.abort();}}catch(_e){{}}
+        toast('Upload cancelled for '+(item.folderName||item.file.name),'wa');
+      }}
+    }};
+    tdAct.appendChild(cnBtn);
+  }}else if(item.status==='cancelled'||item.status==='error'){{
+    const wrap=document.createElement('div');
+    wrap.style.cssText='display:flex;gap:4px;align-items:center;justify-content:center';
+    const retBtn=document.createElement('button');
+    retBtn.type='button';retBtn.textContent='↺';retBtn.title='Retry this item';
+    retBtn.style.cssText='border:none;background:transparent;color:#2563eb;font-size:12px;font-weight:700;cursor:pointer;padding:2px';
+    retBtn.onclick=()=>{{
+      item.status='ready';item.msg='Ready';
+      const stCell=document.getElementById('batch-drv-st-'+item.id);
+      if(stCell)updateBatchRowStatusCell(stCell,item);
+      renderBatchRowActionCell(tdAct,item);
+      updateBatchControlsState();
+    }};
+    const rmBtn=document.createElement('button');
+    rmBtn.type='button';rmBtn.textContent='✕';rmBtn.title='Remove item from queue';
+    rmBtn.style.cssText='border:none;background:transparent;color:#94a3b8;font-size:12px;font-weight:700;cursor:pointer;padding:2px';
+    rmBtn.onclick=()=>{{
+      const idx=(state.batchQueue||[]).indexOf(item);
+      if(idx!==-1){{
+        state.batchQueue.splice(idx,1);
+        renderBatchDriveTable();
+        updateBatchControlsState();
+      }}
+    }};
+    wrap.appendChild(retBtn);
+    wrap.appendChild(rmBtn);
+    tdAct.appendChild(wrap);
+  }}else{{
+    const rmBtn=document.createElement('button');
+    rmBtn.type='button';rmBtn.textContent='✕';rmBtn.title='Remove item from queue';
+    rmBtn.style.cssText='border:none;background:transparent;color:#94a3b8;font-size:12px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1';
+    rmBtn.onmouseenter=()=>rmBtn.style.color='#dc2626';
+    rmBtn.onmouseleave=()=>rmBtn.style.color='#94a3b8';
+    rmBtn.onclick=()=>{{
+      const idx=(state.batchQueue||[]).indexOf(item);
+      if(idx!==-1){{
+        state.batchQueue.splice(idx,1);
+        renderBatchDriveTable();
+        updateBatchControlsState();
+      }}
+    }};
+    tdAct.appendChild(rmBtn);
+  }}
+}}
+
 function stopBatchDriveUpload(){{
   state.batchCancel=true;
+  if(state.batchCurrentAbort)try{{state.batchCurrentAbort.abort();}}catch(_e){{}}
   const spBtn=document.getElementById('batch-drv-stop-btn');
-  if(spBtn){{spBtn.disabled=true;spBtn.textContent='Stopping after current chunk...';}}
+  if(spBtn){{spBtn.disabled=true;spBtn.textContent='Stopping queue...';}}
 }}
 
 async function startBatchDriveUpload(){{
   if(state.batchRunning)return;
   const q=(state.batchQueue||[]).filter(it=>it.recordId&&it.status!=='done');
   if(!q.length){{toast('Please match at least one file to a record first.','wa');return;}}
+
+  // Reset any cancelled or failed items with records back to 'ready'
+  (state.batchQueue||[]).forEach(it=>{{
+    if(it.recordId&&it.status!=='done'){{
+      it.status='ready';
+      it.pct=0;
+      it.msg='Ready';
+      const cell=document.getElementById('batch-drv-st-'+it.id);
+      if(cell)updateBatchRowStatusCell(cell,it);
+      const actCell=document.getElementById('batch-drv-act-'+it.id);
+      if(actCell)renderBatchRowActionCell(actCell,it);
+    }}
+  }});
+
   state.batchRunning=true;
   state.batchCancel=false;
   const slot=state.batchSlot||'submission';
   const stBtn=document.getElementById('batch-drv-start-btn');
-  if(stBtn)stBtn.disabled=true;
+  if(stBtn){{stBtn.disabled=true;stBtn.textContent='⏳ Uploading in progress...';}}
   const spBtn=document.getElementById('batch-drv-stop-btn');
   if(spBtn){{spBtn.classList.remove('hidden');spBtn.disabled=false;spBtn.textContent='⏹ Stop Queue';}}
   const ov=document.getElementById('batch-drv-overall');
   if(ov)ov.style.display='flex';
-  const ovTxt=document.getElementById('batch-drv-overall-txt');
-  const ovPct=document.getElementById('batch-drv-overall-pct');
-  const ovBar=document.getElementById('batch-drv-overall-bar');
+  updateBatchOverallProgress();
 
   const prevEditId=state.editId;
-  const initialDone=(state.batchQueue||[]).filter(it=>it.status==='done').length;
   let newlyDone=0;
-  for(let i=0;i<state.batchQueue.length;i++){{
-    if(state.batchCancel)break;
-    const item=state.batchQueue[i];
-    if(!item.recordId||item.status==='done')continue;
-    const row=(state.recs||[]).find(r=>r._id===item.recordId);
-    const cell=document.getElementById('batch-drv-st-'+i);
-    item.status='uploading';item.pct=0;item.msg='Starting...';
-    updateBatchRowStatusCell(cell,item);
 
-    state.editId=item.recordId;
-    try{{
-      if(item.isFolder){{
-        const files=item.files||[];
-        const subName=item.folderName||(row?.docNo||'Document_Folder');
-        let fDone=0;
-        let lastRes=null;
-        for(let fi=0;fi<files.length;fi++){{
-          if(state.batchCancel)break;
-          const subFile=files[fi];
-          lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl)=>{{
-            const subPct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-            item.pct=Math.round(((fi+(total>0?done/total:0))/files.length)*100);
-            item.msg=`Uploading file ${{fi+1}}/${{files.length}}: ${{subFile.name}} (${{item.pct}}%)`;
-            updateBatchRowStatusCell(cell,item);
-          }},{{subfolder_name:subName,link_as_folder:true}});
-          fDone++;
+  try{{
+    while(!state.batchCancel){{
+      const item=(state.batchQueue||[]).find(it=>it.recordId&&it.status==='ready');
+      if(!item)break; // Finished all ready matched items
+
+      state.batchCurrentItem=item;
+      state.batchCurrentAbort=new AbortController();
+      item.status='uploading';item.pct=0;item.msg='Starting...';
+
+      const cell=document.getElementById('batch-drv-st-'+item.id);
+      const actCell=document.getElementById('batch-drv-act-'+item.id);
+      const inpEl=document.getElementById('batch-drv-inp-'+item.id);
+      if(inpEl)inpEl.disabled=true;
+      if(cell)updateBatchRowStatusCell(cell,item);
+      if(actCell)renderBatchRowActionCell(actCell,item);
+
+      const row=(state.recs||[]).find(r=>r._id===item.recordId);
+      state.editId=item.recordId;
+
+      try{{
+        if(item.isFolder){{
+          const files=item.files||[];
+          const subName=item.folderName||(row?.docNo||'Document_Folder');
+          let fDone=0;
+          let lastRes=null;
+          for(let fi=0;fi<files.length;fi++){{
+            if(state.batchCancel||item.status==='cancelled')break;
+            const subFile=files[fi];
+            lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl)=>{{
+              const subPct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+              item.pct=Math.round(((fi+(total>0?done/total:0))/files.length)*100);
+              item.msg=`Uploading file ${{fi+1}}/${{files.length}}: ${{subFile.name}} (${{item.pct}}%)`;
+              if(cell)updateBatchRowStatusCell(cell,item);
+            }},{{subfolder_name:subName,link_as_folder:true,signal:state.batchCurrentAbort.signal}});
+            fDone++;
+          }}
+          if(state.batchCancel||item.status==='cancelled'){{
+            item.status='cancelled';
+            item.msg=`⏹ Cancelled (${{fDone}}/${{files.length}} files)`;
+          }}else{{
+            if(row&&lastRes&&lastRes.attachment){{
+              row.attachments=lastRes.attachments||row.attachments||{{}};
+              if(!row.fileLocation&&lastRes.attachment.url)row.fileLocation=lastRes.attachment.url;
+            }}
+            item.status='done';item.pct=100;item.msg=`✓ Linked Folder (${{fDone}} files)`;
+            newlyDone++;
+          }}
+        }}else{{
+          const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl)=>{{
+            item.pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+            item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
+            if(cell)updateBatchRowStatusCell(cell,item);
+            updateBatchOverallProgress();
+          }},{{signal:state.batchCurrentAbort.signal}});
+          if(state.batchCancel||item.status==='cancelled'){{
+            item.status='cancelled';
+            item.msg='⏹ Cancelled';
+          }}else{{
+            if(row&&res&&res.attachment){{
+              row.attachments=res.attachments||row.attachments||{{}};
+              if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
+            }}
+            item.status='done';item.pct=100;item.msg='✓ Uploaded & Linked';
+            newlyDone++;
+          }}
         }}
-        if(row&&lastRes&&lastRes.attachment){{
-          row.attachments=lastRes.attachments||row.attachments||{{}};
-          if(!row.fileLocation&&lastRes.attachment.url)row.fileLocation=lastRes.attachment.url;
+      }}catch(err){{
+        if(item.status==='cancelled'||err.name==='AbortError'){{
+          item.status='cancelled';
+          item.msg='⏹ Cancelled';
+        }}else{{
+          item.status='error';
+          item.msg='✕ '+(err.message||'Failed');
         }}
-        item.status='done';item.pct=100;item.msg=`✓ Linked Folder (${{fDone}} files)`;
-        newlyDone++;
-        updateBatchRowStatusCell(cell,item);
-      }}else{{
-        const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl)=>{{
-          item.pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-          item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
-          updateBatchRowStatusCell(cell,item);
-          const totalMatched=(state.batchQueue||[]).filter(it=>it.recordId).length||1;
-          const overallRatio=((initialDone+newlyDone+(total>0?done/total:0))/totalMatched)*100;
-          if(ovBar)ovBar.style.width=Math.min(100,Math.round(overallRatio))+'%';
-          if(ovPct)ovPct.textContent=Math.min(100,Math.round(overallRatio))+'%';
-          if(ovTxt)ovTxt.textContent=`Uploading file ${{initialDone+newlyDone+1}} of ${{totalMatched}}...`;
-        }});
-        if(row&&res&&res.attachment){{
-          row.attachments=res.attachments||row.attachments||{{}};
-          if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
-        }}
-        item.status='done';item.pct=100;item.msg='✓ Uploaded & Linked';
-        newlyDone++;
-        updateBatchRowStatusCell(cell,item);
+      }}finally{{
+        state.batchCurrentAbort=null;
+        state.batchCurrentItem=null;
+        if(cell)updateBatchRowStatusCell(cell,item);
+        if(actCell)renderBatchRowActionCell(actCell,item);
+        updateBatchOverallProgress();
+        updateBatchControlsState();
       }}
-      const totalMatched=(state.batchQueue||[]).filter(it=>it.recordId).length||1;
-      const currDone=initialDone+newlyDone;
-      if(ovBar)ovBar.style.width=Math.round((currDone/totalMatched)*100)+'%';
-      if(ovPct)ovPct.textContent=Math.round((currDone/totalMatched)*100)+'%';
-      if(ovTxt)ovTxt.textContent=`Completed ${{currDone}} of ${{totalMatched}} file(s)`;
-    }}catch(e){{
-      item.status='error';item.msg='✕ '+(e.message||'Failed');
-      updateBatchRowStatusCell(cell,item);
+    }}
+  }}finally{{
+    state.batchRunning=false;
+    state.batchCancel=false;
+    state.batchCurrentAbort=null;
+    state.batchCurrentItem=null;
+    state.editId=prevEditId;
+    if(spBtn)spBtn.classList.add('hidden');
+    renderBatchDriveTable(); // CRITICAL: re-enables inputs and buttons!
+    updateBatchControlsState();
+    renderRows();
+    if(newlyDone>0){{
+      toast(`Batch upload completed (${{newlyDone}} linked)`,'ok');
+    }}else if(state.batchCancel){{
+      toast('Upload queue stopped','wa');
     }}
   }}
-  state.editId=prevEditId;
-  state.batchRunning=false;
-  if(spBtn)spBtn.classList.add('hidden');
-  updateBatchControlsState();
-  renderRows();
-  toast(`Batch upload finished (${{newlyDone}} linked)`,'ok');
 }}
 
 async function saveRecord(){{
