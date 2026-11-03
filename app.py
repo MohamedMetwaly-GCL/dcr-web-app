@@ -18,6 +18,7 @@ from blueprints.logos import logos_bp
 from blueprints.users import users_bp
 from blueprints.exporting import exporting_bp
 from blueprints.ai import ai_bp
+from blueprints.drive_uploads import drive_uploads_bp
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -33,6 +34,7 @@ app.register_blueprint(logos_bp)
 app.register_blueprint(users_bp)
 app.register_blueprint(exporting_bp)
 app.register_blueprint(ai_bp, url_prefix="/api/ai")
+app.register_blueprint(drive_uploads_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import current_user, can_edit, can_view_project, get_allowed_project_ids

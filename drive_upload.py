@@ -201,3 +201,62 @@ def upload_stream_resumable(session_url, fileobj, total, chunk_size=DEFAULT_CHUN
                     return done
                 break                            # re-read chunk from the confirmed offset
     raise DriveUploadError("Upload ended without completion response", reason="incomplete")
+
+
+
+class _RestExec:
+    def __init__(self, fn):
+        self._fn = fn
+
+    def execute(self):
+        return self._fn()
+
+
+class RestDriveAdapter:
+    """Minimal Drive v3 adapter over requests, matching .files().list/get/create().execute()
+    expected by drive_routing.py. Works with both OAuth and Service Account tokens."""
+    def __init__(self, token, http=requests):
+        self.token, self.http = token, http
+
+    def files(self):
+        outer = self
+
+        class _Files:
+            def list(self, q, fields="nextPageToken, files(id, name)", pageSize=1000, pageToken=None, **kw):
+                def _run():
+                    params = {"q": q, "fields": fields, "pageSize": pageSize,
+                              "supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}
+                    if pageToken:
+                        params["pageToken"] = pageToken
+                    r = outer.http.get(FILES_URL, params=params, headers=_auth(outer.token), timeout=30)
+                    if r.status_code != 200:
+                        _raise_for(r, "files.list")
+                    return r.json()
+                return _RestExec(_run)
+
+            def get(self, fileId, fields="id, mimeType, trashed", **kw):
+                return _RestExec(lambda: get_file(outer.token, fileId, fields=fields, http=outer.http))
+
+            def create(self, body, fields="id, name", **kw):
+                def _run():
+                    r = outer.http.post(FILES_URL, params={"fields": fields, "supportsAllDrives": "true"},
+                                        headers=_auth(outer.token, {"Content-Type": "application/json; charset=UTF-8"}),
+                                        data=json.dumps(body), timeout=30)
+                    if r.status_code not in (200, 201):
+                        _raise_for(r, "files.create")
+                    return r.json()
+                return _RestExec(_run)
+        return _Files()
+
+
+def forward_chunk(session_url, chunk_bytes, content_range, http=requests):
+    """Forward a single chunk (or status probe when chunk_bytes is empty) to a Drive session URL."""
+    headers = {"Content-Length": str(len(chunk_bytes)), "Content-Range": content_range}
+    r = http.put(session_url, data=chunk_bytes, headers=headers, timeout=300)
+    if r.status_code in (200, 201):
+        return {"status": r.status_code, "done": True, "file": r.json()}
+    if r.status_code == 308:
+        rng = r.headers.get("Range") or ""
+        offset = (int(rng.split("-")[1]) + 1) if "-" in rng else 0
+        return {"status": 308, "done": False, "range": rng, "offset": offset}
+    _raise_for(r, "upload chunk")

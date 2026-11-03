@@ -139,3 +139,22 @@ c = U.get_upload_credentials(env={"DRIVE_UPLOAD_AUTH": "oauth", "GOOGLE_OAUTH_CL
 assert c.refresh_token == "rt" and c.scopes == U.WRITE_SCOPES
 assert "rt" not in repr(U.DriveUploadError("x"))
 print("ALL DRIVE UPLOAD TESTS PASSED")
+
+
+# ---- RestDriveAdapter + forward_chunk (Step 10)
+h = FakeHTTP([
+    Resp(200, {"files": [{"id": "F1", "name": "01 - SD"}]}),
+    Resp(200, {"id": "F1", "mimeType": "application/vnd.google-apps.folder", "trashed": False}),
+    Resp(201, {"id": "F2", "name": "Submit"}),
+    Resp(308, {}, {"Range": "bytes=0-262143"}),
+    Resp(200, {"id": "UP_DONE"}),
+])
+ad = U.RestDriveAdapter("TOK", http=h)
+assert ad.files().list(q="x").execute()["files"][0]["id"] == "F1"
+assert ad.files().get(fileId="F1").execute()["trashed"] is False
+assert ad.files().create(body={"name": "Submit"}).execute()["id"] == "F2"
+r1 = U.forward_chunk("https://s", b"x" * 10, "bytes 0-9/20", http=h)
+assert r1["status"] == 308 and r1["done"] is False and r1["offset"] == 262144
+r2 = U.forward_chunk("https://s", b"x" * 10, "bytes 10-19/20", http=h)
+assert r2["status"] == 200 and r2["done"] is True and r2["file"]["id"] == "UP_DONE"
+print("RestDriveAdapter + forward_chunk OK")
