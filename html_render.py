@@ -10065,8 +10065,10 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input type="file" id="batch-drv-input" multiple style="display:none" onchange="onBatchFilesSelected(this.files)">
-        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-input').click()">📁 Select Files (PDF / ZIP / DWG up to 1 GB each)</button>
-        <span id="batch-drv-summary" style="font-size:11px;color:var(--mu)">Files are matched to records automatically by Document No.</span>
+        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-input').click()">📄 Select Files (PDF / ZIP / DWG)</button>
+        <input type="file" id="batch-drv-folder-input" webkitdirectory directory multiple style="display:none" onchange="onBatchFolderSelected(this.files)">
+        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-folder-input').click()" style="border-color:#0f766e;color:#0f766e">📁 Select Folder (مجلد كامل للمستند)</button>
+        <span id="batch-drv-summary" style="font-size:11px;color:var(--mu)">Files or Folders are matched to records automatically by Document No.</span>
       </div>
       <div id="batch-drv-overall" style="display:none;flex-direction:column;gap:4px;background:#f1f5f9;padding:8px 10px;border-radius:6px">
         <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--pr)">
@@ -12620,8 +12622,11 @@ function _fmtBytes(b){{
 
 function _resolveSlotLinks(entry){{
   if(!entry||typeof entry!=='object')return ['',''];
-  if(entry.file_id)return ['https://drive.google.com/file/d/'+entry.file_id+'/view','https://drive.google.com/uc?export=download&id='+entry.file_id];
   const u=String(entry.url||'').trim();
+  if(entry.is_folder || u.indexOf('/folders/')>-1){{
+    return [u||('https://drive.google.com/drive/folders/'+(entry.folder_id||entry.file_id)), ''];
+  }}
+  if(entry.file_id)return ['https://drive.google.com/file/d/'+entry.file_id+'/view','https://drive.google.com/uc?export=download&id='+entry.file_id];
   if(!u||u==='#'||u.toLowerCase()==='null'||u.toLowerCase()==='none')return ['',''];
   let dl='';
   if(u.indexOf('/d/')>-1&&u.indexOf('/folders/')<0)dl='https://drive.google.com/uc?export=download&id='+u.split('/d/')[1].split('/')[0].split('?')[0];
@@ -12743,15 +12748,20 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       }}
       const nameSpan=document.createElement('span');
       nameSpan.style.cssText='font-weight:600;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-      nameSpan.textContent=entry.file_name||(entry.legacy?'Linked Drive File':'Attached File');
+      if(entry.is_folder || vUrl.includes('/folders/')){{
+        const fCount=entry.file_count?` (${entry.file_count} files)`:'';
+        nameSpan.textContent='📁 '+(entry.folder_name||entry.file_name||'Document Folder')+fCount;
+      }}else{{
+        nameSpan.textContent=entry.file_name||(entry.legacy?'Linked Drive File':'Attached File');
+        if(entry.file_size)nameSpan.textContent+=' ('+_fmtBytes(entry.file_size)+')';
+      }}
       nameSpan.title=entry.file_name||vUrl;
-      if(entry.file_size)nameSpan.textContent+=' ('+_fmtBytes(entry.file_size)+')';
       statusLine.appendChild(nameSpan);
 
       const vA=document.createElement('a');
       vA.href=vUrl;vA.target='_blank';vA.rel='noopener';
       vA.style.cssText=`padding:2px 8px;border-radius:4px;background:#fff;border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:10px`;
-      vA.textContent='👁 View';
+      vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'👁 View Folder':'👁 View';
       vA.onclick=()=>logFileAction('DRIVE_LINK_CLICK',row?.docNo||row?.nocNo||'',vUrl);
       statusLine.appendChild(vA);
 
@@ -12859,9 +12869,69 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         }}
       }};
 
+      const folderInp=document.createElement('input');
+      folderInp.type='file';folderInp.setAttribute('webkitdirectory','');folderInp.setAttribute('directory','');folderInp.style.display='none';
+      const fldBtn=document.createElement('button');
+      fldBtn.type='button';
+      fldBtn.className='btn btn-sc btn-sm';
+      fldBtn.style.cssText=`font-size:11px;padding:4px 8px;border-color:#0f766e;color:#0f766e;background:#fff`;
+      fldBtn.textContent='📁 Upload Folder';
+      fldBtn.title='Upload an uncompressed folder of files for this document';
+      fldBtn.onclick=()=>folderInp.click();
+
+      folderInp.onchange=async()=>{{
+        const fls=Array.from(folderInp.files||[]);
+        if(!fls.length)return;
+        const subName=row?.docNo||row?.nocNo||(fls[0].webkitRelativePath?fls[0].webkitRelativePath.split('/')[0]:'Document_Files');
+        upBtn.disabled=true;fldBtn.disabled=true;
+        progWrap.style.display='flex';
+        progBarInner.style.width='0%';
+        progTxt.style.color='#475569';
+        progTxt.textContent=`Starting folder upload (${fls.length} files)...`;
+        state.activeDriveUploads=(state.activeDriveUploads||0)+1;
+        try{{
+          let lastRes=null;
+          for(let fi=0;fi<fls.length;fi++){{
+            const f=fls[fi];
+            lastRes=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
+              const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+              const overall=Math.round(((fi+(total>0?done/total:0))/fls.length)*100);
+              progBarInner.style.width=overall+'%';
+              progTxt.textContent=`Uploading file ${fi+1}/${fls.length}: ${f.name} (${overall}%)`;
+            }},{{subfolder_name:subName,link_as_folder:true}});
+          }}
+          if(lastRes&&lastRes.pending){{
+            lastRes.is_folder=true;lastRes.folder_name=subName;lastRes.file_count=fls.length;
+            state.pendingDriveAttachments[s.key]=lastRes;
+            renderSlotInfo(null,lastRes);
+            progTxt.textContent=`✓ Uploaded ${fls.length} files — click Save to finish`;
+          }}else if(lastRes&&lastRes.attachment){{
+            cur[s.key]=lastRes.attachment;
+            if(row){{
+              row.attachments=lastRes.attachments||row.attachments||{{}};
+              if(!row.fileLocation&&lastRes.attachment.url)row.fileLocation=lastRes.attachment.url;
+            }}
+            renderSlotInfo(lastRes.attachment,null);
+            progTxt.textContent=`✓ Attached folder (${fls.length} files)`;
+            renderRows();
+            toast(`Folder uploaded and linked (${fls.length} files)`,'ok');
+          }}
+        }}catch(e){{
+          progTxt.style.color='#dc2626';
+          progTxt.textContent='✕ Upload failed: '+(e.message||e);
+          toast('Upload failed: '+(e.message||e),'er');
+        }}finally{{
+          state.activeDriveUploads=Math.max(0,(state.activeDriveUploads||1)-1);
+          upBtn.disabled=false;fldBtn.disabled=false;
+          folderInp.value='';
+        }}
+      }};
+
       ctrl.appendChild(upBtn);
+      ctrl.appendChild(fldBtn);
       ctrl.appendChild(progWrap);
       ctrl.appendChild(fileInp);
+      ctrl.appendChild(folderInp);
       card.appendChild(ctrl);
     }}
     renderSlotInfo(cur[s.key],null);
@@ -12931,7 +13001,7 @@ async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,
   throw new Error('Network interrupted during chunk upload');
 }}
 
-async function uploadFileToDriveSlot(slot,file,row,onProgress){{
+async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
   const sessRes=await fetch('/api/drive/upload-session',{{
     method:'POST',
     headers:{{'Content-Type':'application/json'}},
@@ -12943,7 +13013,9 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress){{
       file_name:file.name,
       file_size:file.size,
       mime_type:file.type||'application/octet-stream',
-      create_folders:true
+      create_folders:true,
+      subfolder_name:extraOpts.subfolder_name||'',
+      link_as_folder:Boolean(extraOpts.link_as_folder)
     }})
   }});
   const sess=await sessRes.json().catch(()=>({{}}));
@@ -12960,13 +13032,27 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress){{
   if(!fileId)throw new Error('Upload finished without a Drive file ID');
 
   if(!state.editId){{
-    return {{pending:true,upload_ticket:sess.upload_ticket,file_id:fileId,file_name:file.name,file_size:file.size,slot:slot}};
+    return {{
+      pending:true,
+      upload_ticket:sess.upload_ticket,
+      file_id:fileId,
+      file_name:file.name,
+      file_size:file.size,
+      slot:slot,
+      is_folder:Boolean(extraOpts.link_as_folder),
+      folder_name:extraOpts.subfolder_name||''
+    }};
   }}
   onProgress(file.size,file.size,'Linking file to record...');
   const cmpRes=await fetch('/api/drive/upload-complete',{{
     method:'POST',
     headers:{{'Content-Type':'application/json'}},
-    body:JSON.stringify({{upload_ticket:sess.upload_ticket,file_id:fileId,record_id:state.editId}})
+    body:JSON.stringify({{
+      upload_ticket:sess.upload_ticket,
+      file_id:fileId,
+      record_id:state.editId,
+      link_as_folder:Boolean(extraOpts.link_as_folder)
+    }})
   }});
   const cmp=await cmpRes.json().catch(()=>({{}}));
   if(!cmpRes.ok||!cmp.ok)throw new Error(cmp.hint||cmp.error||'Failed to attach file to record');
@@ -13134,6 +13220,7 @@ function onBatchFilesSelected(fileList){{
   const arr=Array.from(fileList);
   state.batchQueue=arr.map((file,idx)=>({{
     idx:idx,
+    isFolder:false,
     file:file,
     recordId:extractDocNoFromFilename(file.name,recs),
     status:'ready',
@@ -13142,6 +13229,41 @@ function onBatchFilesSelected(fileList){{
   }}));
   renderBatchDriveTable();
   updateBatchControlsState();
+}}
+
+function onBatchFolderSelected(fileList){{
+  if(!fileList||!fileList.length)return;
+  const arr=Array.from(fileList);
+  const recs=state.recs||[];
+  const groups={{}};
+  arr.forEach(f=>{{
+    const rel=f.webkitRelativePath||f.name;
+    const folder=rel.includes('/')?rel.split('/')[0]:'Folder';
+    if(!groups[folder])groups[folder]=[];
+    groups[folder].push(f);
+  }});
+
+  const newItems=Object.keys(groups).map((fName,idx)=>{{
+    const files=groups[fName];
+    const totalSize=files.reduce((sum,f)=>sum+(f.size||0),0);
+    const recId=extractDocNoFromFilename(fName,recs);
+    return {{
+      idx:idx,
+      isFolder:true,
+      folderName:fName,
+      file:{{name:'📁 '+fName, size:totalSize}},
+      files:files,
+      fileCount:files.length,
+      recordId:recId,
+      status:'ready',
+      pct:0,
+      msg:`Ready (${files.length} uncompressed files)`
+    }};
+  }});
+  state.batchQueue=newItems;
+  renderBatchDriveTable();
+  updateBatchControlsState();
+  toast(`Queued folder (${arr.length} files ready for uncompressed upload)`,'ok');
 }}
 
 function renderBatchDriveTable(){{
@@ -13298,23 +13420,48 @@ async function startBatchDriveUpload(){{
 
     state.editId=item.recordId;
     try{{
-      const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl)=>{{
-        item.pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-        item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
+      if(item.isFolder){{
+        const files=item.files||[];
+        const subName=item.folderName||(row?.docNo||'Document_Folder');
+        let fDone=0;
+        let lastRes=null;
+        for(let fi=0;fi<files.length;fi++){{
+          if(state.batchCancel)break;
+          const subFile=files[fi];
+          lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl)=>{{
+            const subPct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+            item.pct=Math.round(((fi+(total>0?done/total:0))/files.length)*100);
+            item.msg=`Uploading file ${fi+1}/${files.length}: ${subFile.name} (${item.pct}%)`;
+            updateBatchRowStatusCell(cell,item);
+          }},{{subfolder_name:subName,link_as_folder:true}});
+          fDone++;
+        }}
+        if(row&&lastRes&&lastRes.attachment){{
+          row.attachments=lastRes.attachments||row.attachments||{{}};
+          if(!row.fileLocation&&lastRes.attachment.url)row.fileLocation=lastRes.attachment.url;
+        }}
+        item.status='done';item.pct=100;item.msg=`✓ Linked Folder (${fDone} files)`;
+        newlyDone++;
         updateBatchRowStatusCell(cell,item);
-        const totalMatched=(state.batchQueue||[]).filter(it=>it.recordId).length||1;
-        const overallRatio=((initialDone+newlyDone+(total>0?done/total:0))/totalMatched)*100;
-        if(ovBar)ovBar.style.width=Math.min(100,Math.round(overallRatio))+'%';
-        if(ovPct)ovPct.textContent=Math.min(100,Math.round(overallRatio))+'%';
-        if(ovTxt)ovTxt.textContent=`Uploading file ${{initialDone+newlyDone+1}} of ${{totalMatched}}...`;
-      }});
-      if(row&&res&&res.attachment){{
-        row.attachments=res.attachments||row.attachments||{{}};
-        if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
+      }}else{{
+        const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl)=>{{
+          item.pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+          item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
+          updateBatchRowStatusCell(cell,item);
+          const totalMatched=(state.batchQueue||[]).filter(it=>it.recordId).length||1;
+          const overallRatio=((initialDone+newlyDone+(total>0?done/total:0))/totalMatched)*100;
+          if(ovBar)ovBar.style.width=Math.min(100,Math.round(overallRatio))+'%';
+          if(ovPct)ovPct.textContent=Math.min(100,Math.round(overallRatio))+'%';
+          if(ovTxt)ovTxt.textContent=`Uploading file ${{initialDone+newlyDone+1}} of ${{totalMatched}}...`;
+        }});
+        if(row&&res&&res.attachment){{
+          row.attachments=res.attachments||row.attachments||{{}};
+          if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
+        }}
+        item.status='done';item.pct=100;item.msg='✓ Uploaded & Linked';
+        newlyDone++;
+        updateBatchRowStatusCell(cell,item);
       }}
-      item.status='done';item.pct=100;item.msg='✓ Uploaded & Linked';
-      newlyDone++;
-      updateBatchRowStatusCell(cell,item);
       const totalMatched=(state.batchQueue||[]).filter(it=>it.recordId).length||1;
       const currDone=initialDone+newlyDone;
       if(ovBar)ovBar.style.width=Math.round((currDone/totalMatched)*100)+'%';

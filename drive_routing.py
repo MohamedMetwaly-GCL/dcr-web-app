@@ -112,11 +112,13 @@ def create_folder(service, parent_id, name):
 
 
 # ---------------- Orchestration ----------------
-def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missing=False):
-    """Return {'folder_id', 'doc_type_folder_id', 'source'} or raise RoutingError.
+def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missing=False, subfolder_name=None):
+    """Return {'folder_id', 'doc_type_folder_id', 'source', ...} or raise RoutingError.
 
     store must provide: get_project(pid), get_doc_type(pid, dt_id),
     set_doc_type_drive_cache(pid, dt_id, patch_dict).
+    If subfolder_name is provided, creates/finds a subfolder with that name (e.g. Doc No)
+    inside the destination folder and returns its folder_id.
     """
     if slot not in SLOT_KEYWORDS:
         raise RoutingError("invalid_slot")
@@ -168,4 +170,30 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
 
     if patch:
         store.set_doc_type_drive_cache(pid, dt_id, patch)
-    return {"folder_id": slot_id, "doc_type_folder_id": dt_folder_id, "source": source}
+
+    # 3) Optional subfolder per document (e.g. DS-CY002P608-00001 REV00)
+    target_folder_id = slot_id
+    subfolder_id = None
+    if subfolder_name:
+        clean_sub = str(subfolder_name).strip()
+        if clean_sub:
+            children = list_child_folders(service, slot_id)
+            match = next((f for f in children if str(f.get("name", "")).strip().lower() == clean_sub.lower()), None)
+            if match is None:
+                if not create_if_missing:
+                    raise RoutingError("subfolder_not_found")
+                match = create_folder(service, slot_id, clean_sub)
+                source = "created"
+            subfolder_id = match["id"]
+            target_folder_id = subfolder_id
+
+    result = {
+        "folder_id": target_folder_id,
+        "doc_type_folder_id": dt_folder_id,
+        "slot_folder_id": slot_id,
+        "source": source
+    }
+    if subfolder_id:
+        result["subfolder_id"] = subfolder_id
+        result["subfolder_name"] = str(subfolder_name).strip()
+    return result

@@ -101,6 +101,8 @@ def api_create_upload_session():
     dt_id = str(body.get("dt_id") or "").strip()
     record_id = str(body.get("record_id") or "").strip()
     slot = str(body.get("slot") or attachments.SLOT_SUBMISSION).strip().lower()
+    subfolder_name = str(body.get("subfolder_name") or "").strip()
+    link_as_folder = bool(body.get("link_as_folder", False))
     mime_type = str(body.get("mime_type") or "application/octet-stream").strip()
     create_folders = bool(body.get("create_folders", True))
 
@@ -145,7 +147,8 @@ def api_create_upload_session():
         http = _get_http()
         service = drive_upload.RestDriveAdapter(token, http=http)
         dest = drive_routing.resolve_upload_destination(
-            pid, dt_id, slot, service, db, create_if_missing=create_folders)
+            pid, dt_id, slot, service, db, create_if_missing=create_folders,
+            subfolder_name=subfolder_name or None)
         session_url = drive_upload.create_resumable_session(
             token, dest["folder_id"], clean_name, mime_type, file_size,
             origin=request.headers.get("Origin"), http=http)
@@ -160,6 +163,9 @@ def api_create_upload_session():
         "record_id": record_id,
         "slot": slot,
         "folder_id": dest["folder_id"],
+        "subfolder_id": dest.get("subfolder_id", ""),
+        "subfolder_name": dest.get("subfolder_name", ""),
+        "link_as_folder": link_as_folder,
         "file_name": clean_name,
         "file_size": file_size,
         "mime_type": mime_type,
@@ -257,6 +263,17 @@ def api_upload_complete():
     if slot == attachments.SLOT_APPROVAL and rec.get("status"):
         extra["consultant_status"] = str(rec.get("status"))
 
+    # Folder / Multi-file attachment handling
+    if t.get("link_as_folder") and (t.get("subfolder_id") or t.get("folder_id")):
+        fid = t.get("subfolder_id") or t["folder_id"]
+        folder_url = f"https://drive.google.com/drive/folders/{fid}"
+        extra["is_folder"] = True
+        extra["folder_id"] = fid
+        extra["folder_name"] = t.get("subfolder_name") or t["file_name"]
+        extra["folder_url"] = folder_url
+        extra["url"] = folder_url
+        view_url = folder_url
+
     meta = attachments.build_attachment_meta(
         file_id=file_id,
         name=remote.get("name") or t["file_name"],
@@ -266,8 +283,18 @@ def api_upload_complete():
         **extra,
     )
 
-    # Preserve legacy single fileLocation as submission if attaching an approval to an old record
+    # If this record already has a folder attachment in this slot, track all files inside it
     existing_att = rec.get("attachments") if isinstance(rec.get("attachments"), dict) else {}
+    existing_slot = existing_att.get(slot) if isinstance(existing_att.get(slot), dict) else None
+    if existing_slot and existing_slot.get("is_folder") and (existing_slot.get("folder_id") == extra.get("folder_id")):
+        files_list = list(existing_slot.get("files") or [])
+        files_list.append({"name": meta["file_name"], "size": meta["file_size"], "id": file_id})
+        meta["files"] = files_list
+        meta["file_count"] = len(files_list)
+        meta["file_size"] = sum(f.get("size", 0) for f in files_list)
+        meta["file_name"] = existing_slot.get("file_name") or extra.get("folder_name")
+
+    # Preserve legacy single fileLocation as submission if attaching an approval to an old record
     old_loc = attachments._clean_link(rec.get("fileLocation"))
     if slot == attachments.SLOT_APPROVAL and not existing_att.get(attachments.SLOT_SUBMISSION) and old_loc and old_loc != view_url:
         db.set_record_attachment(record_id, attachments.SLOT_SUBMISSION, {"url": old_loc, "legacy": True})
