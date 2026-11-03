@@ -10061,7 +10061,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 {SHARED_JS}
 <script>
 window._ACCESSIBLE_PROJECTS = {projs_json};
-const PID='{pid}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
+const PID='{pid}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
 const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
   'Accepted & to proceed with Part C':['bbf7d0','166534'],
@@ -12040,6 +12040,7 @@ async function buildForm(row,opts={{}}){{
     initPrItemsEditor([], legacyText);
     if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
   }}
+  mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts,{isNocTab});
   if(!isNocTab)compactSingleFieldFormSections(formRoot);
   if(opts && opts.readonly){{
     formRoot.querySelectorAll('input, select, textarea').forEach(el=>{{
@@ -12536,8 +12537,305 @@ function durChoice(docNo){{
   }});
 }}
 
+function _fmtBytes(b){{
+  const n=Number(b||0);
+  if(n>=1073741824)return (n/1073741824).toFixed(2)+' GB';
+  if(n>=1048576)return (n/1048576).toFixed(1)+' MB';
+  if(n>=1024)return (n/1024).toFixed(0)+' KB';
+  return n+' B';
+}}
+
+function _resolveSlotLinks(entry){{
+  if(!entry||typeof entry!=='object')return ['',''];
+  if(entry.file_id)return ['https://drive.google.com/file/d/'+entry.file_id+'/view','https://drive.google.com/uc?export=download&id='+entry.file_id];
+  const u=String(entry.url||'').trim();
+  if(!u||u==='#'||u.toLowerCase()==='null'||u.toLowerCase()==='none')return ['',''];
+  let dl='';
+  if(u.indexOf('/d/')>-1&&u.indexOf('/folders/')<0)dl='https://drive.google.com/uc?export=download&id='+u.split('/d/')[1].split('/')[0].split('?')[0];
+  return [u,dl];
+}}
+
+function _normalizeRowAttachments(row){{
+  const att=(row&&row.attachments&&typeof row.attachments==='object')?row.attachments:{{}};
+  let sub=att.submission||null;
+  const app=att.approval||null;
+  if(!sub&&row&&row.fileLocation){{
+    const leg=String(row.fileLocation||'').trim();
+    if(leg&&leg!=='#'&&leg.toLowerCase()!=='null'&&leg.toLowerCase()!=='none')sub={{url:leg,file_name:'Current Drive Link',legacy:true}};
+  }}
+  return {{submission:sub,approval:app}};
+}}
+
+function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}}){{
+  state.pendingDriveAttachments={{}};
+  state.activeDriveUploads=0;
+  const secTitle=ctx.isNocTab?'Remarks / Files':'Files / Notes';
+  const secBody=getOrCreateFormSection(formRoot,sectionBodies,secTitle);
+  const wrap=document.createElement('div');
+  wrap.className='fg full';
+  wrap.id='dcr-drive-upload-box';
+  const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
+  const slots=isEng
+    ? [{{key:'submission',title:'1. Submission Document (مستند التقديم)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
+       {{key:'approval',title:'2. Consultant Approval / Reply (رد واعتماد الاستشاري)',color:'#16a34a',bg:'#f0fdf4',bd:'#bbf7d0'}}]
+    : [{{key:'submission',title:'Document Attachment (مرفق المستند)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}}];
+  const cur=_normalizeRowAttachments(row);
+  const grid=document.createElement('div');
+  grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:6px';
+
+  slots.forEach(s=>{{
+    const card=document.createElement('div');
+    card.style.cssText=`border:1px solid ${{s.bd}};background:${{s.bg}};border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px`;
+    const hdr=document.createElement('div');
+    hdr.style.cssText=`font-size:11px;font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center`;
+    hdr.textContent=s.title;
+    card.appendChild(hdr);
+
+    const statusLine=document.createElement('div');
+    statusLine.id='drv-slot-info-'+s.key;
+    statusLine.style.cssText='font-size:11px;color:#334155;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:22px';
+    card.appendChild(statusLine);
+
+    const renderSlotInfo=(entry,pending)=>{{
+      statusLine.innerHTML='';
+      if(pending){{
+        const b=document.createElement('span');
+        b.style.cssText='font-weight:600;color:#0f766e';
+        b.textContent='✓ Uploaded ('+pending.file_name+') — will link on Save';
+        statusLine.appendChild(b);
+        return;
+      }}
+      const [vUrl,dlUrl]=_resolveSlotLinks(entry);
+      if(!vUrl){{
+        const empty=document.createElement('span');
+        empty.style.cssText='color:#64748b;font-style:italic';
+        empty.textContent=s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet';
+        statusLine.appendChild(empty);
+        return;
+      }}
+      const nameSpan=document.createElement('span');
+      nameSpan.style.cssText='font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      nameSpan.textContent=entry.file_name||(entry.legacy?'Linked Drive File':'Attached File');
+      if(entry.file_size)nameSpan.textContent+=' ('+_fmtBytes(entry.file_size)+')';
+      statusLine.appendChild(nameSpan);
+
+      const vA=document.createElement('a');
+      vA.href=vUrl;vA.target='_blank';vA.rel='noopener';
+      vA.style.cssText=`padding:2px 8px;border-radius:4px;background:#fff;border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:10px`;
+      vA.textContent='👁 View';
+      vA.onclick=()=>logFileAction('DRIVE_LINK_CLICK',row?.docNo||row?.nocNo||'',vUrl);
+      statusLine.appendChild(vA);
+
+      if(dlUrl){{
+        const dA=document.createElement('a');
+        dA.href=dlUrl;dA.target='_blank';dA.rel='noopener';
+        dA.style.cssText='padding:2px 8px;border-radius:4px;background:#fff;border:1px solid #64748b;color:#334155;text-decoration:none;font-weight:600;font-size:10px';
+        dA.textContent='⬇ Download';
+        dA.onclick=()=>logFileAction('FILE_DOWNLOAD',row?.docNo||row?.nocNo||'',dlUrl);
+        statusLine.appendChild(dA);
+      }}
+    }};
+    renderSlotInfo(cur[s.key],null);
+
+    if(CAN_EDIT && !(opts&&opts.readonly)){{
+      const ctrl=document.createElement('div');
+      ctrl.style.cssText='display:flex;align-items:center;gap:8px;margin-top:2px';
+      const fileInp=document.createElement('input');
+      fileInp.type='file';fileInp.style.display='none';
+      const upBtn=document.createElement('button');
+      upBtn.type='button';
+      upBtn.className='btn btn-sc btn-sm';
+      upBtn.style.cssText=`font-size:11px;padding:4px 10px;border-color:${{s.color}};color:${{s.color}};background:#fff`;
+      upBtn.textContent=cur[s.key]?'🔄 Replace File':'📤 Upload File (up to 1 GB)';
+      upBtn.onclick=()=>fileInp.click();
+
+      const progWrap=document.createElement('div');
+      progWrap.style.cssText='flex:1;display:none;flex-direction:column;gap:3px';
+      const progBarOuter=document.createElement('div');
+      progBarOuter.style.cssText='width:100%;height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden';
+      const progBarInner=document.createElement('div');
+      progBarInner.style.cssText=`width:0%;height:100%;background:${{s.color}};transition:width .15s`;
+      progBarOuter.appendChild(progBarInner);
+      const progTxt=document.createElement('div');
+      progTxt.style.cssText='font-size:10px;color:#475569;font-weight:600';
+      progWrap.appendChild(progBarOuter);
+      progWrap.appendChild(progTxt);
+
+      fileInp.onchange=async()=>{{
+        const f=fileInp.files&&fileInp.files[0];
+        if(!f)return;
+        upBtn.disabled=true;
+        progWrap.style.display='flex';
+        progBarInner.style.width='0%';
+        progTxt.textContent='Starting upload session...';
+        state.activeDriveUploads=(state.activeDriveUploads||0)+1;
+        try{{
+          const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
+            const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+            progBarInner.style.width=pct+'%';
+            progTxt.textContent=label||(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
+          }});
+          if(res&&res.pending){{
+            state.pendingDriveAttachments[s.key]=res;
+            renderSlotInfo(null,res);
+            progTxt.textContent='✓ Uploaded 100% — click Save to finish';
+          }}else if(res&&res.attachment){{
+            if(row){{
+              row.attachments=res.attachments||row.attachments||{{}};
+              if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
+            }}
+            const flInp=document.getElementById('f-fileLocation');
+            if(flInp&&!flInp.value.trim()&&res.attachment.url)flInp.value=res.attachment.url;
+            renderSlotInfo(res.attachment,null);
+            upBtn.textContent='🔄 Replace File';
+            progTxt.textContent='✓ Attached & saved';
+            renderRows();
+            toast('File uploaded and linked ('+s.key+')','ok');
+          }}
+        }}catch(e){{
+          progTxt.style.color='#dc2626';
+          progTxt.textContent='✕ Upload failed: '+(e.message||e);
+          toast('Upload failed: '+(e.message||e),'er');
+        }}finally{{
+          state.activeDriveUploads=Math.max(0,(state.activeDriveUploads||1)-1);
+          upBtn.disabled=false;
+          fileInp.value='';
+        }}
+      }};
+
+      ctrl.appendChild(upBtn);
+      ctrl.appendChild(progWrap);
+      ctrl.appendChild(fileInp);
+      card.appendChild(ctrl);
+    }}
+    grid.appendChild(card);
+  }});
+  wrap.appendChild(grid);
+  secBody.insertBefore(wrap,secBody.firstChild);
+}}
+
+async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,onProgress,useProxyRef){{
+  const end=Math.min(offset+chunkSize,file.size);
+  const blob=file.slice(offset,end);
+  const contentRange=`bytes ${{offset}}-${{end-1}}/${{file.size}}`;
+  for(let attempt=0;attempt<5;attempt++){{
+    try{{
+      if(!useProxyRef.proxy){{
+        const r=await fetch(sessionUrl,{{
+          method:'PUT',
+          headers:{{'Content-Range':contentRange}},
+          body:blob
+        }});
+        if(r.status===308){{
+          const rng=r.headers.get('Range')||'';
+          const nextOff=rng.includes('-')?(parseInt(rng.split('-')[1],10)+1):end;
+          onProgress(nextOff,file.size);
+          return {{done:false,offset:nextOff}};
+        }}
+        if(r.status===200||r.status===201){{
+          const j=await r.json();
+          onProgress(file.size,file.size);
+          return {{done:true,fileId:j.id}};
+        }}
+        if(r.status>=500||r.status===429)throw new Error('Drive HTTP '+r.status);
+        const errTxt=await r.text();
+        throw new Error('Drive upload error ('+r.status+'): '+errTxt.slice(0,160));
+      }}
+    }}catch(directErr){{
+      if(!useProxyRef.proxy && attempt===0){{
+        useProxyRef.proxy=true;
+      }}else if(!useProxyRef.proxy){{
+        await new Promise(res=>setTimeout(res,Math.min(1000*Math.pow(2,attempt),8000)));
+        continue;
+      }}
+    }}
+    if(useProxyRef.proxy){{
+      const pr=await fetch('/api/drive/upload-chunk',{{
+        method:'POST',
+        headers:{{'X-Upload-Ticket':ticket,'X-Content-Range':contentRange}},
+        body:blob
+      }});
+      const pj=await pr.json().catch(()=>({{}}));
+      if(!pr.ok)throw new Error(pj.error||('Chunk upload failed ('+pr.status+')'));
+      if(pj.done&&pj.file&&pj.file.id){{
+        onProgress(file.size,file.size);
+        return {{done:true,fileId:pj.file.id}};
+      }}
+      const nextOff=pj.offset||end;
+      onProgress(nextOff,file.size);
+      return {{done:false,offset:nextOff}};
+    }}
+  }}
+  throw new Error('Network interrupted during chunk upload');
+}}
+
+async function uploadFileToDriveSlot(slot,file,row,onProgress){{
+  const sessRes=await fetch('/api/drive/upload-session',{{
+    method:'POST',
+    headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{
+      project_id:PID,
+      dt_id:state.tab,
+      record_id:state.editId||'',
+      slot:slot,
+      file_name:file.name,
+      file_size:file.size,
+      mime_type:file.type||'application/octet-stream',
+      create_folders:true
+    }})
+  }});
+  const sess=await sessRes.json().catch(()=>({{}}));
+  if(!sessRes.ok||!sess.ok)throw new Error(sess.hint||sess.error||('Could not start upload ('+sessRes.status+')'));
+
+  const chunkSize=sess.chunk_size||(8*1024*1024);
+  const useProxyRef={{proxy:false}};
+  let offset=0, fileId='';
+  while(offset<file.size){{
+    const step=await _sendDriveChunkWithRetry(sess.session_url,sess.upload_ticket,file,offset,chunkSize,onProgress,useProxyRef);
+    if(step.done){{fileId=step.fileId;break;}}
+    offset=step.offset;
+  }}
+  if(!fileId)throw new Error('Upload finished without a Drive file ID');
+
+  if(!state.editId){{
+    return {{pending:true,upload_ticket:sess.upload_ticket,file_id:fileId,file_name:file.name,file_size:file.size,slot:slot}};
+  }}
+  onProgress(file.size,file.size,'Linking file to record...');
+  const cmpRes=await fetch('/api/drive/upload-complete',{{
+    method:'POST',
+    headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{upload_ticket:sess.upload_ticket,file_id:fileId,record_id:state.editId}})
+  }});
+  const cmp=await cmpRes.json().catch(()=>({{}}));
+  if(!cmpRes.ok||!cmp.ok)throw new Error(cmp.hint||cmp.error||'Failed to attach file to record');
+  return cmp;
+}}
+
+async function finalizePendingDriveAttachments(recordId){{
+  const pending=state.pendingDriveAttachments||{{}};
+  const keys=Object.keys(pending);
+  if(!recordId||!keys.length)return;
+  for(const slot of keys){{
+    const item=pending[slot];
+    if(!item||!item.upload_ticket||!item.file_id)continue;
+    try{{
+      const r=await fetch('/api/drive/upload-complete',{{
+        method:'POST',
+        headers:{{'Content-Type':'application/json'}},
+        body:JSON.stringify({{upload_ticket:item.upload_ticket,file_id:item.file_id,record_id:recordId}})
+      }});
+      const j=await r.json().catch(()=>({{}}));
+      if(!r.ok||!j.ok)toast('Warning: file uploaded to Drive but linking failed ('+(j.error||r.status)+')','wa');
+    }}catch(e){{
+      toast('Warning: could not finalize attachment ('+slot+')','wa');
+    }}
+  }}
+  state.pendingDriveAttachments={{}};
+}}
+
 async function saveRecord(){{
   if(!CAN_EDIT){{toast('You have view-only permissions.', 'wa');return;}}
+  if(state.activeDriveUploads>0){{toast('Please wait for the active file upload to finish.','wa');return;}}
   if(state.savingRecord)return;
   state.savingRecord=true;setRecordSaveState(true);
   try{{
@@ -12582,6 +12880,7 @@ async function saveRecord(){{
   const r=await apiFetch('/api/records/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify(data)}});
   if(r&&r.ok){{
     const wasRevisionDraft=state.revisionDraftActive&&!state.editId;
+    await finalizePendingDriveAttachments(r.id||state.editId);
     if(isPRTab()){{
       const items=getPrItemsFromEditor();
       const recId=r.id||state.editId;
