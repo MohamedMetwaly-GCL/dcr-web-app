@@ -3036,3 +3036,16 @@ def clear_record_attachment(record_id, slot):
                     updated_at = NOW()
                 WHERE id=%s RETURNING id""", (slot, record_id))
     return bool(rows)
+
+
+# ── Drive folder routing cache (doc_types.data) - additive, see drive_routing.py ──
+def set_doc_type_drive_cache(pid, dt_id, patch):
+    """Merge Drive routing keys into doc_types.data atomically; other keys are untouched."""
+    allowed = {"drive_folder_id", "drive_folder_name", "drive_slot_folders", "folder_synced_at"}
+    patch = {k: v for k, v in (patch or {}).items() if k in allowed}
+    if not patch:
+        return False
+    rows = q("""UPDATE doc_types SET data = COALESCE(data,'{}'::jsonb) || %s::jsonb
+                WHERE id=%s AND project_id=%s RETURNING id""",
+             (json.dumps(patch), dt_id, pid))
+    return bool(rows)

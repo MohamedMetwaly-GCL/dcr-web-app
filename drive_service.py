@@ -168,3 +168,33 @@ def register_webhook(folder_id, webhook_url, channel_id):
         "address": webhook_url
     }
     return service.files().watch(fileId=folder_id, body=body).execute()
+
+
+# ==========================================
+# 4. Write-capable service (uploads / folder routing) - separate from the read-only sync
+# ==========================================
+WRITE_SCOPES = ['https://www.googleapis.com/auth/drive']
+
+def get_drive_write_service():
+    """Return a Drive API service with WRITE scope, or None if credentials are unavailable.
+
+    Uses the same credential sources as get_drive_service() but a separate scope, so the
+    existing read-only sync is unaffected. Callers must pass supportsAllDrives=True on
+    Drive calls (done in drive_routing.py).
+    """
+    import json
+    env_creds = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+    try:
+        if env_creds:
+            creds = service_account.Credentials.from_service_account_info(
+                json.loads(env_creds), scopes=WRITE_SCOPES)
+        elif os.path.exists(SERVICE_ACCOUNT_FILE):
+            creds = service_account.Credentials.from_service_account_file(
+                SERVICE_ACCOUNT_FILE, scopes=WRITE_SCOPES)
+        else:
+            print("Warning: no Drive credentials found. Drive write service disabled.")
+            return None
+        return build('drive', 'v3', credentials=creds, cache_discovery=False)
+    except Exception as e:
+        print(f"Error creating Drive write service: {e}")
+        return None
