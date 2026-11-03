@@ -9776,6 +9776,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       <button class="tool-btn teal" onclick="openExportCenter()">📥 Export ▾</button>
     <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
       {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
+      {'<button class="tool-btn teal" onclick="openBatchDriveUpload()">☁ Upload Files</button>' if editable else ''}
     </div>
     <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text);cursor:pointer;margin-right:12px;font-weight:500;">
       <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> Latest Revisions Only
@@ -10035,6 +10036,64 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       <button class="btn btn-sc" onclick="closeM('import-modal')">Cancel</button>
       <button class="btn btn-sc" id="imp-project-btn" onclick="doImportProject()">Import Full Workbook</button>
       <button class="btn btn-pr" onclick="doImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- BATCH DRIVE UPLOAD MODAL -->
+<div class="overlay hidden" id="batch-drive-modal">
+  <div class="modal" style="max-width:780px;width:95vw">
+    <div class="mhdr"><span>☁ Batch Upload Files to Google Drive</span>
+      <button class="xbtn" onclick="closeBatchDriveUpload()">✕</button></div>
+    <div class="mbody" style="display:flex;flex-direction:column;gap:12px">
+      <div id="batch-drv-slot-wrap" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#f8fafc;padding:10px 12px;border:1px solid var(--bd);border-radius:8px">
+        <span style="font-size:11px;font-weight:700;color:var(--pr)">Upload Target Slot:</span>
+        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#2563eb;cursor:pointer">
+          <input type="radio" name="batch-drv-slot" value="submission" checked onchange="onBatchSlotChange(this.value)">
+          📤 Submission Files (ملفات التقديم الأصلي)
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#16a34a;cursor:pointer">
+          <input type="radio" name="batch-drv-slot" value="approval" onchange="onBatchSlotChange(this.value)">
+          ✅ Consultant Replies / Approvals (ردود واعتمادات الاستشاري)
+        </label>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="batch-drv-input" multiple style="display:none" onchange="onBatchFilesSelected(this.files)">
+        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-input').click()">📁 Select Files (PDF / ZIP / DWG up to 1 GB each)</button>
+        <span id="batch-drv-summary" style="font-size:11px;color:var(--mu)">Files are matched to records automatically by Document No.</span>
+      </div>
+      <div id="batch-drv-overall" style="display:none;flex-direction:column;gap:4px;background:#f1f5f9;padding:8px 10px;border-radius:6px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--pr)">
+          <span id="batch-drv-overall-txt">Queue Progress: 0 / 0</span>
+          <span id="batch-drv-overall-pct">0%</span>
+        </div>
+        <div style="width:100%;height:8px;background:#cbd5e1;border-radius:4px;overflow:hidden">
+          <div id="batch-drv-overall-bar" style="width:0%;height:100%;background:#0284c7;transition:width .2s"></div>
+        </div>
+      </div>
+      <div style="max-height:340px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead>
+            <tr style="background:#f8fafc;border-bottom:1px solid var(--bd);text-align:left;color:var(--mu)">
+              <th style="padding:7px 8px">#</th>
+              <th style="padding:7px 8px">File Name</th>
+              <th style="padding:7px 8px;width:75px">Size</th>
+              <th style="padding:7px 8px;width:230px">Matched Record (Doc No.)</th>
+              <th style="padding:7px 8px;width:170px">Status / Progress</th>
+            </tr>
+          </thead>
+          <tbody id="batch-drv-tbody">
+            <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" above to queue files.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mfoot" style="justify-content:space-between">
+      <button type="button" class="btn btn-sc" id="batch-drv-stop-btn" style="display:none;color:#dc2626;border-color:#fca5a5" onclick="stopBatchDriveUpload()">⏹ Stop Queue</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button type="button" class="btn btn-sc" onclick="closeBatchDriveUpload()">Close</button>
+        <button type="button" class="btn btn-pr" id="batch-drv-start-btn" onclick="startBatchDriveUpload()" disabled>🚀 Start Sequential Upload</button>
+      </div>
     </div>
   </div>
 </div>
@@ -12831,6 +12890,212 @@ async function finalizePendingDriveAttachments(recordId){{
     }}
   }}
   state.pendingDriveAttachments={{}};
+}}
+
+function extractDocNoFromFilename(name, recs){{
+  const raw=String(name||'').replace(/\\.[^.]+$/,'');
+  const norm=s=>String(s||'').trim().toUpperCase().replace(/\\s+/g,' ');
+  const list=Array.isArray(recs)?recs:[];
+  const byDoc=[...list].filter(r=>r&&(r.docNo||r.nocNo)).sort((a,b)=>String(b.docNo||b.nocNo||'').length-String(a.docNo||a.nocNo||'').length);
+  const up=norm(raw);
+  for(const r of byDoc){{
+    const dn=norm(r.docNo||r.nocNo);
+    if(dn && up.includes(dn))return r._id;
+  }}
+  let m=raw.match(/((?:[A-Z0-9]+-)+\\d+[A-Z]?\\s+REV\\d+)/i);
+  if(m){{
+    const target=norm(m[1]);
+    const hit=byDoc.find(r=>norm(r.docNo||r.nocNo)===target);
+    if(hit)return hit._id;
+  }}
+  m=raw.match(/((?:[A-Z0-9]+-)+\\d+[A-Z]?)/i);
+  if(m){{
+    const base=norm(m[1]);
+    const hit=byDoc.find(r=>norm(r.docNo||r.nocNo).replace(/\\s+REV\\d+$/i,'')===base);
+    if(hit)return hit._id;
+  }}
+  return '';
+}}
+
+function openBatchDriveUpload(){{
+  if(!CAN_EDIT){{toast('Edit permission required','wa');return;}}
+  state.batchQueue=[];
+  state.batchRunning=false;
+  state.batchCancel=false;
+  const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
+  const slotWrap=document.getElementById('batch-drv-slot-wrap');
+  if(slotWrap)slotWrap.style.display=isEng?'flex':'none';
+  state.batchSlot='submission';
+  const radios=document.querySelectorAll('input[name="batch-drv-slot"]');
+  radios.forEach(r=>{{r.checked=(r.value==='submission');r.disabled=false;}});
+  const inp=document.getElementById('batch-drv-input');
+  if(inp)inp.value='';
+  const ov=document.getElementById('batch-drv-overall');
+  if(ov)ov.style.display='none';
+  const stBtn=document.getElementById('batch-drv-start-btn');
+  if(stBtn){{stBtn.disabled=true;stBtn.textContent='🚀 Start Sequential Upload';}}
+  const spBtn=document.getElementById('batch-drv-stop-btn');
+  if(spBtn)spBtn.style.display='none';
+  renderBatchDriveTable();
+  openM('batch-drive-modal');
+}}
+
+function closeBatchDriveUpload(){{
+  if(state.batchRunning){{
+    if(!confirm('Uploads are currently in progress. Stop the queue and close?'))return;
+    state.batchCancel=true;
+  }}
+  closeM('batch-drive-modal');
+}}
+
+function onBatchSlotChange(val){{
+  state.batchSlot=(val==='approval')?'approval':'submission';
+}}
+
+function onBatchFilesSelected(fileList){{
+  if(!fileList||!fileList.length)return;
+  const recs=state.recs||[];
+  const arr=Array.from(fileList);
+  state.batchQueue=arr.map((file,idx)=>({{
+    idx:idx,
+    file:file,
+    recordId:extractDocNoFromFilename(file.name,recs),
+    status:'ready',
+    pct:0,
+    msg:'Ready'
+  }}));
+  const matched=state.batchQueue.filter(it=>it.recordId).length;
+  const sumEl=document.getElementById('batch-drv-summary');
+  if(sumEl)sumEl.textContent=`Queued ${{arr.length}} file(s) — auto-matched ${{matched}} of ${{arr.length}} to records.`;
+  const stBtn=document.getElementById('batch-drv-start-btn');
+  if(stBtn)stBtn.disabled=(arr.length===0);
+  renderBatchDriveTable();
+}}
+
+function renderBatchDriveTable(){{
+  const tbody=document.getElementById('batch-drv-tbody');
+  if(!tbody)return;
+  const q=state.batchQueue||[];
+  if(!q.length){{
+    tbody.innerHTML='<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" above to queue files.</td></tr>';
+    return;
+  }}
+  const recs=state.recs||[];
+  tbody.innerHTML='';
+  q.forEach((item,i)=>{{
+    const tr=document.createElement('tr');
+    tr.style.borderBottom='1px solid var(--bd)';
+    const tdIdx=document.createElement('td');tdIdx.style.padding='6px 8px';tdIdx.textContent=String(i+1);
+    const tdName=document.createElement('td');tdName.style.cssText='padding:6px 8px;font-weight:600;word-break:break-all';tdName.textContent=item.file.name;
+    const tdSize=document.createElement('td');tdSize.style.cssText='padding:6px 8px;color:var(--mu);white-space:nowrap';tdSize.textContent=_fmtBytes(item.file.size);
+    const tdRec=document.createElement('td');tdRec.style.padding='6px 8px';
+    const sel=document.createElement('select');
+    sel.style.cssText='width:100%;padding:4px 6px;font-size:11px;border:1px solid '+(item.recordId?'#cbd5e1':'#f59e0b')+';border-radius:4px';
+    sel.disabled=state.batchRunning||item.status==='done';
+    const optEmpty=document.createElement('option');optEmpty.value='';optEmpty.textContent='-- Select Record (Skip if empty) --';
+    sel.appendChild(optEmpty);
+    recs.forEach(r=>{{
+      const o=document.createElement('option');
+      o.value=r._id;
+      const dn=r.docNo||r.nocNo||r._id;
+      const t=r.title?(' — '+String(r.title).slice(0,28)):'';
+      o.textContent=dn+t;
+      if(r._id===item.recordId)o.selected=true;
+      sel.appendChild(o);
+    }});
+    sel.onchange=()=>{{item.recordId=sel.value;sel.style.borderColor=item.recordId?'#cbd5e1':'#f59e0b';}};
+    tdRec.appendChild(sel);
+
+    const tdSt=document.createElement('td');tdSt.style.padding='6px 8px';
+    tdSt.id='batch-drv-st-'+i;
+    updateBatchRowStatusCell(tdSt,item);
+
+    tr.appendChild(tdIdx);tr.appendChild(tdName);tr.appendChild(tdSize);tr.appendChild(tdRec);tr.appendChild(tdSt);
+    tbody.appendChild(tr);
+  }});
+}}
+
+function updateBatchRowStatusCell(td,item){{
+  if(!td)return;
+  const color=item.status==='done'?'#16a34a':(item.status==='error'?'#dc2626':(item.status==='uploading'?'#0284c7':'#64748b'));
+  td.innerHTML=`<div style="display:flex;flex-direction:column;gap:3px">
+    <div style="font-size:10px;font-weight:700;color:${{color}}">${{escHtml(item.msg||item.status)}}</div>
+    <div style="width:100%;height:5px;background:#e2e8f0;border-radius:3px;overflow:hidden">
+      <div style="width:${{item.pct||0}}%;height:100%;background:${{color}};transition:width .15s"></div>
+    </div>
+  </div>`;
+}}
+
+function stopBatchDriveUpload(){{
+  state.batchCancel=true;
+  const spBtn=document.getElementById('batch-drv-stop-btn');
+  if(spBtn){{spBtn.disabled=true;spBtn.textContent='Stopping after current chunk...';}}
+}}
+
+async function startBatchDriveUpload(){{
+  if(state.batchRunning)return;
+  const q=(state.batchQueue||[]).filter(it=>it.recordId&&it.status!=='done');
+  if(!q.length){{toast('Please match at least one file to a record first.','wa');return;}}
+  state.batchRunning=true;
+  state.batchCancel=false;
+  const slot=state.batchSlot||'submission';
+  const stBtn=document.getElementById('batch-drv-start-btn');
+  if(stBtn)stBtn.disabled=true;
+  const spBtn=document.getElementById('batch-drv-stop-btn');
+  if(spBtn){{spBtn.style.display='';spBtn.disabled=false;spBtn.textContent='⏹ Stop Queue';}}
+  const ov=document.getElementById('batch-drv-overall');
+  if(ov)ov.style.display='flex';
+  const ovTxt=document.getElementById('batch-drv-overall-txt');
+  const ovPct=document.getElementById('batch-drv-overall-pct');
+  const ovBar=document.getElementById('batch-drv-overall-bar');
+
+  const prevEditId=state.editId;
+  let completed=0;
+  for(let i=0;i<state.batchQueue.length;i++){{
+    if(state.batchCancel)break;
+    const item=state.batchQueue[i];
+    if(!item.recordId||item.status==='done')continue;
+    const row=(state.recs||[]).find(r=>r._id===item.recordId);
+    const cell=document.getElementById('batch-drv-st-'+i);
+    item.status='uploading';item.pct=0;item.msg='Starting...';
+    updateBatchRowStatusCell(cell,item);
+
+    state.editId=item.recordId;
+    try{{
+      const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl)=>{{
+        item.pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+        item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
+        updateBatchRowStatusCell(cell,item);
+        const overallRatio=((completed+(total>0?done/total:0))/q.length)*100;
+        if(ovBar)ovBar.style.width=Math.min(100,Math.round(overallRatio))+'%';
+        if(ovPct)ovPct.textContent=Math.min(100,Math.round(overallRatio))+'%';
+        if(ovTxt)ovTxt.textContent=`Uploading file ${{completed+1}} of ${{q.length}}...`;
+      }});
+      if(row&&res&&res.attachment){{
+        row.attachments=res.attachments||row.attachments||{{}};
+        if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
+      }}
+      item.status='done';item.pct=100;item.msg='✓ Uploaded & Linked';
+      completed++;
+      updateBatchRowStatusCell(cell,item);
+      if(ovBar)ovBar.style.width=Math.round((completed/q.length)*100)+'%';
+      if(ovPct)ovPct.textContent=Math.round((completed/q.length)*100)+'%';
+      if(ovTxt)ovTxt.textContent=`Completed ${{completed}} of ${{q.length}} file(s)`;
+    }}catch(e){{
+      item.status='error';item.msg='✕ '+(e.message||'Failed');
+      updateBatchRowStatusCell(cell,item);
+    }}
+  }}
+  state.editId=prevEditId;
+  state.batchRunning=false;
+  if(spBtn)spBtn.style.display='none';
+  if(stBtn){{
+    const remaining=(state.batchQueue||[]).some(it=>it.recordId&&it.status!=='done');
+    stBtn.disabled=!remaining;
+    stBtn.textContent=remaining?'🔄 Retry Remaining Files':'✓ All Done';
+  }}
+  renderRows();
+  toast(`Batch upload finished (${{completed}}/${{q.length}} linked)`,'ok');
 }}
 
 async function saveRecord(){{
