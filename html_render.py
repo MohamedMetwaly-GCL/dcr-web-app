@@ -10088,6 +10088,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
               <th style="padding:7px 8px;width:75px">Size</th>
               <th style="padding:7px 8px;width:230px">Matched Record (Doc No.)</th>
               <th style="padding:7px 8px;width:170px">Status / Progress</th>
+              <th style="padding:7px 4px;width:24px"></th>
             </tr>
           </thead>
           <tbody id="batch-drv-tbody">
@@ -12743,7 +12744,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         empty.style.cssText='color:#64748b;font-style:italic';
         empty.textContent=s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet';
         statusLine.appendChild(empty);
-        if(upBtn)upBtn.textContent='📤 Upload File (up to 1 GB)';
+        if(upBtn)upBtn.textContent='📤 Upload File';
         return;
       }}
       const nameSpan=document.createElement('span');
@@ -12810,7 +12811,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       upBtn.type='button';
       upBtn.className='btn btn-sc btn-sm';
       upBtn.style.cssText=`font-size:11px;padding:4px 10px;border-color:${{s.color}};color:${{s.color}};background:#fff`;
-      upBtn.textContent=cur[s.key]?'🔄 Replace File':'📤 Upload File (up to 1 GB)';
+      upBtn.textContent=cur[s.key]?'🔄 Replace File':'📤 Upload File';
       upBtn.onclick=()=>fileInp.click();
 
       const progWrap=document.createElement('div');
@@ -12927,12 +12928,98 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         }}
       }};
 
+      progWrap.style.cssText='width:100%;display:none;flex-direction:column;gap:5px;background:#f8fafc;padding:8px 10px;border-radius:6px;border:1px solid #cbd5e1;box-sizing:border-box;margin-top:4px';
+      const progHdr=document.createElement('div');
+      progHdr.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px';
+      progHdr.appendChild(progTxt);
+      const slotStopBtn=document.createElement('button');
+      slotStopBtn.type='button';
+      slotStopBtn.style.cssText='padding:2px 8px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap';
+      slotStopBtn.textContent='⏹ Stop';
+      progHdr.appendChild(slotStopBtn);
+      progWrap.insertBefore(progHdr,progWrap.firstChild);
+
+      let cancelSlotUpload=false;
+      slotStopBtn.onclick=()=>{{
+        cancelSlotUpload=true;
+        slotStopBtn.disabled=true;
+        slotStopBtn.textContent='Stopping...';
+      }};
+
+      const origFileChange = fileInp.onchange;
+      fileInp.onchange = async () => {{
+        cancelSlotUpload=false;
+        slotStopBtn.disabled=false;slotStopBtn.textContent='⏹ Stop';
+        upBtn.style.display='none';fldBtn.style.display='none';
+        try {{
+          await origFileChange();
+        }} finally {{
+          upBtn.style.display='';fldBtn.style.display='';
+          progWrap.style.display='none';
+        }}
+      }};
+
+      folderInp.onchange = async () => {{
+        const fls = Array.from(folderInp.files || []);
+        if(!fls.length) return;
+        const subName = row?.docNo || row?.nocNo || (fls[0].webkitRelativePath ? fls[0].webkitRelativePath.split('/')[0] : 'Document_Files');
+        cancelSlotUpload = false;
+        slotStopBtn.disabled = false; slotStopBtn.textContent = '⏹ Stop';
+        upBtn.style.display = 'none'; fldBtn.style.display = 'none';
+        progWrap.style.display = 'flex';
+        progBarInner.style.width = '0%';
+        progTxt.style.color = '#475569';
+        progTxt.textContent = `Starting folder upload (${{fls.length}} files)...`;
+        state.activeDriveUploads = (state.activeDriveUploads || 0) + 1;
+        try {{
+          let lastRes = null;
+          let uploadedCount = 0;
+          for(let fi = 0; fi < fls.length; fi++) {{
+            if(cancelSlotUpload) {{
+              toast('Folder upload stopped', 'wa');
+              break;
+            }}
+            const f = fls[fi];
+            lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
+              const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+              const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
+              progBarInner.style.width = overall + '%';
+              progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
+            }}, {{subfolder_name: subName, link_as_folder: true}});
+            uploadedCount++;
+          }}
+          if(uploadedCount > 0) {{
+            if(lastRes && lastRes.pending) {{
+              lastRes.is_folder = true; lastRes.folder_name = subName; lastRes.file_count = uploadedCount;
+              state.pendingDriveAttachments[s.key] = lastRes;
+              renderSlotInfo(null, lastRes);
+            }} else if(lastRes && lastRes.attachment) {{
+              cur[s.key] = lastRes.attachment;
+              if(row) {{
+                row.attachments = lastRes.attachments || row.attachments || {{}};
+                if(!row.fileLocation && lastRes.attachment.url) row.fileLocation = lastRes.attachment.url;
+              }}
+              renderSlotInfo(lastRes.attachment, null);
+              renderRows();
+              toast(`Folder attached (${{uploadedCount}} files)`, 'ok');
+            }}
+          }}
+        }} catch(e) {{
+          toast('Folder upload error: ' + (e.message || e), 'er');
+        }} finally {{
+          state.activeDriveUploads = Math.max(0, (state.activeDriveUploads || 1) - 1);
+          upBtn.style.display = ''; fldBtn.style.display = '';
+          progWrap.style.display = 'none';
+          folderInp.value = '';
+        }}
+      }};
+
       ctrl.appendChild(upBtn);
       ctrl.appendChild(fldBtn);
-      ctrl.appendChild(progWrap);
       ctrl.appendChild(fileInp);
       ctrl.appendChild(folderInp);
       card.appendChild(ctrl);
+      card.appendChild(progWrap);
     }}
     renderSlotInfo(cur[s.key],null);
 
@@ -13218,8 +13305,10 @@ function onBatchFilesSelected(fileList){{
   if(!fileList||!fileList.length)return;
   const recs=state.recs||[];
   const arr=Array.from(fileList);
-  state.batchQueue=arr.map((file,idx)=>({{
-    idx:idx,
+  const curQ = state.batchQueue || [];
+  const startIdx = curQ.length;
+  const newItems=arr.map((file,idx)=>({{
+    idx:startIdx + idx,
     isFolder:false,
     file:file,
     recordId:extractDocNoFromFilename(file.name,recs),
@@ -13227,6 +13316,7 @@ function onBatchFilesSelected(fileList){{
     pct:0,
     msg:'Ready'
   }}));
+  state.batchQueue = [...curQ, ...newItems];
   renderBatchDriveTable();
   updateBatchControlsState();
 }}
@@ -13243,12 +13333,14 @@ function onBatchFolderSelected(fileList){{
     groups[folder].push(f);
   }});
 
+  const curQ = state.batchQueue || [];
+  const startIdx = curQ.length;
   const newItems=Object.keys(groups).map((fName,idx)=>{{
     const files=groups[fName];
     const totalSize=files.reduce((sum,f)=>sum+(f.size||0),0);
     const recId=extractDocNoFromFilename(fName,recs);
     return {{
-      idx:idx,
+      idx:startIdx + idx,
       isFolder:true,
       folderName:fName,
       file:{{name:'📁 '+fName, size:totalSize}},
@@ -13260,10 +13352,10 @@ function onBatchFolderSelected(fileList){{
       msg:`Ready (${{files.length}} uncompressed files)`
     }};
   }});
-  state.batchQueue=newItems;
+  state.batchQueue = [...curQ, ...newItems];
   renderBatchDriveTable();
   updateBatchControlsState();
-  toast(`Queued folder (${{arr.length}} files ready for uncompressed upload)`,'ok');
+  toast(`Added folder (${{arr.length}} files) to upload queue`,'ok');
 }}
 
 function renderBatchDriveTable(){{
@@ -13367,7 +13459,22 @@ function renderBatchDriveTable(){{
     tdSt.id='batch-drv-st-'+i;
     updateBatchRowStatusCell(tdSt,item);
 
-    tr.appendChild(tdIdx);tr.appendChild(tdName);tr.appendChild(tdSize);tr.appendChild(tdRec);tr.appendChild(tdSt);
+    const tdAct=document.createElement('td');tdAct.style.padding='6px 4px';tdAct.style.textAlign='center';
+    if(!state.batchRunning && item.status!=='done'){{
+      const rmBtn=document.createElement('button');
+      rmBtn.type='button';rmBtn.textContent='✕';rmBtn.title='Remove item from queue';
+      rmBtn.style.cssText='border:none;background:transparent;color:#94a3b8;font-size:12px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1';
+      rmBtn.onmouseenter=()=>rmBtn.style.color='#dc2626';
+      rmBtn.onmouseleave=()=>rmBtn.style.color='#94a3b8';
+      rmBtn.onclick=()=>{{
+        state.batchQueue.splice(i,1);
+        renderBatchDriveTable();
+        updateBatchControlsState();
+      }};
+      tdAct.appendChild(rmBtn);
+    }}
+
+    tr.appendChild(tdIdx);tr.appendChild(tdName);tr.appendChild(tdSize);tr.appendChild(tdRec);tr.appendChild(tdSt);tr.appendChild(tdAct);
     tbody.appendChild(tr);
   }});
 }}
