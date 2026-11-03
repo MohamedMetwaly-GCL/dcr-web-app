@@ -12749,7 +12749,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       const nameSpan=document.createElement('span');
       nameSpan.style.cssText='font-weight:600;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       if(entry.is_folder || vUrl.includes('/folders/')){{
-        const fCount=entry.file_count?` (${entry.file_count} files)`:'';
+        const fCount=entry.file_count?` (${{entry.file_count}} files)`:'';
         nameSpan.textContent='📁 '+(entry.folder_name||entry.file_name||'Document Folder')+fCount;
       }}else{{
         nameSpan.textContent=entry.file_name||(entry.legacy?'Linked Drive File':'Attached File');
@@ -12887,7 +12887,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         progWrap.style.display='flex';
         progBarInner.style.width='0%';
         progTxt.style.color='#475569';
-        progTxt.textContent=`Starting folder upload (${fls.length} files)...`;
+        progTxt.textContent=`Starting folder upload (${{fls.length}} files)...`;
         state.activeDriveUploads=(state.activeDriveUploads||0)+1;
         try{{
           let lastRes=null;
@@ -12897,14 +12897,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
               const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
               const overall=Math.round(((fi+(total>0?done/total:0))/fls.length)*100);
               progBarInner.style.width=overall+'%';
-              progTxt.textContent=`Uploading file ${fi+1}/${fls.length}: ${f.name} (${overall}%)`;
+              progTxt.textContent=`Uploading file ${{fi+1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
             }},{{subfolder_name:subName,link_as_folder:true}});
           }}
           if(lastRes&&lastRes.pending){{
             lastRes.is_folder=true;lastRes.folder_name=subName;lastRes.file_count=fls.length;
             state.pendingDriveAttachments[s.key]=lastRes;
             renderSlotInfo(null,lastRes);
-            progTxt.textContent=`✓ Uploaded ${fls.length} files — click Save to finish`;
+            progTxt.textContent=`✓ Uploaded ${{fls.length}} files — click Save to finish`;
           }}else if(lastRes&&lastRes.attachment){{
             cur[s.key]=lastRes.attachment;
             if(row){{
@@ -12912,9 +12912,9 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
               if(!row.fileLocation&&lastRes.attachment.url)row.fileLocation=lastRes.attachment.url;
             }}
             renderSlotInfo(lastRes.attachment,null);
-            progTxt.textContent=`✓ Attached folder (${fls.length} files)`;
+            progTxt.textContent=`✓ Attached folder (${{fls.length}} files)`;
             renderRows();
-            toast(`Folder uploaded and linked (${fls.length} files)`,'ok');
+            toast(`Folder uploaded and linked (${{fls.length}} files)`,'ok');
           }}
         }}catch(e){{
           progTxt.style.color='#dc2626';
@@ -13257,13 +13257,13 @@ function onBatchFolderSelected(fileList){{
       recordId:recId,
       status:'ready',
       pct:0,
-      msg:`Ready (${files.length} uncompressed files)`
+      msg:`Ready (${{files.length}} uncompressed files)`
     }};
   }});
   state.batchQueue=newItems;
   renderBatchDriveTable();
   updateBatchControlsState();
-  toast(`Queued folder (${arr.length} files ready for uncompressed upload)`,'ok');
+  toast(`Queued folder (${{arr.length}} files ready for uncompressed upload)`,'ok');
 }}
 
 function renderBatchDriveTable(){{
@@ -13431,7 +13431,7 @@ async function startBatchDriveUpload(){{
           lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl)=>{{
             const subPct=total>0?Math.min(100,Math.round((done/total)*100)):0;
             item.pct=Math.round(((fi+(total>0?done/total:0))/files.length)*100);
-            item.msg=`Uploading file ${fi+1}/${files.length}: ${subFile.name} (${item.pct}%)`;
+            item.msg=`Uploading file ${{fi+1}}/${{files.length}}: ${{subFile.name}} (${{item.pct}}%)`;
             updateBatchRowStatusCell(cell,item);
           }},{{subfolder_name:subName,link_as_folder:true}});
           fDone++;
@@ -13440,7 +13440,7 @@ async function startBatchDriveUpload(){{
           row.attachments=lastRes.attachments||row.attachments||{{}};
           if(!row.fileLocation&&lastRes.attachment.url)row.fileLocation=lastRes.attachment.url;
         }}
-        item.status='done';item.pct=100;item.msg=`✓ Linked Folder (${fDone} files)`;
+        item.status='done';item.pct=100;item.msg=`✓ Linked Folder (${{fDone}} files)`;
         newlyDone++;
         updateBatchRowStatusCell(cell,item);
       }}else{{
