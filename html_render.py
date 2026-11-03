@@ -10959,41 +10959,47 @@ function renderRows(){{
       if(mcs)td.style.cssText=mcs;
       const ltrRole=isLtrTab?getLTRFieldRole(col):'';
       
-      // Dual attachments (Submit + Replied): shown only when BOTH exist; otherwise the original single-link UI below is used unchanged
-      const _att=(row.attachments && typeof row.attachments==='object')?row.attachments:null;
-      if(_att && _att.submission && _att.approval){{
-        const _ex=(e)=>{{
-          let v='',d='';
-          if(e.file_id){{ v='https://drive.google.com/file/d/'+e.file_id+'/view'; d='https://drive.google.com/uc?export=download&id='+e.file_id; }}
-          else if(e.url){{ v=String(e.url).trim(); if(v.indexOf('/d/')>-1 && v.indexOf('/folders/')<0){{ d='https://drive.google.com/uc?export=download&id='+v.split('/d/')[1].split('/')[0].split('?')[0]; }} }}
-          return [v,d];
-        }};
-        const _sv=_ex(_att.submission), _av=_ex(_att.approval);
-        if(_sv[0] && _av[0]){{
-          const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-          const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-          const _mkA=(href,title,svg,act)=>{{
-            const a=document.createElement('a');
-            a.className=(act==='FILE_DOWNLOAD')?'dl-file-icon':'view-file-icon';
-            a.href=href; a.target='_blank'; a.rel='noopener'; a.title=title; a.innerHTML=svg;
-            a.addEventListener('click',()=>logFileAction(act,row.docNo||row.nocNo||'',href));
-            return a;
-          }};
-          const _chip=(label,pair,color,name)=>{{
-            const sp=document.createElement('span');
-            sp.style.cssText='display:inline-flex;align-items:center;gap:3px;margin:0 2px;padding:1px 5px;border-radius:6px;border:1px solid '+color+';font-size:10px;font-weight:700;color:'+color;
-            sp.appendChild(document.createTextNode(label));
-            sp.appendChild(_mkA(pair[0],'View '+name,_eye,'DRIVE_LINK_CLICK'));
-            if(pair[1]) sp.appendChild(_mkA(pair[1],'Download '+name,_dl,'FILE_DOWNLOAD'));
-            return sp;
-          }};
-          td.appendChild(_chip('Subm',_sv,'#2563eb','Submission'));
-          td.appendChild(_chip('Appr',_av,'#16a34a','Approval (Replied)'));
-          td.style.textAlign='center';
-          tr.appendChild(td);return;
-        }}
-      }}
       if(col.col_type==='url' || key==='fileLocation'){{
+        // Dual attachments (Submit + Replied): shown only in Drive Link column when BOTH exist
+        const _att=(row.attachments && typeof row.attachments==='object')?row.attachments:null;
+        if(_att && _att.submission && _att.approval){{
+          const _ex=(e)=>{{
+            let v='',d='';
+            if(e.file_id){{ v='https://drive.google.com/file/d/'+e.file_id+'/view'; d='https://drive.google.com/uc?export=download&id='+e.file_id; }}
+            else if(e.url){{ v=String(e.url).trim(); if(v.indexOf('/d/')>-1 && v.indexOf('/folders/')<0){{ d='https://drive.google.com/uc?export=download&id='+v.split('/d/')[1].split('/')[0].split('?')[0]; }} }}
+            return [v,d];
+          }};
+          const _sv=_ex(_att.submission), _av=_ex(_att.approval);
+          if(_sv[0] && _av[0]){{
+            const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+            const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+            const _mkA=(href,title,svg,act)=>{{
+              const a=document.createElement('a');
+              a.className=(act==='FILE_DOWNLOAD')?'dl-file-icon':'view-file-icon';
+              a.style.cssText='display:inline-flex;align-items:center;padding:0 1px';
+              a.href=href; a.target='_blank'; a.rel='noopener'; a.title=title; a.innerHTML=svg;
+              a.addEventListener('click',()=>logFileAction(act,row.docNo||row.nocNo||'',href));
+              return a;
+            }};
+            const _chip=(label,pair,color,bg,name)=>{{
+              const sp=document.createElement('span');
+              sp.style.cssText='display:inline-flex;align-items:center;justify-content:space-between;gap:3px;padding:1px 5px;border-radius:5px;border:1px solid '+color+';background:'+bg+';font-size:9.5px;font-weight:700;color:'+color+';white-space:nowrap;line-height:1.2';
+              const lbl=document.createElement('span');
+              lbl.textContent=label;
+              sp.appendChild(lbl);
+              sp.appendChild(_mkA(pair[0],'View '+name,_eye,'DRIVE_LINK_CLICK'));
+              if(pair[1]) sp.appendChild(_mkA(pair[1],'Download '+name,_dl,'FILE_DOWNLOAD'));
+              return sp;
+            }};
+            const box=document.createElement('div');
+            box.style.cssText='display:inline-flex;flex-direction:column;gap:2px;align-items:stretch';
+            box.appendChild(_chip('Subm',_sv,'#2563eb','#eff6ff','Submission'));
+            box.appendChild(_chip('Appr',_av,'#16a34a','#f0fdf4','Approval (Replied)'));
+            td.appendChild(box);
+            td.style.textAlign='center';
+            tr.appendChild(td);return;
+          }}
+        }}
         const url=String(row[key]||'').trim();
         const hasValidLink = url && url !== '#' && url.toLowerCase() !== 'null' && url.toLowerCase() !== 'none';
         const isFolder = url.includes('/folders/');
