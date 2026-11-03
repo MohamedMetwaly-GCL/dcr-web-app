@@ -10058,6 +10058,10 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
             <span>📋 Consultant Replies (ردود الاستشاري)</span>
           </label>
         </div>
+        <div id="batch-drv-target-path" style="font-size:11px;color:#0f766e;font-weight:600;display:flex;align-items:center;gap:6px;background:#f0fdfa;border:1px solid #ccfbf1;padding:6px 10px;border-radius:6px">
+          <span style="font-size:12px">📁</span>
+          <span>Target Drive Folder: <strong id="batch-drv-target-path-txt">...</strong></span>
+        </div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input type="file" id="batch-drv-input" multiple style="display:none" onchange="onBatchFilesSelected(this.files)">
@@ -12693,6 +12697,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     hdr.textContent=s.title;
     card.appendChild(hdr);
 
+    const pathSubName=(s.key==='approval')?'Replied':'Submit';
+    const dtObj=(state.dtList||[]).find(d=>d.id===state.tab)||{{}};
+    const dtName=dtObj.name||dtObj.code||state.tab||'Documents';
+    const folderHint=document.createElement('div');
+    folderHint.style.cssText='font-size:10px;color:var(--mu);display:flex;align-items:center;gap:4px;margin-top:-2px';
+    folderHint.innerHTML=`<span>📁 Drive Path:</span> <strong style="color:#334155">${{escHtml(PID)}} ❯ ${{escHtml(dtName)}} ❯ ${{escHtml(pathSubName)}}</strong>`;
+    card.appendChild(folderHint);
+
     const statusLine=document.createElement('div');
     statusLine.id='drv-slot-info-'+s.key;
     statusLine.style.cssText='font-size:11px;color:#334155;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:22px';
@@ -13008,11 +13020,68 @@ function extractDocNoFromFilename(name, recs){{
   return '';
 }}
 
+function getBatchTargetDrivePath(slot){{
+  const dt=(state.dtList||[]).find(d=>d.id===state.tab)||{{}};
+  const dtName=dt.name||dt.code||state.tab||'Documents';
+  const sub=(slot==='approval')?'Replied':'Submit';
+  return `${{PID}} ❯ ${{dtName}} ❯ ${{sub}}`;
+}}
+
+function populateBatchDatalist(){{
+  let dl=document.getElementById('batch-drv-datalist');
+  if(!dl){{
+    dl=document.createElement('datalist');
+    dl.id='batch-drv-datalist';
+    document.body.appendChild(dl);
+  }}
+  dl.innerHTML='';
+  const recs=state.recs||[];
+  recs.forEach(r=>{{
+    const opt=document.createElement('option');
+    const dn=r.docNo||r.nocNo||r._id;
+    const t=r.title?(' — '+String(r.title).slice(0,50)):'';
+    opt.value=dn+t;
+    dl.appendChild(opt);
+  }});
+}}
+
+function updateBatchControlsState(){{
+  const q=state.batchQueue||[];
+  const matched=q.filter(it=>it.recordId).length;
+  const pending=q.filter(it=>it.recordId&&it.status!=='done').length;
+  const done=q.filter(it=>it.status==='done').length;
+  const err=q.filter(it=>it.status==='error').length;
+
+  const sumEl=document.getElementById('batch-drv-summary');
+  if(sumEl){{
+    if(!q.length){{
+      sumEl.textContent='Files are matched to records automatically by Document No.';
+    }}else{{
+      sumEl.textContent=`Queued ${{q.length}} file(s) — ${{matched}} matched (${{done}} uploaded, ${{pending}} ready${{err?`, ${{err}} failed`:''}}).`;
+    }}
+  }}
+
+  const stBtn=document.getElementById('batch-drv-start-btn');
+  if(stBtn&&!state.batchRunning){{
+    if(pending>0){{
+      stBtn.disabled=false;
+      stBtn.textContent=(done>0)?`🚀 Upload Remaining (${{pending}} file${{pending>1?'s':''}})`:'🚀 Start Sequential Upload';
+    }}else if(done>0&&done===matched&&matched>0){{
+      stBtn.disabled=true;
+      stBtn.textContent='✓ All Done';
+    }}else{{
+      stBtn.disabled=true;
+      stBtn.textContent='🚀 Start Sequential Upload';
+    }}
+  }}
+}}
+
 function openBatchDriveUpload(){{
   if(!CAN_EDIT){{toast('Edit permission required','wa');return;}}
   state.batchQueue=[];
   state.batchRunning=false;
   state.batchCancel=false;
+  populateBatchDatalist();
   const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
   const slotWrap=document.getElementById('batch-drv-slot-wrap');
   if(slotWrap)slotWrap.style.display=isEng?'flex':'none';
@@ -13024,13 +13093,10 @@ function openBatchDriveUpload(){{
   const ov=document.getElementById('batch-drv-overall');
   if(ov)ov.style.display='none';
   onBatchSlotChange('submission');
-  const sumEl=document.getElementById('batch-drv-summary');
-  if(sumEl)sumEl.textContent='Files are matched to records automatically by Document No.';
-  const stBtn=document.getElementById('batch-drv-start-btn');
-  if(stBtn){{stBtn.disabled=true;stBtn.textContent='🚀 Start Sequential Upload';}}
   const spBtn=document.getElementById('batch-drv-stop-btn');
   if(spBtn)spBtn.classList.add('hidden');
   renderBatchDriveTable();
+  updateBatchControlsState();
   openM('batch-drive-modal');
 }}
 
@@ -13058,6 +13124,8 @@ function onBatchSlotChange(val){{
     cApp.style.background=act?'#f0fdfa':'#fff';
     cApp.style.color=act?'#0f766e':'#334155';
   }}
+  const pathEl=document.getElementById('batch-drv-target-path-txt');
+  if(pathEl)pathEl.textContent=getBatchTargetDrivePath(state.batchSlot);
 }}
 
 function onBatchFilesSelected(fileList){{
@@ -13072,12 +13140,8 @@ function onBatchFilesSelected(fileList){{
     pct:0,
     msg:'Ready'
   }}));
-  const matched=state.batchQueue.filter(it=>it.recordId).length;
-  const sumEl=document.getElementById('batch-drv-summary');
-  if(sumEl)sumEl.textContent=`Queued ${{arr.length}} file(s) — auto-matched ${{matched}} of ${{arr.length}} to records.`;
-  const stBtn=document.getElementById('batch-drv-start-btn');
-  if(stBtn)stBtn.disabled=(arr.length===0);
   renderBatchDriveTable();
+  updateBatchControlsState();
 }}
 
 function renderBatchDriveTable(){{
@@ -13096,23 +13160,86 @@ function renderBatchDriveTable(){{
     const tdIdx=document.createElement('td');tdIdx.style.padding='6px 8px';tdIdx.textContent=String(i+1);
     const tdName=document.createElement('td');tdName.style.cssText='padding:6px 8px;font-weight:600;word-break:break-all';tdName.textContent=item.file.name;
     const tdSize=document.createElement('td');tdSize.style.cssText='padding:6px 8px;color:var(--mu);white-space:nowrap';tdSize.textContent=_fmtBytes(item.file.size);
+
     const tdRec=document.createElement('td');tdRec.style.padding='6px 8px';
-    const sel=document.createElement('select');
-    sel.style.cssText='width:100%;padding:4px 6px;font-size:11px;border:1px solid '+(item.recordId?'#cbd5e1':'#f59e0b')+';border-radius:4px';
-    sel.disabled=state.batchRunning||item.status==='done';
-    const optEmpty=document.createElement('option');optEmpty.value='';optEmpty.textContent='-- Select Record (Skip if empty) --';
-    sel.appendChild(optEmpty);
-    recs.forEach(r=>{{
-      const o=document.createElement('option');
-      o.value=r._id;
-      const dn=r.docNo||r.nocNo||r._id;
-      const t=r.title?(' — '+String(r.title).slice(0,28)):'';
-      o.textContent=dn+t;
-      if(r._id===item.recordId)o.selected=true;
-      sel.appendChild(o);
-    }});
-    sel.onchange=()=>{{item.recordId=sel.value;sel.style.borderColor=item.recordId?'#cbd5e1':'#f59e0b';}};
-    tdRec.appendChild(sel);
+    const recWrap=document.createElement('div');
+    recWrap.style.cssText='position:relative;display:flex;align-items:center;width:100%';
+
+    const inp=document.createElement('input');
+    inp.setAttribute('list','batch-drv-datalist');
+    inp.setAttribute('autocomplete','off');
+    inp.style.cssText='width:100%;padding:4px 22px 4px 6px;font-size:11px;border-radius:4px;outline:none;transition:all .15s;border:1px solid '+(item.recordId?'#16a34a':'#f59e0b')+';background:'+(item.recordId?'#f0fdf4':'#fff');
+    inp.placeholder='🔍 Search Doc No or Title...';
+    inp.disabled=state.batchRunning||item.status==='done';
+
+    const curRec=recs.find(r=>r._id===item.recordId);
+    if(curRec){{
+      const dn=curRec.docNo||curRec.nocNo||curRec._id;
+      const t=curRec.title?(' — '+String(curRec.title).slice(0,50)):'';
+      inp.value=dn+t;
+      inp.title=dn+t;
+    }}else{{
+      inp.value='';
+    }}
+
+    const clrBtn=document.createElement('button');
+    clrBtn.type='button';
+    clrBtn.style.cssText='position:absolute;right:4px;background:transparent;border:none;color:#94a3b8;font-size:11px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1;display:'+(item.recordId&&!state.batchRunning&&item.status!=='done'?'block':'none');
+    clrBtn.textContent='✕';
+    clrBtn.title='Clear matched record';
+    clrBtn.onclick=(e)=>{{
+      e.stopPropagation();
+      item.recordId='';
+      inp.value='';
+      inp.title='';
+      inp.style.borderColor='#f59e0b';
+      inp.style.backgroundColor='#fff';
+      clrBtn.style.display='none';
+      updateBatchControlsState();
+      inp.focus();
+    }};
+
+    const matchRecFromInput=()=>{{
+      const val=String(inp.value||'').trim().toUpperCase();
+      if(!val){{
+        item.recordId='';
+        inp.title='';
+        inp.style.borderColor='#f59e0b';
+        inp.style.backgroundColor='#fff';
+        clrBtn.style.display='none';
+        updateBatchControlsState();
+        return;
+      }}
+      const found=recs.find(r=>{{
+        const dn=String(r.docNo||r.nocNo||r._id).trim().toUpperCase();
+        const t=r.title?(' — '+String(r.title).slice(0,50)).toUpperCase():'';
+        const full=dn+t;
+        return val===full || val===dn || full.startsWith(val) || val.startsWith(dn);
+      }});
+      if(found){{
+        item.recordId=found._id;
+        const dn=found.docNo||found.nocNo||found._id;
+        const t=found.title?(' — '+String(found.title).slice(0,50)):'';
+        inp.value=dn+t;
+        inp.title=dn+t;
+        inp.style.borderColor='#16a34a';
+        inp.style.backgroundColor='#f0fdf4';
+        clrBtn.style.display=(state.batchRunning||item.status==='done')?'none':'block';
+      }}else{{
+        item.recordId='';
+        inp.title='No matching record found';
+        inp.style.borderColor='#dc2626';
+        inp.style.backgroundColor='#fef2f2';
+        clrBtn.style.display='block';
+      }}
+      updateBatchControlsState();
+    }};
+
+    inp.oninput=matchRecFromInput;
+    inp.onchange=matchRecFromInput;
+    recWrap.appendChild(inp);
+    recWrap.appendChild(clrBtn);
+    tdRec.appendChild(recWrap);
 
     const tdSt=document.createElement('td');tdSt.style.padding='6px 8px';
     tdSt.id='batch-drv-st-'+i;
@@ -13158,7 +13285,8 @@ async function startBatchDriveUpload(){{
   const ovBar=document.getElementById('batch-drv-overall-bar');
 
   const prevEditId=state.editId;
-  let completed=0;
+  const initialDone=(state.batchQueue||[]).filter(it=>it.status==='done').length;
+  let newlyDone=0;
   for(let i=0;i<state.batchQueue.length;i++){{
     if(state.batchCancel)break;
     const item=state.batchQueue[i];
@@ -13174,21 +13302,24 @@ async function startBatchDriveUpload(){{
         item.pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
         item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
         updateBatchRowStatusCell(cell,item);
-        const overallRatio=((completed+(total>0?done/total:0))/q.length)*100;
+        const totalMatched=(state.batchQueue||[]).filter(it=>it.recordId).length||1;
+        const overallRatio=((initialDone+newlyDone+(total>0?done/total:0))/totalMatched)*100;
         if(ovBar)ovBar.style.width=Math.min(100,Math.round(overallRatio))+'%';
         if(ovPct)ovPct.textContent=Math.min(100,Math.round(overallRatio))+'%';
-        if(ovTxt)ovTxt.textContent=`Uploading file ${{completed+1}} of ${{q.length}}...`;
+        if(ovTxt)ovTxt.textContent=`Uploading file ${{initialDone+newlyDone+1}} of ${{totalMatched}}...`;
       }});
       if(row&&res&&res.attachment){{
         row.attachments=res.attachments||row.attachments||{{}};
         if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
       }}
       item.status='done';item.pct=100;item.msg='✓ Uploaded & Linked';
-      completed++;
+      newlyDone++;
       updateBatchRowStatusCell(cell,item);
-      if(ovBar)ovBar.style.width=Math.round((completed/q.length)*100)+'%';
-      if(ovPct)ovPct.textContent=Math.round((completed/q.length)*100)+'%';
-      if(ovTxt)ovTxt.textContent=`Completed ${{completed}} of ${{q.length}} file(s)`;
+      const totalMatched=(state.batchQueue||[]).filter(it=>it.recordId).length||1;
+      const currDone=initialDone+newlyDone;
+      if(ovBar)ovBar.style.width=Math.round((currDone/totalMatched)*100)+'%';
+      if(ovPct)ovPct.textContent=Math.round((currDone/totalMatched)*100)+'%';
+      if(ovTxt)ovTxt.textContent=`Completed ${{currDone}} of ${{totalMatched}} file(s)`;
     }}catch(e){{
       item.status='error';item.msg='✕ '+(e.message||'Failed');
       updateBatchRowStatusCell(cell,item);
@@ -13197,13 +13328,9 @@ async function startBatchDriveUpload(){{
   state.editId=prevEditId;
   state.batchRunning=false;
   if(spBtn)spBtn.classList.add('hidden');
-  if(stBtn){{
-    const remaining=(state.batchQueue||[]).some(it=>it.recordId&&it.status!=='done');
-    stBtn.disabled=!remaining;
-    stBtn.textContent=remaining?'🔄 Retry Remaining Files':'✓ All Done';
-  }}
+  updateBatchControlsState();
   renderRows();
-  toast(`Batch upload finished (${{completed}}/${{q.length}} linked)`,'ok');
+  toast(`Batch upload finished (${{newlyDone}} linked)`,'ok');
 }}
 
 async function saveRecord(){{
