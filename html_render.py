@@ -12099,7 +12099,7 @@ async function buildForm(row,opts={{}}){{
     initPrItemsEditor([], legacyText);
     if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
   }}
-  mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts,{isNocTab});
+  mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts,{{isNocTab}});
   if(!isNocTab)compactSingleFieldFormSections(formRoot);
   if(opts && opts.readonly){{
     formRoot.querySelectorAll('input, select, textarea').forEach(el=>{{
