@@ -2,6 +2,7 @@ import os
 import re
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from attachments import classify_path_kind
 
 # ==========================================
 # 1. Configuration & Setup
@@ -84,6 +85,7 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
     # BFS Queue to hold folders we need to scan: (folder_id, folder_full_path)
     queue = [(folder_id, root_folder_name)]
     doc_map = {}
+    slot_map = {}  # doc_no -> {'submission': {...}, 'approval': {...}}
     
     while queue:
         # Batch up to 15 folders per API query to dramatically reduce API calls
@@ -131,6 +133,13 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
                             'link': item['webViewLink'],
                             'priority': priority
                         }
+
+                    # Additive: also track the best Submit and best Replied link separately
+                    kind = classify_path_kind(item_full_path)
+                    if kind:
+                        slot = slot_map.setdefault(doc_no, {})
+                        if kind not in slot or priority < slot[kind]['priority']:
+                            slot[kind] = {'link': item['webViewLink'], 'priority': priority}
             
             page_token = results.get('nextPageToken')
             if not page_token:
@@ -140,7 +149,8 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
     if doc_map:
         import db
         for doc_no, data in doc_map.items():
-            db.update_record_link(doc_no, data['link'])
+            sync_links = {k: v['link'] for k, v in slot_map.get(doc_no, {}).items()}
+            db.update_record_link(doc_no, data['link'], sync_links)
 
 # ==========================================
 # 3. Webhook Registration (Run once per folder)

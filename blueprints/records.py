@@ -347,7 +347,7 @@ def api_save_record(pid, dt_id):
     uname  = u["username"] if u else "unknown"
     data   = request.get_json(silent=True) or {}
     rec_id = data.pop("_id", None)
-    clean  = {k:v for k,v in data.items() if not k.startswith("_")}
+    clean  = {k:v for k,v in data.items() if not k.startswith("_") and k != "attachments"}
     if _is_ltr_doc_type(pid, dt_id):
         direction_key = _ltr_field_key(pid, dt_id, "direction")
         issued_key = _ltr_field_key(pid, dt_id, "issuedDate")

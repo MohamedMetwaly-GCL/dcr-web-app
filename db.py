@@ -1591,10 +1591,16 @@ def invalidate_dashboard_cache(pid=None):
         exe("DELETE FROM dashboard_cache")
 
 def save_record(pid, dt_id, rec_id, data: dict):
-    clean = {k: v for k, v in data.items() if not k.startswith("_")}
+    # 'attachments' is server-managed (see attachments.py): never accepted from the client
+    clean = {k: v for k, v in data.items() if not k.startswith("_") and k != "attachments"}
     jdata = json.dumps(clean)
+    # On update, carry over existing 'attachments' so a normal record edit can never wipe them.
     exe("""INSERT INTO records(id,project_id,dt_id,data,updated_at) VALUES(%s,%s,%s,%s::jsonb,NOW())
-           ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data, updated_at=NOW()""",
+           ON CONFLICT(id) DO UPDATE SET data = EXCLUDED.data ||
+               CASE WHEN records.data ? 'attachments'
+                    THEN jsonb_build_object('attachments', records.data->'attachments')
+                    ELSE '{}'::jsonb END,
+               updated_at=NOW()""",
         (rec_id, pid, dt_id, jdata))
     invalidate_dashboard_cache(pid)
 
@@ -2984,11 +2990,49 @@ def reorder_columns(pid, dt_id, ordered_ids):
         exe("UPDATE columns_config SET sort_order=%s WHERE id=%s AND project_id=%s",
             (i, col_id, pid))
 
-def update_record_link(doc_no, link):
+def update_record_link(doc_no, link, sync_links=None):
     """Updates the fileLocation (Drive Link) of a record by its docNo."""
     import json
     rows = q("SELECT id, data FROM records WHERE data->>'docNo' = %s", (doc_no,))
     for r in rows:
         d = r["data"] if isinstance(r["data"], dict) else {}
         d["fileLocation"] = link
+        if sync_links:  # additive: merge Submit/Replied links without overwriting DCR uploads
+            import attachments as _att
+            d = _att.merge_sync_links(d, sync_links)
         exe("UPDATE records SET data=%s WHERE id=%s", (json.dumps(d), r["id"]))
+
+
+# ── Dual attachments (Submission / Approval) - additive, see attachments.py ──
+def get_record_attachments(record_id):
+    """Return {'submission':..., 'approval':...} for a record (legacy fileLocation = submission)."""
+    import attachments as _att
+    row = q("SELECT data FROM records WHERE id=%s", (record_id,), one=True)
+    if not row:
+        return None
+    d = row["data"] if isinstance(row["data"], dict) else {}
+    return _att.normalize_attachments(d)
+
+def set_record_attachment(record_id, slot, meta):
+    """Store attachment metadata in records.data['attachments'][slot]. fileLocation is untouched."""
+    import attachments as _att
+    if slot not in _att.SLOTS:
+        raise ValueError("Invalid attachment slot: %r" % (slot,))
+    # Single atomic statement: no read-modify-write race; other keys untouched.
+    rows = q("""UPDATE records SET data = data || jsonb_build_object('attachments',
+                    COALESCE(data->'attachments','{}'::jsonb) || jsonb_build_object(%s::text, %s::jsonb)),
+                    updated_at = NOW()
+                WHERE id=%s RETURNING id""",
+             (slot, json.dumps(meta), record_id))
+    return bool(rows)
+
+def clear_record_attachment(record_id, slot):
+    """Remove one attachment slot from a record. fileLocation is untouched."""
+    import attachments as _att
+    if slot not in _att.SLOTS:
+        raise ValueError("Invalid attachment slot: %r" % (slot,))
+    rows = q("""UPDATE records SET data = jsonb_set(data, '{attachments}',
+                    COALESCE(data->'attachments','{}'::jsonb) - %s::text),
+                    updated_at = NOW()
+                WHERE id=%s RETURNING id""", (slot, record_id))
+    return bool(rows)
