@@ -298,3 +298,47 @@ def api_upload_complete():
         attachment=meta,
         attachments=db.get_record_attachments(record_id),
     )
+
+
+@drive_uploads_bp.route("/api/drive/attachment/<record_id>/<slot>", methods=["DELETE"])
+def api_unlink_attachment(record_id, slot):
+    """Unlink an attachment slot ('submission' or 'approval') from a record without deleting the file on Google Drive."""
+    record_id = str(record_id or "").strip()
+    slot = str(slot or "").strip().lower()
+    if slot not in attachments.SLOTS:
+        return jsonify(error=f"Invalid slot '{slot}'. Must be 'submission' or 'approval'."), 400
+
+    rec = db.get_record_by_id(record_id)
+    if not rec:
+        return jsonify(error="Record not found"), 404
+    pid = rec.get("_project_id") or ""
+    dt_id = rec.get("_dt_id") or ""
+
+    u, err = _check_write_access(pid, dt_id)
+    if err:
+        return err
+
+    existing = (rec.get("attachments") or {}).get(slot) if isinstance(rec.get("attachments"), dict) else None
+    old_name = (existing or {}).get("file_name") or (existing or {}).get("url") or slot
+    db.clear_record_attachment(record_id, slot)
+
+    try:
+        db.log_action(
+            u["username"], "EDIT",
+            project_id=pid, dt_id=dt_id, record_id=record_id,
+            doc_no=rec.get("docNo", ""),
+            field_name=f"attachments.{slot}",
+            old_value=str(old_name),
+            new_value="",
+            detail=f"Unlinked {slot} attachment '{old_name}' from record",
+        )
+    except Exception:
+        pass
+
+    return jsonify(
+        ok=True,
+        record_id=record_id,
+        slot=slot,
+        attachments=db.get_record_attachments(record_id),
+    )
+

@@ -10046,16 +10046,18 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <div class="mhdr"><span>☁ Batch Upload Files to Google Drive</span>
       <button class="xbtn" onclick="closeBatchDriveUpload()">✕</button></div>
     <div class="mbody" style="display:flex;flex-direction:column;gap:12px">
-      <div id="batch-drv-slot-wrap" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#f8fafc;padding:10px 12px;border:1px solid var(--bd);border-radius:8px">
-        <span style="font-size:11px;font-weight:700;color:var(--pr)">Upload Target Slot:</span>
-        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#2563eb;cursor:pointer">
-          <input type="radio" name="batch-drv-slot" value="submission" checked onchange="onBatchSlotChange(this.value)">
-          📤 Submission Files (ملفات التقديم الأصلي)
-        </label>
-        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#16a34a;cursor:pointer">
-          <input type="radio" name="batch-drv-slot" value="approval" onchange="onBatchSlotChange(this.value)">
-          ✅ Consultant Replies / Approvals (ردود واعتمادات الاستشاري)
-        </label>
+      <div id="batch-drv-slot-wrap" style="display:flex;flex-direction:column;gap:8px;background:#f8fafc;padding:10px 12px;border:1px solid var(--bd);border-radius:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px">Upload Target Slot</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+          <label id="batch-slot-card-submission" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">
+            <input type="radio" name="batch-drv-slot" value="submission" checked onchange="onBatchSlotChange(this.value)" style="accent-color:#2563eb">
+            <span>📤 Submission Files (ملفات التقديم الأصلي)</span>
+          </label>
+          <label id="batch-slot-card-approval" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">
+            <input type="radio" name="batch-drv-slot" value="approval" onchange="onBatchSlotChange(this.value)" style="accent-color:#0f766e">
+            <span>📋 Consultant Replies (ردود الاستشاري)</span>
+          </label>
+        </div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input type="file" id="batch-drv-input" multiple style="display:none" onchange="onBatchFilesSelected(this.files)">
@@ -10089,7 +10091,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       </div>
     </div>
     <div class="mfoot" style="justify-content:space-between">
-      <button type="button" class="btn btn-sc" id="batch-drv-stop-btn" style="display:none;color:#dc2626;border-color:#fca5a5" onclick="stopBatchDriveUpload()">⏹ Stop Queue</button>
+      <button type="button" class="btn btn-sc hidden" id="batch-drv-stop-btn" style="color:#dc2626;border-color:#fca5a5" onclick="stopBatchDriveUpload()">⏹ Stop Queue</button>
       <div style="display:flex;gap:8px;margin-left:auto">
         <button type="button" class="btn btn-sc" onclick="closeBatchDriveUpload()">Close</button>
         <button type="button" class="btn btn-pr" id="batch-drv-start-btn" onclick="startBatchDriveUpload()" disabled>🚀 Start Sequential Upload</button>
@@ -10991,10 +10993,12 @@ function renderRows(){{
               if(pair[1]) sp.appendChild(_mkA(pair[1],'Download '+name,_dl,'FILE_DOWNLOAD'));
               return sp;
             }};
+            const _rTheme=_getReplyStatusTheme(row.status||(_att.approval&&_att.approval.consultant_status));
+            const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
             const box=document.createElement('div');
             box.style.cssText='display:inline-flex;flex-direction:column;gap:2px;align-items:stretch';
             box.appendChild(_chip('Subm',_sv,'#2563eb','#eff6ff','Submission'));
-            box.appendChild(_chip('Appr',_av,'#16a34a','#f0fdf4','Approval (Replied)'));
+            box.appendChild(_chip('Reply',_av,_rTheme.color,_rTheme.bg,_rName));
             td.appendChild(box);
             td.style.textAlign='center';
             tr.appendChild(td);return;
@@ -12620,6 +12624,18 @@ function _resolveSlotLinks(entry){{
   return [u,dl];
 }}
 
+function _getReplyStatusTheme(statusStr){{
+  const s=String(statusStr||'').trim().toLowerCase();
+  if(!s)return {{color:'#0f766e',bg:'#f0fdfa',bd:'#99f6e4'}};
+  if(/^c\b|^d\b/.test(s)||s.includes('reject')||s.includes('revise')||s.includes('resubmit')||s.includes('disapprov')||s.includes('not approved')||s.includes('refused')){{
+    return {{color:'#dc2626',bg:'#fef2f2',bd:'#fca5a5'}};
+  }}
+  if(/^a\b|^b\b/.test(s)||s.includes('approv')||s.includes('accept')||s.includes('no objection')||s.includes('proceed')||s.includes('completed')){{
+    return {{color:'#16a34a',bg:'#f0fdf4',bd:'#bbf7d0'}};
+  }}
+  return {{color:'#d97706',bg:'#fffbeb',bd:'#fde68a'}};
+}}
+
 function _normalizeRowAttachments(row){{
   const att=(row&&row.attachments&&typeof row.attachments==='object')?row.attachments:{{}};
   let sub=att.submission||null;
@@ -12636,23 +12652,44 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   state.activeDriveUploads=0;
   const secTitle=ctx.isNocTab?'Remarks / Files':'Files / Notes';
   const secBody=getOrCreateFormSection(formRoot,sectionBodies,secTitle);
+
+  // Clarify the legacy fileLocation input label so it doesn't confuse DCs alongside the new upload cards
+  const flInput=formRoot.querySelector('#f-fileLocation');
+  if(flInput && flInput.parentElement){{
+    const flLbl=flInput.parentElement.querySelector('label');
+    if(flLbl)flLbl.textContent='Drive Link (Legacy / Manual Override)';
+  }}
+
   const wrap=document.createElement('div');
   wrap.className='fg full';
   wrap.id='dcr-drive-upload-box';
   const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
+  const cur=_normalizeRowAttachments(row);
+  const currentStatus=()=>{{
+    const stEl=formRoot.querySelector('#f-status');
+    return (stEl&&stEl.value)?stEl.value:(row?.status||cur.approval?.consultant_status||'');
+  }};
+  const replyThemeFor=(hasFile)=>hasFile?_getReplyStatusTheme(currentStatus()):{{color:'#475569',bg:'#f8fafc',bd:'#cbd5e1'}};
+  const initReplyTheme=replyThemeFor(Boolean(cur.approval));
   const slots=isEng
     ? [{{key:'submission',title:'1. Submission Document (مستند التقديم)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
-       {{key:'approval',title:'2. Consultant Approval / Reply (رد واعتماد الاستشاري)',color:'#16a34a',bg:'#f0fdf4',bd:'#bbf7d0'}}]
+       {{key:'approval',title:'2. Consultant Reply (رد الاستشاري)',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
     : [{{key:'submission',title:'Document Attachment (مرفق المستند)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}}];
-  const cur=_normalizeRowAttachments(row);
   const grid=document.createElement('div');
   grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:6px';
 
   slots.forEach(s=>{{
     const card=document.createElement('div');
-    card.style.cssText=`border:1px solid ${{s.bd}};background:${{s.bg}};border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px`;
     const hdr=document.createElement('div');
-    hdr.style.cssText=`font-size:11px;font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center`;
+    let upBtn=null, progBarInner=null;
+    const applyCardTheme=(th)=>{{
+      s.color=th.color;s.bg=th.bg;s.bd=th.bd;
+      card.style.cssText=`border:1px solid ${{s.bd}};background:${{s.bg}};border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;transition:all .15s`;
+      hdr.style.cssText=`font-size:11px;font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center`;
+      if(upBtn)upBtn.style.cssText=`font-size:11px;padding:4px 10px;border-color:${{s.color}};color:${{s.color}};background:#fff`;
+      if(progBarInner)progBarInner.style.background=s.color;
+    }};
+    applyCardTheme(s);
     hdr.textContent=s.title;
     card.appendChild(hdr);
 
@@ -12663,11 +12700,24 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
 
     const renderSlotInfo=(entry,pending)=>{{
       statusLine.innerHTML='';
+      if(s.key==='approval')applyCardTheme(replyThemeFor(Boolean(entry||pending)));
       if(pending){{
         const b=document.createElement('span');
         b.style.cssText='font-weight:600;color:#0f766e';
         b.textContent='✓ Uploaded ('+pending.file_name+') — will link on Save';
         statusLine.appendChild(b);
+        if(CAN_EDIT && !(opts&&opts.readonly)){{
+          const clrBtn=document.createElement('button');
+          clrBtn.type='button';
+          clrBtn.style.cssText='padding:1px 6px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
+          clrBtn.textContent='✕';
+          clrBtn.title='Cancel pending attachment';
+          clrBtn.onclick=()=>{{
+            delete state.pendingDriveAttachments[s.key];
+            renderSlotInfo(cur[s.key],null);
+          }};
+          statusLine.appendChild(clrBtn);
+        }}
         return;
       }}
       const [vUrl,dlUrl]=_resolveSlotLinks(entry);
@@ -12676,11 +12726,13 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         empty.style.cssText='color:#64748b;font-style:italic';
         empty.textContent=s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet';
         statusLine.appendChild(empty);
+        if(upBtn)upBtn.textContent='📤 Upload File (up to 1 GB)';
         return;
       }}
       const nameSpan=document.createElement('span');
-      nameSpan.style.cssText='font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      nameSpan.style.cssText='font-weight:600;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       nameSpan.textContent=entry.file_name||(entry.legacy?'Linked Drive File':'Attached File');
+      nameSpan.title=entry.file_name||vUrl;
       if(entry.file_size)nameSpan.textContent+=' ('+_fmtBytes(entry.file_size)+')';
       statusLine.appendChild(nameSpan);
 
@@ -12699,15 +12751,40 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         dA.onclick=()=>logFileAction('FILE_DOWNLOAD',row?.docNo||row?.nocNo||'',dlUrl);
         statusLine.appendChild(dA);
       }}
+
+      if(CAN_EDIT && !(opts&&opts.readonly) && !entry.legacy && state.editId){{
+        const unBtn=document.createElement('button');
+        unBtn.type='button';
+        unBtn.style.cssText='padding:1px 6px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
+        unBtn.textContent='✕';
+        unBtn.title='Unlink this attachment from the record';
+        unBtn.onclick=async()=>{{
+          if(!confirm('Unlink this '+s.key+' attachment from the record? (The file remains safe on Google Drive)'))return;
+          unBtn.disabled=true;
+          try{{
+            const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key),{{method:'DELETE'}});
+            const j=await r.json().catch(()=>({{}}));
+            if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
+            cur[s.key]=null;
+            if(row)row.attachments=j.attachments||{{}};
+            renderSlotInfo(null,null);
+            renderRows();
+            toast('Attachment unlinked ('+s.key+')','ok');
+          }}catch(e){{
+            unBtn.disabled=false;
+            toast('Could not unlink attachment: '+(e.message||e),'er');
+          }}
+        }};
+        statusLine.appendChild(unBtn);
+      }}
     }};
-    renderSlotInfo(cur[s.key],null);
 
     if(CAN_EDIT && !(opts&&opts.readonly)){{
       const ctrl=document.createElement('div');
       ctrl.style.cssText='display:flex;align-items:center;gap:8px;margin-top:2px';
       const fileInp=document.createElement('input');
       fileInp.type='file';fileInp.style.display='none';
-      const upBtn=document.createElement('button');
+      upBtn=document.createElement('button');
       upBtn.type='button';
       upBtn.className='btn btn-sc btn-sm';
       upBtn.style.cssText=`font-size:11px;padding:4px 10px;border-color:${{s.color}};color:${{s.color}};background:#fff`;
@@ -12718,7 +12795,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       progWrap.style.cssText='flex:1;display:none;flex-direction:column;gap:3px';
       const progBarOuter=document.createElement('div');
       progBarOuter.style.cssText='width:100%;height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden';
-      const progBarInner=document.createElement('div');
+      progBarInner=document.createElement('div');
       progBarInner.style.cssText=`width:0%;height:100%;background:${{s.color}};transition:width .15s`;
       progBarOuter.appendChild(progBarInner);
       const progTxt=document.createElement('div');
@@ -12732,6 +12809,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         upBtn.disabled=true;
         progWrap.style.display='flex';
         progBarInner.style.width='0%';
+        progTxt.style.color='#475569';
         progTxt.textContent='Starting upload session...';
         state.activeDriveUploads=(state.activeDriveUploads||0)+1;
         try{{
@@ -12745,6 +12823,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             renderSlotInfo(null,res);
             progTxt.textContent='✓ Uploaded 100% — click Save to finish';
           }}else if(res&&res.attachment){{
+            cur[s.key]=res.attachment;
             if(row){{
               row.attachments=res.attachments||row.attachments||{{}};
               if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
@@ -12772,6 +12851,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       ctrl.appendChild(progWrap);
       ctrl.appendChild(fileInp);
       card.appendChild(ctrl);
+    }}
+    renderSlotInfo(cur[s.key],null);
+
+    if(s.key==='approval'){{
+      const stEl=formRoot.querySelector('#f-status');
+      if(stEl)stEl.addEventListener('change',()=>renderSlotInfo(cur[s.key],state.pendingDriveAttachments?.[s.key]||null));
     }}
     grid.appendChild(card);
   }});
@@ -12938,10 +13023,13 @@ function openBatchDriveUpload(){{
   if(inp)inp.value='';
   const ov=document.getElementById('batch-drv-overall');
   if(ov)ov.style.display='none';
+  onBatchSlotChange('submission');
+  const sumEl=document.getElementById('batch-drv-summary');
+  if(sumEl)sumEl.textContent='Files are matched to records automatically by Document No.';
   const stBtn=document.getElementById('batch-drv-start-btn');
   if(stBtn){{stBtn.disabled=true;stBtn.textContent='🚀 Start Sequential Upload';}}
   const spBtn=document.getElementById('batch-drv-stop-btn');
-  if(spBtn)spBtn.style.display='none';
+  if(spBtn)spBtn.classList.add('hidden');
   renderBatchDriveTable();
   openM('batch-drive-modal');
 }}
@@ -12956,6 +13044,20 @@ function closeBatchDriveUpload(){{
 
 function onBatchSlotChange(val){{
   state.batchSlot=(val==='approval')?'approval':'submission';
+  const cSub=document.getElementById('batch-slot-card-submission');
+  const cApp=document.getElementById('batch-slot-card-approval');
+  if(cSub){{
+    const act=(state.batchSlot==='submission');
+    cSub.style.border=act?'2px solid #2563eb':'1px solid #cbd5e1';
+    cSub.style.background=act?'#eff6ff':'#fff';
+    cSub.style.color=act?'#1d4ed8':'#334155';
+  }}
+  if(cApp){{
+    const act=(state.batchSlot==='approval');
+    cApp.style.border=act?'2px solid #0f766e':'1px solid #cbd5e1';
+    cApp.style.background=act?'#f0fdfa':'#fff';
+    cApp.style.color=act?'#0f766e':'#334155';
+  }}
 }}
 
 function onBatchFilesSelected(fileList){{
@@ -13048,7 +13150,7 @@ async function startBatchDriveUpload(){{
   const stBtn=document.getElementById('batch-drv-start-btn');
   if(stBtn)stBtn.disabled=true;
   const spBtn=document.getElementById('batch-drv-stop-btn');
-  if(spBtn){{spBtn.style.display='';spBtn.disabled=false;spBtn.textContent='⏹ Stop Queue';}}
+  if(spBtn){{spBtn.classList.remove('hidden');spBtn.disabled=false;spBtn.textContent='⏹ Stop Queue';}}
   const ov=document.getElementById('batch-drv-overall');
   if(ov)ov.style.display='flex';
   const ovTxt=document.getElementById('batch-drv-overall-txt');
@@ -13094,7 +13196,7 @@ async function startBatchDriveUpload(){{
   }}
   state.editId=prevEditId;
   state.batchRunning=false;
-  if(spBtn)spBtn.style.display='none';
+  if(spBtn)spBtn.classList.add('hidden');
   if(stBtn){{
     const remaining=(state.batchQueue||[]).some(it=>it.recordId&&it.status!=='done');
     stBtn.disabled=!remaining;
