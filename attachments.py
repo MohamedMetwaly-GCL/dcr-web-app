@@ -144,3 +144,28 @@ def merge_sync_links(data, sync_links):
             continue
         new = apply_attachment(new, slot, {"url": url, "source": SYNC_SOURCE})
     return new
+
+
+# ---------------- Document types with / without a consultant reply cycle ----------------
+REPLY_CYCLE_CODES = {"SD", "DS", "MS", "IR", "MIR", "RFI", "NOC", "ABD"}
+_NO_CYCLE_NAME_HINTS = ("requisition", "purchase", "letter", "correspondence", "minutes", "mom",
+                        "daily report", "site log", "boq", "specs", "variation")
+_CYCLE_NAME_HINTS = ("shop drawing", "drawing", "material submittal", "submittal", "inspection request",
+                     "request for information", "notice of change", "as-built", "as built")
+
+
+def doc_type_has_reply_cycle(dt):
+    """True when documents of this type go to the consultant and receive a reply / approval status
+    (Shop Drawings, Material Submittals, IR, RFI, NOC). False for single-party documents
+    (PR, Letters, MOM, Daily Reports). An explicit boolean 'has_reply_cycle' on the doc type wins."""
+    dt = dt or {}
+    flag = dt.get("has_reply_cycle")
+    if isinstance(flag, bool):
+        return flag
+    code = str(dt.get("code") or dt.get("id") or "").strip().upper()
+    if code in REPLY_CYCLE_CODES:
+        return True
+    name = str(dt.get("name") or "").strip().lower()
+    if any(h in name for h in _NO_CYCLE_NAME_HINTS):
+        return False
+    return any(h in name for h in _CYCLE_NAME_HINTS)

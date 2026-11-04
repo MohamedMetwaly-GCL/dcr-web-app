@@ -119,6 +119,10 @@ def api_create_upload_session():
     ws_id = str(proj.get("workspace_id") or "ENG").strip().upper()
     if slot == attachments.SLOT_APPROVAL and ws_id != "ENG":
         return jsonify(error="Approval slot is only available in the Engineering & Projects workspace"), 400
+    dt_meta = db.get_doc_type(pid, dt_id) or {}
+    has_cycle = attachments.doc_type_has_reply_cycle(dt_meta)
+    if slot == attachments.SLOT_APPROVAL and not has_cycle:
+        return jsonify(error="This document type has no consultant reply cycle"), 400
 
     if record_id:
         rec = db.get_record_by_id(record_id)
@@ -148,7 +152,7 @@ def api_create_upload_session():
         service = drive_upload.RestDriveAdapter(token, http=http)
         dest = drive_routing.resolve_upload_destination(
             pid, dt_id, slot, service, db, create_if_missing=create_folders,
-            subfolder_name=subfolder_name or None)
+            subfolder_name=subfolder_name or None, flat=not has_cycle)
         session_url = drive_upload.create_resumable_session(
             token, dest["folder_id"], clean_name, mime_type, file_size,
             origin=request.headers.get("Origin"), http=http)
@@ -283,16 +287,25 @@ def api_upload_complete():
         **extra,
     )
 
-    # If this record already has a folder attachment in this slot, track all files inside it
+    # If this is a folder upload, track all files inside it (including the very first file)
     existing_att = rec.get("attachments") if isinstance(rec.get("attachments"), dict) else {}
     existing_slot = existing_att.get(slot) if isinstance(existing_att.get(slot), dict) else None
-    if existing_slot and existing_slot.get("is_folder") and (existing_slot.get("folder_id") == extra.get("folder_id")):
-        files_list = list(existing_slot.get("files") or [])
-        files_list.append({"name": meta["file_name"], "size": meta["file_size"], "id": file_id})
+    if extra.get("is_folder"):
+        if existing_slot and existing_slot.get("is_folder") and (existing_slot.get("folder_id") == extra.get("folder_id")):
+            files_list = list(existing_slot.get("files") or [])
+        else:
+            files_list = []
+        files_list = [f for f in files_list if f.get("id") != file_id]
+        files_list.append({
+            "id": file_id,
+            "name": meta["file_name"],
+            "size": meta["file_size"],
+            "mimeType": meta["mime_type"],
+        })
         meta["files"] = files_list
         meta["file_count"] = len(files_list)
-        meta["file_size"] = sum(f.get("size", 0) for f in files_list)
-        meta["file_name"] = existing_slot.get("file_name") or extra.get("folder_name")
+        meta["file_size"] = sum(int(f.get("size") or 0) for f in files_list)
+        meta["file_name"] = (existing_slot or {}).get("folder_name") or extra.get("folder_name") or meta["file_name"]
 
     # Preserve legacy single fileLocation as submission if attaching an approval to an old record
     old_loc = attachments._clean_link(rec.get("fileLocation"))

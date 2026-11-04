@@ -112,7 +112,7 @@ def create_folder(service, parent_id, name):
 
 
 # ---------------- Orchestration ----------------
-def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missing=False, subfolder_name=None):
+def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missing=False, subfolder_name=None, flat=False):
     """Return {'folder_id', 'doc_type_folder_id', 'source', ...} or raise RoutingError.
 
     store must provide: get_project(pid), get_doc_type(pid, dt_id),
@@ -151,9 +151,11 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
                       "drive_slot_folders": {},
                       "folder_synced_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"})
 
-    # 2) Submit / Replied sub-folder
+    # 2) Submit / Replied sub-folder (skipped when flat=True: single-party documents such as PR / Letters)
     slot_id = str(slot_cache.get(slot) or "").strip()
-    if slot_id and not folder_is_usable(service, slot_id):
+    if flat:
+        slot_id = dt_folder_id
+    elif slot_id and not folder_is_usable(service, slot_id):
         slot_id = ""
     if not slot_id:
         sub = match_slot_folder(list_child_folders(service, dt_folder_id), slot)

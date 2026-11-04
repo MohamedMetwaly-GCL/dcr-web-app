@@ -10107,6 +10107,25 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   </div>
 </div>
 
+<!-- DOCUMENT / FOLDER VIEWER MODAL -->
+<div class="overlay hidden" id="doc-viewer-modal" style="z-index:1200">
+  <div class="modal" style="max-width:1120px;width:96vw;height:88vh;display:flex;flex-direction:column;overflow:hidden">
+    <div class="mhdr"><span id="dv-title" style="min-width:0;word-break:break-word">Document</span>
+      <button class="xbtn" onclick="closeM('doc-viewer-modal');document.getElementById('dv-pane').innerHTML=''">✕</button></div>
+    <div style="flex:1;min-height:0;display:flex;flex-wrap:wrap">
+      <div id="dv-side" style="width:300px;max-width:100%;border-right:1px solid var(--bd);display:none;flex-direction:column;min-height:0;background:#fff">
+        <div style="padding:8px;border-bottom:1px solid var(--bd)"><input id="dv-search" type="text" placeholder="🔍 Search files in folder..." oninput="dvFilter(this.value)" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--bd);border-radius:6px"></div>
+        <div id="dv-list" style="flex:1;overflow:auto"></div>
+      </div>
+      <div id="dv-pane" style="flex:1;min-width:280px;min-height:0;display:flex;flex-direction:column;background:#f1f5f9"></div>
+    </div>
+    <div class="mfoot" style="justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <div id="dv-foot-left" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>
+      <button type="button" class="btn btn-sc" onclick="closeM('doc-viewer-modal');document.getElementById('dv-pane').innerHTML=''">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- PROJECT SETTINGS MODAL -->
 <div class="overlay hidden" id="project-settings-modal">
   <div class="modal" style="max-width:600px">
@@ -10969,43 +10988,42 @@ function renderRows(){{
       const ltrRole=isLtrTab?getLTRFieldRole(col):'';
       
       if(col.col_type==='url' || key==='fileLocation'){{
-        // Dual attachments (Submit + Replied): shown only in Drive Link column when BOTH exist
+        // Attachments: chips open the in-app viewer. Two chips (Subm + Reply) for consultant-cycle types, one 'Doc' chip otherwise.
         const _att=(row.attachments && typeof row.attachments==='object')?row.attachments:null;
-        if(_att && _att.submission && _att.approval){{
-          const _ex=(e)=>{{
-            let v='',d='';
-            if(e.file_id){{ v='https://drive.google.com/file/d/'+e.file_id+'/view'; d='https://drive.google.com/uc?export=download&id='+e.file_id; }}
-            else if(e.url){{ v=String(e.url).trim(); if(v.indexOf('/d/')>-1 && v.indexOf('/folders/')<0){{ d='https://drive.google.com/uc?export=download&id='+v.split('/d/')[1].split('/')[0].split('?')[0]; }} }}
-            return [v,d];
-          }};
-          const _sv=_ex(_att.submission), _av=_ex(_att.approval);
-          if(_sv[0] && _av[0]){{
+        const _cyc=tabHasReplyCycle();
+        if(_att && _att.submission && (_att.approval || !_cyc)){{
+          const _okE=(e)=>!!(e&&(e.file_id||e.folder_id||String(e.url||'').trim()));
+          if(_okE(_att.submission) && (!_att.approval || _okE(_att.approval))){{
             const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
             const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-            const _mkA=(href,title,svg,act)=>{{
-              const a=document.createElement('a');
-              a.className=(act==='FILE_DOWNLOAD')?'dl-file-icon':'view-file-icon';
-              a.style.cssText='display:inline-flex;align-items:center;padding:0 1px';
-              a.href=href; a.target='_blank'; a.rel='noopener'; a.title=title; a.innerHTML=svg;
-              a.addEventListener('click',()=>logFileAction(act,row.docNo||row.nocNo||'',href));
-              return a;
-            }};
-            const _chip=(label,pair,color,bg,name)=>{{
+            const _chip=(label,slot,entry,color,bg,name)=>{{
               const sp=document.createElement('span');
               sp.style.cssText='display:inline-flex;align-items:center;justify-content:space-between;gap:3px;padding:1px 5px;border-radius:5px;border:1px solid '+color+';background:'+bg+';font-size:9.5px;font-weight:700;color:'+color+';white-space:nowrap;line-height:1.2';
-              const lbl=document.createElement('span');
-              lbl.textContent=label;
-              sp.appendChild(lbl);
-              sp.appendChild(_mkA(pair[0],'View '+name,_eye,'DRIVE_LINK_CLICK'));
-              if(pair[1]) sp.appendChild(_mkA(pair[1],'Download '+name,_dl,'FILE_DOWNLOAD'));
+              const lbl=document.createElement('span');lbl.textContent=label;sp.appendChild(lbl);
+              const v=document.createElement('a');
+              v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px';
+              v.href='#';v.title='View '+name;v.innerHTML=_eye;
+              v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}});
+              sp.appendChild(v);
+              const dh=canDownloadUI()?docDownloadHref(row._id,slot,entry):'';
+              if(dh){{
+                const d=document.createElement('a');
+                d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px';
+                d.href=dh;d.title=((entry.is_folder||String(entry.url||'').indexOf('/folders/')>-1)?'Download folder (ZIP) - ':'Download ')+name;d.innerHTML=_dl;
+                sp.appendChild(d);
+              }}
               return sp;
             }};
-            const _rTheme=_getReplyStatusTheme(row.status||(_att.approval&&_att.approval.consultant_status));
-            const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
             const box=document.createElement('div');
             box.style.cssText='display:inline-flex;flex-direction:column;gap:2px;align-items:stretch';
-            box.appendChild(_chip('Subm',_sv,'#2563eb','#eff6ff','Submission'));
-            box.appendChild(_chip('Reply',_av,_rTheme.color,_rTheme.bg,_rName));
+            if(_att.approval){{
+              const _rTheme=_getReplyStatusTheme(row.status||_att.approval.consultant_status);
+              const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
+              box.appendChild(_chip('Subm','submission',_att.submission,'#2563eb','#eff6ff','Submission'));
+              box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName));
+            }}else{{
+              box.appendChild(_chip('Doc','submission',_att.submission,'#0f766e','#f0fdfa','Document'));
+            }}
             td.appendChild(box);
             td.style.textAlign='center';
             tr.appendChild(td);return;
@@ -11017,15 +11035,12 @@ function renderRows(){{
         if(hasValidLink){{
           let eyeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
           let dlSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-          const escDocNo = escHtml(row.docNo||row.nocNo||'');
-          let icons = `<a class="view-file-icon" href="${{url}}" target="_blank" onclick="logFileAction('DRIVE_LINK_CLICK', '${{escDocNo}}', '${{escHtml(url)}}')" title="${{isFolder ? 'Open Folder' : 'View File'}}">${{eyeSvg}}</a>`;
-          if(!isFolder) {{
-            let dlUrl = url;
-            let m = url.match(/d\\/([a-zA-Z0-9_-]+)/);
-            if(m) dlUrl = `https://drive.google.com/uc?export=download&id=${{m[1]}}`;
-            else {{ m = url.match(/id=([a-zA-Z0-9_-]+)/); if(m) dlUrl = `https://drive.google.com/uc?export=download&id=${{m[1]}}`; }}
-            icons += `<a class="dl-file-icon" href="${{dlUrl}}" target="_blank" onclick="logFileAction('FILE_DOWNLOAD', '${{escDocNo}}', '${{escHtml(dlUrl)}}')" title="Download File">${{dlSvg}}</a>`;
-          }}
+          const _att2=(row.attachments&&typeof row.attachments==='object')?row.attachments:{{}};
+          const _vSlot=_att2.submission?'submission':(_att2.approval?'approval':'legacy');
+          const _vEntry=_att2[_vSlot]||{{url:url,legacy:true}};
+          let icons = `<a class="view-file-icon" href="#" onclick="openDocViewer('${{row._id}}','${{_vSlot}}');return false;" title="${{isFolder ? 'Open Folder' : 'View File'}}">${{eyeSvg}}</a>`;
+          const _dh = canDownloadUI() ? docDownloadHref(row._id,_vSlot,_vEntry) : '';
+          if(_dh) icons += `<a class="dl-file-icon" href="${{_dh}}" title="${{isFolder ? 'Download folder (ZIP)' : 'Download File'}}">${{dlSvg}}</a>`;
           td.innerHTML=icons;
         }}
         else {{
@@ -12634,6 +12649,178 @@ function _resolveSlotLinks(entry){{
   return [u,dl];
 }}
 
+/* ===== Document-type aware attachments + in-app document viewer ===== */
+function canDownloadUI(){{
+  return (typeof CAN_EDIT!=='undefined') && !!CAN_EDIT;
+}}
+function dtHasReplyCycle(dt){{
+  dt=dt||{{}};
+  if(typeof dt.has_reply_cycle==='boolean')return dt.has_reply_cycle;
+  const code=String(dt.code||dt.id||'').trim().toUpperCase();
+  if(['SD','DS','MS','IR','MIR','RFI','NOC','ABD'].includes(code))return true;
+  const name=String(dt.name||'').trim().toLowerCase();
+  if(['requisition','purchase','letter','correspondence','minutes','mom','daily report','site log','boq','specs','variation'].some(h=>name.includes(h)))return false;
+  return ['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built'].some(h=>name.includes(h));
+}}
+function tabHasReplyCycle(){{
+  const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
+  return isEng && dtHasReplyCycle((state.dtList||[]).find(d=>d.id===state.tab)||{{}});
+}}
+function docDownloadHref(rid,slot,entry){{
+  if(!entry)return '';
+  const url=String(entry.url||'');
+  if(entry.is_folder||url.indexOf('/folders/')>-1)return '/api/drive/folder-zip/'+encodeURIComponent(rid)+'/'+slot;
+  let fid=entry.file_id||'';
+  if(!fid){{const m=url.match(/\\/d\\/([a-zA-Z0-9_-]+)/)||url.match(/[?&]id=([a-zA-Z0-9_-]+)/);fid=m?m[1]:'';}}
+  return fid?('/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'/'+encodeURIComponent(fid)+'?dl=1'):'';
+}}
+
+const DV={{info:null,rid:'',slot:'',cur:-1,filter:'',label:''}};
+function _dvEl(id){{return document.getElementById(id);}}
+function _dvFmt(n){{return (typeof _fmtBytes==='function')?_fmtBytes(n):(n+' B');}}
+function _dvIcon(f){{
+  if(f.preview==='pdf')return '📕';
+  if(f.preview==='image')return '🖼️';
+  const n=String(f.name||'').toLowerCase();
+  if(/\\.(dwg|dxf|rvt|ifc)$/.test(n))return '📐';
+  if(/\\.(xls|xlsx|xlsm|csv)$/.test(n))return '📊';
+  if(/\\.(doc|docx)$/.test(n))return '📄';
+  if(/\\.(zip|rar|7z)$/.test(n))return '🗜️';
+  return '📎';
+}}
+function _dvSetBusy(msg){{
+  const pane=_dvEl('dv-pane');
+  if(pane)pane.innerHTML='<div style="margin:auto;color:var(--mu);font-size:13px">'+escHtml(msg)+'</div>';
+}}
+function _dvError(j,status){{
+  _dvEl('dv-side').style.display='none';
+  const pane=_dvEl('dv-pane');
+  let html='<div style="margin:auto;max-width:440px;text-align:center;padding:24px;color:#334155">'
+    +'<div style="font-size:34px">⚠️</div>'
+    +'<div style="font-weight:700;margin:8px 0">Could not open this document</div>'
+    +'<div style="font-size:12px;color:#64748b;line-height:1.6">'+escHtml((j&&(j.hint||j.error))||('Error '+status))+'</div>';
+  if(j&&j.fallback_url)html+='<a class="btn btn-sc" style="margin-top:14px;display:inline-block" target="_blank" rel="noopener" href="'+escHtml(j.fallback_url)+'">🔗 Open original link</a>';
+  pane.innerHTML=html+'</div>';
+  _dvEl('dv-foot-left').innerHTML='';
+}}
+async function openDocViewer(rid,slot,opts){{
+  opts=opts||{{}};
+  DV.rid=rid;DV.slot=slot;DV.info=null;DV.cur=-1;DV.filter='';DV.label=opts.label||'';
+  _dvEl('dv-title').textContent='Loading document...';
+  _dvEl('dv-side').style.display='none';
+  _dvEl('dv-foot-left').innerHTML='';
+  _dvSetBusy('Loading...');
+  openM('doc-viewer-modal');
+  try{{
+    const r=await fetch('/api/drive/view-info/'+encodeURIComponent(rid)+'/'+slot);
+    const j=await r.json().catch(()=>({{}}));
+    if(!r.ok||!j.ok){{_dvError(j,r.status);_dvEl('dv-title').textContent='Document';return;}}
+    DV.info=j;
+    _dvRender();
+  }}catch(e){{_dvError({{error:e.message||String(e)}},0);}}
+}}
+function _dvRender(){{
+  const j=DV.info;if(!j)return;
+  const rec=(state.recs||[]).find(x=>x._id===DV.rid)||{{}};
+  const docNo=rec.docNo||rec.nocNo||'';
+  const isFolder=j.kind==='folder';
+  const total=_dvFmt(j.total_size||0);
+  const head=(isFolder?'📁 ':'📄 ')+(docNo?docNo+' — ':'')+(DV.label||j.name||'Document');
+  _dvEl('dv-title').innerHTML=escHtml(head)+' <span style="font-weight:500;color:var(--mu);font-size:11px;margin-left:6px">'
+    +(isFolder?(j.files.length+' file'+(j.files.length===1?'':'s')+' · '):'')+total+'</span>';
+  const showSide=isFolder&&j.files.length>0;
+  _dvEl('dv-side').style.display=showSide?'flex':'none';
+  _dvEl('dv-search').value='';
+  _dvRenderList();
+  const first=j.files.findIndex(f=>f.preview!=='other');
+  if(j.files.length)dvSelect(first>-1?first:0);
+  else _dvSetBusy('This folder is empty.');
+  _dvRenderFooter();
+}}
+function _dvRenderList(){{
+  const j=DV.info;const box=_dvEl('dv-list');if(!j||!box)return;
+  const q=DV.filter.trim().toLowerCase();
+  box.innerHTML='';
+  let shown=0;
+  j.files.forEach((f,i)=>{{
+    if(q&&String(f.name).toLowerCase().indexOf(q)<0)return;
+    shown++;
+    const row=document.createElement('div');
+    row.dataset.idx=i;
+    const active=(i===DV.cur);
+    row.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--bd);'+(active?'background:#eff6ff;border-left:3px solid #2563eb':'border-left:3px solid transparent');
+    row.innerHTML='<span style="font-size:18px">'+_dvIcon(f)+'</span>'
+      +'<span style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;word-break:break-all;line-height:1.3">'+escHtml(f.name)+'</div>'
+      +'<div style="font-size:10px;color:var(--mu)">'+_dvFmt(f.size)+(f.preview==='other'?' · no preview':'')+'</div></span>';
+    if(f.download_url){{
+      const a=document.createElement('a');a.href=f.download_url;a.title='Download';a.textContent='⬇';
+      a.style.cssText='font-size:13px;text-decoration:none;color:#475569;padding:2px 4px';
+      a.onclick=(ev)=>ev.stopPropagation();
+      row.appendChild(a);
+    }}
+    row.onclick=()=>dvSelect(i);
+    box.appendChild(row);
+  }});
+  if(!shown)box.innerHTML='<div style="padding:16px;font-size:12px;color:var(--mu);text-align:center">No matching files</div>';
+}}
+function dvFilter(v){{DV.filter=v||'';_dvRenderList();}}
+function dvSelect(i){{
+  const j=DV.info;if(!j||!j.files[i])return;
+  DV.cur=i;
+  const f=j.files[i];
+  _dvRenderList();
+  const pane=_dvEl('dv-pane');
+  const noCopy=!j.can_download;
+  let body='';
+  if(f.preview==='pdf'){{
+    body='<iframe title="'+escHtml(f.name)+'" src="'+f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH')+'" style="border:0;width:100%;height:100%;flex:1;background:#fff"></iframe>';
+  }}else if(f.preview==='image'){{
+    body='<div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:12px"><img alt="'+escHtml(f.name)+'" src="'+f.stream_url+'" '+(noCopy?'draggable="false" oncontextmenu="return false" ':'')+'style="max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 2px 12px rgba(0,0,0,.15);background:#fff"></div>';
+  }}else if(f.preview==='text'){{
+    body='<iframe title="'+escHtml(f.name)+'" src="'+f.stream_url+'" style="border:0;width:100%;height:100%;flex:1;background:#fff"></iframe>';
+  }}else{{
+    body='<div style="margin:auto;text-align:center;padding:24px;color:#334155;max-width:380px">'
+      +'<div style="font-size:48px">'+_dvIcon(f)+'</div>'
+      +'<div style="font-weight:700;margin:10px 0 4px;word-break:break-all">'+escHtml(f.name)+'</div>'
+      +'<div style="font-size:12px;color:#64748b;line-height:1.6">This file type (CAD / Office / archive) cannot be previewed inside the browser.'
+      +(f.download_url?'':'<br>You do not have download permission - ask the Document Controller.')+'</div>'
+      +(f.download_url?'<a class="btn btn-pr" style="margin-top:14px;display:inline-block" href="'+f.download_url+'">⬇ Download file</a>':'')
+      +'</div>';
+  }}
+  pane.innerHTML='<div style="padding:6px 12px;border-bottom:1px solid var(--bd);background:#fff;font-size:12px;font-weight:600;display:flex;justify-content:space-between;gap:8px">'
+    +'<span style="word-break:break-all">'+_dvIcon(f)+' '+escHtml(f.name)+'</span><span style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
+  pane.style.display='flex';pane.style.flexDirection='column';
+  _dvRenderFooter();
+}}
+function _dvRenderFooter(){{
+  const j=DV.info;const box=_dvEl('dv-foot-left');if(!j||!box)return;
+  box.innerHTML='';
+  const mk=(txt,href,cls,newTab)=>{{
+    const a=document.createElement('a');a.className='btn '+cls;a.href=href;a.textContent=txt;
+    if(newTab){{a.target='_blank';a.rel='noopener';}}
+    box.appendChild(a);
+  }};
+  if(j.zip_url)mk('⬇ Download All (ZIP)',j.zip_url,'btn-pr',false);
+  const f=j.files[DV.cur];
+  if(f&&f.download_url&&j.files.length>1)mk('⬇ This file',f.download_url,'btn-sc',false);
+  if(f&&f.download_url&&j.files.length===1)mk('⬇ Download',f.download_url,'btn-pr',false);
+  if(j.can_open_drive&&j.drive_url)mk('🔗 Open in Google Drive',j.drive_url,'btn-sc',true);
+  if(!j.can_download){{
+    const n=document.createElement('span');n.style.cssText='font-size:11px;color:var(--mu)';
+    n.textContent='View only - download is restricted for your account';box.appendChild(n);
+  }}
+}}
+document.addEventListener('keydown',function(ev){{
+  const m=_dvEl('doc-viewer-modal');
+  if(!m||m.classList.contains('hidden')||!DV.info||DV.info.files.length<2)return;
+  if(ev.target&&ev.target.id==='dv-search')return;
+  if(ev.key==='ArrowDown'||ev.key==='ArrowUp'){{
+    ev.preventDefault();
+    const n=DV.info.files.length;
+    dvSelect((DV.cur+(ev.key==='ArrowDown'?1:-1)+n)%n);
+  }}
+}});
+
 function _getReplyStatusTheme(statusStr){{
   const s=String(statusStr||'').trim().toLowerCase();
   if(!s)return {{color:'#0f766e',bg:'#f0fdfa',bd:'#99f6e4'}};
@@ -12681,7 +12868,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   }};
   const replyThemeFor=(hasFile)=>hasFile?_getReplyStatusTheme(currentStatus()):{{color:'#475569',bg:'#f8fafc',bd:'#cbd5e1'}};
   const initReplyTheme=replyThemeFor(Boolean(cur.approval));
-  const slots=isEng
+  const hasReply=isEng&&dtHasReplyCycle((state.dtList||[]).find(d=>d.id===state.tab)||{{}});
+  const slots=hasReply
     ? [{{key:'submission',title:'1. Submission Document (مستند التقديم)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
        {{key:'approval',title:'2. Consultant Reply (رد الاستشاري)',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
     : [{{key:'submission',title:'Document Attachment (مرفق المستند)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}}];
@@ -12708,7 +12896,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     const dtName=dtObj.name||dtObj.code||state.tab||'Documents';
     const folderHint=document.createElement('div');
     folderHint.style.cssText='font-size:10px;color:var(--mu);display:flex;align-items:center;gap:4px;margin-top:-2px';
-    folderHint.innerHTML=`<span>📁 Drive Path:</span> <strong style="color:#334155">${{escHtml(PID)}} ❯ ${{escHtml(dtName)}} ❯ ${{escHtml(pathSubName)}}</strong>`;
+    folderHint.innerHTML=`<span>📁 Drive Path:</span> <strong style="color:#334155">${{escHtml(PID)}} ❯ ${{escHtml(dtName)}}${{hasReply?(' ❯ '+escHtml(pathSubName)):''}}</strong>`;
     card.appendChild(folderHint);
 
     const statusLine=document.createElement('div');
@@ -12759,19 +12947,27 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       nameSpan.title=entry.file_name||vUrl;
       statusLine.appendChild(nameSpan);
 
+      const _recId=row&&row._id?row._id:(state.editId||'');
+      const _slotKey=entry.legacy?'legacy':s.key;
       const vA=document.createElement('a');
-      vA.href=vUrl;vA.target='_blank';vA.rel='noopener';
-      vA.style.cssText=`padding:2px 8px;border-radius:4px;background:#fff;border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:10px`;
+      vA.href=_recId?'#':vUrl;
+      if(!_recId){{vA.target='_blank';vA.rel='noopener';}}
+      vA.style.cssText=`padding:2px 8px;border-radius:4px;background:#fff;border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:10px;cursor:pointer`;
       vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'👁 View Folder':'👁 View';
-      vA.onclick=()=>logFileAction('DRIVE_LINK_CLICK',row?.docNo||row?.nocNo||'',vUrl);
+      vA.onclick=(ev)=>{{
+        if(_recId){{ev.preventDefault();openDocViewer(_recId,_slotKey,{{label:s.title}});}}
+        else logFileAction('DRIVE_LINK_CLICK',row?.docNo||row?.nocNo||'',vUrl);
+      }};
       statusLine.appendChild(vA);
 
-      if(dlUrl){{
+      const _dlHref=(_recId&&canDownloadUI())?docDownloadHref(_recId,_slotKey,entry):(canDownloadUI()?dlUrl:'');
+      if(_dlHref){{
         const dA=document.createElement('a');
-        dA.href=dlUrl;dA.target='_blank';dA.rel='noopener';
+        dA.href=_dlHref;
+        if(!_recId){{dA.target='_blank';dA.rel='noopener';}}
         dA.style.cssText='padding:2px 8px;border-radius:4px;background:#fff;border:1px solid #64748b;color:#334155;text-decoration:none;font-weight:600;font-size:10px';
-        dA.textContent='⬇ Download';
-        dA.onclick=()=>logFileAction('FILE_DOWNLOAD',row?.docNo||row?.nocNo||'',dlUrl);
+        dA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'⬇ ZIP':'⬇ Download';
+        dA.onclick=()=>{{if(!_recId)logFileAction('FILE_DOWNLOAD',row?.docNo||row?.nocNo||'',_dlHref);}};
         statusLine.appendChild(dA);
       }}
 
@@ -13171,7 +13367,7 @@ function getBatchTargetDrivePath(slot){{
   const dt=(state.dtList||[]).find(d=>d.id===state.tab)||{{}};
   const dtName=dt.name||dt.code||state.tab||'Documents';
   const sub=(slot==='approval')?'Replied':'Submit';
-  return `${{PID}} ❯ ${{dtName}} ❯ ${{sub}}`;
+  return tabHasReplyCycle() ? `${{PID}} ❯ ${{dtName}} ❯ ${{sub}}` : `${{PID}} ❯ ${{dtName}}`;
 }}
 
 function populateBatchDatalist(){{
@@ -13249,7 +13445,7 @@ function openBatchDriveUpload(){{
   state.batchCurrentItem=null;
   state.batchCurrentAbort=null;
   populateBatchDatalist();
-  const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
+  const isEng=tabHasReplyCycle();
   const slotWrap=document.getElementById('batch-drv-slot-wrap');
   if(slotWrap)slotWrap.style.display=isEng?'flex':'none';
   state.batchSlot='submission';
