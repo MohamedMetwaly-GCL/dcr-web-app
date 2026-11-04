@@ -3,6 +3,7 @@
 Endpoints (all require a logged-in user who can view the record's project):
   GET /api/drive/view-info/<record_id>/<slot>               -- what is attached (file or folder listing) + permissions
   GET /api/drive/stream/<record_id>/<slot>/<file_id>        -- stream one file (inline preview, or ?dl=1 download)
+  GET /api/drive/office-preview/<record_id>/<slot>/<file_id>-- structured JSON preview for Excel (.xlsx/.csv) & Word (.docx)
   GET /api/drive/folder-zip/<record_id>/<slot>              -- download a whole attached folder as one ZIP
 
 <slot> is 'submission' | 'approval' | 'legacy' (the old single fileLocation link).
@@ -10,9 +11,12 @@ A file can only be streamed if it IS the record's attachment or lives directly i
 so users can never reach arbitrary Drive files through this gateway. Drive URLs are not exposed to
 non-admin users; downloads require edit permission (or admin).
 """
+import csv
+import io
 import logging
 import re
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 from urllib.parse import quote
 
@@ -27,12 +31,23 @@ logger = logging.getLogger(__name__)
 drive_viewer_bp = Blueprint("drive_viewer", __name__)
 
 MAX_ZIP_BYTES = 1024 * 1024 * 1024
+MAX_OFFICE_PREVIEW_BYTES = 35 * 1024 * 1024
 MAX_FOLDER_FILES = 500
 FOLDER_MIME = "application/vnd.google-apps.folder"
 FILE_FIELDS = "id,name,size,mimeType,parents,trashed"
 
 _IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "bmp"}
-_INLINE_MIME = {"application/pdf", "text/plain", "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"}
+_EXCEL_EXTS = {"xlsx", "xlsm", "csv"}
+_WORD_EXTS = {"docx"}
+_INLINE_MIME = {
+    "application/pdf",
+    "text/plain",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+}
 
 
 def _hooks():
@@ -43,6 +58,14 @@ def _hooks():
 def preview_kind(name, mime):
     ext = str(name or "").rsplit(".", 1)[-1].lower() if "." in str(name or "") else ""
     mime = str(mime or "").lower()
+    if ext in _EXCEL_EXTS or mime in (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel.sheet.macroenabled.12",
+        "text/csv",
+    ):
+        return "excel"
+    if ext in _WORD_EXTS or mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return "word"
     if mime == "application/pdf" or ext == "pdf" or mime.startswith("application/vnd.google-apps."):
         return "pdf"
     if (mime.startswith("image/") and mime not in ("image/svg+xml", "image/tiff")) or ext in _IMAGE_EXTS:
@@ -130,11 +153,20 @@ def _list_folder(token, http, folder_id):
 
 def _file_dict(f, rid, slot, can_dl):
     kind = preview_kind(f.get("name"), f.get("mimeType"))
-    base = "/api/drive/stream/%s/%s/%s" % (quote(rid, safe=""), slot, quote(str(f["id"]), safe=""))
-    return {"id": f["id"], "name": f.get("name") or "file", "size": int(f.get("size") or 0),
-            "mime": f.get("mimeType") or "", "preview": kind,
-            "stream_url": base if kind != "other" else "",
-            "download_url": (base + "?dl=1") if can_dl else ""}
+    fid_q = quote(str(f["id"]), safe="")
+    rid_q = quote(rid, safe="")
+    base = "/api/drive/stream/%s/%s/%s" % (rid_q, slot, fid_q)
+    office_url = ("/api/drive/office-preview/%s/%s/%s" % (rid_q, slot, fid_q)) if kind in ("excel", "word") else ""
+    return {
+        "id": f["id"],
+        "name": f.get("name") or "file",
+        "size": int(f.get("size") or 0),
+        "mime": f.get("mimeType") or "",
+        "preview": kind,
+        "stream_url": base if kind in ("pdf", "image", "text") else "",
+        "office_url": office_url,
+        "download_url": (base + "?dl=1") if can_dl else "",
+    }
 
 
 def _log(ctx, action, detail):
@@ -207,6 +239,278 @@ def _drive_media(token, http, meta):
     else:
         url, params = "%s/%s" % (drive_upload.FILES_URL, meta["id"]), {"alt": "media", "supportsAllDrives": "true"}
     return http.get(url, params=params, headers={"Authorization": "Bearer " + token}, timeout=120, stream=True)
+
+
+def _read_media_bytes(resp, max_bytes=MAX_OFFICE_PREVIEW_BYTES):
+    if hasattr(resp, "iter_content"):
+        buf = bytearray()
+        for chunk in resp.iter_content(65536):
+            if chunk:
+                buf.extend(chunk)
+                if len(buf) > max_bytes:
+                    raise ValueError("File exceeds maximum in-app preview size (35 MB)")
+        return bytes(buf)
+    data = resp.content or b""
+    if len(data) > max_bytes:
+        raise ValueError("File exceeds maximum in-app preview size (35 MB)")
+    return data
+
+
+def _col_letters_to_idx(col_str):
+    idx = 0
+    for ch in col_str:
+        if "A" <= ch <= "Z":
+            idx = idx * 26 + (ord(ch) - ord("A") + 1)
+    return max(0, idx - 1)
+
+
+def _parse_xlsx_bytes(raw_bytes, max_rows=500, max_cols=40):
+    """Parse .xlsx bytes into [{'name': sheet_name, 'rows': [[cell, ...], ...]}] using openpyxl or stdlib XML."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True, read_only=True)
+        sheets = []
+        for sname in wb.sheetnames[:15]:
+            ws = wb[sname]
+            rows = []
+            for r_idx, row in enumerate(ws.iter_rows(values_only=True)):
+                if r_idx >= max_rows:
+                    break
+                vals = ["" if v is None else str(v) for v in row[:max_cols]]
+                while vals and vals[-1] == "":
+                    vals.pop()
+                rows.append(vals)
+            while rows and not any(rows[-1]):
+                rows.pop()
+            max_w = max((len(r) for r in rows), default=0)
+            norm_rows = [r + [""] * (max_w - len(r)) for r in rows]
+            sheets.append({"name": sname, "rows": norm_rows})
+        wb.close()
+        if sheets:
+            return sheets
+    except Exception:
+        pass
+
+    # Pure-stdlib XML fallback for .xlsx
+    sheets = []
+    with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as zf:
+        shared_strings = []
+        if "xl/sharedStrings.xml" in zf.namelist():
+            ss_root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+            for si in ss_root.iter():
+                if si.tag.endswith("}si") or si.tag == "si":
+                    texts = [t.text or "" for t in si.iter() if t.tag.endswith("}t") or t.tag == "t"]
+                    shared_strings.append("".join(texts))
+
+        sheet_Specs = []
+        if "xl/workbook.xml" in zf.namelist():
+            wb_root = ET.fromstring(zf.read("xl/workbook.xml"))
+            for idx, el in enumerate(wb_root.iter()):
+                if el.tag.endswith("}sheet") or el.tag == "sheet":
+                    sname = el.attrib.get("name") or f"Sheet{idx + 1}"
+                    sheet_Specs.append((sname, f"xl/worksheets/sheet{len(sheet_Specs) + 1}.xml"))
+        if not sheet_Specs:
+            for name in sorted(zf.namelist()):
+                if name.startswith("xl/worksheets/sheet") and name.endswith(".xml"):
+                    sheet_Specs.append((f"Sheet{len(sheet_Specs) + 1}", name))
+
+        for sname, spath in sheet_Specs[:15]:
+            if spath not in zf.namelist():
+                continue
+            ws_root = ET.fromstring(zf.read(spath))
+            rows = []
+            for row_el in ws_root.iter():
+                if not (row_el.tag.endswith("}row") or row_el.tag == "row"):
+                    continue
+                if len(rows) >= max_rows:
+                    break
+                row_vals = []
+                for c_el in row_el:
+                    if not (c_el.tag.endswith("}c") or c_el.tag == "c"):
+                        continue
+                    ref = c_el.attrib.get("r", "")
+                    col_letters = "".join(ch for ch in ref if ch.isalpha()).upper()
+                    c_idx = _col_letters_to_idx(col_letters) if col_letters else len(row_vals)
+                    if c_idx >= max_cols:
+                        continue
+                    while len(row_vals) <= c_idx:
+                        row_vals.append("")
+                    ctype = c_el.attrib.get("t", "")
+                    val_str = ""
+                    if ctype == "inlineStr":
+                        texts = [t.text or "" for t in c_el.iter() if t.tag.endswith("}t") or t.tag == "t"]
+                        val_str = "".join(texts)
+                    else:
+                        v_el = next((ch for ch in c_el if ch.tag.endswith("}v") or ch.tag == "v"), None)
+                        raw_v = v_el.text if (v_el is not None and v_el.text is not None) else ""
+                        if ctype == "s":
+                            try:
+                                val_str = shared_strings[int(raw_v)]
+                            except Exception:
+                                val_str = raw_v
+                        else:
+                            val_str = raw_v
+                    row_vals[c_idx] = val_str
+                while row_vals and row_vals[-1] == "":
+                    row_vals.pop()
+                rows.append(row_vals)
+            while rows and not any(rows[-1]):
+                rows.pop()
+            max_w = max((len(r) for r in rows), default=0)
+            norm_rows = [r + [""] * (max_w - len(r)) for r in rows]
+            sheets.append({"name": sname, "rows": norm_rows})
+    return sheets
+
+
+def _parse_csv_bytes(raw_bytes, max_rows=500, max_cols=40):
+    text = raw_bytes.decode("utf-8-sig", errors="replace")
+    reader = csv.reader(io.StringIO(text))
+    rows = []
+    for idx, r in enumerate(reader):
+        if idx >= max_rows:
+            break
+        rows.append([str(c) for c in r[:max_cols]])
+    max_w = max((len(r) for r in rows), default=0)
+    norm_rows = [r + [""] * (max_w - len(r)) for r in rows]
+    return [{"name": "CSV Data", "rows": norm_rows}]
+
+
+def _parse_docx_bytes(raw_bytes):
+    """Parse .docx bytes into structured blocks [{'type': 'h1'|'h2'|'h3'|'p'|'li'|'table', ...}] for safe rendering."""
+    blocks = []
+    with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as zf:
+        if "word/document.xml" not in zf.namelist():
+            raise ValueError("Invalid .docx archive (missing word/document.xml)")
+        root = ET.fromstring(zf.read("word/document.xml"))
+
+    def _local(tag):
+        return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+    def _para_to_block(p_el):
+        style_val = ""
+        is_list = False
+        align = ""
+        for ch in p_el:
+            if _local(ch.tag) == "pPr":
+                for pr in ch:
+                    ln = _local(pr.tag)
+                    if ln == "pStyle":
+                        for k, v in pr.attrib.items():
+                            if _local(k) == "val":
+                                style_val = str(v or "")
+                    elif ln == "numPr":
+                        is_list = True
+                    elif ln == "jc":
+                        for k, v in pr.attrib.items():
+                            if _local(k) == "val":
+                                align = str(v or "").lower()
+        runs = []
+        for r_el in p_el.iter():
+            if _local(r_el.tag) == "r":
+                bold = False
+                italic = False
+                underline = False
+                for r_ch in r_el:
+                    if _local(r_ch.tag) == "rPr":
+                        for pr in r_ch:
+                            pln = _local(pr.tag)
+                            if pln == "b":
+                                bold = True
+                            elif pln == "i":
+                                italic = True
+                            elif pln == "u":
+                                underline = True
+                t_parts = []
+                for r_ch in r_el:
+                    rl = _local(r_ch.tag)
+                    if rl == "t" and r_ch.text:
+                        t_parts.append(r_ch.text)
+                    elif rl == "tab":
+                        t_parts.append("\t")
+                    elif rl in ("br", "cr"):
+                        t_parts.append("\n")
+                txt = "".join(t_parts)
+                if txt:
+                    runs.append({"text": txt, "b": bold, "i": italic, "u": underline})
+        full_text = "".join(r["text"] for r in runs).strip()
+        if not full_text:
+            return None
+        st_low = style_val.lower()
+        btype = "p"
+        if "title" in st_low or "heading1" in st_low or st_low == "h1":
+            btype = "h1"
+        elif "heading2" in st_low or "subtitle" in st_low or st_low == "h2":
+            btype = "h2"
+        elif "heading" in st_low or st_low == "h3":
+            btype = "h3"
+        elif is_list or "list" in st_low:
+            btype = "li"
+        return {"type": btype, "text": full_text, "runs": runs, "align": align}
+
+    body_el = next((ch for ch in root if _local(ch.tag) == "body"), root)
+    for child in body_el:
+        cname = _local(child.tag)
+        if cname == "p":
+            blk = _para_to_block(child)
+            if blk:
+                blocks.append(blk)
+        elif cname == "tbl":
+            t_rows = []
+            for tr in child:
+                if _local(tr.tag) != "tr":
+                    continue
+                row_cells = []
+                for tc in tr:
+                    if _local(tc.tag) != "tc":
+                        continue
+                    cell_texts = []
+                    for p in tc.iter():
+                        if _local(p.tag) == "p":
+                            pb = _para_to_block(p)
+                            if pb and pb.get("text"):
+                                cell_texts.append(pb["text"])
+                    row_cells.append("\n".join(cell_texts))
+                if row_cells:
+                    t_rows.append(row_cells)
+            if t_rows:
+                blocks.append({"type": "table", "rows": t_rows})
+    return blocks
+
+
+@drive_viewer_bp.route("/api/drive/office-preview/<record_id>/<slot>/<file_id>")
+def api_office_preview(record_id, slot, file_id):
+    ctx, err = _context(record_id, slot)
+    if err:
+        return err
+    try:
+        token, http = _hooks()
+        meta = _authorize_file(ctx, token, http, str(file_id))
+        if not meta:
+            return jsonify(ok=False, error="File does not belong to this attachment"), 403
+        name = meta.get("name") or "file"
+        kind = preview_kind(name, meta.get("mimeType"))
+        if kind not in ("excel", "word"):
+            return jsonify(ok=False, error="Not a supported Office file for inline preview"), 415
+        resp = _drive_media(token, http, meta)
+    except drive_upload.DriveUploadError as e:
+        return jsonify(ok=False, error=str(e), hint=e.hint), 502
+    if resp.status_code != 200:
+        return jsonify(ok=False, error="Drive returned HTTP %s" % resp.status_code), 502
+
+    try:
+        raw_bytes = _read_media_bytes(resp)
+        if kind == "excel":
+            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            sheets = _parse_csv_bytes(raw_bytes) if ext == "csv" else _parse_xlsx_bytes(raw_bytes)
+            _log(ctx, "DRIVE_LINK_CLICK", "Previewed Excel '%s' via in-app gateway" % name)
+            return jsonify(ok=True, kind="excel", name=name, sheets=sheets)
+        else:
+            blocks = _parse_docx_bytes(raw_bytes)
+            _log(ctx, "DRIVE_LINK_CLICK", "Previewed Word '%s' via in-app gateway" % name)
+            return jsonify(ok=True, kind="word", name=name, blocks=blocks)
+    except Exception as e:
+        logger.warning("Office preview parse failed for %s: %s", file_id, e)
+        return jsonify(ok=False, error="Could not parse Office file for preview: %s" % str(e)), 422
 
 
 @drive_viewer_bp.route("/api/drive/stream/<record_id>/<slot>/<file_id>")

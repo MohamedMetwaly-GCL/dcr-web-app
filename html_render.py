@@ -12675,18 +12675,28 @@ function docDownloadHref(rid,slot,entry){{
   return fid?('/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'/'+encodeURIComponent(fid)+'?dl=1'):'';
 }}
 
-const DV={{info:null,rid:'',slot:'',cur:-1,filter:'',label:''}};
+const DV={{info:null,rid:'',slot:'',cur:-1,filter:'',label:'',imgZoom:1,imgRot:0,imgPanX:0,imgPanY:0,imgDrag:false,imgSX:0,imgSY:0,excelSheet:0,excelFilter:'',wordZoom:100}};
 function _dvEl(id){{return document.getElementById(id);}}
 function _dvFmt(n){{return (typeof _fmtBytes==='function')?_fmtBytes(n):(n+' B');}}
 function _dvIcon(f){{
   if(f.preview==='pdf')return '📕';
   if(f.preview==='image')return '🖼️';
+  if(f.preview==='excel')return '📊';
+  if(f.preview==='word')return '📝';
   const n=String(f.name||'').toLowerCase();
   if(/\\.(dwg|dxf|rvt|ifc)$/.test(n))return '📐';
   if(/\\.(xls|xlsx|xlsm|csv)$/.test(n))return '📊';
-  if(/\\.(doc|docx)$/.test(n))return '📄';
+  if(/\\.(doc|docx)$/.test(n))return '📝';
   if(/\\.(zip|rar|7z)$/.test(n))return '🗜️';
   return '📎';
+}}
+function _dvPreviewBadge(f){{
+  if(f.preview==='pdf')return '<span style="color:#dc2626;font-weight:600">PDF</span>';
+  if(f.preview==='image')return '<span style="color:#0284c7;font-weight:600">Image</span>';
+  if(f.preview==='excel')return '<span style="color:#16a34a;font-weight:600">Excel</span>';
+  if(f.preview==='word')return '<span style="color:#2563eb;font-weight:600">Word</span>';
+  if(f.preview==='text')return '<span style="color:#475569;font-weight:600">Text</span>';
+  return '<span style="color:#94a3b8">Download only</span>';
 }}
 function _dvSetBusy(msg){{
   const pane=_dvEl('dv-pane');
@@ -12751,7 +12761,7 @@ function _dvRenderList(){{
     row.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--bd);'+(active?'background:#eff6ff;border-left:3px solid #2563eb':'border-left:3px solid transparent');
     row.innerHTML='<span style="font-size:18px">'+_dvIcon(f)+'</span>'
       +'<span style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;word-break:break-all;line-height:1.3">'+escHtml(f.name)+'</div>'
-      +'<div style="font-size:10px;color:var(--mu)">'+_dvFmt(f.size)+(f.preview==='other'?' · no preview':'')+'</div></span>';
+      +'<div style="font-size:10px;color:var(--mu)">'+_dvFmt(f.size)+' · '+_dvPreviewBadge(f)+'</div></span>';
     if(f.download_url){{
       const a=document.createElement('a');a.href=f.download_url;a.title='Download';a.textContent='⬇';
       a.style.cssText='font-size:13px;text-decoration:none;color:#475569;padding:2px 4px';
@@ -12764,9 +12774,260 @@ function _dvRenderList(){{
   if(!shown)box.innerHTML='<div style="padding:16px;font-size:12px;color:var(--mu);text-align:center">No matching files</div>';
 }}
 function dvFilter(v){{DV.filter=v||'';_dvRenderList();}}
+
+/* --- Interactive Image Inspection Controls (Zoom / Pan / Rotate / Fullscreen) --- */
+function _dvApplyImgTransform(){{
+  const img=_dvEl('dv-img-el');
+  const lbl=_dvEl('dv-img-zoom-lbl');
+  const stage=_dvEl('dv-img-stage');
+  if(img){{
+    img.style.transform=`translate(${{DV.imgPanX}}px, ${{DV.imgPanY}}px) scale(${{DV.imgZoom}}) rotate(${{DV.imgRot}}deg)`;
+  }}
+  if(lbl)lbl.textContent=Math.round(DV.imgZoom*100)+'%';
+  if(stage)stage.style.cursor=DV.imgDrag?'grabbing':(DV.imgZoom>1?'grab':'default');
+}}
+function dvImgZoom(delta){{
+  DV.imgZoom=Math.min(5,Math.max(0.25,Math.round((DV.imgZoom+delta)*100)/100));
+  if(DV.imgZoom<=1){{DV.imgPanX=0;DV.imgPanY=0;}}
+  _dvApplyImgTransform();
+}}
+function dvImgReset(){{
+  DV.imgZoom=1;DV.imgRot=0;DV.imgPanX=0;DV.imgPanY=0;
+  _dvApplyImgTransform();
+}}
+function dvImgRotate(deg){{
+  DV.imgRot=(DV.imgRot+deg)%360;
+  _dvApplyImgTransform();
+}}
+function dvImgFullscreen(){{
+  const stage=_dvEl('dv-img-stage')||_dvEl('dv-pane');
+  if(!stage)return;
+  if(document.fullscreenElement){{document.exitFullscreen().catch(()=>{{}});}}
+  else if(stage.requestFullscreen){{stage.requestFullscreen().catch(()=>{{}});}}
+}}
+function _dvBindImgStage(){{
+  const stage=_dvEl('dv-img-stage');
+  if(!stage)return;
+  stage.addEventListener('wheel',(ev)=>{{
+    ev.preventDefault();
+    dvImgZoom(ev.deltaY<0?0.2:-0.2);
+  }},{{passive:false}});
+  stage.addEventListener('mousedown',(ev)=>{{
+    if(ev.button!==0)return;
+    ev.preventDefault();
+    DV.imgDrag=true;
+    DV.imgSX=ev.clientX-DV.imgPanX;
+    DV.imgSY=ev.clientY-DV.imgPanY;
+    _dvApplyImgTransform();
+  }});
+  stage.addEventListener('mousemove',(ev)=>{{
+    if(!DV.imgDrag)return;
+    DV.imgPanX=ev.clientX-DV.imgSX;
+    DV.imgPanY=ev.clientY-DV.imgSY;
+    _dvApplyImgTransform();
+  }});
+  const stopDrag=()=>{{if(DV.imgDrag){{DV.imgDrag=false;_dvApplyImgTransform();}}}};
+  stage.addEventListener('mouseup',stopDrag);
+  stage.addEventListener('mouseleave',stopDrag);
+  stage.addEventListener('dblclick',()=>{{
+    if(DV.imgZoom>1)dvImgReset();
+    else{{DV.imgZoom=2;_dvApplyImgTransform();}}
+  }});
+}}
+
+/* --- In-App Office Renderers (Excel Multi-Sheet Grid & Word Page Viewer) --- */
+function _dvColLabel(idx){{
+  let s='', n=idx;
+  while(n>=0){{
+    s=String.fromCharCode(65+(n%26))+s;
+    n=Math.floor(n/26)-1;
+  }}
+  return s;
+}}
+function _dvRenderExcelView(f){{
+  const box=_dvEl('dv-office-box');
+  if(!box||!f._officeData)return;
+  const sheets=f._officeData.sheets||[];
+  if(!sheets.length){{
+    box.innerHTML='<div style="margin:auto;padding:24px;color:var(--mu)">Workbook is empty.</div>';
+    return;
+  }}
+  if(DV.excelSheet>=sheets.length)DV.excelSheet=0;
+  const activeSheet=sheets[DV.excelSheet]||{{name:'Sheet1',rows:[]}};
+  const rows=activeSheet.rows||[];
+  const colCount=rows.length?Math.max(...rows.map(r=>r.length),1):1;
+  const q=String(DV.excelFilter||'').trim().toLowerCase();
+
+  let tabsHtml='';
+  sheets.forEach((sh,idx)=>{{
+    const act=(idx===DV.excelSheet);
+    tabsHtml+=`<button type="button" onclick="dvSelectExcelSheet(${{idx}})" style="padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:${{act?'700':'600'}};cursor:pointer;border:1px solid ${{act?'#16a34a':'#cbd5e1'}};background:${{act?'#f0fdf4':'#fff'}};color:${{act?'#15803d':'#334155'}};transition:all .12s">📊 ${{escHtml(sh.name||('Sheet '+(idx+1)))}} <span style="font-size:10px;opacity:.75">(${{(sh.rows||[]).length}})</span></button>`;
+  }});
+
+  let colHdr='<tr><th style="position:sticky;top:0;left:0;z-index:4;background:#e2e8f0;color:#475569;font-size:10px;font-weight:700;padding:4px 8px;border:1px solid #cbd5e1;text-align:center;min-width:36px">#</th>';
+  for(let c=0;c<colCount;c++){{
+    colHdr+=`<th style="position:sticky;top:0;z-index:3;background:#e2e8f0;color:#334155;font-size:10.5px;font-weight:700;padding:4px 10px;border:1px solid #cbd5e1;text-align:center;min-width:90px">${{_dvColLabel(c)}}</th>`;
+  }}
+  colHdr+='</tr>';
+
+  let bodyRows='';
+  let visibleDataRows=0;
+  rows.forEach((r,rIdx)=>{{
+    const isHeaderRow=(rIdx===0);
+    if(!isHeaderRow && q){{
+      const hit=r.some(cell=>String(cell||'').toLowerCase().includes(q));
+      if(!hit)return;
+    }}
+    if(!isHeaderRow)visibleDataRows++;
+    const rowBg=isHeaderRow?'#f1f5f9':(visibleDataRows%2===0?'#f8fafc':'#fff');
+    const rowFw=isHeaderRow?'700':'400';
+    bodyRows+=`<tr style="background:${{rowBg}};font-weight:${{rowFw}}">`;
+    bodyRows+=`<td style="position:sticky;left:0;z-index:2;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:700;padding:5px 8px;border:1px solid #cbd5e1;text-align:center">${{rIdx+1}}</td>`;
+    for(let c=0;c<colCount;c++){{
+      const raw=String(r[c]??'');
+      const isNum=!isHeaderRow && raw!=='' && /^-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?%?$/.test(raw.replace(/,/g,''));
+      const align=isHeaderRow?'left':(isNum?'right':'left');
+      const cellHtml=(q&&!isHeaderRow)?highlightText(raw,q):escHtml(raw);
+      bodyRows+=`<td dir="auto" style="padding:5px 10px;border:1px solid #e2e8f0;font-size:11.5px;color:#0f172a;text-align:${{align}};white-space:pre-wrap;max-width:340px">${{cellHtml}}</td>`;
+    }}
+    bodyRows+='</tr>';
+  }});
+
+  if(!rows.length){{
+    bodyRows=`<tr><td colspan="${{colCount+1}}" style="padding:24px;text-align:center;color:var(--mu)">This sheet has no rows.</td></tr>`;
+  }}else if(q && visibleDataRows===0){{
+    bodyRows+=`<tr><td colspan="${{colCount+1}}" style="padding:20px;text-align:center;color:var(--mu)">No rows match "${{escHtml(DV.excelFilter)}}"</td></tr>`;
+  }}
+
+  box.innerHTML=`
+    <div style="padding:8px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${{tabsHtml}}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:#64748b;font-weight:600">${{rows.length}} rows × ${{colCount}} cols</span>
+        <input id="dv-excel-filter-inp" type="text" placeholder="🔍 Filter rows in sheet..." value="${{escHtml(DV.excelFilter)}}" oninput="dvFilterExcelRows(this.value)" style="padding:5px 10px;font-size:11.5px;border:1px solid #cbd5e1;border-radius:6px;width:200px;background:#fff">
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;background:#fff">
+      <table style="border-collapse:collapse;width:max-content;min-width:100%">
+        <thead>${{colHdr}}</thead>
+        <tbody>${{bodyRows}}</tbody>
+      </table>
+    </div>`;
+}}
+function dvSelectExcelSheet(idx){{
+  DV.excelSheet=idx;
+  const f=DV.info&&DV.info.files[DV.cur];
+  if(f)_dvRenderExcelView(f);
+}}
+function dvFilterExcelRows(val){{
+  DV.excelFilter=val||'';
+  const f=DV.info&&DV.info.files[DV.cur];
+  if(!f)return;
+  _dvRenderExcelView(f);
+  const inp=_dvEl('dv-excel-filter-inp');
+  if(inp){{inp.focus();try{{inp.setSelectionRange(inp.value.length,inp.value.length);}}catch(_e){{}}}}
+}}
+
+function _dvRenderWordView(f){{
+  const box=_dvEl('dv-office-box');
+  if(!box||!f._officeData)return;
+  const blocks=f._officeData.blocks||[];
+  const zoom=DV.wordZoom||100;
+  let docHtml='';
+  if(!blocks.length){{
+    docHtml='<div style="color:var(--mu);text-align:center;padding:40px">This Word document has no readable text blocks.</div>';
+  }}else{{
+    blocks.forEach(b=>{{
+      if(b.type==='table'){{
+        const tRows=b.rows||[];
+        let tbl='<table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:12.5px">';
+        tRows.forEach((r,ri)=>{{
+          const isHdr=(ri===0);
+          tbl+=`<tr style="background:${{isHdr?'#f1f5f9':(ri%2===1?'#f8fafc':'#fff')}}">`;
+          r.forEach(cell=>{{
+            const tag=isHdr?'th':'td';
+            tbl+=`<${{tag}} dir="auto" style="border:1px solid #cbd5e1;padding:7px 10px;text-align:left;font-weight:${{isHdr?'700':'400'}};white-space:pre-line;color:#0f172a">${{escHtml(cell)}}</${{tag}}>`;
+          }});
+          tbl+='</tr>';
+        }});
+        tbl+='</table>';
+        docHtml+=tbl;
+      }}else{{
+        let inner='';
+        if(Array.isArray(b.runs)&&b.runs.length){{
+          inner=b.runs.map(rn=>{{
+            let s=escHtml(rn.text||'');
+            if(rn.b)s=`<strong>${{s}}</strong>`;
+            if(rn.i)s=`<em>${{s}}</em>`;
+            if(rn.u)s=`<u>${{s}}</u>`;
+            return s;
+          }}).join('');
+        }}else{{
+          inner=escHtml(b.text||'');
+        }}
+        const align=b.align==='center'?'center':(b.align==='right'?'right':'');
+        const alStyle=align?`text-align:${{align}};`:'';
+        if(b.type==='h1')docHtml+=`<h1 dir="auto" style="${{alStyle}}font-size:20px;font-weight:800;color:#0f172a;margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid #e2e8f0">${{inner}}</h1>`;
+        else if(b.type==='h2')docHtml+=`<h2 dir="auto" style="${{alStyle}}font-size:16px;font-weight:700;color:#1e3a8a;margin:16px 0 6px">${{inner}}</h2>`;
+        else if(b.type==='h3')docHtml+=`<h3 dir="auto" style="${{alStyle}}font-size:14px;font-weight:700;color:#334155;margin:12px 0 4px">${{inner}}</h3>`;
+        else if(b.type==='li')docHtml+=`<div dir="auto" style="${{alStyle}}font-size:13px;line-height:1.65;color:#1e293b;margin:4px 0 4px 18px;display:flex;gap:8px"><span style="color:#2563eb;font-weight:700">•</span><span style="flex:1">${{inner}}</span></div>`;
+        else docHtml+=`<p dir="auto" style="${{alStyle}}font-size:13px;line-height:1.7;color:#1e293b;margin:8px 0;white-space:pre-line">${{inner}}</p>`;
+      }}
+    }});
+  }}
+  box.innerHTML=`
+    <div style="padding:7px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span style="font-size:11.5px;font-weight:700;color:#1e40af">📝 In-App Word Document Viewer</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button type="button" class="btn btn-sc btn-sm" onclick="dvWordZoom(-10)" style="padding:2px 8px">🔍−</button>
+        <span id="dv-word-zoom-lbl" style="font-size:11px;font-weight:700;min-width:42px;text-align:center">${{zoom}}%</span>
+        <button type="button" class="btn btn-sc btn-sm" onclick="dvWordZoom(10)" style="padding:2px 8px">🔍+</button>
+        <button type="button" class="btn btn-sc btn-sm" onclick="DV.wordZoom=100;dvWordZoom(0)" style="padding:2px 8px">100%</button>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:24px 16px;background:#e2e8f0">
+      <div id="dv-word-page" style="max-width:794px;min-height:680px;margin:0 auto;background:#fff;padding:44px 52px;border-radius:4px;box-shadow:0 8px 28px rgba(15,23,42,.14);transform:scale(${{zoom/100}});transform-origin:top center;transition:transform .12s">
+        ${{docHtml}}
+      </div>
+    </div>`;
+}}
+function dvWordZoom(delta){{
+  DV.wordZoom=Math.min(160,Math.max(70,(DV.wordZoom||100)+delta));
+  const f=DV.info&&DV.info.files[DV.cur];
+  if(f)_dvRenderWordView(f);
+}}
+
+async function _dvLoadOfficePreview(f){{
+  const box=_dvEl('dv-office-box');
+  if(!box)return;
+  if(f._officeData){{
+    if(f.preview==='excel')_dvRenderExcelView(f);
+    else _dvRenderWordView(f);
+    return;
+  }}
+  box.innerHTML='<div style="margin:auto;color:var(--mu);font-size:13px">⏳ Rendering Office document inside DCR...</div>';
+  try{{
+    const r=await fetch(f.office_url);
+    const j=await r.json().catch(()=>({{}}));
+    if(!r.ok||!j.ok){{
+      box.innerHTML='<div style="margin:auto;text-align:center;padding:24px;color:#dc2626;max-width:400px"><div style="font-size:28px">⚠️</div><div style="font-weight:700;margin:6px 0">Could not render Office preview</div><div style="font-size:12px;color:#64748b">'+escHtml(j.error||('HTTP '+r.status))+'</div>'+(f.download_url?'<a class="btn btn-pr" style="margin-top:12px;display:inline-block" href="'+f.download_url+'">⬇ Download file</a>':'')+'</div>';
+      return;
+    }}
+    f._officeData=j;
+    if(DV.info&&DV.info.files[DV.cur]===f){{
+      if(f.preview==='excel')_dvRenderExcelView(f);
+      else _dvRenderWordView(f);
+    }}
+  }}catch(e){{
+    box.innerHTML='<div style="margin:auto;color:#dc2626;font-size:12px">Failed to load preview: '+escHtml(e.message||String(e))+'</div>';
+  }}
+}}
+
 function dvSelect(i){{
   const j=DV.info;if(!j||!j.files[i])return;
   DV.cur=i;
+  DV.imgZoom=1;DV.imgRot=0;DV.imgPanX=0;DV.imgPanY=0;DV.imgDrag=false;
+  DV.excelSheet=0;DV.excelFilter='';DV.wordZoom=100;
   const f=j.files[i];
   _dvRenderList();
   const pane=_dvEl('dv-pane');
@@ -12775,14 +13036,30 @@ function dvSelect(i){{
   if(f.preview==='pdf'){{
     body='<iframe title="'+escHtml(f.name)+'" src="'+f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH')+'" style="border:0;width:100%;height:100%;flex:1;background:#fff"></iframe>';
   }}else if(f.preview==='image'){{
-    body='<div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:12px"><img alt="'+escHtml(f.name)+'" src="'+f.stream_url+'" '+(noCopy?'draggable="false" oncontextmenu="return false" ':'')+'style="max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 2px 12px rgba(0,0,0,.15);background:#fff"></div>';
+    body='<div style="padding:6px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+      +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(-0.25)" title="Zoom Out" style="padding:3px 9px;font-weight:700">🔍−</button>'
+      +'<span id="dv-img-zoom-lbl" style="font-size:11px;font-weight:700;min-width:44px;text-align:center;color:#0f172a">100%</span>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(0.25)" title="Zoom In" style="padding:3px 9px;font-weight:700">🔍+</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgReset()" title="Reset 100%" style="padding:3px 9px">↺ Reset</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(-90)" title="Rotate Left 90°" style="padding:3px 9px">⟲ 90°</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(90)" title="Rotate Right 90°" style="padding:3px 9px">⟳ 90°</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgFullscreen()" title="Fullscreen" style="padding:3px 9px">⛶ Fullscreen</button>'
+      +'</div>'
+      +'<span style="font-size:10.5px;color:#64748b">🖱️ Scroll to zoom · Drag to pan · Double-click to 200%</span>'
+      +'</div>'
+      +'<div id="dv-img-stage" style="flex:1;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:12px;background:#1e293b;position:relative;user-select:none">'
+      +'<img id="dv-img-el" alt="'+escHtml(f.name)+'" src="'+f.stream_url+'" draggable="false" '+(noCopy?'oncontextmenu="return false" ':'')+'style="max-width:94%;max-height:94%;object-fit:contain;box-shadow:0 8px 28px rgba(0,0,0,.45);background:#fff;transition:transform .08s ease-out;transform-origin:center center">'
+      +'</div>';
+  }}else if(f.preview==='excel'||f.preview==='word'){{
+    body='<div id="dv-office-box" style="flex:1;min-height:0;display:flex;flex-direction:column;background:#f8fafc"></div>';
   }}else if(f.preview==='text'){{
     body='<iframe title="'+escHtml(f.name)+'" src="'+f.stream_url+'" style="border:0;width:100%;height:100%;flex:1;background:#fff"></iframe>';
   }}else{{
     body='<div style="margin:auto;text-align:center;padding:24px;color:#334155;max-width:380px">'
       +'<div style="font-size:48px">'+_dvIcon(f)+'</div>'
       +'<div style="font-weight:700;margin:10px 0 4px;word-break:break-all">'+escHtml(f.name)+'</div>'
-      +'<div style="font-size:12px;color:#64748b;line-height:1.6">This file type (CAD / Office / archive) cannot be previewed inside the browser.'
+      +'<div style="font-size:12px;color:#64748b;line-height:1.6">This file type (CAD / archive) cannot be previewed directly inside the browser.'
       +(f.download_url?'':'<br>You do not have download permission - ask the Document Controller.')+'</div>'
       +(f.download_url?'<a class="btn btn-pr" style="margin-top:14px;display:inline-block" href="'+f.download_url+'">⬇ Download file</a>':'')
       +'</div>';
@@ -12790,6 +13067,8 @@ function dvSelect(i){{
   pane.innerHTML='<div style="padding:6px 12px;border-bottom:1px solid var(--bd);background:#fff;font-size:12px;font-weight:600;display:flex;justify-content:space-between;gap:8px">'
     +'<span style="word-break:break-all">'+_dvIcon(f)+' '+escHtml(f.name)+'</span><span style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
   pane.style.display='flex';pane.style.flexDirection='column';
+  if(f.preview==='image')_dvBindImgStage();
+  if(f.preview==='excel'||f.preview==='word')_dvLoadOfficePreview(f);
   _dvRenderFooter();
 }}
 function _dvRenderFooter(){{
@@ -12813,7 +13092,7 @@ function _dvRenderFooter(){{
 document.addEventListener('keydown',function(ev){{
   const m=_dvEl('doc-viewer-modal');
   if(!m||m.classList.contains('hidden')||!DV.info||DV.info.files.length<2)return;
-  if(ev.target&&ev.target.id==='dv-search')return;
+  if(ev.target&&(ev.target.id==='dv-search'||ev.target.id==='dv-excel-filter-inp'))return;
   if(ev.key==='ArrowDown'||ev.key==='ArrowUp'){{
     ev.preventDefault();
     const n=DV.info.files.length;
