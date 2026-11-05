@@ -192,7 +192,10 @@ def api_create_upload_session():
             token, dest["folder_id"], clean_name, mime_type, file_size,
             origin=request.headers.get("Origin"), http=http)
     except drive_routing.RoutingError as e:
-        return jsonify(error=e.reason, candidates=e.candidates), 400
+        msg = e.reason
+        if e.reason == "project_has_no_drive_folder":
+            msg = "لم يتم تحديد معرّف مجلد Google Drive لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع أولاً)"
+        return jsonify(error=msg, reason=e.reason, candidates=e.candidates), 400
     except drive_upload.DriveUploadError as e:
         return jsonify(error=str(e), reason=e.reason, hint=e.hint), (e.status if e.status in (400, 401, 403, 404) else 502)
 

@@ -13566,8 +13566,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           }}
         }}catch(e){{
           progTxt.style.color='#dc2626';
-          progTxt.textContent='✕ Upload failed: '+(e.message||e);
-          toast('Upload failed: '+(e.message||e),'er');
+          const errMsg = String(e.message || e || '');
+          const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
+            ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
+            : (e.message || e);
+          progTxt.textContent='✕ Upload failed: ' + friendly;
+          toast('Upload failed: ' + friendly, 'er');
         }}finally{{
           state.activeDriveUploads=Math.max(0,(state.activeDriveUploads||1)-1);
           upBtn.disabled=false;
@@ -13680,7 +13684,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           if(e.name === 'AbortError' || cancelSlotUpload) {{
             toast('Folder upload stopped', 'wa');
           }} else {{
-            toast('Folder upload error: ' + (e.message || e), 'er');
+            const errMsg = String(e.message || e || '');
+            const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
+              ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
+              : (e.message || e);
+            toast('Folder upload error: ' + friendly, 'er');
           }}
         }} finally {{
           state.activeDriveUploads = Math.max(0, (state.activeDriveUploads || 1) - 1);
@@ -14779,6 +14787,12 @@ async function saveProject(){{
   }};
   const legSlotEl = document.getElementById('p-legacy-slot');
   if(legSlotEl) data.legacy_file_slot = legSlotEl.value;
+  const drvInp = document.getElementById('proj-drive-id');
+  if(drvInp){{
+    let raw = drvInp.value.trim();
+    if(raw.includes('/folders/')) raw = raw.split('/folders/')[1].split('/')[0].split('?')[0];
+    data.drive_folder_id = raw;
+  }}
   const r=await apiFetch('/api/project/'+PID,{{method:'POST',body:JSON.stringify(data)}});
   if(r===null)return;
   if(r.ok){{

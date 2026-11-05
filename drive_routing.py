@@ -265,6 +265,10 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
         raise RoutingError("invalid_slot")
     project = store.get_project(pid) or {}
     root_id = str(project.get("drive_folder_id") or "").strip()
+    if root_id:
+        m = re.search(r"/folders/([a-zA-Z0-9_-]+)", root_id)
+        if m:
+            root_id = m.group(1)
     if not root_id:
         raise RoutingError("project_has_no_drive_folder")
     dt = store.get_doc_type(pid, dt_id)
