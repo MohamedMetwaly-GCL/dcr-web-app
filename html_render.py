@@ -13109,7 +13109,7 @@ function dvSelect(i){{
       +'<span style="font-size:11px;font-weight:700;color:#dc2626">📕 PDF Document Viewer</span>'
       +'<div style="display:flex;align-items:center;gap:6px">'
       +(!noCopy?'<a href="'+f.stream_url+'" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 9px;font-size:11px;text-decoration:none">🔗 Open in New Tab</a>':'')
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane(\'dv-pdf-frame\')" title="Fullscreen PDF" style="padding:2px 9px;font-size:11px">⛶ Fullscreen</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane()" title="Fullscreen PDF" style="padding:2px 9px;font-size:11px">⛶ Fullscreen</button>'
       +'</div></div>'
       +'<iframe id="dv-pdf-frame" allowfullscreen title="'+escHtml(f.name)+'" src="'+f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH')+'" style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>';
   }}else if(f.preview==='image'){{
