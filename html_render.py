@@ -12678,17 +12678,43 @@ function canDownloadUI(){{
   return (typeof CAN_EDIT!=='undefined') && !!CAN_EDIT;
 }}
 function dtHasReplyCycle(dt){{
-  dt=dt||{{}};
-  if(typeof dt.has_reply_cycle==='boolean')return dt.has_reply_cycle;
-  const code=String(dt.code||dt.id||'').trim().toUpperCase();
-  if(['SD','DS','MS','IR','MIR','RFI','NOC','ABD'].includes(code))return true;
-  const name=String(dt.name||'').trim().toLowerCase();
-  if(['requisition','purchase','letter','correspondence','minutes','mom','daily report','site log','boq','specs','variation'].some(h=>name.includes(h)))return false;
-  return ['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built'].some(h=>name.includes(h));
+  dt = dt || {{}};
+  if(typeof dt.has_reply_cycle === 'boolean') return dt.has_reply_cycle;
+  
+  if(!dt.code && typeof state !== 'undefined' && state.tab){{
+    const curT = String(state.tab).trim().toUpperCase();
+    const found = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT);
+    if(found) dt = found;
+  }}
+  
+  const curTabStr = (typeof state !== 'undefined' && state.tab) ? String(state.tab).trim().toUpperCase() : '';
+  const code = String(dt.code || dt.id || curTabStr).trim().toUpperCase();
+  const codes = ['SD','DS','MS','IR','MIR','RFI','NOC','ABD','WN','NCN','NCR','EI','SI','CVI','PCQ','SVP'];
+  if(codes.includes(code)) return true;
+  
+  const name = String(dt.name || '').trim().toLowerCase();
+  if(['requisition','purchase','letter','correspondence','minutes','mom','daily report','site log','boq','specs','variation'].some(h=>name.includes(h))) return false;
+  if(['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built','work notice','work notification','works notice','non-conformance','non conformance','instruction'].some(h=>name.includes(h))) return true;
+  
+  if(typeof state !== 'undefined' && Array.isArray(state.cols)){{
+    const hasReplyCol = state.cols.some(c => {{
+      if(!c) return false;
+      const k = String(c.col_key || '').toLowerCase();
+      const l = String(c.label || '').toLowerCase();
+      return k.includes('reply') || l.includes('reply') || k === 'actualreplydate' || k === 'expectedreplydate';
+    }});
+    if(hasReplyCol) return true;
+  }}
+  return false;
 }}
 function tabHasReplyCycle(){{
-  const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
-  return isEng && dtHasReplyCycle((state.dtList||[]).find(d=>d.id===state.tab)||{{}});
+  const ws = String(typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : 'ENG').trim().toUpperCase();
+  const isEng = !ws || ws === 'NONE' || ws === 'NULL' || ws === 'ENG' || ws.includes('ENG');
+  if(!isEng) return false;
+  const curTab = (typeof state !== 'undefined') ? state.tab : '';
+  const curT = String(curTab).trim().toUpperCase();
+  const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
+  return dtHasReplyCycle(dtObj);
 }}
 function docDownloadHref(rid,slot,entry){{
   if(!entry)return '';
@@ -13305,24 +13331,33 @@ function isLegacyReplyFile(row, dtTab, explicitUrl){{
   const leg = String(explicitUrl || row.fileLocation || row.driveLink || row.drive_link || row['Drive Link'] || row.url || '').trim().toLowerCase();
   if(!leg || leg === '#' || leg === 'null' || leg === 'none') return false;
   
-  const curTab = dtTab || state.tab;
-  const dtObj = (state.dtList || []).find(d => d.id === curTab || d.code === curTab) || {{}};
+  const curTab = dtTab || (typeof state !== 'undefined' ? state.tab : '');
+  const curT = String(curTab).trim().toUpperCase();
+  const dtObj = (typeof state !== 'undefined' && state.dtList || []).find(d => 
+    String(d.id).trim().toUpperCase() === curT || 
+    String(d.code || '').trim().toUpperCase() === curT
+  ) || {{}};
   if(!dtHasReplyCycle(dtObj)) return false;
 
-  // 1) Explicit URL or path indicator: folder/file name contains 'repl' or 'approv'
+  // 1) Explicit path/URL keywords:
+  // If the path contains 'submit' or 'subm', it is 100% in a Submit folder -> NOT a reply!
+  if(leg.includes('submit') || leg.includes('subm')) return false;
+
+  // If the path contains 'repl' or 'approv', it is 100% in a Replied/Approval folder -> It's a reply!
   if(leg.includes('repl') || leg.includes('approv')) return true;
+
   const docLow = String(row.docNo || '').toLowerCase();
   if(docLow.includes('reply') || docLow.includes('replied')) return true;
 
-  // 2) If the record has a consultant reply / approval (status is returned, or actual reply date exists)
-  //    and status is NOT 'Under Review', 'pending', 'submitted', or empty
+  // 2) Status-based determination:
   const st = String(row.status || '').trim().toLowerCase();
-  const hasActualReply = Boolean(row.actualReplyDate && String(row.actualReplyDate).trim());
-  const hasConsultantStatus = Boolean(st && st !== '-' && st !== 'null' && !st.includes('under review') && !st.includes('pending') && !st.includes('submitted'));
+  const isPendingStatus = !st || st === '-' || st === 'null' || st.includes('under review') || st.includes('pending') || st.includes('submitted');
 
-  if(hasConsultantStatus || hasActualReply) return true;
+  // If the status is 'Under Review' or 'Pending', there is NO consultant reply yet! -> Must be Submission!
+  if(isPendingStatus) return false;
 
-  return false;
+  // Otherwise, the status is an actual returned status (e.g. Code A, Code B, Code C, Approved, Revise, Replied, etc.)
+  return true;
 }}
 
 function _normalizeRowAttachments(row, dtTab, explicitUrl){{
@@ -13373,7 +13408,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const wrap=document.createElement('div');
   wrap.className='fg full';
   wrap.id='dcr-drive-upload-box';
-  const isEng=String(typeof WS_ID!=='undefined'?WS_ID:'ENG').toUpperCase()==='ENG';
+  const ws=String(typeof WS_ID!=='undefined'&&WS_ID?WS_ID:'ENG').trim().toUpperCase();
+  const isEng=!ws || ws==='NONE' || ws==='NULL' || ws==='ENG' || ws.includes('ENG');
   const cur=_normalizeRowAttachments(row);
   const currentStatus=()=>{{
     const stEl=formRoot.querySelector('#f-status');
@@ -13381,7 +13417,9 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   }};
   const replyThemeFor=(hasFile)=>hasFile?_getReplyStatusTheme(currentStatus()):{{color:'#475569',bg:'#f8fafc',bd:'#cbd5e1'}};
   const initReplyTheme=replyThemeFor(Boolean(cur.approval));
-  const hasReply=isEng&&dtHasReplyCycle((state.dtList||[]).find(d=>d.id===state.tab)||{{}});
+  const curT=String(typeof state!=='undefined'?state.tab:'').trim().toUpperCase();
+  const dtObj=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT || String(d.code||'').trim().toUpperCase()===curT)||{{}};
+  const hasReply=isEng&&dtHasReplyCycle(dtObj);
   const slots=hasReply
     ? [{{key:'submission',title:'1. Submission Document (مستند التقديم)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
        {{key:'approval',title:'2. Consultant Reply (رد الاستشاري)',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
