@@ -178,11 +178,16 @@ def api_create_upload_session():
         http = _get_http()
         service = drive_upload.RestDriveAdapter(token, http=http)
         direction = str(body.get("direction") or (rec.get("direction") if rec else "") or "").strip()
+        from_party = str(body.get("from_party") or ((rec.get("fromParty") or rec.get("from")) if rec else "") or "").strip()
+        to_party = str(body.get("to_party") or ((rec.get("toParty") or rec.get("to")) if rec else "") or "").strip()
+        party = str(body.get("party") or "").strip()
+        doc_no = str(body.get("doc_no") or (rec.get("docNo") if rec else "") or clean_name or "").strip()
         dest_folder_id = str(body.get("destination_folder_id") or "").strip()
         dest = drive_routing.resolve_upload_destination(
             pid, dt_id, slot, service, db, create_if_missing=create_folders,
             subfolder_name=subfolder_name or None, flat=not has_cycle,
-            direction=direction, destination_folder_id=dest_folder_id)
+            direction=direction, destination_folder_id=dest_folder_id,
+            party=party, from_party=from_party, to_party=to_party, doc_no=doc_no)
         session_url = drive_upload.create_resumable_session(
             token, dest["folder_id"], clean_name, mime_type, file_size,
             origin=request.headers.get("Origin"), http=http)

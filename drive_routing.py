@@ -36,6 +36,125 @@ def _norm(s):
     return " ".join(_tokens(s))
 
 
+def extract_project_party_aliases(project):
+    """Return dict of {code_or_token: phrase, phrase: code_or_token} from project metadata."""
+    aliases = {}
+    if not isinstance(project, dict):
+        return aliases
+    party_fields = ["client", "consultant", "contractor", "pmo", "landlord", "mainConsultant", "mepConsultant", "mep"]
+    for pf in party_fields:
+        val = str(project.get(pf) or "").strip()
+        if not val:
+            continue
+        m = re.search(r"^(.*?)\s*\(([A-Za-z0-9_-]+)\)\s*$", val)
+        if m:
+            full_name = _norm(m.group(1))
+            code = _norm(m.group(2))
+            if code and full_name:
+                aliases[code] = full_name
+                aliases[full_name] = code
+        else:
+            norm_val = _norm(val)
+            if norm_val:
+                tokens = _tokens(val)
+                initials = "".join(t[0] for t in tokens if t)
+                if len(initials) >= 2:
+                    aliases[initials] = norm_val
+                    aliases[norm_val] = initials
+    return aliases
+
+
+def resolve_hierarchical_subfolder(service, dt_folder_id, project, direction="",
+                                   party="", from_party="", to_party="", doc_no=""):
+    """Drill down through company and direction subfolders (e.g. Letters > Style Design > Sent)."""
+    children = list_child_folders(service, dt_folder_id)
+    if not children:
+        return dt_folder_id
+
+    # If this is a standard submission/approval layout, let standard slot routing handle it
+    if any(any(k in str(c.get("name", "")).lower() for k in SLOT_KEYWORDS["submission"] + SLOT_KEYWORDS["approval"]) for c in children):
+        return dt_folder_id
+
+    d_norm = str(direction or "").lower()
+    is_inc = any(k in d_norm for k in ("receiv", "incom", "rec", "وارد")) or d_norm in ("in", "i")
+    is_out = any(k in d_norm for k in ("issu", "outgo", "sent", "iss", "صادر")) or d_norm in ("out", "o")
+
+    # Check if children are directly Sent / Received / Incoming / Outgoing
+    inc_kws = ("in", "incom", "incoming", "receiv", "received", "وارد")
+    out_kws = ("out", "outgo", "outgoing", "sent", "issu", "issued", "صادر")
+    dir_hits = [c for c in children if any(k in _tokens(c["name"]) for k in inc_kws + out_kws)]
+    if dir_hits and len(dir_hits) == len(children):
+        if is_inc:
+            match = next((c for c in children if any(k in _tokens(c["name"]) for k in inc_kws)), None)
+            if match:
+                return match["id"]
+        elif is_out:
+            match = next((c for c in children if any(k in _tokens(c["name"]) for k in out_kws)), None)
+            if match:
+                return match["id"]
+        raise RoutingError("ambiguous", [{"id": c["id"], "name": c["name"]} for c in children])
+
+    # Otherwise children are company / party folders (e.g. 'Style Design', 'SCAS', 'EKH', 'SCAS to SD')
+    aliases = extract_project_party_aliases(project)
+    p_tokens = set()
+    for raw in (party, from_party, to_party, doc_no):
+        if raw:
+            for t in _tokens(raw):
+                p_tokens.add(t)
+                if t in aliases:
+                    p_tokens.update(_tokens(aliases[t]))
+
+    scored_comps = []
+    for c in children:
+        c_toks = _tokens(c["name"])
+        c_norm = _norm(c["name"])
+        score = 0
+        if party and (_norm(party) == c_norm or _norm(aliases.get(_norm(party), "")) == c_norm):
+            score += 100
+        if from_party and (_norm(from_party) == c_norm or _norm(aliases.get(_norm(from_party), "")) == c_norm):
+            score += 85
+        if to_party and (_norm(to_party) == c_norm or _norm(aliases.get(_norm(to_party), "")) == c_norm):
+            score += 85
+        common = p_tokens.intersection(set(c_toks))
+        score += len(common) * 20
+        if "to" in c_toks and len(common) >= 2:
+            score += 35
+        if score > 0:
+            scored_comps.append((score, c))
+
+    scored_comps.sort(key=lambda x: -x[0])
+    if scored_comps:
+        top_score = scored_comps[0][0]
+        chosen_comps = [c for s, c in scored_comps if s == top_score]
+    else:
+        chosen_comps = children
+
+    final_candidates = []
+    for comp in chosen_comps:
+        comp_children = list_child_folders(service, comp["id"])
+        if not comp_children:
+            final_candidates.append({"id": comp["id"], "name": comp["name"]})
+            continue
+
+        matched_dir = None
+        if is_inc:
+            matched_dir = next((sc for sc in comp_children if any(k in _tokens(sc["name"]) for k in inc_kws)), None)
+        elif is_out:
+            matched_dir = next((sc for sc in comp_children if any(k in _tokens(sc["name"]) for k in out_kws)), None)
+
+        if matched_dir:
+            final_candidates.append({"id": matched_dir["id"], "name": f"{comp['name']} ❯ {matched_dir['name']}"})
+        else:
+            for sc in comp_children:
+                final_candidates.append({"id": sc["id"], "name": f"{comp['name']} ❯ {sc['name']}"})
+
+    if len(final_candidates) == 1:
+        return final_candidates[0]["id"]
+    if len(final_candidates) > 1:
+        raise RoutingError("ambiguous", final_candidates)
+    return dt_folder_id
+
+
 def score_folder_name(folder_name, code, name, direction=""):
     """Score how well a Drive folder name matches a doc type (code + display name)."""
     f_tokens, f_norm = _tokens(folder_name), _norm(folder_name)
@@ -133,7 +252,8 @@ def create_folder(service, parent_id, name):
 
 # ---------------- Orchestration ----------------
 def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missing=False,
-                               subfolder_name=None, flat=False, direction="", destination_folder_id=""):
+                               subfolder_name=None, flat=False, direction="", destination_folder_id="",
+                               party="", from_party="", to_party="", doc_no=""):
     """Return {'folder_id', 'doc_type_folder_id', 'source', ...} or raise RoutingError.
 
     store must provide: get_project(pid), get_doc_type(pid, dt_id),
@@ -214,8 +334,14 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
 
     # 2) Submit / Replied sub-folder (skipped when flat=True: single-party documents such as PR / Letters)
     slot_id = str(slot_cache.get(slot) or "").strip()
-    if flat:
-        slot_id = dt_folder_id
+    if destination_folder_id and folder_is_usable(service, destination_folder_id):
+        slot_id = destination_folder_id
+    elif flat:
+        slot_id = resolve_hierarchical_subfolder(
+            service, dt_folder_id, project,
+            direction=direction, party=party,
+            from_party=from_party, to_party=to_party, doc_no=doc_no
+        )
     elif slot_id and not folder_is_usable(service, slot_id):
         slot_id = ""
     if not slot_id:

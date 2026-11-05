@@ -116,6 +116,8 @@ def _context(record_id, slot):
         entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
     else:
         entry = att.get(slot) if isinstance(att.get(slot), dict) else None
+        if not entry and slot == "submission" and rec.get("fileLocation"):
+            entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
     if not entry or not (entry.get("file_id") or entry.get("folder_id") or entry.get("url")):
         return None, (jsonify(error="Nothing is attached in this slot"), 404)
 
@@ -247,6 +249,24 @@ def api_view_info(record_id, slot):
                     }
                     for idx, f in enumerate(stored_files)
                 ]
+            # Auto-sync discovered subfolders to database attachment entry if DB lacked subfolders
+            if files and any(f.get("subfolder") for f in files) and stored_files is not None:
+                if not any(sf.get("subfolder") for sf in stored_files if isinstance(sf, dict)):
+                    try:
+                        synced_entry = dict(ctx["entry"])
+                        synced_entry["files"] = [
+                            {
+                                "id": f.get("id") or "",
+                                "name": f.get("name") or "",
+                                "size": int(f.get("size") or 0),
+                                "mimeType": f.get("mimeType") or "",
+                                "subfolder": f.get("subfolder") or "",
+                            }
+                            for f in files
+                        ]
+                        db.set_record_attachment(rid, ctx["slot"], synced_entry)
+                    except Exception:
+                        pass
         else:
             meta = drive_upload.get_file(token, ctx["target_id"], fields=FILE_FIELDS, http=http)
             files = [meta]
@@ -264,6 +284,39 @@ def api_view_info(record_id, slot):
         drive_url=ctx["url"] if ctx["can_open_drive"] else "",
         zip_url=("/api/drive/folder-zip/%s/%s" % (quote(rid, safe=""), ctx["slot"]))
         if (ctx["kind"] == "folder" and ctx["can_download"]) else "")
+
+
+@drive_viewer_bp.route("/api/drive/rescan-folder/<record_id>/<slot>", methods=["POST"])
+def api_rescan_folder(record_id, slot):
+    """Force re-query Google Drive for a folder attachment, discover subfolders and all files, and update DB."""
+    ctx, err = _context(record_id, slot)
+    if err:
+        return err
+    if ctx["kind"] != "folder":
+        return jsonify(ok=False, error="Attachment is not a folder"), 400
+    rid = ctx["rec"].get("_id") or record_id
+    doc_no = ctx["rec"].get("docNo") or ctx["rec"].get("nocNo") or ""
+    try:
+        token, http = _hooks()
+        files = _list_folder(token, http, ctx["target_id"], doc_no=doc_no, stored_files=None)
+        entry = dict(ctx["entry"])
+        entry["files"] = [
+            {
+                "id": f.get("id") or "",
+                "name": f.get("name") or "",
+                "size": int(f.get("size") or 0),
+                "mimeType": f.get("mimeType") or "",
+                "subfolder": f.get("subfolder") or "",
+            }
+            for f in files
+        ]
+        entry["file_count"] = len(files)
+        entry["file_size"] = sum(int(f.get("size") or 0) for f in files)
+        db.set_record_attachment(rid, ctx["slot"], entry)
+        _log(ctx, "DRIVE_FOLDER_SYNC", f"Re-scanned Drive folder '{entry.get('folder_name') or rid}' ({len(files)} files found)")
+        return jsonify(ok=True, files=entry["files"], file_count=entry["file_count"], file_size=entry["file_size"])
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)), 500
 
 
 def _authorize_file(ctx, token, http, file_id):

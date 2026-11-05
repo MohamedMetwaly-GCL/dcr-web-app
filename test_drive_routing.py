@@ -209,4 +209,46 @@ assert r_inc2["folder_id"] == d_ltr.id_of("01 - INCOMING LETTERS")
 assert r_inc2["source"] == "cache"
 print("directional routing & caching OK")
 
+# ---- hierarchical company & direction routing for letters (e.g. Letters > Style Design > Sent)
+ekh_tree = {
+    "PROJ_EKH": {
+        "5. Letters (L)": {
+            "Style Design": {"SD_Sent": {}, "SD_Received": {}},
+            "SCAS": {"SCAS_Sent": {}, "SCAS_Received": {}},
+            "EKH": {"EKH_Sent": {}, "EKH_Received": {}}
+        }
+    }
+}
+d_ekh = FakeDrive(ekh_tree)
+st_ekh = FakeStore({
+    "drive_folder_id": d_ekh.id_of("PROJ_EKH"),
+    "consultant": "Style Design (SD)",
+    "contractor": "SCAS Construction & Finishing",
+    "client": "Egypt Kuwait Holding (EKH)"
+}, {"LTR": {"code": "LTR", "name": "Letters"}})
+
+# Letter from SD received by GCL -> must route to Style Design > SD_Received
+r_ekh_rec = R.resolve_upload_destination(
+    "p", "LTR", "submission", d_ekh, st_ekh, flat=True,
+    direction="Received", from_party="SD", to_party="GCL", doc_no="24CP01-L-SCAS-SD-018"
+)
+assert r_ekh_rec["folder_id"] == d_ekh.id_of("SD_Received"), "Must route to Style Design > SD_Received"
+assert d_ekh.items[r_ekh_rec["folder_id"]]["parent"] == d_ekh.id_of("Style Design")
+
+# Letter from GCL sent to SD -> must route to Style Design > SD_Sent
+r_ekh_sent = R.resolve_upload_destination(
+    "p", "LTR", "submission", d_ekh, st_ekh, flat=True,
+    direction="Issued", from_party="GCL", to_party="SD", doc_no="24CP01-L-GCL-SD-001"
+)
+assert r_ekh_sent["folder_id"] == d_ekh.id_of("SD_Sent"), "Must route to Style Design > SD_Sent"
+assert d_ekh.items[r_ekh_sent["folder_id"]]["parent"] == d_ekh.id_of("Style Design")
+
+# Letter to SCAS -> must route to SCAS > SCAS_Sent
+r_scas = R.resolve_upload_destination(
+    "p", "LTR", "submission", d_ekh, st_ekh, flat=True,
+    direction="Issued", from_party="GCL", to_party="SCAS"
+)
+assert d_ekh.items[r_scas["folder_id"]]["parent"] == d_ekh.id_of("SCAS")
+print("hierarchical letters company + direction routing OK")
+
 print("ALL DRIVE ROUTING TESTS PASSED")

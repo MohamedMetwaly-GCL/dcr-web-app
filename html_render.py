@@ -11011,63 +11011,69 @@ function renderRows(){{
         // Attachments: chips open the in-app viewer. Two chips (Subm + Reply) for consultant-cycle types, one 'Doc' chip otherwise.
         const _att=(row.attachments && typeof row.attachments==='object')?row.attachments:null;
         const _cyc=tabHasReplyCycle();
-        if(_att && _att.submission && (_att.approval || !_cyc)){{
-          const _okE=(e)=>!!(e&&(e.file_id||e.folder_id||String(e.url||'').trim()));
-          if(_okE(_att.submission) && (!_att.approval || _okE(_att.approval))){{
-            const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-            const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-            const _chip=(label,slot,entry,color,bg,name,themeObj)=>{{
-              const sp=document.createElement('span');
-              const isMix=Boolean(themeObj&&themeObj.mixed);
-              const bdStyle=isMix
-                ? 'border-top:1.5px solid '+themeObj.bd+';border-left:1.5px solid '+themeObj.bd+';border-right:1.5px solid '+themeObj.bd2+';border-bottom:1.5px solid '+themeObj.bd2
-                : 'border:1px solid '+color;
-              sp.style.cssText='display:inline-flex;align-items:center;justify-content:space-between;gap:3px;padding:1px 5px;border-radius:5px;'+bdStyle+';background:'+bg+';font-size:9.5px;font-weight:700;color:'+color+';white-space:nowrap;line-height:1.2';
-              const lbl=document.createElement('span');lbl.textContent=label;
-              if(isMix)lbl.style.color=themeObj.color;
-              sp.appendChild(lbl);
-              const v=document.createElement('a');
-              v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px'+(isMix?';color:'+themeObj.color2:'');
-              v.href='#';v.title='View '+name;v.innerHTML=_eye;
-              v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}});
-              sp.appendChild(v);
-              const dh=canDownloadUI()?docDownloadHref(row._id,slot,entry):'';
-              if(dh){{
-                const d=document.createElement('a');
-                d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px'+(isMix?';color:'+themeObj.color2:'');
-                d.href=dh;d.title=((entry.is_folder||String(entry.url||'').indexOf('/folders/')>-1)?'Download folder (ZIP) - ':'Download ')+name;d.innerHTML=_dl;
-                sp.appendChild(d);
-              }}
-              return sp;
-            }};
-            const box=document.createElement('div');
-            box.style.cssText='display:inline-flex;flex-direction:column;gap:2px;align-items:stretch';
-            if(_att.approval){{
-              const _rTheme=_getReplyStatusTheme(row.status||_att.approval.consultant_status);
-              const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
+        const url=String(row[key]||'').trim();
+        const hasValidLink = url && url !== '#' && url.toLowerCase() !== 'null' && url.toLowerCase() !== 'none';
+        const _okE=(e)=>!!(e&&(e.file_id||e.folder_id||String(e.url||'').trim()));
+
+        const hasSubm = Boolean(_att && _okE(_att.submission));
+        const hasAppr = Boolean(_att && _okE(_att.approval));
+
+        if(hasSubm || hasAppr || hasValidLink){{
+          const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+          const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+          const _chip=(label,slot,entry,color,bg,name,themeObj)=>{{
+            const sp=document.createElement('span');
+            const isMix=Boolean(themeObj&&themeObj.mixed);
+            const bdStyle=isMix
+              ? 'border-top:1.5px solid '+themeObj.bd+';border-left:1.5px solid '+themeObj.bd+';border-right:1.5px solid '+themeObj.bd2+';border-bottom:1.5px solid '+themeObj.bd2
+              : 'border:1px solid '+color;
+            sp.style.cssText='display:inline-flex;align-items:center;justify-content:space-between;gap:3px;padding:1px 5px;border-radius:5px;'+bdStyle+';background:'+bg+';font-size:9.5px;font-weight:700;color:'+color+';white-space:nowrap;line-height:1.2';
+            const lbl=document.createElement('span');lbl.textContent=label;
+            if(isMix)lbl.style.color=themeObj.color;
+            sp.appendChild(lbl);
+            const v=document.createElement('a');
+            v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px'+(isMix?';color:'+themeObj.color2:'');
+            v.href='#';v.title='View '+name;v.innerHTML=_eye;
+            v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}});
+            sp.appendChild(v);
+            const dh=canDownloadUI()?docDownloadHref(row._id,slot,entry):'';
+            if(dh){{
+              const d=document.createElement('a');
+              d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px'+(isMix?';color:'+themeObj.color2:'');
+              d.href=dh;d.title=((entry.is_folder||String(entry.url||'').indexOf('/folders/')>-1)?'Download folder (ZIP) - ':'Download ')+name;d.innerHTML=_dl;
+              sp.appendChild(d);
+            }}
+            return sp;
+          }};
+          const box=document.createElement('div');
+          box.style.cssText='display:inline-flex;flex-direction:column;gap:2px;align-items:stretch';
+
+          if(hasSubm && hasAppr){{
+            const _rTheme=_getReplyStatusTheme(row.status||_att.approval.consultant_status);
+            const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
+            box.appendChild(_chip('Subm','submission',_att.submission,'#2563eb','#eff6ff','Submission',null));
+            box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+          }}else if(hasSubm){{
+            if(_cyc){{
               box.appendChild(_chip('Subm','submission',_att.submission,'#2563eb','#eff6ff','Submission',null));
-              box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
             }}else{{
               box.appendChild(_chip('Doc','submission',_att.submission,'#0f766e','#f0fdfa','Document'));
             }}
-            td.appendChild(box);
-            td.style.textAlign='center';
-            tr.appendChild(td);return;
+          }}else if(hasAppr){{
+            const _rTheme=_getReplyStatusTheme(row.status||_att.approval.consultant_status);
+            const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
+            box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+          }}else if(hasValidLink){{
+            const legacyEntry={{url:url,legacy:true}};
+            if(_cyc){{
+              box.appendChild(_chip('Subm','submission',legacyEntry,'#2563eb','#eff6ff','Submission',null));
+            }}else{{
+              box.appendChild(_chip('Doc','submission',legacyEntry,'#0f766e','#f0fdfa','Document'));
+            }}
           }}
-        }}
-        const url=String(row[key]||'').trim();
-        const hasValidLink = url && url !== '#' && url.toLowerCase() !== 'null' && url.toLowerCase() !== 'none';
-        const isFolder = url.includes('/folders/');
-        if(hasValidLink){{
-          let eyeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-          let dlSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-          const _att2=(row.attachments&&typeof row.attachments==='object')?row.attachments:{{}};
-          const _vSlot=_att2.submission?'submission':(_att2.approval?'approval':'legacy');
-          const _vEntry=_att2[_vSlot]||{{url:url,legacy:true}};
-          let icons = `<a class="view-file-icon" href="#" onclick="openDocViewer('${{row._id}}','${{_vSlot}}');return false;" title="${{isFolder ? 'Open Folder' : 'View File'}}">${{eyeSvg}}</a>`;
-          const _dh = canDownloadUI() ? docDownloadHref(row._id,_vSlot,_vEntry) : '';
-          if(_dh) icons += `<a class="dl-file-icon" href="${{_dh}}" title="${{isFolder ? 'Download folder (ZIP)' : 'Download File'}}">${{dlSvg}}</a>`;
-          td.innerHTML=icons;
+          td.appendChild(box);
+          td.style.textAlign='center';
+          tr.appendChild(td);return;
         }}
         else {{
           let eyeOffSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
@@ -12927,7 +12933,14 @@ function _dvRenderExcelView(f){{
           <button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane('dv-office-box')" title="Fullscreen" style="padding:2px 8px;font-size:11px">⛶ Fullscreen</button>
         </div>
       </div>
-      <iframe src="${{f.drive_embed_url}}" allowfullscreen style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>
+      <div style="position:relative;flex:1;min-height:0;width:100%;height:100%;display:flex">
+        <div id="dv-office-loading-${{f.id}}" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;z-index:2;gap:10px;color:#475569">
+          <div style="width:28px;height:28px;border:3px solid #e2e8f0;border-top-color:#16a34a;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+          <div style="font-size:12px;font-weight:600">Connecting to Google Drive Office Engine...</div>
+          <div style="font-size:10.5px;color:#94a3b8">Streaming high-fidelity preview with original layout, tables, and images</div>
+        </div>
+        <iframe src="${{f.drive_embed_url}}" onload="const el=document.getElementById('dv-office-loading-${{f.id}}');if(el)el.style.display='none';" allowfullscreen style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>
+      </div>
     `;
     return;
   }}
@@ -13046,7 +13059,14 @@ function _dvRenderWordView(f){{
           <button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane('dv-office-box')" title="Fullscreen" style="padding:2px 8px;font-size:11px">⛶ Fullscreen</button>
         </div>
       </div>
-      <iframe src="${{f.drive_embed_url}}" allowfullscreen style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>
+      <div style="position:relative;flex:1;min-height:0;width:100%;height:100%;display:flex">
+        <div id="dv-office-loading-${{f.id}}" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;z-index:2;gap:10px;color:#475569">
+          <div style="width:28px;height:28px;border:3px solid #e2e8f0;border-top-color:#1e40af;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+          <div style="font-size:12px;font-weight:600">Connecting to Google Drive Office Engine...</div>
+          <div style="font-size:10.5px;color:#94a3b8">Streaming high-fidelity preview with original layout, tables, and images</div>
+        </div>
+        <iframe src="${{f.drive_embed_url}}" onload="const el=document.getElementById('dv-office-loading-${{f.id}}');if(el)el.style.display='none';" allowfullscreen style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>
+      </div>
     `;
     return;
   }}
@@ -13483,12 +13503,18 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         state.activeDriveUploads=(state.activeDriveUploads||0)+1;
         const dirEl=formRoot.querySelector('#f-direction')||formRoot.querySelector('[name="direction"]');
         const formDir=(dirEl&&dirEl.value)?dirEl.value:(row?.direction||'');
+        const fromEl=formRoot.querySelector('#f-fromParty')||formRoot.querySelector('[name="fromParty"]')||formRoot.querySelector('[name="from"]')||formRoot.querySelector('#f-from');
+        const formFrom=(fromEl&&fromEl.value)?fromEl.value:(row?.fromParty||row?.from||'');
+        const toEl=formRoot.querySelector('#f-toParty')||formRoot.querySelector('[name="toParty"]')||formRoot.querySelector('[name="to"]')||formRoot.querySelector('#f-to');
+        const formTo=(toEl&&toEl.value)?toEl.value:(row?.toParty||row?.to||'');
+        const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]');
+        const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||'');
         try{{
           const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
             const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
             progBarInner.style.width=pct+'%';
             progTxt.textContent=label||(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
-          }}, {{direction: formDir}});
+          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo}});
           if(res&&res.pending){{
             state.pendingDriveAttachments[s.key]=res;
             renderSlotInfo(null,res);
@@ -13589,12 +13615,18 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const relSub = relParts.length > 2 ? relParts.slice(1, -1).join('/') : '';
             const dirEl=formRoot.querySelector('#f-direction')||formRoot.querySelector('[name="direction"]');
             const formDir=(dirEl&&dirEl.value)?dirEl.value:(row?.direction||'');
+            const fromEl=formRoot.querySelector('#f-fromParty')||formRoot.querySelector('[name="fromParty"]')||formRoot.querySelector('[name="from"]')||formRoot.querySelector('#f-from');
+            const formFrom=(fromEl&&fromEl.value)?fromEl.value:(row?.fromParty||row?.from||'');
+            const toEl=formRoot.querySelector('#f-toParty')||formRoot.querySelector('[name="toParty"]')||formRoot.querySelector('[name="to"]')||formRoot.querySelector('#f-to');
+            const formTo=(toEl&&toEl.value)?toEl.value:(row?.toParty||row?.to||'');
+            const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]');
+            const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||'');
             lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
               const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
               const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
               progBarInner.style.width = overall + '%';
               progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
-            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, direction: formDir, signal: slotAbortCtrl.signal}});
+            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, signal: slotAbortCtrl.signal}});
             uploadedCount++;
           }}
           if(!cancelSlotUpload && uploadedCount > 0) {{
@@ -13753,6 +13785,9 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
     subfolder_name: extraOpts.subfolder_name||'',
     link_as_folder: Boolean(extraOpts.link_as_folder),
     direction: extraOpts.direction||row?.direction||'',
+    from_party: extraOpts.from_party||row?.fromParty||row?.from||'',
+    to_party: extraOpts.to_party||row?.toParty||row?.to||'',
+    doc_no: extraOpts.doc_no||row?.docNo||'',
     destination_folder_id: extraOpts.destination_folder_id||''
   }};
   const sessRes=await fetch('/api/drive/upload-session',{{
