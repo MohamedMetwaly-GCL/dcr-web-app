@@ -36,30 +36,50 @@ def _norm(s):
     return " ".join(_tokens(s))
 
 
-def score_folder_name(folder_name, code, name):
+def score_folder_name(folder_name, code, name, direction=""):
     """Score how well a Drive folder name matches a doc type (code + display name)."""
     f_tokens, f_norm = _tokens(folder_name), _norm(folder_name)
     c_norm, n_norm = _norm(code), _norm(name)
+    c_tokens = _tokens(code)
     if not f_norm:
         return 0
     if f_norm in (c_norm, n_norm):
-        return SCORE_EXACT
-    # whole-token match only, so code 'IR' never matches 'MIR' or 'SIRIUS'
-    c_tokens = _tokens(code)
-    if c_tokens and f_tokens[:len(c_tokens)] == c_tokens:
-        return SCORE_PREFIX
-    if c_tokens and any(f_tokens[i:i + len(c_tokens)] == c_tokens
+        score = SCORE_EXACT
+    elif c_tokens and f_tokens[:len(c_tokens)] == c_tokens:
+        score = SCORE_PREFIX
+    elif c_tokens and any(f_tokens[i:i + len(c_tokens)] == c_tokens
                         for i in range(len(f_tokens) - len(c_tokens) + 1)):
-        return SCORE_TOKEN
-    if n_norm and (" " + n_norm + " ") in (" " + f_norm + " "):
-        return SCORE_NAME_IN
-    return 0
+        score = SCORE_TOKEN
+    elif n_norm and (" " + n_norm + " ") in (" " + f_norm + " "):
+        score = SCORE_NAME_IN
+    else:
+        score = 0
+
+    # Direction-based tie-breaker (e.g. for Letters where Drive has 'Incoming Letters' vs 'Outgoing Letters')
+    if score > 0 and direction:
+        d_norm = str(direction).lower()
+        is_incoming = any(k in d_norm for k in ("receiv", "incom", "rec", "وارد")) or d_norm in ("in", "i")
+        is_outgoing = any(k in d_norm for k in ("issu", "outgo", "sent", "iss", "صادر")) or d_norm in ("out", "o")
+        inc_hit = any(t.startswith("incom") or t.startswith("receiv") or t in ("in", "وارد") for t in f_tokens)
+        out_hit = any(t.startswith("outgo") or t.startswith("issu") or t.startswith("sent") or t in ("out", "صادر") for t in f_tokens)
+        if is_incoming:
+            if inc_hit:
+                score += 35
+            elif out_hit:
+                score -= 35
+        elif is_outgoing:
+            if out_hit:
+                score += 35
+            elif inc_hit:
+                score -= 35
+
+    return score
 
 
-def match_doc_type_folder(folders, code, name):
+def match_doc_type_folder(folders, code, name, direction=""):
     """Pick the folder for a doc type. Returns folder dict, None (no match).
     Raises RoutingError('ambiguous') if the top score is shared by several folders."""
-    scored = sorted(((score_folder_name(f.get("name"), code, name), f) for f in folders),
+    scored = sorted(((score_folder_name(f.get("name"), code, name, direction=direction), f) for f in folders),
                     key=lambda x: -x[0])
     scored = [(s, f) for s, f in scored if s > 0]
     if not scored:
@@ -112,7 +132,8 @@ def create_folder(service, parent_id, name):
 
 
 # ---------------- Orchestration ----------------
-def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missing=False, subfolder_name=None, flat=False):
+def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missing=False,
+                               subfolder_name=None, flat=False, direction="", destination_folder_id=""):
     """Return {'folder_id', 'doc_type_folder_id', 'source', ...} or raise RoutingError.
 
     store must provide: get_project(pid), get_doc_type(pid, dt_id),
@@ -131,15 +152,29 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
         raise RoutingError("doc_type_not_found")
 
     source = "cache"
-    # 1) doc type folder
-    dt_folder_id = str(dt.get("drive_folder_id") or "").strip()
-    if dt_folder_id and not folder_is_usable(service, dt_folder_id):
-        dt_folder_id = ""          # deleted / trashed on Drive -> rediscover
     patch = {}
     slot_cache = dict(dt.get("drive_slot_folders") or {})
+    dt_folder_id = ""
+
+    # Explicit destination folder chosen by caller (e.g. resolved after ambiguous picker)
+    if destination_folder_id:
+        if folder_is_usable(service, destination_folder_id):
+            dt_folder_id = destination_folder_id
+            source = "explicit"
+            patch.update({"drive_folder_id": dt_folder_id,
+                          "folder_synced_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"})
+        else:
+            raise RoutingError("folder_not_usable")
+
+    # 1) doc type folder
+    if not dt_folder_id:
+        dt_folder_id = str(dt.get("drive_folder_id") or "").strip()
+        if dt_folder_id and not folder_is_usable(service, dt_folder_id):
+            dt_folder_id = ""          # deleted / trashed on Drive -> rediscover
+
     if not dt_folder_id:
         source = "discovered"
-        folder = match_doc_type_folder(list_child_folders(service, root_id), dt.get("code"), dt.get("name"))
+        folder = match_doc_type_folder(list_child_folders(service, root_id), dt.get("code"), dt.get("name"), direction=direction)
         if folder is None:
             if not create_if_missing:
                 raise RoutingError("doc_type_folder_not_found")

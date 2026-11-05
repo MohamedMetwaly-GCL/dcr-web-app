@@ -9202,6 +9202,8 @@ init();
 
 def render_register(u, proj, active_ws_id=None):
     pid      = proj["id"]
+    pcode    = (proj.get("code") or pid) if proj else pid
+    pname    = (proj.get("name") or "") if proj else ""
     uname    = u["username"] if u else "guest"
     role     = u["role"]     if u else "guest"
     editable = can_edit(pid)
@@ -10110,6 +10112,8 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 <!-- DOCUMENT / FOLDER VIEWER MODAL -->
 <style>
   #doc-viewer-modal.dv-fs .modal {{ width:100vw !important; max-width:100vw !important; height:100vh !important; max-height:100vh !important; border-radius:0 !important; margin:0 !important; }}
+  #doc-viewer-modal.dv-fs .modal .mhdr {{ padding:4px 12px !important; min-height:32px !important; }}
+  #doc-viewer-modal.dv-fs .modal .mfoot {{ display:none !important; }}
   .dv-scroll {{ scrollbar-width:auto; scrollbar-color:#64748b #e2e8f0; }}
   .dv-scroll::-webkit-scrollbar {{ width:11px; height:11px; }}
   .dv-scroll::-webkit-scrollbar-track {{ background:#e2e8f0; border-radius:5px; }}
@@ -10164,7 +10168,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 {SHARED_JS}
 <script>
 window._ACCESSIBLE_PROJECTS = {projs_json};
-const PID='{pid}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
+const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
 const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
   'Accepted & to proceed with Part C':['bbf7d0','166534'],
@@ -12897,9 +12901,37 @@ function _dvColLabel(idx){{
   }}
   return s;
 }}
+function dvToggleOfficeMode(fid, mode){{
+  DV.officeMode = DV.officeMode || {{}};
+  DV.officeMode[fid] = mode;
+  const f = DV.info && DV.info.files[DV.cur];
+  if(f){{
+    if(f.preview === 'excel') _dvRenderExcelView(f);
+    else if(f.preview === 'word') _dvRenderWordView(f);
+  }}
+}}
 function _dvRenderExcelView(f){{
   const box=_dvEl('dv-office-box');
-  if(!box||!f._officeData)return;
+  if(!box)return;
+  DV.officeMode=DV.officeMode||{{}};
+  const mode=DV.officeMode[f.id]||(f.drive_embed_url?'high':'inapp');
+  if(mode==='high'&&f.drive_embed_url){{
+    box.innerHTML=`
+      <div style="padding:4px 10px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0;min-height:30px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:11px;font-weight:700;color:#16a34a">📊 High-Fidelity Office Preview</span>
+          <span style="font-size:10px;color:#64748b">(Original formatting, formulas, and colors)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button type="button" class="btn btn-sc btn-sm" onclick="dvToggleOfficeMode('${{f.id}}','inapp')" style="padding:2px 8px;font-size:11px;font-weight:600">📊 Switch to In-App Grid</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane('dv-office-box')" title="Fullscreen" style="padding:2px 8px;font-size:11px">⛶ Fullscreen</button>
+        </div>
+      </div>
+      <iframe src="${{f.drive_embed_url}}" allowfullscreen style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>
+    `;
+    return;
+  }}
+  if(!f._officeData)return;
   const sheets=f._officeData.sheets||[];
   if(!sheets.length){{
     box.innerHTML='<div style="margin:auto;padding:24px;color:var(--mu)">Workbook is empty.</div>';
@@ -12965,6 +12997,7 @@ function _dvRenderExcelView(f){{
           <button type="button" class="btn btn-sc btn-sm" onclick="DV.excelZoom=100;dvExcelZoom(0)" title="Reset 100%" style="padding:1px 5px;border:0;font-size:10px">100%</button>
         </div>
         <input id="dv-excel-filter-inp" type="text" placeholder="🔍 Filter rows..." value="${{escHtml(DV.excelFilter)}}" oninput="dvFilterExcelRows(this.value)" style="padding:4px 8px;font-size:11px;border:1px solid #cbd5e1;border-radius:6px;width:155px;background:#fff">
+        ${{f.drive_embed_url?`<button type="button" class="btn btn-sc btn-sm" onclick="dvToggleOfficeMode('${{f.id}}','high')" style="padding:3px 8px;font-size:11px;font-weight:600">🖥️ High-Fidelity</button>`:''}}
         <button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane('dv-office-box')" title="Fullscreen Excel View" style="padding:3px 8px;font-size:11px">⛶ Fullscreen</button>
       </div>
     </div>
@@ -12998,7 +13031,26 @@ function dvFilterExcelRows(val){{
 
 function _dvRenderWordView(f){{
   const box=_dvEl('dv-office-box');
-  if(!box||!f._officeData)return;
+  if(!box)return;
+  DV.officeMode=DV.officeMode||{{}};
+  const mode=DV.officeMode[f.id]||(f.drive_embed_url?'high':'inapp');
+  if(mode==='high'&&f.drive_embed_url){{
+    box.innerHTML=`
+      <div style="padding:4px 10px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0;min-height:30px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:11px;font-weight:700;color:#1e40af">📝 High-Fidelity Word Preview</span>
+          <span style="font-size:10px;color:#64748b">(Original layout, photos, logos, and covers)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button type="button" class="btn btn-sc btn-sm" onclick="dvToggleOfficeMode('${{f.id}}','inapp')" style="padding:2px 8px;font-size:11px;font-weight:600">📝 Switch to In-App Text</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane('dv-office-box')" title="Fullscreen" style="padding:2px 8px;font-size:11px">⛶ Fullscreen</button>
+        </div>
+      </div>
+      <iframe src="${{f.drive_embed_url}}" allowfullscreen style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>
+    `;
+    return;
+  }}
+  if(!f._officeData)return;
   const blocks=f._officeData.blocks||[];
   const zoom=DV.wordZoom||100;
   let docHtml='';
@@ -13020,6 +13072,9 @@ function _dvRenderWordView(f){{
         }});
         tbl+='</table>';
         docHtml+=tbl;
+      }}else if(b.type==='image'){{
+        const al=b.align==='right'?'right':(b.align==='left'?'left':'center');
+        docHtml+=`<div dir="auto" style="text-align:${{al}};margin:16px 0"><img src="${{b.src}}" style="max-width:100%;height:auto;border-radius:4px;box-shadow:0 3px 12px rgba(0,0,0,.12)"></div>`;
       }}else{{
         let inner='';
         if(Array.isArray(b.runs)&&b.runs.length){{
@@ -13051,6 +13106,7 @@ function _dvRenderWordView(f){{
         <span id="dv-word-zoom-lbl" style="font-size:11px;font-weight:700;min-width:42px;text-align:center">${{zoom}}%</span>
         <button type="button" class="btn btn-sc btn-sm" onclick="dvWordZoom(10)" style="padding:2px 8px">🔍+</button>
         <button type="button" class="btn btn-sc btn-sm" onclick="DV.wordZoom=100;dvWordZoom(0)" style="padding:2px 8px">100%</button>
+        ${{f.drive_embed_url?`<button type="button" class="btn btn-sc btn-sm" onclick="dvToggleOfficeMode('${{f.id}}','high')" style="padding:2px 8px;font-size:11px;font-weight:600">🖥️ High-Fidelity</button>`:''}}
         <button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane('dv-office-box')" style="padding:2px 8px">⛶ Fullscreen</button>
       </div>
     </div>
@@ -13105,13 +13161,17 @@ function dvSelect(i){{
   const noCopy=!j.can_download;
   let body='';
   if(f.preview==='pdf'){{
-    body='<div style="padding:5px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0">'
-      +'<span style="font-size:11px;font-weight:700;color:#dc2626">📕 PDF Document Viewer</span>'
-      +'<div style="display:flex;align-items:center;gap:6px">'
-      +(!noCopy?'<a href="'+f.stream_url+'" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 9px;font-size:11px;text-decoration:none">🔗 Open in New Tab</a>':'')
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane()" title="Fullscreen PDF" style="padding:2px 9px;font-size:11px">⛶ Fullscreen</button>'
-      +'</div></div>'
+    const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
+    const pdfTools = `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">`
+      +(!noCopy?`<a href="${{f.stream_url}}" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:11px;text-decoration:none">🔗 Open in New Tab</a>`:'')
+      +`<button type="button" class="btn btn-sc btn-sm" onclick="dvToggleModalFullscreen()" title="Toggle Fullscreen" style="padding:2px 8px;font-size:11px">⛶ Fullscreen</button>`
+      +`</div>`;
+    pane.innerHTML='<div style="padding:4px 10px;border-bottom:1px solid var(--bd);background:#fff;font-size:11.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0;min-height:30px">'
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;min-width:0">'+_dvIcon(f)+' <span style="color:#0f172a">'+escHtml(f.name)+'</span>'+subLabel+' <span style="color:var(--mu);font-weight:500;white-space:nowrap;font-size:10.5px">('+_dvFmt(f.size)+')</span></span>'+pdfTools+'</div>'
       +'<iframe id="dv-pdf-frame" allowfullscreen title="'+escHtml(f.name)+'" src="'+f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH')+'" style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>';
+    pane.style.display='flex';pane.style.flexDirection='column';
+    _dvRenderFooter();
+    return;
   }}else if(f.preview==='image'){{
     body='<div style="padding:6px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0">'
       +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
@@ -13280,7 +13340,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     const dtName=dtObj.name||dtObj.code||state.tab||'Documents';
     const folderHint=document.createElement('div');
     folderHint.style.cssText='font-size:10px;color:var(--mu);display:flex;align-items:center;gap:4px;margin-top:-2px';
-    folderHint.innerHTML=`<span>📁 Drive Path:</span> <strong style="color:#334155">${{escHtml(PID)}} ❯ ${{escHtml(dtName)}}${{hasReply?(' ❯ '+escHtml(pathSubName)):''}}</strong>`;
+    const _projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
+    folderHint.innerHTML=`<span>📁 Drive Path:</span> <strong style="color:#334155">${{escHtml(_projLbl)}} ❯ ${{escHtml(dtName)}}${{hasReply?(' ❯ '+escHtml(pathSubName)):''}}</strong>`;
     card.appendChild(folderHint);
 
     const statusLine=document.createElement('div');
@@ -13420,12 +13481,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         progTxt.style.color='#475569';
         progTxt.textContent='Starting upload session...';
         state.activeDriveUploads=(state.activeDriveUploads||0)+1;
+        const dirEl=formRoot.querySelector('#f-direction')||formRoot.querySelector('[name="direction"]');
+        const formDir=(dirEl&&dirEl.value)?dirEl.value:(row?.direction||'');
         try{{
           const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
             const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
             progBarInner.style.width=pct+'%';
             progTxt.textContent=label||(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
-          }});
+          }}, {{direction: formDir}});
           if(res&&res.pending){{
             state.pendingDriveAttachments[s.key]=res;
             renderSlotInfo(null,res);
@@ -13524,12 +13587,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const f = fls[fi];
             const relParts = (f.webkitRelativePath || '').split('/').filter(Boolean);
             const relSub = relParts.length > 2 ? relParts.slice(1, -1).join('/') : '';
+            const dirEl=formRoot.querySelector('#f-direction')||formRoot.querySelector('[name="direction"]');
+            const formDir=(dirEl&&dirEl.value)?dirEl.value:(row?.direction||'');
             lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
               const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
               const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
               progBarInner.style.width = overall + '%';
               progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
-            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, signal: slotAbortCtrl.signal}});
+            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, direction: formDir, signal: slotAbortCtrl.signal}});
             uploadedCount++;
           }}
           if(!cancelSlotUpload && uploadedCount > 0) {{
@@ -13643,27 +13708,67 @@ async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,
   throw new Error('Network interrupted during chunk upload');
 }}
 
+function promptDriveFolderChoice(candidates, dtName){{
+  return new Promise((resolve)=>{{
+    let el=document.getElementById('dv-folder-pick-modal');
+    if(!el){{
+      el=document.createElement('div');
+      el.id='dv-folder-pick-modal';
+      el.className='overlay';
+      el.style.zIndex='1400';
+      document.body.appendChild(el);
+    }}
+    let itemsHtml='';
+    candidates.forEach((c)=>{{
+      itemsHtml+=`<button type="button" class="btn btn-sc" style="width:100%;text-align:left;padding:10px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px;border-radius:6px;margin-bottom:6px" onclick="window._dvPickFolder('${{escHtml(c.id)}}')">📁 ${{escHtml(c.name)}}</button>`;
+    }});
+    el.innerHTML=`
+      <div class="modal" style="max-width:440px">
+        <div class="mhdr"><span>📁 Select Drive Folder</span><button class="xbtn" onclick="window._dvPickFolder(null)">✕</button></div>
+        <div class="mbody" style="padding:16px">
+          <div style="font-size:12px;color:#334155;line-height:1.5;margin-bottom:12px">Multiple matching folders found on Google Drive for <strong>${{escHtml(dtName||'this tab')}}</strong>. Please select the folder to upload into:</div>
+          <div style="display:flex;flex-direction:column">${{itemsHtml}}</div>
+        </div>
+      </div>`;
+    el.classList.remove('hidden');
+    window._dvPickFolder=(id)=>{{
+      el.classList.add('hidden');
+      resolve(id);
+    }};
+  }});
+}}
+
 async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
   const signal=extraOpts.signal||null;
   if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
+  const sessPayload = {{
+    project_id: PID,
+    dt_id: state.tab,
+    record_id: state.editId||'',
+    slot: slot,
+    file_name: file.name,
+    file_size: file.size,
+    mime_type: file.type||'application/octet-stream',
+    create_folders: true,
+    subfolder_name: extraOpts.subfolder_name||'',
+    link_as_folder: Boolean(extraOpts.link_as_folder),
+    direction: extraOpts.direction||row?.direction||'',
+    destination_folder_id: extraOpts.destination_folder_id||''
+  }};
   const sessRes=await fetch('/api/drive/upload-session',{{
     method:'POST',
     headers:{{'Content-Type':'application/json'}},
     signal:signal,
-    body:JSON.stringify({{
-      project_id:PID,
-      dt_id:state.tab,
-      record_id:state.editId||'',
-      slot:slot,
-      file_name:file.name,
-      file_size:file.size,
-      mime_type:file.type||'application/octet-stream',
-      create_folders:true,
-      subfolder_name:extraOpts.subfolder_name||'',
-      link_as_folder:Boolean(extraOpts.link_as_folder)
-    }})
+    body:JSON.stringify(sessPayload)
   }});
   const sess=await sessRes.json().catch(()=>({{}}));
+  if(!sessRes.ok && sess.error==='ambiguous' && Array.isArray(sess.candidates) && sess.candidates.length){{
+    const chosen = await promptDriveFolderChoice(sess.candidates, state.tab);
+    if(chosen){{
+      extraOpts.destination_folder_id = chosen;
+      return uploadFileToDriveSlot(slot, file, row, onProgress, extraOpts);
+    }}
+  }}
   if(!sessRes.ok||!sess.ok)throw new Error(sess.hint||sess.error||('Could not start upload ('+sessRes.status+')'));
 
   const chunkSize=sess.chunk_size||(8*1024*1024);

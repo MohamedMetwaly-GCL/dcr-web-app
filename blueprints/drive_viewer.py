@@ -11,6 +11,7 @@ A file can only be streamed if it IS the record's attachment or lives inside the
 so users can never reach arbitrary Drive files through this gateway. Drive URLs are not exposed to
 non-admin users; downloads require edit permission (or admin).
 """
+import base64
 import csv
 import io
 import logging
@@ -199,6 +200,7 @@ def _file_dict(f, rid, slot, can_dl):
     rid_q = quote(rid, safe="")
     base = "/api/drive/stream/%s/%s/%s" % (rid_q, slot, fid_q)
     office_url = ("/api/drive/office-preview/%s/%s/%s" % (rid_q, slot, fid_q)) if kind in ("excel", "word") else ""
+    drive_embed_url = "https://drive.google.com/file/d/%s/preview" % fid_q
     return {
         "id": f["id"],
         "name": f.get("name") or "file",
@@ -208,6 +210,7 @@ def _file_dict(f, rid, slot, can_dl):
         "preview": kind,
         "stream_url": base if kind in ("pdf", "image", "text") else "",
         "office_url": office_url,
+        "drive_embed_url": drive_embed_url,
         "download_url": (base + "?dl=1") if can_dl else "",
     }
 
@@ -437,12 +440,40 @@ def _parse_csv_bytes(raw_bytes, max_rows=1500, max_cols=80):
 
 
 def _parse_docx_bytes(raw_bytes):
-    """Parse .docx bytes into structured blocks [{'type': 'h1'|'h2'|'h3'|'p'|'li'|'table', ...}] for safe rendering."""
+    """Parse .docx bytes into structured blocks [{'type': 'h1'|'h2'|'h3'|'p'|'li'|'table'|'image', ...}] for safe rendering."""
     blocks = []
     with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as zf:
         if "word/document.xml" not in zf.namelist():
             raise ValueError("Invalid .docx archive (missing word/document.xml)")
         root = ET.fromstring(zf.read("word/document.xml"))
+
+        # Pre-load relationship map for media images
+        rels_map = {}
+        if "word/_rels/document.xml.rels" in zf.namelist():
+            try:
+                rels_root = ET.fromstring(zf.read("word/_rels/document.xml.rels"))
+                for rel in rels_root:
+                    r_id = rel.attrib.get("Id")
+                    target = rel.attrib.get("Target")
+                    if r_id and target:
+                        if not target.startswith("word/"):
+                            target = "word/" + target.lstrip("/")
+                        rels_map[r_id] = target
+            except Exception:
+                pass
+
+        img_cache = {}
+        for r_id, img_path in rels_map.items():
+            if img_path in zf.namelist():
+                try:
+                    idata = zf.read(img_path)
+                    if len(idata) <= 5 * 1024 * 1024:
+                        ext = img_path.rsplit(".", 1)[-1].lower()
+                        mime = "image/png" if ext == "png" else ("image/jpeg" if ext in ("jpg", "jpeg") else ("image/gif" if ext == "gif" else "image/png"))
+                        b64 = base64.b64encode(idata).decode("ascii")
+                        img_cache[r_id] = f"data:{mime};base64,{b64}"
+                except Exception:
+                    pass
 
     def _local(tag):
         return tag.rsplit("}", 1)[-1] if "}" in tag else tag
@@ -465,6 +496,14 @@ def _parse_docx_bytes(raw_bytes):
                         for k, v in pr.attrib.items():
                             if _local(k) == "val":
                                 align = str(v or "").lower()
+
+        images_in_p = []
+        for el in p_el.iter():
+            if _local(el.tag) == "blip":
+                for k, v in el.attrib.items():
+                    if _local(k) == "embed" and v in img_cache:
+                        images_in_p.append(img_cache[v])
+
         runs = []
         for r_el in p_el.iter():
             if _local(r_el.tag) == "r":
@@ -495,6 +534,8 @@ def _parse_docx_bytes(raw_bytes):
                     runs.append({"text": txt, "b": bold, "i": italic, "u": underline})
         full_text = "".join(r["text"] for r in runs).strip()
         if not full_text:
+            if images_in_p:
+                return {"type": "image", "src": images_in_p[0], "align": align or "center"}
             return None
         st_low = style_val.lower()
         btype = "p"
@@ -506,7 +547,7 @@ def _parse_docx_bytes(raw_bytes):
             btype = "h3"
         elif is_list or "list" in st_low:
             btype = "li"
-        return {"type": btype, "text": full_text, "runs": runs, "align": align}
+        return {"type": btype, "text": full_text, "runs": runs, "align": align, "images": images_in_p}
 
     body_el = next((ch for ch in root if _local(ch.tag) == "body"), root)
     for child in body_el:
@@ -514,6 +555,9 @@ def _parse_docx_bytes(raw_bytes):
         if cname == "p":
             blk = _para_to_block(child)
             if blk:
+                if blk.get("images"):
+                    for img in blk["images"]:
+                        blocks.append({"type": "image", "src": img, "align": blk.get("align") or "center"})
                 blocks.append(blk)
         elif cname == "tbl":
             t_rows = []
