@@ -122,6 +122,30 @@ def delete_file(token, file_id, http=requests):
     return True
 
 
+def trash_file(token, file_id, http=requests):
+    """Move a file or folder to Google Drive Trash (recoverable for 30 days)."""
+    if not file_id:
+        return False
+    patch_fn = getattr(http, "patch", None)
+    if patch_fn is not None:
+        r = patch_fn("%s/%s" % (FILES_URL, file_id),
+                     params={"fields": "id,trashed", "supportsAllDrives": "true"},
+                     headers=_auth(token, {"Content-Type": "application/json; charset=UTF-8"}),
+                     data=json.dumps({"trashed": True}), timeout=30)
+        if r.status_code not in (200, 204):
+            _raise_for(r, "files.trash")
+        return True
+    del_fn = getattr(http, "delete", None)
+    if del_fn is not None:
+        try:
+            r = del_fn("%s/%s" % (FILES_URL, file_id), params={"supportsAllDrives": "true"},
+                       headers=_auth(token), timeout=30)
+            return r.status_code in (200, 204)
+        except Exception:
+            return False
+    return False
+
+
 def create_resumable_session(token, folder_id, file_name, mime_type, size, origin=None, http=requests):
     """Start a resumable upload. Returns the session URL (valid ~1 week).
 

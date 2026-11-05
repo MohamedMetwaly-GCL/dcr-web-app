@@ -10108,20 +10108,36 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 </div>
 
 <!-- DOCUMENT / FOLDER VIEWER MODAL -->
+<style>
+  #doc-viewer-modal.dv-fs .modal {{ width:100vw !important; max-width:100vw !important; height:100vh !important; max-height:100vh !important; border-radius:0 !important; margin:0 !important; }}
+  .dv-scroll {{ scrollbar-width:auto; scrollbar-color:#64748b #e2e8f0; }}
+  .dv-scroll::-webkit-scrollbar {{ width:11px; height:11px; }}
+  .dv-scroll::-webkit-scrollbar-track {{ background:#e2e8f0; border-radius:5px; }}
+  .dv-scroll::-webkit-scrollbar-thumb {{ background:#64748b; border-radius:5px; border:2px solid #e2e8f0; }}
+  .dv-scroll::-webkit-scrollbar-thumb:hover {{ background:#475569; }}
+  .dv-scroll::-webkit-scrollbar-corner {{ background:#e2e8f0; }}
+</style>
 <div class="overlay hidden" id="doc-viewer-modal" style="z-index:1200">
-  <div class="modal" style="max-width:1120px;width:96vw;height:88vh;display:flex;flex-direction:column;overflow:hidden">
-    <div class="mhdr"><span id="dv-title" style="min-width:0;word-break:break-word">Document</span>
-      <button class="xbtn" onclick="closeM('doc-viewer-modal');document.getElementById('dv-pane').innerHTML=''">✕</button></div>
-    <div style="flex:1;min-height:0;display:flex;flex-wrap:wrap">
-      <div id="dv-side" style="width:300px;max-width:100%;border-right:1px solid var(--bd);display:none;flex-direction:column;min-height:0;background:#fff">
-        <div style="padding:8px;border-bottom:1px solid var(--bd)"><input id="dv-search" type="text" placeholder="🔍 Search files in folder..." oninput="dvFilter(this.value)" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--bd);border-radius:6px"></div>
-        <div id="dv-list" style="flex:1;overflow:auto"></div>
+  <div class="modal" style="max-width:1180px;width:96vw;height:88vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
+    <div class="mhdr" style="gap:8px"><span id="dv-title" style="min-width:0;flex:1;word-break:break-word">Document</span>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <button type="button" id="dv-fs-btn" class="btn btn-sc btn-sm" onclick="dvToggleModalFullscreen()" title="Toggle Fullscreen Window" style="padding:3px 9px;font-size:11px">⛶ Fullscreen</button>
+        <button class="xbtn" onclick="dvCloseModal()">✕</button>
       </div>
-      <div id="dv-pane" style="flex:1;min-width:280px;min-height:0;display:flex;flex-direction:column;background:#f1f5f9"></div>
     </div>
-    <div class="mfoot" style="justify-content:space-between;gap:8px;flex-wrap:wrap">
+    <div id="dv-body-wrap" style="flex:1;min-height:0;height:100%;overflow:hidden;display:flex;flex-direction:row">
+      <div id="dv-side" style="width:310px;flex-shrink:0;height:100%;max-height:100%;min-height:0;border-right:1px solid var(--bd);display:none;flex-direction:column;background:#fff;overflow:hidden">
+        <div style="padding:8px;border-bottom:1px solid var(--bd);flex-shrink:0">
+          <input id="dv-search" type="text" placeholder="🔍 Search files in folder..." oninput="dvFilter(this.value)" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--bd);border-radius:6px">
+          <div id="dv-list-count" style="font-size:10.5px;color:#64748b;margin-top:4px;font-weight:600;display:flex;justify-content:space-between"></div>
+        </div>
+        <div id="dv-list" class="dv-scroll" style="flex:1;min-height:0;overflow-y:scroll;overflow-x:hidden"></div>
+      </div>
+      <div id="dv-pane" style="flex:1;min-width:0;height:100%;max-height:100%;min-height:0;overflow:hidden;display:flex;flex-direction:column;background:#f1f5f9"></div>
+    </div>
+    <div class="mfoot" style="justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0">
       <div id="dv-foot-left" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>
-      <button type="button" class="btn btn-sc" onclick="closeM('doc-viewer-modal');document.getElementById('dv-pane').innerHTML=''">Close</button>
+      <button type="button" class="btn btn-sc" onclick="dvCloseModal()">Close</button>
     </div>
   </div>
 </div>
@@ -10996,19 +11012,25 @@ function renderRows(){{
           if(_okE(_att.submission) && (!_att.approval || _okE(_att.approval))){{
             const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
             const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-            const _chip=(label,slot,entry,color,bg,name)=>{{
+            const _chip=(label,slot,entry,color,bg,name,themeObj)=>{{
               const sp=document.createElement('span');
-              sp.style.cssText='display:inline-flex;align-items:center;justify-content:space-between;gap:3px;padding:1px 5px;border-radius:5px;border:1px solid '+color+';background:'+bg+';font-size:9.5px;font-weight:700;color:'+color+';white-space:nowrap;line-height:1.2';
-              const lbl=document.createElement('span');lbl.textContent=label;sp.appendChild(lbl);
+              const isMix=Boolean(themeObj&&themeObj.mixed);
+              const bdStyle=isMix
+                ? 'border-top:1.5px solid '+themeObj.bd+';border-left:1.5px solid '+themeObj.bd+';border-right:1.5px solid '+themeObj.bd2+';border-bottom:1.5px solid '+themeObj.bd2
+                : 'border:1px solid '+color;
+              sp.style.cssText='display:inline-flex;align-items:center;justify-content:space-between;gap:3px;padding:1px 5px;border-radius:5px;'+bdStyle+';background:'+bg+';font-size:9.5px;font-weight:700;color:'+color+';white-space:nowrap;line-height:1.2';
+              const lbl=document.createElement('span');lbl.textContent=label;
+              if(isMix)lbl.style.color=themeObj.color;
+              sp.appendChild(lbl);
               const v=document.createElement('a');
-              v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px';
+              v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px'+(isMix?';color:'+themeObj.color2:'');
               v.href='#';v.title='View '+name;v.innerHTML=_eye;
               v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}});
               sp.appendChild(v);
               const dh=canDownloadUI()?docDownloadHref(row._id,slot,entry):'';
               if(dh){{
                 const d=document.createElement('a');
-                d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px';
+                d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px'+(isMix?';color:'+themeObj.color2:'');
                 d.href=dh;d.title=((entry.is_folder||String(entry.url||'').indexOf('/folders/')>-1)?'Download folder (ZIP) - ':'Download ')+name;d.innerHTML=_dl;
                 sp.appendChild(d);
               }}
@@ -11019,8 +11041,8 @@ function renderRows(){{
             if(_att.approval){{
               const _rTheme=_getReplyStatusTheme(row.status||_att.approval.consultant_status);
               const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
-              box.appendChild(_chip('Subm','submission',_att.submission,'#2563eb','#eff6ff','Submission'));
-              box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName));
+              box.appendChild(_chip('Subm','submission',_att.submission,'#2563eb','#eff6ff','Submission',null));
+              box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
             }}else{{
               box.appendChild(_chip('Doc','submission',_att.submission,'#0f766e','#f0fdfa','Document'));
             }}
@@ -12675,9 +12697,33 @@ function docDownloadHref(rid,slot,entry){{
   return fid?('/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'/'+encodeURIComponent(fid)+'?dl=1'):'';
 }}
 
-const DV={{info:null,rid:'',slot:'',cur:-1,filter:'',label:'',imgZoom:1,imgRot:0,imgPanX:0,imgPanY:0,imgDrag:false,imgSX:0,imgSY:0,excelSheet:0,excelFilter:'',wordZoom:100}};
+const DV={{info:null,rid:'',slot:'',cur:-1,filter:'',label:'',imgZoom:1,imgRot:0,imgPanX:0,imgPanY:0,imgDrag:false,imgSX:0,imgSY:0,excelSheet:0,excelFilter:'',excelZoom:100,wordZoom:100}};
 function _dvEl(id){{return document.getElementById(id);}}
 function _dvFmt(n){{return (typeof _fmtBytes==='function')?_fmtBytes(n):(n+' B');}}
+function dvCloseModal(){{
+  const m=_dvEl('doc-viewer-modal');
+  if(m)m.classList.remove('dv-fs');
+  const b=_dvEl('dv-fs-btn');
+  if(b)b.textContent='⛶ Fullscreen';
+  if(document.fullscreenElement){{try{{document.exitFullscreen();}}catch(_e){{}}}}
+  closeM('doc-viewer-modal');
+  const p=_dvEl('dv-pane');
+  if(p)p.innerHTML='';
+}}
+function dvToggleModalFullscreen(){{
+  const m=_dvEl('doc-viewer-modal');
+  if(!m)return;
+  const isFs=m.classList.toggle('dv-fs');
+  const b=_dvEl('dv-fs-btn');
+  if(b)b.textContent=isFs?'🗗 Exit Fullscreen':'⛶ Fullscreen';
+}}
+function dvFullscreenPane(targetId){{
+  const el=(targetId&&_dvEl(targetId))||_dvEl('dv-pane');
+  if(!el)return;
+  if(document.fullscreenElement){{document.exitFullscreen().catch(()=>{{}});}}
+  else if(el.requestFullscreen){{el.requestFullscreen().catch(()=>dvToggleModalFullscreen());}}
+  else{{dvToggleModalFullscreen();}}
+}}
 function _dvIcon(f){{
   if(f.preview==='pdf')return '📕';
   if(f.preview==='image')return '🖼️';
@@ -12752,16 +12798,21 @@ function _dvRenderList(){{
   const q=DV.filter.trim().toLowerCase();
   box.innerHTML='';
   let shown=0;
+  let activeRowEl=null;
   j.files.forEach((f,i)=>{{
-    if(q&&String(f.name).toLowerCase().indexOf(q)<0)return;
+    const sub=String(f.subfolder||'').trim();
+    if(q&&String(f.name).toLowerCase().indexOf(q)<0&&sub.toLowerCase().indexOf(q)<0)return;
     shown++;
     const row=document.createElement('div');
     row.dataset.idx=i;
     const active=(i===DV.cur);
+    if(active)activeRowEl=row;
     row.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--bd);'+(active?'background:#eff6ff;border-left:3px solid #2563eb':'border-left:3px solid transparent');
-    row.innerHTML='<span style="font-size:18px">'+_dvIcon(f)+'</span>'
+    const subBadge=sub?`<span style="display:inline-block;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:600;margin-right:4px">📁 ${{escHtml(sub)}}</span>`:'';
+    row.innerHTML='<span style="font-size:10px;font-weight:700;color:#94a3b8;min-width:16px;text-align:right">'+(i+1)+'.</span>'
+      +'<span style="font-size:17px">'+_dvIcon(f)+'</span>'
       +'<span style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;word-break:break-all;line-height:1.3">'+escHtml(f.name)+'</div>'
-      +'<div style="font-size:10px;color:var(--mu)">'+_dvFmt(f.size)+' · '+_dvPreviewBadge(f)+'</div></span>';
+      +'<div style="font-size:10px;color:var(--mu);margin-top:2px">'+subBadge+_dvFmt(f.size)+' · '+_dvPreviewBadge(f)+'</div></span>';
     if(f.download_url){{
       const a=document.createElement('a');a.href=f.download_url;a.title='Download';a.textContent='⬇';
       a.style.cssText='font-size:13px;text-decoration:none;color:#475569;padding:2px 4px';
@@ -12771,7 +12822,12 @@ function _dvRenderList(){{
     row.onclick=()=>dvSelect(i);
     box.appendChild(row);
   }});
+  const cntEl=_dvEl('dv-list-count');
+  if(cntEl){{
+    cntEl.innerHTML=`<span>Showing ${{shown}} of ${{j.files.length}} files</span><span style="color:#94a3b8">↕ Scroll</span>`;
+  }}
   if(!shown)box.innerHTML='<div style="padding:16px;font-size:12px;color:var(--mu);text-align:center">No matching files</div>';
+  if(activeRowEl){{try{{activeRowEl.scrollIntoView({{block:'nearest'}});}}catch(_e){{}}}}
 }}
 function dvFilter(v){{DV.filter=v||'';_dvRenderList();}}
 
@@ -12800,10 +12856,7 @@ function dvImgRotate(deg){{
   _dvApplyImgTransform();
 }}
 function dvImgFullscreen(){{
-  const stage=_dvEl('dv-img-stage')||_dvEl('dv-pane');
-  if(!stage)return;
-  if(document.fullscreenElement){{document.exitFullscreen().catch(()=>{{}});}}
-  else if(stage.requestFullscreen){{stage.requestFullscreen().catch(()=>{{}});}}
+  dvFullscreenPane('dv-img-stage');
 }}
 function _dvBindImgStage(){{
   const stage=_dvEl('dv-img-stage');
@@ -12857,11 +12910,12 @@ function _dvRenderExcelView(f){{
   const rows=activeSheet.rows||[];
   const colCount=rows.length?Math.max(...rows.map(r=>r.length),1):1;
   const q=String(DV.excelFilter||'').trim().toLowerCase();
+  const zoom=DV.excelZoom||100;
 
   let tabsHtml='';
   sheets.forEach((sh,idx)=>{{
     const act=(idx===DV.excelSheet);
-    tabsHtml+=`<button type="button" onclick="dvSelectExcelSheet(${{idx}})" style="padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:${{act?'700':'600'}};cursor:pointer;border:1px solid ${{act?'#16a34a':'#cbd5e1'}};background:${{act?'#f0fdf4':'#fff'}};color:${{act?'#15803d':'#334155'}};transition:all .12s">📊 ${{escHtml(sh.name||('Sheet '+(idx+1)))}} <span style="font-size:10px;opacity:.75">(${{(sh.rows||[]).length}})</span></button>`;
+    tabsHtml+=`<button type="button" onclick="dvSelectExcelSheet(${{idx}})" style="padding:4px 10px;border-radius:6px;font-size:11px;font-weight:${{act?'700':'600'}};cursor:pointer;border:1px solid ${{act?'#16a34a':'#cbd5e1'}};background:${{act?'#f0fdf4':'#fff'}};color:${{act?'#15803d':'#334155'}};transition:all .12s">📊 ${{escHtml(sh.name||('Sheet '+(idx+1)))}} <span style="font-size:10px;opacity:.75">(${{(sh.rows||[]).length}})</span></button>`;
   }});
 
   let colHdr='<tr><th style="position:sticky;top:0;left:0;z-index:4;background:#e2e8f0;color:#475569;font-size:10px;font-weight:700;padding:4px 8px;border:1px solid #cbd5e1;text-align:center;min-width:36px">#</th>';
@@ -12900,19 +12954,33 @@ function _dvRenderExcelView(f){{
   }}
 
   box.innerHTML=`
-    <div style="padding:8px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <div style="padding:7px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${{tabsHtml}}</div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:11px;color:#64748b;font-weight:600">${{rows.length}} rows × ${{colCount}} cols</span>
-        <input id="dv-excel-filter-inp" type="text" placeholder="🔍 Filter rows in sheet..." value="${{escHtml(DV.excelFilter)}}" oninput="dvFilterExcelRows(this.value)" style="padding:5px 10px;font-size:11.5px;border:1px solid #cbd5e1;border-radius:6px;width:200px;background:#fff">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="font-size:10.5px;color:#64748b;font-weight:600">${{rows.length}} rows × ${{colCount}} cols</span>
+        <div style="display:inline-flex;align-items:center;gap:3px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:1px 4px">
+          <button type="button" class="btn btn-sc btn-sm" onclick="dvExcelZoom(-10)" title="Zoom Out" style="padding:1px 6px;border:0">🔍−</button>
+          <span id="dv-excel-zoom-lbl" style="font-size:10.5px;font-weight:700;min-width:38px;text-align:center;color:#0f172a">${{zoom}}%</span>
+          <button type="button" class="btn btn-sc btn-sm" onclick="dvExcelZoom(10)" title="Zoom In" style="padding:1px 6px;border:0">🔍+</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="DV.excelZoom=100;dvExcelZoom(0)" title="Reset 100%" style="padding:1px 5px;border:0;font-size:10px">100%</button>
+        </div>
+        <input id="dv-excel-filter-inp" type="text" placeholder="🔍 Filter rows..." value="${{escHtml(DV.excelFilter)}}" oninput="dvFilterExcelRows(this.value)" style="padding:4px 8px;font-size:11px;border:1px solid #cbd5e1;border-radius:6px;width:155px;background:#fff">
+        <button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane('dv-office-box')" title="Fullscreen Excel View" style="padding:3px 8px;font-size:11px">⛶ Fullscreen</button>
       </div>
     </div>
-    <div style="flex:1;overflow:auto;background:#fff">
-      <table style="border-collapse:collapse;width:max-content;min-width:100%">
+    <div id="dv-excel-scroll" class="dv-scroll" style="flex:1;min-height:0;overflow:scroll;background:#fff">
+      <table id="dv-excel-tbl" style="border-collapse:collapse;width:max-content;min-width:100%;zoom:${{zoom}}%">
         <thead>${{colHdr}}</thead>
         <tbody>${{bodyRows}}</tbody>
       </table>
     </div>`;
+}}
+function dvExcelZoom(delta){{
+  DV.excelZoom=Math.min(160,Math.max(50,(DV.excelZoom||100)+delta));
+  const tbl=_dvEl('dv-excel-tbl');
+  const lbl=_dvEl('dv-excel-zoom-lbl');
+  if(tbl)tbl.style.zoom=DV.excelZoom+'%';
+  if(lbl)lbl.textContent=DV.excelZoom+'%';
 }}
 function dvSelectExcelSheet(idx){{
   DV.excelSheet=idx;
@@ -12976,25 +13044,28 @@ function _dvRenderWordView(f){{
     }});
   }}
   box.innerHTML=`
-    <div style="padding:7px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <div style="padding:7px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0">
       <span style="font-size:11.5px;font-weight:700;color:#1e40af">📝 In-App Word Document Viewer</span>
       <div style="display:flex;align-items:center;gap:6px">
         <button type="button" class="btn btn-sc btn-sm" onclick="dvWordZoom(-10)" style="padding:2px 8px">🔍−</button>
         <span id="dv-word-zoom-lbl" style="font-size:11px;font-weight:700;min-width:42px;text-align:center">${{zoom}}%</span>
         <button type="button" class="btn btn-sc btn-sm" onclick="dvWordZoom(10)" style="padding:2px 8px">🔍+</button>
         <button type="button" class="btn btn-sc btn-sm" onclick="DV.wordZoom=100;dvWordZoom(0)" style="padding:2px 8px">100%</button>
+        <button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane('dv-office-box')" style="padding:2px 8px">⛶ Fullscreen</button>
       </div>
     </div>
-    <div style="flex:1;overflow:auto;padding:24px 16px;background:#e2e8f0">
-      <div id="dv-word-page" style="max-width:794px;min-height:680px;margin:0 auto;background:#fff;padding:44px 52px;border-radius:4px;box-shadow:0 8px 28px rgba(15,23,42,.14);transform:scale(${{zoom/100}});transform-origin:top center;transition:transform .12s">
+    <div class="dv-scroll" style="flex:1;min-height:0;overflow:scroll;padding:24px 16px;background:#e2e8f0">
+      <div id="dv-word-page" style="max-width:794px;min-height:680px;margin:0 auto;background:#fff;padding:44px 52px;border-radius:4px;box-shadow:0 8px 28px rgba(15,23,42,.14);zoom:${{zoom}}%">
         ${{docHtml}}
       </div>
     </div>`;
 }}
 function dvWordZoom(delta){{
   DV.wordZoom=Math.min(160,Math.max(70,(DV.wordZoom||100)+delta));
-  const f=DV.info&&DV.info.files[DV.cur];
-  if(f)_dvRenderWordView(f);
+  const pg=_dvEl('dv-word-page');
+  const lbl=_dvEl('dv-word-zoom-lbl');
+  if(pg)pg.style.zoom=DV.wordZoom+'%';
+  if(lbl)lbl.textContent=DV.wordZoom+'%';
 }}
 
 async function _dvLoadOfficePreview(f){{
@@ -13027,16 +13098,22 @@ function dvSelect(i){{
   const j=DV.info;if(!j||!j.files[i])return;
   DV.cur=i;
   DV.imgZoom=1;DV.imgRot=0;DV.imgPanX=0;DV.imgPanY=0;DV.imgDrag=false;
-  DV.excelSheet=0;DV.excelFilter='';DV.wordZoom=100;
+  DV.excelSheet=0;DV.excelFilter='';DV.excelZoom=100;DV.wordZoom=100;
   const f=j.files[i];
   _dvRenderList();
   const pane=_dvEl('dv-pane');
   const noCopy=!j.can_download;
   let body='';
   if(f.preview==='pdf'){{
-    body='<iframe title="'+escHtml(f.name)+'" src="'+f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH')+'" style="border:0;width:100%;height:100%;flex:1;background:#fff"></iframe>';
+    body='<div style="padding:5px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0">'
+      +'<span style="font-size:11px;font-weight:700;color:#dc2626">📕 PDF Document Viewer</span>'
+      +'<div style="display:flex;align-items:center;gap:6px">'
+      +(!noCopy?'<a href="'+f.stream_url+'" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 9px;font-size:11px;text-decoration:none">🔗 Open in New Tab</a>':'')
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvFullscreenPane(\'dv-pdf-frame\')" title="Fullscreen PDF" style="padding:2px 9px;font-size:11px">⛶ Fullscreen</button>'
+      +'</div></div>'
+      +'<iframe id="dv-pdf-frame" allowfullscreen title="'+escHtml(f.name)+'" src="'+f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH')+'" style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>';
   }}else if(f.preview==='image'){{
-    body='<div style="padding:6px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+    body='<div style="padding:6px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0">'
       +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
       +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(-0.25)" title="Zoom Out" style="padding:3px 9px;font-weight:700">🔍−</button>'
       +'<span id="dv-img-zoom-lbl" style="font-size:11px;font-weight:700;min-width:44px;text-align:center;color:#0f172a">100%</span>'
@@ -13048,13 +13125,13 @@ function dvSelect(i){{
       +'</div>'
       +'<span style="font-size:10.5px;color:#64748b">🖱️ Scroll to zoom · Drag to pan · Double-click to 200%</span>'
       +'</div>'
-      +'<div id="dv-img-stage" style="flex:1;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:12px;background:#1e293b;position:relative;user-select:none">'
+      +'<div id="dv-img-stage" style="flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:12px;background:#1e293b;position:relative;user-select:none">'
       +'<img id="dv-img-el" alt="'+escHtml(f.name)+'" src="'+f.stream_url+'" draggable="false" '+(noCopy?'oncontextmenu="return false" ':'')+'style="max-width:94%;max-height:94%;object-fit:contain;box-shadow:0 8px 28px rgba(0,0,0,.45);background:#fff;transition:transform .08s ease-out;transform-origin:center center">'
       +'</div>';
   }}else if(f.preview==='excel'||f.preview==='word'){{
-    body='<div id="dv-office-box" style="flex:1;min-height:0;display:flex;flex-direction:column;background:#f8fafc"></div>';
+    body='<div id="dv-office-box" style="flex:1;min-height:0;height:100%;overflow:hidden;display:flex;flex-direction:column;background:#f8fafc"></div>';
   }}else if(f.preview==='text'){{
-    body='<iframe title="'+escHtml(f.name)+'" src="'+f.stream_url+'" style="border:0;width:100%;height:100%;flex:1;background:#fff"></iframe>';
+    body='<iframe title="'+escHtml(f.name)+'" src="'+f.stream_url+'" style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>';
   }}else{{
     body='<div style="margin:auto;text-align:center;padding:24px;color:#334155;max-width:380px">'
       +'<div style="font-size:48px">'+_dvIcon(f)+'</div>'
@@ -13064,8 +13141,9 @@ function dvSelect(i){{
       +(f.download_url?'<a class="btn btn-pr" style="margin-top:14px;display:inline-block" href="'+f.download_url+'">⬇ Download file</a>':'')
       +'</div>';
   }}
-  pane.innerHTML='<div style="padding:6px 12px;border-bottom:1px solid var(--bd);background:#fff;font-size:12px;font-weight:600;display:flex;justify-content:space-between;gap:8px">'
-    +'<span style="word-break:break-all">'+_dvIcon(f)+' '+escHtml(f.name)+'</span><span style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
+  const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
+  pane.innerHTML='<div style="padding:6px 12px;border-bottom:1px solid var(--bd);background:#fff;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0">'
+    +'<span style="word-break:break-all">'+_dvIcon(f)+' '+escHtml(f.name)+subLabel+'</span><span style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
   pane.style.display='flex';pane.style.flexDirection='column';
   if(f.preview==='image')_dvBindImgStage();
   if(f.preview==='excel'||f.preview==='word')_dvLoadOfficePreview(f);
@@ -13101,15 +13179,39 @@ document.addEventListener('keydown',function(ev){{
 }});
 
 function _getReplyStatusTheme(statusStr){{
-  const s=String(statusStr||'').trim().toLowerCase();
-  if(!s)return {{color:'#0f766e',bg:'#f0fdfa',bd:'#99f6e4'}};
-  if(/^c\b|^d\b/.test(s)||s.includes('reject')||s.includes('revise')||s.includes('resubmit')||s.includes('disapprov')||s.includes('not approved')||s.includes('refused')){{
-    return {{color:'#dc2626',bg:'#fef2f2',bd:'#fca5a5'}};
+  const raw=String(statusStr||'').trim();
+  if(!raw)return {{color:'#0f766e',bg:'#f0fdfa',bd:'#99f6e4',mixed:false}};
+  const parts=raw.split(/[\\n,;]+/).map(p=>p.trim().toLowerCase()).filter(Boolean);
+  let hasGreen=false, hasRed=false;
+  const checkPart=(p)=>{{
+    const isRed=/^c\\b|^d\\b|^e\\b/.test(p)||p.includes('reject')||p.includes('revise')||p.includes('resubmit')||p.includes('disapprov')||p.includes('not approved')||p.includes('refused');
+    const isGreen=(!isRed)&&(/^a\\b|^b\\b/.test(p)||p.includes('approv')||p.includes('accept')||p.includes('no objection')||p.includes('proceed')||p.includes('completed'));
+    if(isRed)hasRed=true;
+    if(isGreen)hasGreen=true;
+  }};
+  if(parts.length>1){{
+    parts.forEach(checkPart);
+  }}else{{
+    const s=raw.toLowerCase();
+    if((/\\b(a|b)\\s*[-–]/.test(s)||s.includes('approv')) && (/\\b(c|d)\\s*[-–]/.test(s)||s.includes('revise')||s.includes('resubmit')||s.includes('reject'))){{
+      hasGreen=true;hasRed=true;
+    }}else{{
+      checkPart(s);
+    }}
   }}
-  if(/^a\b|^b\b/.test(s)||s.includes('approv')||s.includes('accept')||s.includes('no objection')||s.includes('proceed')||s.includes('completed')){{
-    return {{color:'#16a34a',bg:'#f0fdf4',bd:'#bbf7d0'}};
+  if(hasGreen&&hasRed){{
+    return {{
+      color:'#15803d',
+      color2:'#dc2626',
+      bg:'linear-gradient(135deg, #dcfce7 0%, #dcfce7 48%, #fee2e2 52%, #fee2e2 100%)',
+      bd:'#16a34a',
+      bd2:'#dc2626',
+      mixed:true
+    }};
   }}
-  return {{color:'#d97706',bg:'#fffbeb',bd:'#fde68a'}};
+  if(hasRed)return {{color:'#dc2626',bg:'#fef2f2',bd:'#fca5a5',mixed:false}};
+  if(hasGreen)return {{color:'#16a34a',bg:'#f0fdf4',bd:'#bbf7d0',mixed:false}};
+  return {{color:'#d97706',bg:'#fffbeb',bd:'#fde68a',mixed:false}};
 }}
 
 function _normalizeRowAttachments(row){{
@@ -13160,8 +13262,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     const hdr=document.createElement('div');
     let upBtn=null, progBarInner=null;
     const applyCardTheme=(th)=>{{
-      s.color=th.color;s.bg=th.bg;s.bd=th.bd;
-      card.style.cssText=`border:1px solid ${{s.bd}};background:${{s.bg}};border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;transition:all .15s`;
+      s.color=th.color;s.bg=th.bg;s.bd=th.bd;s.mixed=Boolean(th.mixed);s.bd2=th.bd2||th.bd;s.color2=th.color2||th.color;
+      const bdCss=s.mixed
+        ? `border-top:1.5px solid ${{s.bd}};border-left:1.5px solid ${{s.bd}};border-right:1.5px solid ${{s.bd2}};border-bottom:1.5px solid ${{s.bd2}}`
+        : `border:1px solid ${{s.bd}}`;
+      card.style.cssText=`${{bdCss}};background:${{s.bg}};border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;transition:all .15s`;
       hdr.style.cssText=`font-size:11px;font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center`;
       if(upBtn)upBtn.style.cssText=`font-size:11px;padding:4px 10px;border-color:${{s.color}};color:${{s.color}};background:#fff`;
       if(progBarInner)progBarInner.style.background=s.color;
@@ -13255,19 +13360,24 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         unBtn.type='button';
         unBtn.style.cssText='padding:1px 6px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
         unBtn.textContent='✕';
-        unBtn.title='Unlink this attachment from the record';
+        unBtn.title='Remove this attachment and move it to Google Drive Trash';
         unBtn.onclick=async()=>{{
-          if(!confirm('Unlink this '+s.key+' attachment from the record? (The file remains safe on Google Drive)'))return;
+          if(!confirm('Remove this '+s.key+' attachment from the record and move the old file/folder to Google Drive Trash?'))return;
           unBtn.disabled=true;
           try{{
             const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key),{{method:'DELETE'}});
             const j=await r.json().catch(()=>({{}}));
             if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
             cur[s.key]=null;
-            if(row)row.attachments=j.attachments||{{}};
+            if(row){{
+              row.attachments=j.attachments||{{}};
+              if(typeof j.fileLocation==='string')row.fileLocation=j.fileLocation;
+            }}
+            const flInp=document.getElementById('f-fileLocation');
+            if(flInp&&typeof j.fileLocation==='string')flInp.value=j.fileLocation;
             renderSlotInfo(null,null);
             renderRows();
-            toast('Attachment unlinked ('+s.key+')','ok');
+            toast('Attachment removed and moved to Drive Trash ('+s.key+')','ok');
           }}catch(e){{
             unBtn.disabled=false;
             toast('Could not unlink attachment: '+(e.message||e),'er');
@@ -13412,12 +13522,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
               break;
             }}
             const f = fls[fi];
+            const relParts = (f.webkitRelativePath || '').split('/').filter(Boolean);
+            const relSub = relParts.length > 2 ? relParts.slice(1, -1).join('/') : '';
             lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
               const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
               const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
               progBarInner.style.width = overall + '%';
               progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
-            }}, {{subfolder_name: subName, link_as_folder: true, signal: slotAbortCtrl.signal}});
+            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, signal: slotAbortCtrl.signal}});
             uploadedCount++;
           }}
           if(!cancelSlotUpload && uploadedCount > 0) {{
@@ -13587,7 +13699,9 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
       upload_ticket:sess.upload_ticket,
       file_id:fileId,
       record_id:state.editId,
-      link_as_folder:Boolean(extraOpts.link_as_folder)
+      link_as_folder:Boolean(extraOpts.link_as_folder),
+      replace_existing:extraOpts.replace_existing!==undefined?Boolean(extraOpts.replace_existing):(!extraOpts.link_as_folder),
+      rel_subfolder:extraOpts.rel_subfolder||''
     }})
   }});
   const cmp=await cmpRes.json().catch(()=>({{}}));
@@ -14097,12 +14211,14 @@ async function startBatchDriveUpload(){{
           for(let fi=0;fi<files.length;fi++){{
             if(state.batchCancel||item.status==='cancelled')break;
             const subFile=files[fi];
+            const relParts=(subFile.webkitRelativePath||'').split('/').filter(Boolean);
+            const relSub=relParts.length>2?relParts.slice(1,-1).join('/'):'';
             lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl)=>{{
               const subPct=total>0?Math.min(100,Math.round((done/total)*100)):0;
               item.pct=Math.round(((fi+(total>0?done/total:0))/files.length)*100);
               item.msg=`Uploading file ${{fi+1}}/${{files.length}}: ${{subFile.name}} (${{item.pct}}%)`;
               if(cell)updateBatchRowStatusCell(cell,item);
-            }},{{subfolder_name:subName,link_as_folder:true,signal:state.batchCurrentAbort.signal}});
+            }},{{subfolder_name:subName,link_as_folder:true,replace_existing:(fi===0),rel_subfolder:relSub,signal:state.batchCurrentAbort.signal}});
             fDone++;
           }}
           if(state.batchCancel||item.status==='cancelled'){{

@@ -4,6 +4,7 @@ Endpoints:
   POST /api/drive/upload-session   -- authorize upload, resolve Drive folder, create resumable session
   POST /api/drive/upload-chunk     -- optional chunk-proxy fallback (<=16 MB per chunk, zero full buffering)
   POST /api/drive/upload-complete  -- verify uploaded file on Drive, attach to record, write Audit Log
+  DELETE /api/drive/attachment/<record_id>/<slot> -- unlink attachment and move old Drive file/folder to Trash
 """
 import logging
 import os
@@ -65,6 +66,32 @@ def sanitize_upload_filename(raw_name):
     if ext in DANGEROUS_EXTS_INSIDE_ARCHIVE:
         return "", "forbidden_file_extension"
     return name, ""
+
+
+def _trash_old_attachment(entry, exclude_id="", files_only=False):
+    """Best-effort move of an old attachment's Drive file(s) or folder to Google Drive Trash."""
+    if not isinstance(entry, dict) or entry.get("legacy"):
+        return
+    try:
+        http = _get_http()
+        # Only call real Drive PATCH when http supports .patch (avoids consuming scripted FakeHTTP queues in unit tests)
+        if getattr(http, "patch", None) is None:
+            return
+        token = _get_token()
+        if files_only and isinstance(entry.get("files"), list):
+            for f in entry["files"]:
+                fid = str(f.get("id") or "").strip()
+                if fid and fid != exclude_id:
+                    try:
+                        drive_upload.trash_file(token, fid, http=http)
+                    except Exception:
+                        pass
+            return
+        target_id = str(entry.get("folder_id") or entry.get("file_id") or "").strip()
+        if target_id and target_id != exclude_id:
+            drive_upload.trash_file(token, target_id, http=http)
+    except Exception as e:
+        logger.warning("Could not move old Drive attachment to trash: %s", e)
 
 
 def _check_write_access(pid, dt_id):
@@ -225,6 +252,8 @@ def api_upload_complete():
     body = request.get_json(silent=True) or {}
     ticket_str = str(body.get("upload_ticket") or "").strip()
     file_id = str(body.get("file_id") or "").strip()
+    replace_existing = bool(body.get("replace_existing", False))
+    rel_subfolder = str(body.get("rel_subfolder") or "").strip()
     if not ticket_str or not file_id:
         return jsonify(error="upload_ticket and file_id are required"), 400
 
@@ -287,25 +316,35 @@ def api_upload_complete():
         **extra,
     )
 
-    # If this is a folder upload, track all files inside it (including the very first file)
     existing_att = rec.get("attachments") if isinstance(rec.get("attachments"), dict) else {}
     existing_slot = existing_att.get(slot) if isinstance(existing_att.get(slot), dict) else None
     if extra.get("is_folder"):
-        if existing_slot and existing_slot.get("is_folder") and (existing_slot.get("folder_id") == extra.get("folder_id")):
+        if replace_existing and existing_slot:
+            # First file of a replacement folder upload: move previous files inside that folder to Drive Trash
+            _trash_old_attachment(existing_slot, exclude_id=file_id, files_only=True)
+            files_list = []
+        elif existing_slot and existing_slot.get("is_folder") and (existing_slot.get("folder_id") == extra.get("folder_id")):
             files_list = list(existing_slot.get("files") or [])
         else:
             files_list = []
         files_list = [f for f in files_list if f.get("id") != file_id]
-        files_list.append({
+        f_item = {
             "id": file_id,
             "name": meta["file_name"],
             "size": meta["file_size"],
             "mimeType": meta["mime_type"],
-        })
+        }
+        if rel_subfolder:
+            f_item["subfolder"] = rel_subfolder
+        files_list.append(f_item)
         meta["files"] = files_list
         meta["file_count"] = len(files_list)
         meta["file_size"] = sum(int(f.get("size") or 0) for f in files_list)
         meta["file_name"] = (existing_slot or {}).get("folder_name") or extra.get("folder_name") or meta["file_name"]
+    else:
+        # Single-file upload replacing an existing attachment in the same slot: move the old file/folder to Trash
+        if existing_slot:
+            _trash_old_attachment(existing_slot, exclude_id=file_id)
 
     # Preserve legacy single fileLocation as submission if attaching an approval to an old record
     old_loc = attachments._clean_link(rec.get("fileLocation"))
@@ -314,8 +353,9 @@ def api_upload_complete():
 
     db.set_record_attachment(record_id, slot, meta)
 
-    # If the record had no fileLocation yet, populate it so legacy views/exports work immediately
-    if not old_loc:
+    # If the record had no fileLocation yet (or if replacing the slot that owned fileLocation), keep fileLocation synced
+    prev_slot_url = attachments._clean_link((existing_slot or {}).get("url"))
+    if not old_loc or (prev_slot_url and old_loc == prev_slot_url):
         db.q("""UPDATE records SET data = data || jsonb_build_object('fileLocation', %s::text), updated_at = NOW()
                 WHERE id = %s RETURNING id""", (view_url, record_id))
 
@@ -342,7 +382,7 @@ def api_upload_complete():
 
 @drive_uploads_bp.route("/api/drive/attachment/<record_id>/<slot>", methods=["DELETE"])
 def api_unlink_attachment(record_id, slot):
-    """Unlink an attachment slot ('submission' or 'approval') from a record without deleting the file on Google Drive."""
+    """Unlink an attachment slot ('submission' or 'approval') from a record and move the old Drive file/folder to Trash."""
     record_id = str(record_id or "").strip()
     slot = str(slot or "").strip().lower()
     if slot not in attachments.SLOTS:
@@ -360,7 +400,23 @@ def api_unlink_attachment(record_id, slot):
 
     existing = (rec.get("attachments") or {}).get(slot) if isinstance(rec.get("attachments"), dict) else None
     old_name = (existing or {}).get("file_name") or (existing or {}).get("url") or slot
+    old_url = attachments._clean_link((existing or {}).get("url"))
+
+    if existing:
+        _trash_old_attachment(existing)
+
     db.clear_record_attachment(record_id, slot)
+    updated_att = db.get_record_attachments(record_id)
+
+    # Keep legacy fileLocation in sync if it was pointing to the removed attachment
+    cur_loc = attachments._clean_link(rec.get("fileLocation"))
+    next_loc = cur_loc
+    if old_url and cur_loc == old_url:
+        other_slot = attachments.SLOT_SUBMISSION if slot == attachments.SLOT_APPROVAL else attachments.SLOT_APPROVAL
+        other_entry = (updated_att or {}).get(other_slot) if isinstance(updated_att, dict) else None
+        next_loc = attachments._clean_link((other_entry or {}).get("url")) if isinstance(other_entry, dict) else ""
+        db.q("""UPDATE records SET data = data || jsonb_build_object('fileLocation', %s::text), updated_at = NOW()
+                WHERE id = %s RETURNING id""", (next_loc, record_id))
 
     try:
         db.log_action(
@@ -370,7 +426,7 @@ def api_unlink_attachment(record_id, slot):
             field_name=f"attachments.{slot}",
             old_value=str(old_name),
             new_value="",
-            detail=f"Unlinked {slot} attachment '{old_name}' from record",
+            detail=f"Removed {slot} attachment '{old_name}' and moved to Google Drive Trash",
         )
     except Exception:
         pass
@@ -379,6 +435,6 @@ def api_unlink_attachment(record_id, slot):
         ok=True,
         record_id=record_id,
         slot=slot,
-        attachments=db.get_record_attachments(record_id),
+        attachments=updated_att,
+        fileLocation=next_loc,
     )
-

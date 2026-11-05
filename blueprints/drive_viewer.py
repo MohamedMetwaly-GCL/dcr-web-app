@@ -7,7 +7,7 @@ Endpoints (all require a logged-in user who can view the record's project):
   GET /api/drive/folder-zip/<record_id>/<slot>              -- download a whole attached folder as one ZIP
 
 <slot> is 'submission' | 'approval' | 'legacy' (the old single fileLocation link).
-A file can only be streamed if it IS the record's attachment or lives directly inside the attached folder,
+A file can only be streamed if it IS the record's attachment or lives inside the attached folder,
 so users can never reach arbitrary Drive files through this gateway. Drive URLs are not exposed to
 non-admin users; downloads require edit permission (or admin).
 """
@@ -136,19 +136,60 @@ def _context(record_id, slot):
     return ctx, None
 
 
-def _list_folder(token, http, folder_id):
+def _list_folder(token, http, folder_id, doc_no="", stored_files=None):
     svc = drive_upload.RestDriveAdapter(token, http=http)
-    out, page = [], None
+    out, subfolders, page = [], [], None
     while len(out) < MAX_FOLDER_FILES:
         res = svc.files().list(q="'%s' in parents and trashed=false" % folder_id,
                                fields="nextPageToken, files(id,name,size,mimeType)", pageToken=page).execute()
         for f in res.get("files", []):
-            if f.get("mimeType") != FOLDER_MIME:
+            if f.get("mimeType") == FOLDER_MIME:
+                subfolders.append(f)
+            else:
                 out.append(f)
         page = res.get("nextPageToken")
         if not page:
             break
-    out.sort(key=lambda f: str(f.get("name", "")).lower())
+
+    # Also list files inside 1-level subfolders on Google Drive if any exist
+    for sf in subfolders[:10]:
+        sf_id = sf.get("id")
+        sf_name = sf.get("name") or ""
+        if not sf_id or len(out) >= MAX_FOLDER_FILES:
+            continue
+        try:
+            sub_res = svc.files().list(q="'%s' in parents and trashed=false" % sf_id,
+                                       fields="files(id,name,size,mimeType)").execute()
+            for cf in sub_res.get("files", []):
+                if cf.get("mimeType") != FOLDER_MIME and len(out) < MAX_FOLDER_FILES:
+                    cf["subfolder"] = sf_name
+                    out.append(cf)
+        except Exception:
+            pass
+
+    # Merge any stored relative subfolder metadata from DCR attachment entry
+    if isinstance(stored_files, list) and stored_files:
+        by_id = {str(sf.get("id") or ""): sf.get("subfolder") or "" for sf in stored_files if isinstance(sf, dict)}
+        by_name = {str(sf.get("name") or "").lower(): sf.get("subfolder") or "" for sf in stored_files if isinstance(sf, dict)}
+        for f in out:
+            if not f.get("subfolder"):
+                sub = by_id.get(str(f.get("id") or "")) or by_name.get(str(f.get("name") or "").lower()) or ""
+                if sub:
+                    f["subfolder"] = sub
+
+    doc_clean = str(doc_no or "").strip().lower()
+    doc_base = re.sub(r"\s+rev\d+$", "", doc_clean, flags=re.IGNORECASE).strip()
+
+    def _sort_key(f):
+        fname = str(f.get("name") or "").lower()
+        sub = str(f.get("subfolder") or "").lower()
+        matches_doc = bool(doc_clean and (doc_clean in fname or (doc_base and doc_base in fname)))
+        # 1) Files matching the record's Document No. appear FIRST at the very top of the list
+        # 2) Root-level files appear before subfolder files
+        # 3) Alphabetical by subfolder then file name
+        return (0 if matches_doc else 1, 0 if not sub else 1, sub, fname)
+
+    out.sort(key=_sort_key)
     return out[:MAX_FOLDER_FILES]
 
 
@@ -163,6 +204,7 @@ def _file_dict(f, rid, slot, can_dl):
         "name": f.get("name") or "file",
         "size": int(f.get("size") or 0),
         "mime": f.get("mimeType") or "",
+        "subfolder": f.get("subfolder") or "",
         "preview": kind,
         "stream_url": base if kind in ("pdf", "image", "text") else "",
         "office_url": office_url,
@@ -185,19 +227,22 @@ def api_view_info(record_id, slot):
     if err:
         return err
     rid = ctx["rec"].get("_id") or record_id
+    doc_no = ctx["rec"].get("docNo") or ctx["rec"].get("nocNo") or ""
+    stored_files = ctx["entry"].get("files") if isinstance(ctx["entry"].get("files"), list) else None
     try:
         token, http = _hooks()
         if ctx["kind"] == "folder":
-            files = _list_folder(token, http, ctx["target_id"])
-            if not files and isinstance(ctx["entry"].get("files"), list):
+            files = _list_folder(token, http, ctx["target_id"], doc_no=doc_no, stored_files=stored_files)
+            if not files and stored_files:
                 files = [
                     {
                         "id": f.get("id") or f"ITEM_{idx + 1}",
                         "name": f.get("name") or f"File_{idx + 1}",
                         "size": int(f.get("size") or 0),
                         "mimeType": f.get("mimeType") or "",
+                        "subfolder": f.get("subfolder") or "",
                     }
-                    for idx, f in enumerate(ctx["entry"]["files"])
+                    for idx, f in enumerate(stored_files)
                 ]
         else:
             meta = drive_upload.get_file(token, ctx["target_id"], fields=FILE_FIELDS, http=http)
@@ -219,13 +264,28 @@ def api_view_info(record_id, slot):
 
 
 def _authorize_file(ctx, token, http, file_id):
-    """Return Drive metadata if file_id is the attachment itself or sits directly inside the attached folder."""
+    """Return Drive metadata if file_id is the attachment itself or sits inside the attached folder (or its 1-level subfolder)."""
     meta = drive_upload.get_file(token, file_id, fields=FILE_FIELDS, http=http)
     if meta.get("trashed"):
         return None
     if ctx["kind"] == "file":
         return meta if file_id == ctx["target_id"] else None
-    return meta if ctx["target_id"] in (meta.get("parents") or []) else None
+    parents = meta.get("parents") or []
+    if ctx["target_id"] in parents:
+        return meta
+    # Check if file_id was explicitly recorded in ctx["entry"]["files"]
+    stored = ctx["entry"].get("files") if isinstance(ctx["entry"].get("files"), list) else []
+    if any(str(f.get("id") or "") == str(file_id) for f in stored if isinstance(f, dict)):
+        return meta
+    # Check 1-level subfolder parent on Drive
+    for pid in parents[:2]:
+        try:
+            pmeta = drive_upload.get_file(token, pid, fields="id,parents,trashed", http=http)
+            if not pmeta.get("trashed") and ctx["target_id"] in (pmeta.get("parents") or []):
+                return meta
+        except Exception:
+            pass
+    return None
 
 
 def _safe_disposition(kind, name):
@@ -265,7 +325,7 @@ def _col_letters_to_idx(col_str):
     return max(0, idx - 1)
 
 
-def _parse_xlsx_bytes(raw_bytes, max_rows=500, max_cols=40):
+def _parse_xlsx_bytes(raw_bytes, max_rows=1500, max_cols=80):
     """Parse .xlsx bytes into [{'name': sheet_name, 'rows': [[cell, ...], ...]}] using openpyxl or stdlib XML."""
     try:
         import openpyxl
@@ -363,7 +423,7 @@ def _parse_xlsx_bytes(raw_bytes, max_rows=500, max_cols=40):
     return sheets
 
 
-def _parse_csv_bytes(raw_bytes, max_rows=500, max_cols=40):
+def _parse_csv_bytes(raw_bytes, max_rows=1500, max_cols=80):
     text = raw_bytes.decode("utf-8-sig", errors="replace")
     reader = csv.reader(io.StringIO(text))
     rows = []
@@ -565,7 +625,9 @@ def api_folder_zip(record_id, slot):
         return jsonify(error="Download permission required"), 403
     try:
         token, http = _hooks()
-        files = _list_folder(token, http, ctx["target_id"])
+        doc_no = ctx["rec"].get("docNo") or ctx["rec"].get("nocNo") or ""
+        stored_files = ctx["entry"].get("files") if isinstance(ctx["entry"].get("files"), list) else None
+        files = _list_folder(token, http, ctx["target_id"], doc_no=doc_no, stored_files=stored_files)
         if sum(int(f.get("size") or 0) for f in files) > MAX_ZIP_BYTES:
             return jsonify(error="Folder is larger than 1 GB - download files one by one"), 413
         tmp = tempfile.TemporaryFile()
@@ -575,7 +637,9 @@ def api_folder_zip(record_id, slot):
                 resp = _drive_media(token, http, f)
                 if resp.status_code != 200:
                     continue
-                arc = f.get("name") or f["id"]
+                sub = str(f.get("subfolder") or "").strip("/\\ ")
+                fname = f.get("name") or f["id"]
+                arc = f"{sub}/{fname}" if sub else fname
                 if arc in used:
                     arc = "%s_%s" % (f["id"][:6], arc)
                 used.add(arc)
