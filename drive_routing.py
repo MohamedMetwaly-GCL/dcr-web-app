@@ -154,23 +154,43 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
     source = "cache"
     patch = {}
     slot_cache = dict(dt.get("drive_slot_folders") or {})
+    dir_cache = dict(dt.get("drive_direction_folders") or {})
     dt_folder_id = ""
+
+    d_norm = str(direction or "").lower()
+    is_incoming = any(k in d_norm for k in ("receiv", "incom", "rec", "وارد")) or d_norm in ("in", "i")
+    is_outgoing = any(k in d_norm for k in ("issu", "outgo", "sent", "iss", "صادر")) or d_norm in ("out", "o")
+    dir_key = "incoming" if is_incoming else ("outgoing" if is_outgoing else "")
 
     # Explicit destination folder chosen by caller (e.g. resolved after ambiguous picker)
     if destination_folder_id:
         if folder_is_usable(service, destination_folder_id):
             dt_folder_id = destination_folder_id
             source = "explicit"
-            patch.update({"drive_folder_id": dt_folder_id,
-                          "folder_synced_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"})
+            now_iso = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            if dir_key:
+                dir_cache[dir_key] = dt_folder_id
+                patch.update({"drive_direction_folders": dir_cache, "folder_synced_at": now_iso})
+            else:
+                patch.update({"drive_folder_id": dt_folder_id, "folder_synced_at": now_iso})
         else:
             raise RoutingError("folder_not_usable")
 
     # 1) doc type folder
+    if not dt_folder_id and dir_key and dir_cache.get(dir_key):
+        cand_dir_id = str(dir_cache[dir_key]).strip()
+        if folder_is_usable(service, cand_dir_id):
+            dt_folder_id = cand_dir_id
+            source = "cache"
+
     if not dt_folder_id:
-        dt_folder_id = str(dt.get("drive_folder_id") or "").strip()
-        if dt_folder_id and not folder_is_usable(service, dt_folder_id):
-            dt_folder_id = ""          # deleted / trashed on Drive -> rediscover
+        cand_id = str(dt.get("drive_folder_id") or "").strip()
+        cached_name = str(dt.get("drive_folder_name") or "").lower()
+        opposite_inc = is_outgoing and any(k in cached_name for k in ("incom", "receiv", "وارد"))
+        opposite_out = is_incoming and any(k in cached_name for k in ("outgo", "issu", "sent", "صادر"))
+        if cand_id and not (opposite_inc or opposite_out) and folder_is_usable(service, cand_id):
+            dt_folder_id = cand_id
+            source = "cache"
 
     if not dt_folder_id:
         source = "discovered"
@@ -182,9 +202,15 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
             source = "created"
         dt_folder_id = folder["id"]
         slot_cache = {}            # slot folders belong to the old doc type folder
-        patch.update({"drive_folder_id": dt_folder_id, "drive_folder_name": folder.get("name", ""),
-                      "drive_slot_folders": {},
-                      "folder_synced_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"})
+        now_iso = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        if dir_key:
+            dir_cache[dir_key] = dt_folder_id
+            patch.update({"drive_direction_folders": dir_cache,
+                          "folder_synced_at": now_iso})
+        else:
+            patch.update({"drive_folder_id": dt_folder_id, "drive_folder_name": folder.get("name", ""),
+                          "drive_slot_folders": {},
+                          "folder_synced_at": now_iso})
 
     # 2) Submit / Replied sub-folder (skipped when flat=True: single-party documents such as PR / Letters)
     slot_id = str(slot_cache.get(slot) or "").strip()

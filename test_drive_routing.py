@@ -182,4 +182,31 @@ try:
     R.resolve_upload_destination("p", "ZZ", "submission", FakeDrive(tree), mk()[1]); raise SystemExit("x")
 except R.RoutingError as e:
     assert e.reason == "doc_type_not_found"
+# ---- directional routing & separate directional caching
+ltr_tree = {
+    "PROJ_LTR": {
+        "01 - INCOMING LETTERS": {},
+        "02 - OUTGOING LETTERS": {}
+    }
+}
+d_ltr = FakeDrive(ltr_tree)
+st_ltr = FakeStore({"drive_folder_id": d_ltr.id_of("PROJ_LTR")},
+                   {"LTR": {"code": "LTR", "name": "Letters"}})
+
+# Upload incoming
+r_inc = R.resolve_upload_destination("p", "LTR", "submission", d_ltr, st_ltr, flat=True, direction="Received")
+assert r_inc["folder_id"] == d_ltr.id_of("01 - INCOMING LETTERS")
+assert st_ltr.dts["LTR"].get("drive_direction_folders", {}).get("incoming") == d_ltr.id_of("01 - INCOMING LETTERS")
+
+# Upload outgoing -> must route to OUTGOING and not use incoming cache
+r_out = R.resolve_upload_destination("p", "LTR", "submission", d_ltr, st_ltr, flat=True, direction="Issued")
+assert r_out["folder_id"] == d_ltr.id_of("02 - OUTGOING LETTERS")
+assert st_ltr.dts["LTR"].get("drive_direction_folders", {}).get("outgoing") == d_ltr.id_of("02 - OUTGOING LETTERS")
+
+# 2nd incoming upload -> cache hit for incoming
+r_inc2 = R.resolve_upload_destination("p", "LTR", "submission", d_ltr, st_ltr, flat=True, direction="Received")
+assert r_inc2["folder_id"] == d_ltr.id_of("01 - INCOMING LETTERS")
+assert r_inc2["source"] == "cache"
+print("directional routing & caching OK")
+
 print("ALL DRIVE ROUTING TESTS PASSED")
