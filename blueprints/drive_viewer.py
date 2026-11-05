@@ -116,7 +116,7 @@ def _context(record_id, slot):
         entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
     else:
         entry = att.get(slot) if isinstance(att.get(slot), dict) else None
-        if not entry and slot == "submission" and rec.get("fileLocation"):
+        if not entry and slot in ("submission", "approval") and rec.get("fileLocation"):
             entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
     if not entry or not (entry.get("file_id") or entry.get("folder_id") or entry.get("url")):
         return None, (jsonify(error="Nothing is attached in this slot"), 404)

@@ -9204,6 +9204,7 @@ def render_register(u, proj, active_ws_id=None):
     pid      = proj["id"]
     pcode    = (proj.get("code") or pid) if proj else pid
     pname    = (proj.get("name") or "") if proj else ""
+    proj_legacy_slot = str((proj or {}).get("legacy_file_slot") or ("approval" if (str(pcode).upper() in ("PEM-058", "CFC") or str(pid).upper() in ("PEM-058", "CFC")) else "submission")).strip().lower()
     uname    = u["username"] if u else "guest"
     role     = u["role"]     if u else "guest"
     editable = can_edit(pid)
@@ -10168,7 +10169,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 {SHARED_JS}
 <script>
 window._ACCESSIBLE_PROJECTS = {projs_json};
-const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
+const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', PROJ_LEGACY_SLOT='{proj_legacy_slot}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
 const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
   'Accepted & to proceed with Part C':['bbf7d0','166534'],
@@ -11064,10 +11065,16 @@ function renderRows(){{
             const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
             box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasValidLink){{
-            const legacyEntry={{url:url,legacy:true}};
-            if(_cyc){{
+            if(_cyc && isLegacyReplyFile(row, state.tab)){{
+              const legacyEntry={{url:url,legacy:true,consultant_status:row.status||''}};
+              const _rTheme=_getReplyStatusTheme(row.status);
+              const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
+              box.appendChild(_chip('Reply','approval',legacyEntry,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+            }}else if(_cyc){{
+              const legacyEntry={{url:url,legacy:true}};
               box.appendChild(_chip('Subm','submission',legacyEntry,'#2563eb','#eff6ff','Submission',null));
             }}else{{
+              const legacyEntry={{url:url,legacy:true}};
               box.appendChild(_chip('Doc','submission',legacyEntry,'#0f766e','#f0fdfa','Document'));
             }}
           }}
@@ -13294,13 +13301,39 @@ function _getReplyStatusTheme(statusStr){{
   return {{color:'#d97706',bg:'#fffbeb',bd:'#fde68a',mixed:false}};
 }}
 
+function isLegacyReplyFile(row, dtTab){{
+  if(!row) return false;
+  const leg = String(row.fileLocation || '').trim().toLowerCase();
+  if(!leg || leg === '#' || leg === 'null' || leg === 'none') return false;
+  const dtObj = (state.dtList || []).find(d => d.id === (dtTab || state.tab)) || {{}};
+  if(!dtHasReplyCycle(dtObj)) return false;
+
+  // 1) Project-level preference: PEM-058/CFC or PROJ_LEGACY_SLOT === 'approval'
+  const defSlot = (typeof PROJ_LEGACY_SLOT !== 'undefined' && PROJ_LEGACY_SLOT ? PROJ_LEGACY_SLOT : '') ||
+                  ((typeof PROJ_CODE !== 'undefined' && (PROJ_CODE === 'PEM-058' || PROJ_CODE === 'CFC')) ? 'approval' : 'submission');
+  if(defSlot === 'approval') return true;
+
+  // 2) Smart URL or docNo / title detection: if path or URL contains 'repl' or 'approv'
+  if(leg.includes('repl') || leg.includes('approv')) return true;
+  const docLow = String(row.docNo || '').toLowerCase();
+  if(docLow.includes('reply') || docLow.includes('replied')) return true;
+
+  return false;
+}}
+
 function _normalizeRowAttachments(row){{
   const att=(row&&row.attachments&&typeof row.attachments==='object')?row.attachments:{{}};
   let sub=att.submission||null;
-  const app=att.approval||null;
-  if(!sub&&row&&row.fileLocation){{
+  let app=att.approval||null;
+  if(!sub && !app && row && row.fileLocation){{
     const leg=String(row.fileLocation||'').trim();
-    if(leg&&leg!=='#'&&leg.toLowerCase()!=='null'&&leg.toLowerCase()!=='none')sub={{url:leg,file_name:'Current Drive Link',legacy:true}};
+    if(leg && leg!=='#' && leg.toLowerCase()!=='null' && leg.toLowerCase()!=='none'){{
+      if(isLegacyReplyFile(row, state.tab)){{
+        app={{url:leg,file_name:'Consultant Reply',legacy:true,consultant_status:row.status||''}};
+      }}else{{
+        sub={{url:leg,file_name:'Current Drive Link',legacy:true}};
+      }}
+    }}
   }}
   return {{submission:sub,approval:app}};
 }}
@@ -14615,6 +14648,20 @@ async function editProject(){{
   }});
   body.appendChild(grid);
   
+  // Legacy Single File Slot Default (Submit vs Reply)
+  const legSec = document.createElement('div');
+  legSec.style.cssText = 'margin-top:14px;padding:10px 12px;background:var(--bg);border:1px solid var(--bd);border-radius:6px';
+  const curSlot = (proj.legacy_file_slot || ((typeof PROJ_CODE!=='undefined'&&(PROJ_CODE==='PEM-058'||PROJ_CODE==='CFC'))?'approval':'submission'));
+  legSec.innerHTML = `
+    <div style="font-weight:700;font-size:12px;color:var(--tx);margin-bottom:3px">📂 Legacy Single File Default Slot (خانة الملفات القديمة المفردة)</div>
+    <div style="font-size:11px;color:var(--mu);margin-bottom:8px">يحدد ما إذا كانت روابط الملفات القديمة المفردة في سجلات الاعتماد تمثل مستند التقديم الأصلي أم رد الاستشاري المعتمد (مثل مشروع CFC).</div>
+    <select id="p-legacy-slot" class="finput" style="width:100%;font-weight:600">
+      <option value="submission" ${{curSlot==='submission'?'selected':''}}>📤 Submission Document (مستند التقديم الأصلي - افتراضي)</option>
+      <option value="approval" ${{curSlot==='approval'?'selected':''}}>📥 Consultant Reply (رد الاستشاري المعتمد - كما في مشروع CFC)</option>
+    </select>
+  `;
+  body.appendChild(legSec);
+
   // Google Drive
   const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent='Google Drive Integration';body.appendChild(drvTitle);
   const drvGrid=document.createElement('div');drvGrid.className='fgrid';
@@ -14732,6 +14779,8 @@ async function saveProject(){{
     weekend_mode:document.getElementById('er-weekend-mode')?.value||'friday_only',
     exclude_official_holidays:(document.getElementById('er-exclude-holidays')?.value||'yes')==='yes'
   }};
+  const legSlotEl = document.getElementById('p-legacy-slot');
+  if(legSlotEl) data.legacy_file_slot = legSlotEl.value;
   const r=await apiFetch('/api/project/'+PID,{{method:'POST',body:JSON.stringify(data)}});
   if(r===null)return;
   if(r.ok){{
