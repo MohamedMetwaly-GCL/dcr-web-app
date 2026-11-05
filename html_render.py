@@ -9204,7 +9204,6 @@ def render_register(u, proj, active_ws_id=None):
     pid      = proj["id"]
     pcode    = (proj.get("code") or pid) if proj else pid
     pname    = (proj.get("name") or "") if proj else ""
-    proj_legacy_slot = str((proj or {}).get("legacy_file_slot") or ("approval" if (str(pcode).upper() in ("PEM-058", "CFC") or str(pid).upper() in ("PEM-058", "CFC")) else "submission")).strip().lower()
     uname    = u["username"] if u else "guest"
     role     = u["role"]     if u else "guest"
     editable = can_edit(pid)
@@ -10169,7 +10168,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 {SHARED_JS}
 <script>
 window._ACCESSIBLE_PROJECTS = {projs_json};
-const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', PROJ_LEGACY_SLOT='{proj_legacy_slot}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
+const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
 const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
   'Accepted & to proceed with Part C':['bbf7d0','166534'],
@@ -13296,19 +13295,18 @@ function isLegacyReplyFile(row, dtTab, explicitUrl){{
   const dtObj = (state.dtList || []).find(d => d.id === curTab || d.code === curTab) || {{}};
   if(!dtHasReplyCycle(dtObj)) return false;
 
-  // 1) Project-level preference: PEM-058 / CFC or PROJ_LEGACY_SLOT === 'approval'
-  const defSlot = (typeof PROJ_LEGACY_SLOT !== 'undefined' && PROJ_LEGACY_SLOT ? PROJ_LEGACY_SLOT : '') ||
-                  ((typeof PROJ_CODE !== 'undefined' && (PROJ_CODE === 'PEM-058' || PROJ_CODE === 'CFC' || String(PROJ_CODE).toUpperCase().includes('CFC'))) ? 'approval' : 'submission');
-  if(defSlot === 'approval') return true;
-
-  // 2) Smart URL or docNo / title detection: if path or URL contains 'repl' or 'approv'
+  // 1) Explicit URL or path indicator: folder/file name contains 'repl' or 'approv'
   if(leg.includes('repl') || leg.includes('approv')) return true;
   const docLow = String(row.docNo || '').toLowerCase();
   if(docLow.includes('reply') || docLow.includes('replied')) return true;
 
-  // 3) If row has a consultant status (like Code A, B, C) and project default is approval, it's a reply
-  const st = String(row.status || '').trim();
-  if(st && st !== '-' && st.toLowerCase() !== 'null' && defSlot === 'approval') return true;
+  // 2) If the record has a consultant reply / approval (status is returned, or actual reply date exists)
+  //    and status is NOT 'Under Review', 'pending', 'submitted', or empty
+  const st = String(row.status || '').trim().toLowerCase();
+  const hasActualReply = Boolean(row.actualReplyDate && String(row.actualReplyDate).trim());
+  const hasConsultantStatus = Boolean(st && st !== '-' && st !== 'null' && !st.includes('under review') && !st.includes('pending') && !st.includes('submitted'));
+
+  if(hasConsultantStatus || hasActualReply) return true;
 
   return false;
 }}
@@ -13317,6 +13315,15 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
   const att = (row && row.attachments && typeof row.attachments === 'object') ? row.attachments : {{}};
   let sub = att.submission || null;
   let app = att.approval || null;
+
+  // An explicit new DCR upload has file_id, or uploaded_at without legacy flag
+  const isDcrUpload = (e) => Boolean(e && (e.file_id || (e.uploaded_at && !e.legacy) || (e.source && e.source !== 'drive_sync' && !e.legacy)));
+
+  // If submission is a genuine DCR upload, NEVER convert it to approval
+  if(sub && isDcrUpload(sub)){{
+    return {{submission: sub, approval: app}};
+  }}
+
   const leg = String(explicitUrl || row?.fileLocation || row?.driveLink || row?.drive_link || row?.['Drive Link'] || row?.url || '').trim();
   const hasLeg = leg && leg !== '#' && leg.toLowerCase() !== 'null' && leg.toLowerCase() !== 'none';
 
@@ -13326,8 +13333,8 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
     }} else {{
       sub = {{url: leg, file_name: 'Current Drive Link', legacy: true}};
     }}
-  }} else if(sub && !app){{
-    const subUrl = (sub && (sub.url || (sub.file_id ? ('https://drive.google.com/file/d/' + sub.file_id + '/view') : ''))) || leg;
+  }} else if(sub && !app && !isDcrUpload(sub)){{
+    const subUrl = (sub && (sub.url || '')) || leg;
     if(isLegacyReplyFile(row, dtTab || state.tab, subUrl)){{
       app = {{...sub, file_name: sub.file_name || 'Consultant Reply', legacy: true, consultant_status: row.status || sub.consultant_status || ''}};
       sub = null;
@@ -14654,20 +14661,6 @@ async function editProject(){{
   }});
   body.appendChild(grid);
   
-  // Legacy Single File Slot Default (Submit vs Reply)
-  const legSec = document.createElement('div');
-  legSec.style.cssText = 'margin-top:14px;padding:10px 12px;background:var(--bg);border:1px solid var(--bd);border-radius:6px';
-  const curSlot = (proj.legacy_file_slot || ((typeof PROJ_CODE!=='undefined'&&(PROJ_CODE==='PEM-058'||PROJ_CODE==='CFC'))?'approval':'submission'));
-  legSec.innerHTML = `
-    <div style="font-weight:700;font-size:12px;color:var(--tx);margin-bottom:3px">📂 Legacy Single File Default Slot (خانة الملفات القديمة المفردة)</div>
-    <div style="font-size:11px;color:var(--mu);margin-bottom:8px">يحدد ما إذا كانت روابط الملفات القديمة المفردة في سجلات الاعتماد تمثل مستند التقديم الأصلي أم رد الاستشاري المعتمد (مثل مشروع CFC).</div>
-    <select id="p-legacy-slot" class="finput" style="width:100%;font-weight:600">
-      <option value="submission" ${{curSlot==='submission'?'selected':''}}>📤 Submission Document (مستند التقديم الأصلي - افتراضي)</option>
-      <option value="approval" ${{curSlot==='approval'?'selected':''}}>📥 Consultant Reply (رد الاستشاري المعتمد - كما في مشروع CFC)</option>
-    </select>
-  `;
-  body.appendChild(legSec);
-
   // Google Drive
   const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent='Google Drive Integration';body.appendChild(drvTitle);
   const drvGrid=document.createElement('div');drvGrid.className='fgrid';
@@ -14785,8 +14778,6 @@ async function saveProject(){{
     weekend_mode:document.getElementById('er-weekend-mode')?.value||'friday_only',
     exclude_official_holidays:(document.getElementById('er-exclude-holidays')?.value||'yes')==='yes'
   }};
-  const legSlotEl = document.getElementById('p-legacy-slot');
-  if(legSlotEl) data.legacy_file_slot = legSlotEl.value;
   const drvInp = document.getElementById('proj-drive-id');
   if(drvInp){{
     let raw = drvInp.value.trim();
