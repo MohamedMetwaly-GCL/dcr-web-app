@@ -127,7 +127,8 @@ def _context(record_id, slot):
         target_id = entry.get("file_id") or attachments.extract_file_id(url)
         kind = "file"
     if not target_id:
-        return None, (jsonify(error="Attachment has no Drive id", fallback_url=url if is_superadmin(u) else ""), 404)
+        return None, (jsonify(error="Attachment has no Drive id",
+                              fallback_url=url if (is_superadmin(u) or entry.get("legacy")) else ""), 404)
 
     can_dl = bool(can_edit(pid) or _is_workspace_admin(u, pid))
     ctx = dict(user=u, rec=rec, pid=pid, dt_id=dt_id, slot=slot, entry=entry, kind=kind, target_id=target_id,

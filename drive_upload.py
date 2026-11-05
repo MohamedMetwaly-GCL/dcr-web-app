@@ -59,7 +59,8 @@ def classify_drive_error(status, body_text):
 # ---------------- credentials ----------------
 def get_upload_credentials(mode=None, env=None):
     env = os.environ if env is None else env
-    mode = (mode or env.get("DRIVE_UPLOAD_AUTH") or "service_account").strip().lower()
+    has_oauth = bool(env.get("GOOGLE_OAUTH_CLIENT_ID") and env.get("GOOGLE_OAUTH_CLIENT_SECRET") and env.get("GOOGLE_OAUTH_REFRESH_TOKEN"))
+    mode = (mode or env.get("DRIVE_UPLOAD_AUTH") or ("oauth" if has_oauth else "service_account")).strip().lower()
     if mode == "oauth":
         from google.oauth2.credentials import Credentials
         cid, sec, rt = (env.get("GOOGLE_OAUTH_CLIENT_ID"), env.get("GOOGLE_OAUTH_CLIENT_SECRET"),
