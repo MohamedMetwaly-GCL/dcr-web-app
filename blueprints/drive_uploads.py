@@ -151,6 +151,7 @@ def api_create_upload_session():
     if slot == attachments.SLOT_APPROVAL and not has_cycle:
         return jsonify(error="This document type has no consultant reply cycle"), 400
 
+    rec = None
     if record_id:
         rec = db.get_record_by_id(record_id)
         if not rec or rec.get("_project_id") != pid or rec.get("_dt_id") != dt_id:
@@ -198,6 +199,10 @@ def api_create_upload_session():
         return jsonify(error=msg, reason=e.reason, candidates=e.candidates), 400
     except drive_upload.DriveUploadError as e:
         return jsonify(error=str(e), reason=e.reason, hint=e.hint), (e.status if e.status in (400, 401, 403, 404) else 502)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify(error=f"Upload initialization error: {str(e)}", hint=str(e)), 500
 
     ticket = sign_upload_ticket({
         "pid": pid,
