@@ -22,6 +22,17 @@ TOKEN_URI = "https://oauth2.googleapis.com/token"
 CHUNK_UNIT = 256 * 1024                      # Drive requires chunk sizes in multiples of 256 KiB
 DEFAULT_CHUNK = 8 * 1024 * 1024
 FILE_FIELDS = "id,name,size,mimeType,webViewLink,owners(emailAddress),parents"
+_cached_creds = None
+_shared_session = None
+
+def get_shared_http():
+    global _shared_session
+    if _shared_session is None:
+        _shared_session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=20, max_retries=2)
+        _shared_session.mount("https://", adapter)
+        _shared_session.mount("http://", adapter)
+    return _shared_session
 
 QUOTA_HINT = ("Drive rejected the upload for storage-quota reasons. A Service Account has no storage of its own "
               "when the target folder is in a personal 'My Drive'. Use OAuth (DRIVE_UPLOAD_AUTH=oauth) or a Shared Drive.")
@@ -58,9 +69,13 @@ def classify_drive_error(status, body_text):
 
 # ---------------- credentials ----------------
 def get_upload_credentials(mode=None, env=None):
+    global _cached_creds
     env = os.environ if env is None else env
     has_oauth = bool(env.get("GOOGLE_OAUTH_CLIENT_ID") and env.get("GOOGLE_OAUTH_CLIENT_SECRET") and env.get("GOOGLE_OAUTH_REFRESH_TOKEN"))
     mode = (mode or env.get("DRIVE_UPLOAD_AUTH") or ("oauth" if has_oauth else "service_account")).strip().lower()
+    if _cached_creds is not None and getattr(_cached_creds, "_auth_mode", None) == mode:
+        if getattr(_cached_creds, "valid", False):
+            return _cached_creds
     if mode == "oauth":
         from google.oauth2.credentials import Credentials
         cid, sec, rt = (env.get("GOOGLE_OAUTH_CLIENT_ID"), env.get("GOOGLE_OAUTH_CLIENT_SECRET"),
@@ -68,15 +83,24 @@ def get_upload_credentials(mode=None, env=None):
         if not (cid and sec and rt):
             raise DriveUploadError("OAuth selected but GOOGLE_OAUTH_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN are not all set",
                                    reason="oauth_not_configured")
-        return Credentials(None, refresh_token=rt, token_uri=TOKEN_URI, client_id=cid,
-                           client_secret=sec, scopes=WRITE_SCOPES)
+        c = Credentials(None, refresh_token=rt, token_uri=TOKEN_URI, client_id=cid,
+                        client_secret=sec, scopes=WRITE_SCOPES)
+        c._auth_mode = "oauth"
+        _cached_creds = c
+        return c
     if mode == "service_account":
         from google.oauth2 import service_account
         raw = env.get("GOOGLE_CREDENTIALS_JSON")
         if raw:
-            return service_account.Credentials.from_service_account_info(json.loads(raw), scopes=WRITE_SCOPES)
+            c = service_account.Credentials.from_service_account_info(json.loads(raw), scopes=WRITE_SCOPES)
+            c._auth_mode = "service_account"
+            _cached_creds = c
+            return c
         if os.path.exists("service_account.json"):
-            return service_account.Credentials.from_service_account_file("service_account.json", scopes=WRITE_SCOPES)
+            c = service_account.Credentials.from_service_account_file("service_account.json", scopes=WRITE_SCOPES)
+            c._auth_mode = "service_account"
+            _cached_creds = c
+            return c
         raise DriveUploadError("No service account credentials found", reason="service_account_not_configured")
     raise DriveUploadError("Unknown DRIVE_UPLOAD_AUTH mode: %r" % mode, reason="bad_mode")
 
@@ -240,8 +264,9 @@ class _RestExec:
 class RestDriveAdapter:
     """Minimal Drive v3 adapter over requests, matching .files().list/get/create().execute()
     expected by drive_routing.py. Works with both OAuth and Service Account tokens."""
-    def __init__(self, token, http=requests):
-        self.token, self.http = token, http
+    def __init__(self, token, http=None):
+        self.token = token
+        self.http = http if http is not None else get_shared_http()
 
     def files(self):
         outer = self

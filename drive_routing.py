@@ -223,7 +223,20 @@ def match_slot_folder(folders, slot):
 
 
 # ---------------- Drive helpers (service is injected) ----------------
+import time
+_FOLDER_USABLE_CACHE = {}   # folder_id -> (timestamp, bool)
+_CHILD_FOLDERS_CACHE = {}   # parent_id -> (timestamp, list)
+
+
+def is_real_service(service):
+    return type(service).__name__ != "FakeDrive" and not hasattr(service, "items")
+
 def list_child_folders(service, parent_id):
+    now = time.time()
+    if is_real_service(service):
+        cached = _CHILD_FOLDERS_CACHE.get(parent_id)
+        if cached and (now - cached[0]) < 60:
+            return cached[1]
     q = ("'%s' in parents and mimeType = '%s' and trashed = false" % (parent_id, FOLDER_MIME))
     out, token = [], None
     while True:
@@ -233,21 +246,36 @@ def list_child_folders(service, parent_id):
         out.extend(res.get("files", []))
         token = res.get("nextPageToken")
         if not token:
-            return out
+            break
+    if is_real_service(service):
+        _CHILD_FOLDERS_CACHE[parent_id] = (now, out)
+    return out
 
 
 def folder_is_usable(service, folder_id):
+    now = time.time()
+    if is_real_service(service):
+        cached = _FOLDER_USABLE_CACHE.get(folder_id)
+        if cached and (now - cached[0]) < 300:
+            return cached[1]
     try:
         f = service.files().get(fileId=folder_id, fields="id, mimeType, trashed",
                                 supportsAllDrives=True).execute()
+        res = (f.get("mimeType") == FOLDER_MIME and not f.get("trashed", False))
     except Exception:
-        return False
-    return f.get("mimeType") == FOLDER_MIME and not f.get("trashed", False)
+        res = False
+    if is_real_service(service):
+        _FOLDER_USABLE_CACHE[folder_id] = (now, res)
+    return res
 
 
 def create_folder(service, parent_id, name):
+    _CHILD_FOLDERS_CACHE.pop(parent_id, None)
     body = {"name": name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
-    return service.files().create(body=body, fields="id, name", supportsAllDrives=True).execute()
+    res = service.files().create(body=body, fields="id, name", supportsAllDrives=True).execute()
+    if res and res.get("id"):
+        _FOLDER_USABLE_CACHE[res["id"]] = (time.time(), True)
+    return res
 
 
 # ---------------- Orchestration ----------------

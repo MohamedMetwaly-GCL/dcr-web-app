@@ -13176,7 +13176,6 @@ function dvSelect(i){{
     const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
     const pdfTools = `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">`
       +(!noCopy?`<a href="${{f.stream_url}}" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:11px;text-decoration:none">🔗 Open in New Tab</a>`:'')
-      +`<button type="button" class="btn btn-sc btn-sm" onclick="dvToggleModalFullscreen()" title="Toggle Fullscreen" style="padding:2px 8px;font-size:11px">⛶ Fullscreen</button>`
       +`</div>`;
     pane.innerHTML='<div style="padding:4px 10px;border-bottom:1px solid var(--bd);background:#fff;font-size:11.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0;min-height:30px">'
       +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;min-width:0">'+_dvIcon(f)+' <span style="color:#0f172a">'+escHtml(f.name)+'</span>'+subLabel+' <span style="color:var(--mu);font-weight:500;white-space:nowrap;font-size:10.5px">('+_dvFmt(f.size)+')</span></span>'+pdfTools+'</div>'
@@ -13253,11 +13252,26 @@ document.addEventListener('keydown',function(ev){{
 function _getReplyStatusTheme(statusStr){{
   const raw=String(statusStr||'').trim();
   if(!raw)return {{color:'#0f766e',bg:'#f0fdfa',bd:'#99f6e4',mixed:false}};
+  
+  if(typeof SC !== 'undefined' && SC && SC[raw]){{
+    const [bgHex, fgHex] = SC[raw];
+    if(bgHex && fgHex){{
+      return {{color:'#'+fgHex, bg:'#'+bgHex, bd:'#'+(fgHex||bgHex), mixed:false}};
+    }}
+  }}
   const parts=raw.split(/[\\n,;]+/).map(p=>p.trim().toLowerCase()).filter(Boolean);
   let hasGreen=false, hasRed=false;
   const checkPart=(p)=>{{
+    if(typeof SC !== 'undefined' && SC){{
+      for(const [k, v] of Object.entries(SC)){{
+        if(k.toLowerCase() === p && v && v[0] && v[1]){{
+          const isDarkGreen = v[1] === '166534' || v[0] === 'bbf7d0' || v[0] === 'dcfce7';
+          if(isDarkGreen){{ hasGreen = true; return; }}
+        }}
+      }}
+    }}
     const isRed=/^c\\b|^d\\b|^e\\b/.test(p)||p.includes('reject')||p.includes('revise')||p.includes('resubmit')||p.includes('disapprov')||p.includes('not approved')||p.includes('refused');
-    const isGreen=(!isRed)&&(/^a\\b|^b\\b/.test(p)||p.includes('approv')||p.includes('accept')||p.includes('no objection')||p.includes('proceed')||p.includes('completed'));
+    const isGreen=(!isRed)&&(/^a\\b|^b\\b/.test(p)||p.includes('approv')||p.includes('accept')||p.includes('no objection')||p.includes('proceed')||p.includes('completed')||p.includes('replied')||p.includes('reply')||p.includes('answered')||p.includes('closed')||p.includes('resolved'));
     if(isRed)hasRed=true;
     if(isGreen)hasGreen=true;
   }};

@@ -147,11 +147,12 @@ def merge_sync_links(data, sync_links):
 
 
 # ---------------- Document types with / without a consultant reply cycle ----------------
-REPLY_CYCLE_CODES = {"SD", "DS", "MS", "IR", "MIR", "RFI", "NOC", "ABD"}
+REPLY_CYCLE_CODES = {"SD", "DS", "MS", "IR", "MIR", "RFI", "NOC", "ABD", "WN", "NCN", "NCR", "EI", "SI", "CVI", "PCQ", "SVP"}
 _NO_CYCLE_NAME_HINTS = ("requisition", "purchase", "letter", "correspondence", "minutes", "mom",
                         "daily report", "site log", "boq", "specs", "variation")
 _CYCLE_NAME_HINTS = ("shop drawing", "drawing", "material submittal", "submittal", "inspection request",
-                     "request for information", "notice of change", "as-built", "as built")
+                     "request for information", "notice of change", "as-built", "as built",
+                     "work notice", "work notification", "works notice", "non-conformance", "non conformance", "instruction")
 
 
 def doc_type_has_reply_cycle(dt):
