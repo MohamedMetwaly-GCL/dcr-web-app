@@ -11009,17 +11009,16 @@ function renderRows(){{
       const ltrRole=isLtrTab?getLTRFieldRole(col):'';
       
       if(col.col_type==='url' || key==='fileLocation'){{
-        // Attachments: chips open the in-app viewer. Two chips (Subm + Reply) for consultant-cycle types, one 'Doc' chip otherwise.
-        const _att=(row.attachments && typeof row.attachments==='object')?row.attachments:null;
-        const _cyc=tabHasReplyCycle();
-        const url=String(row[key]||'').trim();
-        const hasValidLink = url && url !== '#' && url.toLowerCase() !== 'null' && url.toLowerCase() !== 'none';
-        const _okE=(e)=>!!(e&&(e.file_id||e.folder_id||String(e.url||'').trim()));
+        // Attachments: normalize slots (Submission / Approval) with project-level legacy slot awareness
+        const url = String(row[key]||'').trim();
+        const norm = _normalizeRowAttachments(row, state.tab, url);
+        const _cyc = tabHasReplyCycle();
+        const _okE = (e) => !!(e && (e.file_id || e.folder_id || String(e.url||'').trim()));
 
-        const hasSubm = Boolean(_att && _okE(_att.submission));
-        const hasAppr = Boolean(_att && _okE(_att.approval));
+        const hasSubm = Boolean(norm.submission && _okE(norm.submission));
+        const hasAppr = Boolean(norm.approval && _okE(norm.approval));
 
-        if(hasSubm || hasAppr || hasValidLink){{
+        if(hasSubm || hasAppr){{
           const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
           const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
           const _chip=(label,slot,entry,color,bg,name,themeObj)=>{{
@@ -11050,32 +11049,19 @@ function renderRows(){{
           box.style.cssText='display:inline-flex;flex-direction:column;gap:2px;align-items:stretch';
 
           if(hasSubm && hasAppr){{
-            const _rTheme=_getReplyStatusTheme(row.status||_att.approval.consultant_status);
+            const _rTheme=_getReplyStatusTheme(row.status||norm.approval.consultant_status);
             const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
-            box.appendChild(_chip('Subm','submission',_att.submission,'#2563eb','#eff6ff','Submission',null));
-            box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+            box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff','Submission',null));
+            box.appendChild(_chip('Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+          }}else if(hasAppr){{
+            const _rTheme=_getReplyStatusTheme(row.status||norm.approval.consultant_status);
+            const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
+            box.appendChild(_chip('Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasSubm){{
             if(_cyc){{
-              box.appendChild(_chip('Subm','submission',_att.submission,'#2563eb','#eff6ff','Submission',null));
+              box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff','Submission',null));
             }}else{{
-              box.appendChild(_chip('Doc','submission',_att.submission,'#0f766e','#f0fdfa','Document'));
-            }}
-          }}else if(hasAppr){{
-            const _rTheme=_getReplyStatusTheme(row.status||_att.approval.consultant_status);
-            const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
-            box.appendChild(_chip('Reply','approval',_att.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
-          }}else if(hasValidLink){{
-            if(_cyc && isLegacyReplyFile(row, state.tab)){{
-              const legacyEntry={{url:url,legacy:true,consultant_status:row.status||''}};
-              const _rTheme=_getReplyStatusTheme(row.status);
-              const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
-              box.appendChild(_chip('Reply','approval',legacyEntry,_rTheme.color,_rTheme.bg,_rName,_rTheme));
-            }}else if(_cyc){{
-              const legacyEntry={{url:url,legacy:true}};
-              box.appendChild(_chip('Subm','submission',legacyEntry,'#2563eb','#eff6ff','Submission',null));
-            }}else{{
-              const legacyEntry={{url:url,legacy:true}};
-              box.appendChild(_chip('Doc','submission',legacyEntry,'#0f766e','#f0fdfa','Document'));
+              box.appendChild(_chip('Doc','submission',norm.submission,'#0f766e','#f0fdfa','Document'));
             }}
           }}
           td.appendChild(box);
@@ -13301,16 +13287,18 @@ function _getReplyStatusTheme(statusStr){{
   return {{color:'#d97706',bg:'#fffbeb',bd:'#fde68a',mixed:false}};
 }}
 
-function isLegacyReplyFile(row, dtTab){{
+function isLegacyReplyFile(row, dtTab, explicitUrl){{
   if(!row) return false;
-  const leg = String(row.fileLocation || '').trim().toLowerCase();
+  const leg = String(explicitUrl || row.fileLocation || row.driveLink || row.drive_link || row['Drive Link'] || row.url || '').trim().toLowerCase();
   if(!leg || leg === '#' || leg === 'null' || leg === 'none') return false;
-  const dtObj = (state.dtList || []).find(d => d.id === (dtTab || state.tab)) || {{}};
+  
+  const curTab = dtTab || state.tab;
+  const dtObj = (state.dtList || []).find(d => d.id === curTab || d.code === curTab) || {{}};
   if(!dtHasReplyCycle(dtObj)) return false;
 
-  // 1) Project-level preference: PEM-058/CFC or PROJ_LEGACY_SLOT === 'approval'
+  // 1) Project-level preference: PEM-058 / CFC or PROJ_LEGACY_SLOT === 'approval'
   const defSlot = (typeof PROJ_LEGACY_SLOT !== 'undefined' && PROJ_LEGACY_SLOT ? PROJ_LEGACY_SLOT : '') ||
-                  ((typeof PROJ_CODE !== 'undefined' && (PROJ_CODE === 'PEM-058' || PROJ_CODE === 'CFC')) ? 'approval' : 'submission');
+                  ((typeof PROJ_CODE !== 'undefined' && (PROJ_CODE === 'PEM-058' || PROJ_CODE === 'CFC' || String(PROJ_CODE).toUpperCase().includes('CFC'))) ? 'approval' : 'submission');
   if(defSlot === 'approval') return true;
 
   // 2) Smart URL or docNo / title detection: if path or URL contains 'repl' or 'approv'
@@ -13318,24 +13306,34 @@ function isLegacyReplyFile(row, dtTab){{
   const docLow = String(row.docNo || '').toLowerCase();
   if(docLow.includes('reply') || docLow.includes('replied')) return true;
 
+  // 3) If row has a consultant status (like Code A, B, C) and project default is approval, it's a reply
+  const st = String(row.status || '').trim();
+  if(st && st !== '-' && st.toLowerCase() !== 'null' && defSlot === 'approval') return true;
+
   return false;
 }}
 
-function _normalizeRowAttachments(row){{
-  const att=(row&&row.attachments&&typeof row.attachments==='object')?row.attachments:{{}};
-  let sub=att.submission||null;
-  let app=att.approval||null;
-  if(!sub && !app && row && row.fileLocation){{
-    const leg=String(row.fileLocation||'').trim();
-    if(leg && leg!=='#' && leg.toLowerCase()!=='null' && leg.toLowerCase()!=='none'){{
-      if(isLegacyReplyFile(row, state.tab)){{
-        app={{url:leg,file_name:'Consultant Reply',legacy:true,consultant_status:row.status||''}};
-      }}else{{
-        sub={{url:leg,file_name:'Current Drive Link',legacy:true}};
-      }}
+function _normalizeRowAttachments(row, dtTab, explicitUrl){{
+  const att = (row && row.attachments && typeof row.attachments === 'object') ? row.attachments : {{}};
+  let sub = att.submission || null;
+  let app = att.approval || null;
+  const leg = String(explicitUrl || row?.fileLocation || row?.driveLink || row?.drive_link || row?.['Drive Link'] || row?.url || '').trim();
+  const hasLeg = leg && leg !== '#' && leg.toLowerCase() !== 'null' && leg.toLowerCase() !== 'none';
+
+  if(!sub && !app && hasLeg){{
+    if(isLegacyReplyFile(row, dtTab || state.tab, leg)){{
+      app = {{url: leg, file_name: 'Consultant Reply', legacy: true, consultant_status: row.status || ''}};
+    }} else {{
+      sub = {{url: leg, file_name: 'Current Drive Link', legacy: true}};
+    }}
+  }} else if(sub && !app){{
+    const subUrl = (sub && (sub.url || (sub.file_id ? ('https://drive.google.com/file/d/' + sub.file_id + '/view') : ''))) || leg;
+    if(isLegacyReplyFile(row, dtTab || state.tab, subUrl)){{
+      app = {{...sub, file_name: sub.file_name || 'Consultant Reply', legacy: true, consultant_status: row.status || sub.consultant_status || ''}};
+      sub = null;
     }}
   }}
-  return {{submission:sub,approval:app}};
+  return {{submission: sub, approval: app}};
 }}
 
 function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}}){{

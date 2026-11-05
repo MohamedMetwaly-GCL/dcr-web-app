@@ -116,8 +116,14 @@ def _context(record_id, slot):
         entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
     else:
         entry = att.get(slot) if isinstance(att.get(slot), dict) else None
-        if not entry and slot in ("submission", "approval") and rec.get("fileLocation"):
-            entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
+        # Fallback 1: If approval slot requested, but record only has single submission slot, allow viewing
+        if not entry and slot == "approval" and att.get("submission") and not att.get("approval"):
+            entry = att.get("submission")
+        # Fallback 2: Check any legacy/drive column on record
+        if not entry and slot in ("submission", "approval"):
+            fallback_url = rec.get("fileLocation") or rec.get("driveLink") or rec.get("drive_link") or rec.get("link")
+            if fallback_url:
+                entry = {"url": attachments._clean_link(fallback_url), "legacy": True}
     if not entry or not (entry.get("file_id") or entry.get("folder_id") or entry.get("url")):
         return None, (jsonify(error="Nothing is attached in this slot"), 404)
 
