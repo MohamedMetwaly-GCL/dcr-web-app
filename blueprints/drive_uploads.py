@@ -138,17 +138,17 @@ def api_create_upload_session():
         return err
 
     if slot not in attachments.SLOTS:
-        return jsonify(error=f"Invalid slot '{slot}'. Must be 'submission' or 'approval'."), 400
+        return jsonify(error=f"Invalid slot '{slot}'. Must be one of {attachments.SLOTS}."), 400
 
     proj = db.get_project(pid)
     if not proj:
         return jsonify(error="Project not found"), 404
     ws_id = str(proj.get("workspace_id") or "ENG").strip().upper()
-    if slot == attachments.SLOT_APPROVAL and ws_id != "ENG":
-        return jsonify(error="Approval slot is only available in the Engineering & Projects workspace"), 400
+    if (slot == attachments.SLOT_APPROVAL or slot in attachments.NOC_SLOTS) and ws_id != "ENG":
+        return jsonify(error="Approval / NOC slots are only available in the Engineering & Projects workspace"), 400
     dt_meta = db.get_doc_type(pid, dt_id) or {}
     has_cycle = attachments.doc_type_has_reply_cycle(dt_meta)
-    if slot == attachments.SLOT_APPROVAL and not has_cycle:
+    if (slot == attachments.SLOT_APPROVAL or slot in attachments.NOC_SLOTS) and not has_cycle:
         return jsonify(error="This document type has no consultant reply cycle"), 400
 
     rec = None
@@ -311,6 +311,14 @@ def api_upload_complete():
     extra = {"url": view_url}
     if slot == attachments.SLOT_APPROVAL and rec.get("status"):
         extra["consultant_status"] = str(rec.get("status"))
+    elif slot == attachments.SLOT_PART_B:
+        pb_st = rec.get("partBStatus") or rec.get("part_b_status") or rec.get("Part B Status") or rec.get("status")
+        if pb_st:
+            extra["consultant_status"] = str(pb_st)
+    elif slot == attachments.SLOT_PART_D:
+        pd_st = rec.get("partDStatus") or rec.get("part_d_status") or rec.get("Part D Status")
+        if pd_st:
+            extra["consultant_status"] = str(pd_st)
 
     # Folder / Multi-file attachment handling
     if t.get("link_as_folder") and (t.get("subfolder_id") or t.get("folder_id")):
@@ -362,10 +370,14 @@ def api_upload_complete():
         if existing_slot:
             _trash_old_attachment(existing_slot, exclude_id=file_id)
 
-    # Preserve legacy single fileLocation as submission if attaching an approval to an old record
+    # Preserve legacy single fileLocation as submission (or part_a for NOC) if attaching a later slot to an old record
     old_loc = attachments._clean_link(rec.get("fileLocation"))
     if slot == attachments.SLOT_APPROVAL and not existing_att.get(attachments.SLOT_SUBMISSION) and old_loc and old_loc != view_url:
         db.set_record_attachment(record_id, attachments.SLOT_SUBMISSION, {"url": old_loc, "legacy": True})
+    elif slot in (attachments.SLOT_PART_B, attachments.SLOT_PART_C, attachments.SLOT_PART_D):
+        has_any_noc = any(existing_att.get(ns) for ns in attachments.NOC_SLOTS)
+        if not has_any_noc and old_loc and old_loc != view_url:
+            db.set_record_attachment(record_id, attachments.SLOT_PART_A, {"url": old_loc, "legacy": True})
 
     db.set_record_attachment(record_id, slot, meta)
 
@@ -402,7 +414,7 @@ def api_unlink_attachment(record_id, slot):
     record_id = str(record_id or "").strip()
     slot = str(slot or "").strip().lower()
     if slot not in attachments.SLOTS:
-        return jsonify(error=f"Invalid slot '{slot}'. Must be 'submission' or 'approval'."), 400
+        return jsonify(error=f"Invalid slot '{slot}'. Must be one of {attachments.SLOTS}."), 400
 
     rec = db.get_record_by_id(record_id)
     if not rec:
@@ -428,9 +440,17 @@ def api_unlink_attachment(record_id, slot):
     cur_loc = attachments._clean_link(rec.get("fileLocation"))
     next_loc = cur_loc
     if old_url and cur_loc == old_url:
-        other_slot = attachments.SLOT_SUBMISSION if slot == attachments.SLOT_APPROVAL else attachments.SLOT_APPROVAL
-        other_entry = (updated_att or {}).get(other_slot) if isinstance(updated_att, dict) else None
-        next_loc = attachments._clean_link((other_entry or {}).get("url")) if isinstance(other_entry, dict) else ""
+        next_loc = ""
+        if isinstance(updated_att, dict):
+            for cand_slot in ("part_d", "part_c", "part_b", "part_a", "approval", "submission"):
+                if cand_slot == slot:
+                    continue
+                cand_entry = updated_att.get(cand_slot)
+                if isinstance(cand_entry, dict):
+                    cand_url = attachments._clean_link(cand_entry.get("url"))
+                    if cand_url:
+                        next_loc = cand_url
+                        break
         db.q("""UPDATE records SET data = data || jsonb_build_object('fileLocation', %s::text), updated_at = NOW()
                 WHERE id = %s RETURNING id""", (next_loc, record_id))
 

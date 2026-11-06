@@ -10050,7 +10050,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <div class="mbody" style="display:flex;flex-direction:column;gap:12px">
       <div id="batch-drv-slot-wrap" style="display:flex;flex-direction:column;gap:8px;background:#f8fafc;padding:10px 12px;border:1px solid var(--bd);border-radius:8px">
         <div style="font-size:11px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px">Upload Target Slot</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+        <div id="batch-drv-slot-cards-dual" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
           <label id="batch-slot-card-submission" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">
             <input type="radio" name="batch-drv-slot" value="submission" checked onchange="onBatchSlotChange(this.value)" style="accent-color:#2563eb">
             <span>📤 Submission Files (ملفات التقديم الأصلي)</span>
@@ -10058,6 +10058,24 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
           <label id="batch-slot-card-approval" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">
             <input type="radio" name="batch-drv-slot" value="approval" onchange="onBatchSlotChange(this.value)" style="accent-color:#0f766e">
             <span>📋 Consultant Replies (ردود الاستشاري)</span>
+          </label>
+        </div>
+        <div id="batch-drv-slot-cards-noc" style="display:none;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
+          <label id="batch-slot-card-part_a" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s">
+            <input type="radio" name="batch-drv-slot" value="part_a" onchange="onBatchSlotChange(this.value)" style="accent-color:#2563eb">
+            <span>🅰️ Part A — Notice of Change (تقديم إشعار التغيير)</span>
+          </label>
+          <label id="batch-slot-card-part_b" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s">
+            <input type="radio" name="batch-drv-slot" value="part_b" onchange="onBatchSlotChange(this.value)" style="accent-color:#0f766e">
+            <span>🅱️ Part B — Consultant Reply (رد الاستشاري على Part A)</span>
+          </label>
+          <label id="batch-slot-card-part_c" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s">
+            <input type="radio" name="batch-drv-slot" value="part_c" onchange="onBatchSlotChange(this.value)" style="accent-color:#0284c7">
+            <span>🅲 Part C — Cost & Time Claim (المطالبة المالية)</span>
+          </label>
+          <label id="batch-slot-card-part_d" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s">
+            <input type="radio" name="batch-drv-slot" value="part_d" onchange="onBatchSlotChange(this.value)" style="accent-color:#16a34a">
+            <span>🅳 Part D — Final Approval / VO (الاعتماد النهائي)</span>
           </label>
         </div>
         <div id="batch-drv-target-path" style="font-size:11px;color:#0f766e;font-weight:600;display:flex;align-items:center;gap:6px;background:#f0fdfa;border:1px solid #ccfbf1;padding:6px 10px;border-radius:6px">
@@ -10212,10 +10230,11 @@ function isSDOrABDTab(){{
   return isSDTab() || isABDTab();
 }}
 
-function isNOCTab(){{
-  const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
-  const code=(dt.code||dt.id||'').toString().toUpperCase();
-  const name=(dt.name||'').toString().toLowerCase();
+function isNOCTab(dtTab){{
+  const curT=String(dtTab!==undefined?dtTab:(typeof state!=='undefined'?state.tab:'')).trim().toUpperCase();
+  const dt=(typeof state!=='undefined'&&state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT||String(d.code||'').trim().toUpperCase()===curT)||{{}};
+  const code=String(dt.code||dt.id||curT).trim().toUpperCase();
+  const name=String(dt.name||'').trim().toLowerCase();
   return code==='NOC' || name.includes('notice of change');
 }}
 
@@ -11016,8 +11035,13 @@ function renderRows(){{
 
         const hasSubm = Boolean(norm.submission && _okE(norm.submission));
         const hasAppr = Boolean(norm.approval && _okE(norm.approval));
+        const isNoc = isNOCTab();
+        const hasPartA = Boolean(isNoc && norm.part_a && _okE(norm.part_a));
+        const hasPartB = Boolean(isNoc && norm.part_b && _okE(norm.part_b));
+        const hasPartC = Boolean(isNoc && norm.part_c && _okE(norm.part_c));
+        const hasPartD = Boolean(isNoc && norm.part_d && _okE(norm.part_d));
 
-        if(hasSubm || hasAppr){{
+        if(hasPartA || hasPartB || hasPartC || hasPartD || hasSubm || hasAppr){{
           const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
           const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
           const _chip=(label,slot,entry,color,bg,name,themeObj)=>{{
@@ -11047,7 +11071,26 @@ function renderRows(){{
           const box=document.createElement('div');
           box.style.cssText='display:inline-flex;flex-direction:column;gap:2px;align-items:stretch';
 
-          if(hasSubm && hasAppr){{
+          if(isNoc && (hasPartA || hasPartB || hasPartC || hasPartD)){{
+            if(hasPartA){{
+              box.appendChild(_chip('A','part_a',norm.part_a,'#2563eb','#eff6ff','Part A - Notice of Change',null));
+            }}
+            if(hasPartB){{
+              const _stB=_getNocPartStatus(row,'B')||norm.part_b.consultant_status||'';
+              const _thB=_getReplyStatusTheme(_stB);
+              const _nmB='Part B - Consultant Reply'+(_stB?' ('+_stB+')':'');
+              box.appendChild(_chip('B','part_b',norm.part_b,_thB.color,_thB.bg,_nmB,_thB));
+            }}
+            if(hasPartC){{
+              box.appendChild(_chip('C','part_c',norm.part_c,'#0284c7','#f0f9ff','Part C - Cost & Time Claim',null));
+            }}
+            if(hasPartD){{
+              const _stD=_getNocPartStatus(row,'D')||norm.part_d.consultant_status||'';
+              const _thD=_getReplyStatusTheme(_stD);
+              const _nmD='Part D - Final Approval'+(_stD?' ('+_stD+')':'');
+              box.appendChild(_chip('D','part_d',norm.part_d,_thD.color,_thD.bg,_nmD,_thD));
+            }}
+          }}else if(hasSubm && hasAppr){{
             const _rTheme=_getReplyStatusTheme(row.status||norm.approval.consultant_status);
             const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
             box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff','Submission',null));
@@ -13281,7 +13324,7 @@ function _getReplyStatusTheme(statusStr){{
   
   if(typeof SC !== 'undefined' && SC && SC[raw]){{
     const [bgHex, fgHex] = SC[raw];
-    if(bgHex && fgHex){{
+    if(bgHex && fgHex && fgHex.toLowerCase() !== 'ffffff' && fgHex.toLowerCase() !== 'fff'){{
       return {{color:'#'+fgHex, bg:'#'+bgHex, bd:'#'+(fgHex||bgHex), mixed:false}};
     }}
   }}
@@ -13360,21 +13403,74 @@ function isLegacyReplyFile(row, dtTab, explicitUrl){{
   return true;
 }}
 
+function _getNocPartStatusKey(partLetter){{
+  const p=String(partLetter||'').trim().toLowerCase();
+  const targetPhrase='part '+p+' status';
+  const targetCompact='part'+p+'status';
+  const cols=(typeof state!=='undefined'&&(state.allTabCols||state.cols))||[];
+  for(const c of cols){{
+    const meta=normalizeNocFieldText(c);
+    if(meta.keyCompact===targetCompact || meta.text.includes(targetPhrase) || meta.compact.includes(targetCompact)){{
+      return c.col_key;
+    }}
+  }}
+  return p==='b'?'partBStatus':'partDStatus';
+}}
+
+function _getNocPartStatus(row, partLetter, formRoot){{
+  const colKey=_getNocPartStatusKey(partLetter);
+  if(formRoot){{
+    const el=formRoot.querySelector('#f-'+colKey)||formRoot.querySelector('[name="'+colKey+'"]');
+    if(el){{
+      if(el.classList.contains('ms-con'))return el.dataset.value||'';
+      if(el.value)return el.value;
+    }}
+  }}
+  if(!row)return '';
+  if(row[colKey])return String(row[colKey]);
+  const pUp=String(partLetter||'').trim().toUpperCase();
+  const pLow=pUp.toLowerCase();
+  return String(row['part'+pUp+'Status']||row['part_'+pLow+'_status']||row['Part '+pUp+' Status']||'').trim();
+}}
+
 function _normalizeRowAttachments(row, dtTab, explicitUrl){{
   const att = (row && row.attachments && typeof row.attachments === 'object') ? row.attachments : {{}};
   let sub = att.submission || null;
   let app = att.approval || null;
+  let part_a = att.part_a || null;
+  let part_b = att.part_b || null;
+  let part_c = att.part_c || null;
+  let part_d = att.part_d || null;
 
   // An explicit new DCR upload has file_id, or uploaded_at without legacy flag
   const isDcrUpload = (e) => Boolean(e && (e.file_id || (e.uploaded_at && !e.legacy) || (e.source && e.source !== 'drive_sync' && !e.legacy)));
+
+  const leg = String(explicitUrl || row?.fileLocation || row?.driveLink || row?.drive_link || row?.['Drive Link'] || row?.url || '').trim();
+  const hasLeg = leg && leg !== '#' && leg.toLowerCase() !== 'null' && leg.toLowerCase() !== 'none';
+
+  if(isNOCTab(dtTab)){{
+    if(!part_a && !part_b && !part_c && !part_d){{
+      if(sub && isDcrUpload(sub)) part_a = sub;
+      if(app && isDcrUpload(app)) part_b = app;
+      if(!part_a && !part_b){{
+        const rawUrl = (sub && sub.url) || (app && app.url) || (hasLeg ? leg : '');
+        if(rawUrl){{
+          const uLow = rawUrl.toLowerCase();
+          const baseEntry = (sub && typeof sub === 'object') ? {{...sub, url: rawUrl, legacy: true}} : {{url: rawUrl, file_name: 'Linked Drive File', legacy: true}};
+          if(/\\bpart[\\s_-]*d\\b/.test(uLow)) part_d = {{...baseEntry, consultant_status: _getNocPartStatus(row, 'D')}};
+          else if(/\\bpart[\\s_-]*c\\b/.test(uLow)) part_c = baseEntry;
+          else if(/\\bpart[\\s_-]*b\\b/.test(uLow)) part_b = {{...baseEntry, consultant_status: _getNocPartStatus(row, 'B')}};
+          else part_a = baseEntry;
+        }}
+      }}
+    }}
+    return {{submission: sub, approval: app, part_a, part_b, part_c, part_d}};
+  }}
 
   // If submission is a genuine DCR upload, NEVER convert it to approval
   if(sub && isDcrUpload(sub)){{
     return {{submission: sub, approval: app}};
   }}
-
-  const leg = String(explicitUrl || row?.fileLocation || row?.driveLink || row?.drive_link || row?.['Drive Link'] || row?.url || '').trim();
-  const hasLeg = leg && leg !== '#' && leg.toLowerCase() !== 'null' && leg.toLowerCase() !== 'none';
 
   if(!sub && !app && hasLeg){{
     if(isLegacyReplyFile(row, dtTab || state.tab, leg)){{
@@ -13395,7 +13491,8 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
 function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}}){{
   state.pendingDriveAttachments={{}};
   state.activeDriveUploads=0;
-  const secTitle=ctx.isNocTab?'Remarks / Files':'Files / Notes';
+  const isNoc=Boolean(ctx.isNocTab || isNOCTab());
+  const secTitle=isNoc?'Remarks / Files':'Files / Notes';
   const secBody=getOrCreateFormSection(formRoot,sectionBodies,secTitle);
 
   // Clarify the legacy fileLocation input label so it doesn't confuse DCs alongside the new upload cards
@@ -13415,15 +13512,26 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     const stEl=formRoot.querySelector('#f-status');
     return (stEl&&stEl.value)?stEl.value:(row?.status||cur.approval?.consultant_status||'');
   }};
+  const currentNocPartStatus=(pLetter)=>{{
+    return _getNocPartStatus(row, pLetter, formRoot) || (pLetter==='B'?cur.part_b?.consultant_status:cur.part_d?.consultant_status) || '';
+  }};
   const replyThemeFor=(hasFile)=>hasFile?_getReplyStatusTheme(currentStatus()):{{color:'#475569',bg:'#f8fafc',bd:'#cbd5e1'}};
+  const nocPartThemeFor=(pLetter,hasFile)=>hasFile?_getReplyStatusTheme(currentNocPartStatus(pLetter)):{{color:'#475569',bg:'#f8fafc',bd:'#cbd5e1'}};
   const initReplyTheme=replyThemeFor(Boolean(cur.approval));
+  const initPartBTheme=nocPartThemeFor('B',Boolean(cur.part_b));
+  const initPartDTheme=nocPartThemeFor('D',Boolean(cur.part_d));
   const curT=String(typeof state!=='undefined'?state.tab:'').trim().toUpperCase();
   const dtObj=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT || String(d.code||'').trim().toUpperCase()===curT)||{{}};
   const hasReply=isEng&&dtHasReplyCycle(dtObj);
-  const slots=hasReply
-    ? [{{key:'submission',title:'1. Submission Document (مستند التقديم)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
-       {{key:'approval',title:'2. Consultant Reply (رد الاستشاري)',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
-    : [{{key:'submission',title:'Document Attachment (مرفق المستند)',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}}];
+  const slots=isNoc
+    ? [{{key:'part_a',title:'1. Part A — Notice of Change (تقديم إشعار التغيير)',pathSub:'Part A',emptyText:'No Part A file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
+       {{key:'part_b',title:'2. Part B — Consultant Reply (رد الاستشاري على Part A)',pathSub:'Part B',emptyText:'No Part B reply attached yet',color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
+       {{key:'part_c',title:'3. Part C — Cost & Time Claim (المطالبة المالية التفصيلية)',pathSub:'Part C',emptyText:'No Part C claim attached yet',color:'#0284c7',bg:'#f0f9ff',bd:'#bae6fd'}},
+       {{key:'part_d',title:'4. Part D — Final Approval / VO (الاعتماد المالي النهائي)',pathSub:'Part D',emptyText:'No Part D approval attached yet',color:initPartDTheme.color,bg:initPartDTheme.bg,bd:initPartDTheme.bd}}]
+    : (hasReply
+      ? [{{key:'submission',title:'1. Submission Document (مستند التقديم)',pathSub:'Submit',emptyText:'No submission file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
+         {{key:'approval',title:'2. Consultant Reply (رد الاستشاري)',pathSub:'Replied',emptyText:'No consultant reply attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
+      : [{{key:'submission',title:'Document Attachment (مرفق المستند)',pathSub:'',emptyText:'No file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}}]);
   const grid=document.createElement('div');
   grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:6px';
 
@@ -13445,13 +13553,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     hdr.textContent=s.title;
     card.appendChild(hdr);
 
-    const pathSubName=(s.key==='approval')?'Replied':'Submit';
-    const dtObj=(state.dtList||[]).find(d=>d.id===state.tab)||{{}};
+    const pathSubName=s.pathSub!==undefined?s.pathSub:((s.key==='approval')?'Replied':'Submit');
     const dtName=dtObj.name||dtObj.code||state.tab||'Documents';
     const folderHint=document.createElement('div');
     folderHint.style.cssText='font-size:10px;color:var(--mu);display:flex;align-items:center;gap:4px;margin-top:-2px';
     const _projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
-    folderHint.innerHTML=`<span>📁 Drive Path:</span> <strong style="color:#334155">${{escHtml(_projLbl)}} ❯ ${{escHtml(dtName)}}${{hasReply?(' ❯ '+escHtml(pathSubName)):''}}</strong>`;
+    folderHint.innerHTML=`<span>📁 Drive Path:</span> <strong style="color:#334155">${{escHtml(_projLbl)}} ❯ ${{escHtml(dtName)}}${{(hasReply||isNoc)&&pathSubName?(' ❯ '+escHtml(pathSubName)):''}}</strong>`;
     card.appendChild(folderHint);
 
     const statusLine=document.createElement('div');
@@ -13462,6 +13569,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     const renderSlotInfo=(entry,pending)=>{{
       statusLine.innerHTML='';
       if(s.key==='approval')applyCardTheme(replyThemeFor(Boolean(entry||pending)));
+      else if(s.key==='part_b')applyCardTheme(nocPartThemeFor('B',Boolean(entry||pending)));
+      else if(s.key==='part_d')applyCardTheme(nocPartThemeFor('D',Boolean(entry||pending)));
       if(pending){{
         const b=document.createElement('span');
         b.style.cssText='font-weight:600;color:#0f766e';
@@ -13485,7 +13594,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(!vUrl){{
         const empty=document.createElement('span');
         empty.style.cssText='color:#64748b;font-style:italic';
-        empty.textContent=s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet';
+        empty.textContent=s.emptyText||(s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet');
         statusLine.appendChild(empty);
         if(upBtn)upBtn.textContent='📤 Upload File';
         return;
@@ -13597,8 +13706,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const formFrom=(fromEl&&fromEl.value)?fromEl.value:(row?.fromParty||row?.from||'');
         const toEl=formRoot.querySelector('#f-toParty')||formRoot.querySelector('[name="toParty"]')||formRoot.querySelector('[name="to"]')||formRoot.querySelector('#f-to');
         const formTo=(toEl&&toEl.value)?toEl.value:(row?.toParty||row?.to||'');
-        const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]');
-        const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||'');
+        const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]')||formRoot.querySelector('#f-nocNo')||formRoot.querySelector('[name="nocNo"]');
+        const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||row?.nocNo||'');
         try{{
           const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
             const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
@@ -13713,8 +13822,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const formFrom=(fromEl&&fromEl.value)?fromEl.value:(row?.fromParty||row?.from||'');
             const toEl=formRoot.querySelector('#f-toParty')||formRoot.querySelector('[name="toParty"]')||formRoot.querySelector('[name="to"]')||formRoot.querySelector('#f-to');
             const formTo=(toEl&&toEl.value)?toEl.value:(row?.toParty||row?.to||'');
-            const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]');
-            const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||'');
+            const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]')||formRoot.querySelector('#f-nocNo')||formRoot.querySelector('[name="nocNo"]');
+            const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||row?.nocNo||'');
             lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
               const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
               const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
@@ -13770,6 +13879,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     if(s.key==='approval'){{
       const stEl=formRoot.querySelector('#f-status');
       if(stEl)stEl.addEventListener('change',()=>renderSlotInfo(cur[s.key],state.pendingDriveAttachments?.[s.key]||null));
+    }}else if(s.key==='part_b'||s.key==='part_d'){{
+      const pL=s.key==='part_b'?'B':'D';
+      const stKey=_getNocPartStatusKey(pL);
+      const stEl=formRoot.querySelector('#f-'+stKey)||formRoot.querySelector('[name="'+stKey+'"]');
+      if(stEl){{
+        stEl.addEventListener('change',()=>renderSlotInfo(cur[s.key],state.pendingDriveAttachments?.[s.key]||null));
+        stEl.addEventListener('input',()=>renderSlotInfo(cur[s.key],state.pendingDriveAttachments?.[s.key]||null));
+      }}
     }}
     grid.appendChild(card);
   }});
@@ -13995,10 +14112,13 @@ function extractDocNoFromFilename(name, recs){{
 }}
 
 function getBatchTargetDrivePath(slot){{
-  const dt=(state.dtList||[]).find(d=>d.id===state.tab)||{{}};
+  const curT=String(state.tab||'').trim().toUpperCase();
+  const dt=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT||String(d.code||'').trim().toUpperCase()===curT)||{{}};
   const dtName=dt.name||dt.code||state.tab||'Documents';
-  const sub=(slot==='approval')?'Replied':'Submit';
-  return tabHasReplyCycle() ? `${{PID}} ❯ ${{dtName}} ❯ ${{sub}}` : `${{PID}} ❯ ${{dtName}}`;
+  const slotMap={{submission:'Submit',approval:'Replied',part_a:'Part A',part_b:'Part B',part_c:'Part C',part_d:'Part D'}};
+  const sub=slotMap[slot]||'Submit';
+  const projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
+  return (tabHasReplyCycle()||isNOCTab()) ? `${{projLbl}} ❯ ${{dtName}} ❯ ${{sub}}` : `${{projLbl}} ❯ ${{dtName}}`;
 }}
 
 function populateBatchDatalist(){{
@@ -14076,19 +14196,25 @@ function openBatchDriveUpload(){{
   state.batchCurrentItem=null;
   state.batchCurrentAbort=null;
   populateBatchDatalist();
-  const isEng=tabHasReplyCycle();
+  const isNoc=isNOCTab();
+  const isEng=tabHasReplyCycle()||isNoc;
   const slotWrap=document.getElementById('batch-drv-slot-wrap');
   if(slotWrap)slotWrap.style.display=isEng?'flex':'none';
-  state.batchSlot='submission';
+  const dualCards=document.getElementById('batch-drv-slot-cards-dual');
+  const nocCards=document.getElementById('batch-drv-slot-cards-noc');
+  if(dualCards)dualCards.style.display=isNoc?'none':'grid';
+  if(nocCards)nocCards.style.display=isNoc?'grid':'none';
+  const defSlot=isNoc?'part_a':'submission';
+  state.batchSlot=defSlot;
   const radios=document.querySelectorAll('input[name="batch-drv-slot"]');
-  radios.forEach(r=>{{r.checked=(r.value==='submission');r.disabled=false;}});
+  radios.forEach(r=>{{r.checked=(r.value===defSlot);r.disabled=false;}});
   const inp=document.getElementById('batch-drv-input');
   if(inp)inp.value='';
   const finp=document.getElementById('batch-drv-folder-input');
   if(finp)finp.value='';
   const ov=document.getElementById('batch-drv-overall');
   if(ov)ov.style.display='none';
-  onBatchSlotChange('submission');
+  onBatchSlotChange(defSlot);
   const spBtn=document.getElementById('batch-drv-stop-btn');
   if(spBtn)spBtn.classList.add('hidden');
   renderBatchDriveTable();
@@ -14106,21 +14232,25 @@ function closeBatchDriveUpload(){{
 }}
 
 function onBatchSlotChange(val){{
-  state.batchSlot=(val==='approval')?'approval':'submission';
-  const cSub=document.getElementById('batch-slot-card-submission');
-  const cApp=document.getElementById('batch-slot-card-approval');
-  if(cSub){{
-    const act=(state.batchSlot==='submission');
-    cSub.style.border=act?'2px solid #2563eb':'1px solid #cbd5e1';
-    cSub.style.background=act?'#eff6ff':'#fff';
-    cSub.style.color=act?'#1d4ed8':'#334155';
-  }}
-  if(cApp){{
-    const act=(state.batchSlot==='approval');
-    cApp.style.border=act?'2px solid #0f766e':'1px solid #cbd5e1';
-    cApp.style.background=act?'#f0fdfa':'#fff';
-    cApp.style.color=act?'#0f766e':'#334155';
-  }}
+  const validSlots=['submission','approval','part_a','part_b','part_c','part_d'];
+  state.batchSlot=validSlots.includes(val)?val:(isNOCTab()?'part_a':'submission');
+  const cardThemes={{
+    submission:{{bd:'#2563eb',bg:'#eff6ff',fg:'#1d4ed8'}},
+    approval:{{bd:'#0f766e',bg:'#f0fdfa',fg:'#0f766e'}},
+    part_a:{{bd:'#2563eb',bg:'#eff6ff',fg:'#1d4ed8'}},
+    part_b:{{bd:'#0f766e',bg:'#f0fdfa',fg:'#0f766e'}},
+    part_c:{{bd:'#0284c7',bg:'#f0f9ff',fg:'#0369a1'}},
+    part_d:{{bd:'#16a34a',bg:'#f0fdf4',fg:'#15803d'}}
+  }};
+  validSlots.forEach(sk=>{{
+    const c=document.getElementById('batch-slot-card-'+sk);
+    if(!c)return;
+    const act=(state.batchSlot===sk);
+    const th=cardThemes[sk]||cardThemes.submission;
+    c.style.border=act?('2px solid '+th.bd):'1px solid #cbd5e1';
+    c.style.background=act?th.bg:'#fff';
+    c.style.color=act?th.fg:'#334155';
+  }});
   const pathEl=document.getElementById('batch-drv-target-path-txt');
   if(pathEl)pathEl.textContent=getBatchTargetDrivePath(state.batchSlot);
 }}

@@ -15,8 +15,22 @@ import datetime
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
 # Drive folder names that mean each slot (same keywords drive_service.get_item_priority uses)
-SLOT_KEYWORDS = {"submission": ("submit",), "approval": ("reply", "replied")}
-SLOT_DEFAULT_NAMES = {"submission": "Submit", "approval": "Replied"}
+SLOT_KEYWORDS = {
+    "submission": ("submit",),
+    "approval": ("reply", "replied"),
+    "part_a": ("part a", "part_a", "part-a"),
+    "part_b": ("part b", "part_b", "part-b"),
+    "part_c": ("part c", "part_c", "part-c"),
+    "part_d": ("part d", "part_d", "part-d"),
+}
+SLOT_DEFAULT_NAMES = {
+    "submission": "Submit",
+    "approval": "Replied",
+    "part_a": "Part A",
+    "part_b": "Part B",
+    "part_c": "Part C",
+    "part_d": "Part D",
+}
 
 SCORE_EXACT, SCORE_PREFIX, SCORE_TOKEN, SCORE_NAME_IN = 100, 90, 80, 60
 
@@ -211,7 +225,14 @@ def match_doc_type_folder(folders, code, name, direction=""):
 
 
 def match_slot_folder(folders, slot):
-    """Find the Submit / Replied sub-folder inside a doc type folder."""
+    """Find the Submit / Replied / Part A..D sub-folder inside a doc type folder."""
+    if slot in ("part_a", "part_b", "part_c", "part_d"):
+        letter = slot.split("_")[-1]
+        pat = re.compile(r"\bpart[\s_-]*" + re.escape(letter) + r"\b", re.IGNORECASE)
+        hits = [f for f in folders if pat.search(str(f.get("name", "")))]
+        if len(hits) > 1:
+            raise RoutingError("ambiguous", [{"id": f["id"], "name": f["name"]} for f in hits])
+        return hits[0] if hits else None
     keys = SLOT_KEYWORDS[slot]
     hits = [f for f in folders if any(k in str(f.get("name", "")).lower() for k in keys)]
     # 'Replied' must not be taken for the Submit slot and vice versa

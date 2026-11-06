@@ -10,7 +10,13 @@ import re
 
 SLOT_SUBMISSION = "submission"
 SLOT_APPROVAL = "approval"
-SLOTS = (SLOT_SUBMISSION, SLOT_APPROVAL)
+SLOT_PART_A = "part_a"
+SLOT_PART_B = "part_b"
+SLOT_PART_C = "part_c"
+SLOT_PART_D = "part_d"
+DUAL_SLOTS = (SLOT_SUBMISSION, SLOT_APPROVAL)
+NOC_SLOTS = (SLOT_PART_A, SLOT_PART_B, SLOT_PART_C, SLOT_PART_D)
+SLOTS = DUAL_SLOTS + NOC_SLOTS
 
 _INVALID_LINKS = {"", "#", "null", "none"}
 
@@ -54,6 +60,7 @@ def normalize_attachments(data):
     """Return {'submission': dict|None, 'approval': dict|None} for a record's data.
 
     - If data['attachments'] has a slot, it is used as-is.
+    - Includes 'part_a'..'part_d' when present in data['attachments'].
     - If the submission slot is empty and a legacy fileLocation exists, it is
       exposed as a legacy submission entry ({'url': ..., 'legacy': True}).
     Never mutates `data`.
@@ -61,8 +68,12 @@ def normalize_attachments(data):
     data = data if isinstance(data, dict) else {}
     att = data.get("attachments")
     att = att if isinstance(att, dict) else {}
-    result = {s: (att.get(s) if isinstance(att.get(s), dict) else None) for s in SLOTS}
-    if result[SLOT_SUBMISSION] is None:
+    result = {s: (att.get(s) if isinstance(att.get(s), dict) else None) for s in DUAL_SLOTS}
+    for ns in NOC_SLOTS:
+        if isinstance(att.get(ns), dict):
+            result[ns] = att.get(ns)
+    has_noc_part = any(ns in result for ns in NOC_SLOTS)
+    if result[SLOT_SUBMISSION] is None and not has_noc_part:
         legacy = _clean_link(data.get("fileLocation"))
         if legacy:
             result[SLOT_SUBMISSION] = {"url": legacy, "legacy": True}
@@ -113,11 +124,15 @@ SYNC_SOURCE = "drive_sync"
 
 
 def classify_path_kind(full_path):
-    """'approval' if the Drive path contains 'reply', 'submission' if it contains 'submit', else None.
+    """'part_a'..'part_d' if path contains 'part a'..'part d',
+    'approval' if the Drive path contains 'reply', 'submission' if it contains 'submit', else None.
 
-    Same precedence as drive_service.get_item_priority (reply wins over submit).
+    Same precedence as drive_service.get_item_priority (part_d..part_a / reply wins over submit).
     """
     p = (full_path or "").lower()
+    m = re.search(r"\bpart[\s_-]*([abcd])\b", p)
+    if m:
+        return "part_" + m.group(1)
     if "reply" in p:
         return SLOT_APPROVAL
     if "submit" in p:

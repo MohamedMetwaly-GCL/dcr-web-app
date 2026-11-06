@@ -251,4 +251,24 @@ r_scas = R.resolve_upload_destination(
 assert d_ekh.items[r_scas["folder_id"]]["parent"] == d_ekh.id_of("SCAS")
 print("hierarchical letters company + direction routing OK")
 
+# ---- NOC 4-part slot routing (Part A, Part B, Part C, Part D)
+noc_tree = {
+    "PROJ_CFC": {
+        "11. Notice of Change (NOC)": {
+            "Part A": {},
+            "Part B": {},
+            "Part C": {},
+            "Part D": {}
+        }
+    }
+}
+d_noc = FakeDrive(noc_tree)
+st_noc = FakeStore({"drive_folder_id": d_noc.id_of("PROJ_CFC")},
+                   {"NOC": {"code": "NOC", "name": "Notice of Change"}})
+
+for part_slot, folder_label in (("part_a", "Part A"), ("part_b", "Part B"), ("part_c", "Part C"), ("part_d", "Part D")):
+    res_noc = R.resolve_upload_destination("p", "NOC", part_slot, d_noc, st_noc)
+    assert res_noc["folder_id"] == d_noc.id_of(folder_label), f"Expected {folder_label} for {part_slot}"
+print("NOC 4-part slot routing OK")
+
 print("ALL DRIVE ROUTING TESTS PASSED")

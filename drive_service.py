@@ -57,22 +57,26 @@ def extract_doc_no(name):
 
 def get_item_priority(full_path, mime_type):
     """
-    Priority Logic (1 = Highest, 4 = Lowest):
-    1: Reply Folder (path contains 'reply', is folder)
-    2: Reply File   (path contains 'reply', is file)
-    3: Submit Folder (path contains 'submit', is folder)
-    4: Submit File   (path contains 'submit', is file)
+    Priority Logic (lower = Higher priority):
+    For NOC 4-Part structure: Part D > Part C > Part B > Part A
+    For Dual-slot structure: Reply Folder (1) > Reply File (2) > Submit Folder (3) > Submit File (4)
     """
     path_lower = full_path.lower()
     is_folder = (mime_type == 'application/vnd.google-apps.folder')
-    
+
+    m = re.search(r'\bpart[\s_-]*([abcd])\b', path_lower)
+    if m:
+        part_letter = m.group(1)
+        part_rank = {'d': 1, 'c': 3, 'b': 5, 'a': 7}.get(part_letter, 7)
+        return part_rank if is_folder else (part_rank + 1)
+
     if 'reply' in path_lower:
         return 1 if is_folder else 2
     elif 'submit' in path_lower:
         return 3 if is_folder else 4
-    
+
     # If neither, treat as lowest priority
-    return 5
+    return 9
 
 def process_drive_folder(folder_id, root_folder_name="Root"):
     """

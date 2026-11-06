@@ -116,11 +116,11 @@ def _context(record_id, slot):
         entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
     else:
         entry = att.get(slot) if isinstance(att.get(slot), dict) else None
-        # Fallback 1: If approval slot requested, and record has legacy submission slot, allow viewing
-        if not entry and slot == "approval" and att.get("submission") and not att.get("approval") and (att.get("submission") or {}).get("legacy"):
+        # Fallback 1: If approval or NOC part slot requested, and record has legacy submission slot, allow viewing
+        if not entry and (slot == "approval" or slot in attachments.NOC_SLOTS) and att.get("submission") and not att.get("approval") and (att.get("submission") or {}).get("legacy"):
             entry = att.get("submission")
         # Fallback 2: Check any legacy/drive column on record
-        if not entry and slot in ("submission", "approval"):
+        if not entry and slot in attachments.SLOTS:
             fallback_url = rec.get("fileLocation") or rec.get("driveLink") or rec.get("drive_link") or rec.get("link")
             if fallback_url:
                 entry = {"url": attachments._clean_link(fallback_url), "legacy": True}
