@@ -75,7 +75,12 @@ def normalize_attachments(data):
     has_noc_part = any(ns in result for ns in NOC_SLOTS)
     if result[SLOT_SUBMISSION] is None and not has_noc_part:
         legacy = _clean_link(data.get("fileLocation"))
-        if legacy:
+        app_entry = result.get(SLOT_APPROVAL) or {}
+        app_url = _clean_link(app_entry.get("url"))
+        app_fid = app_entry.get("file_id") or extract_file_id(app_url)
+        leg_fid = extract_file_id(legacy)
+        is_same = bool((legacy and legacy == app_url) or (app_fid and leg_fid and app_fid == leg_fid))
+        if legacy and not is_same:
             result[SLOT_SUBMISSION] = {"url": legacy, "legacy": True}
     return result
 

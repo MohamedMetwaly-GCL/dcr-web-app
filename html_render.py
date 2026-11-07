@@ -12733,12 +12733,12 @@ function dtHasReplyCycle(dt){{
   
   const curTabStr = (typeof state !== 'undefined' && state.tab) ? String(state.tab).trim().toUpperCase() : '';
   const code = String(dt.code || dt.id || curTabStr).trim().toUpperCase();
-  const codes = ['SD','DS','MS','IR','MIR','RFI','NOC','ABD','WN','NCN','NCR','EI','SI','CVI','PCQ','SVP'];
+  const codes = ['SD','DS','MS','IR','MIR','RFI','NOC','ABD','WN','NCN','NCR'];
   if(codes.includes(code)) return true;
   
   const name = String(dt.name || '').trim().toLowerCase();
-  if(['requisition','purchase','letter','correspondence','minutes','mom','daily report','site log','boq','specs','variation'].some(h=>name.includes(h))) return false;
-  if(['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built','work notice','work notification','works notice','non-conformance','non conformance','instruction'].some(h=>name.includes(h))) return true;
+  if(['instruction','site instruction','engineer instruction','verbal instruction','requisition','purchase','letter','correspondence','minutes','mom','daily report','site log','boq','specs','variation','safety violation'].some(h=>name.includes(h))) return false;
+  if(['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built','work notice','work notification','works notice','non-conformance','non conformance'].some(h=>name.includes(h))) return true;
   
   if(typeof state !== 'undefined' && Array.isArray(state.cols)){{
     const hasReplyCol = state.cols.some(c => {{
@@ -13514,6 +13514,13 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
       sub = null;
     }} else if(kind === 'doc'){{
       sub = {{...sub, file_name: sub.file_name || 'Document', legacy: true, is_flat_doc: true}};
+    }}
+  }}
+  if(sub && app){{
+    const subUrl = String(sub.url || '').trim().toLowerCase();
+    const appUrl = String(app.url || '').trim().toLowerCase();
+    if(sub.legacy || subUrl === appUrl || (sub.file_id && app.file_id && sub.file_id === app.file_id)){{
+      sub = null;
     }}
   }}
   return {{submission: sub, approval: app, is_flat_doc: Boolean(sub && sub.is_flat_doc)}};
