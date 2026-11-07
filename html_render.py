@@ -4206,6 +4206,14 @@ function selectWorkspace(wsId,e){
   } catch(e){}
 })();
 if(localStorage.getItem('dcr_dark'))applyDarkMode(true);
+try {
+  if (new URLSearchParams(window.location.search).get('openAdmin') === '1') {
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => { if (typeof openAdmin === 'function') openAdmin(); }, 150);
+    });
+    setTimeout(() => { if (typeof openAdmin === 'function') openAdmin(); }, 350);
+  }
+} catch(e) {}
 function toast(msg,type=''){
   const t=document.getElementById('toast');
   t.textContent=msg;t.className='show '+(type||'');
@@ -7213,9 +7221,14 @@ def render_launchpad(u):
     role_labels = {
         "superadmin": "SUPER ADMIN",
         "admin": "DEPARTMENT ADMIN",
-        "editor": "DOCUMENT CONTROL ENGINEER",
-        "viewer": "AUTHORIZED VIEWER",
+        "editor": "DOCUMENT CONTROL • EDITOR",
+        "viewer": "DOCUMENT CONTROL • VIEWER",
     }
+    can_admin = (role in ("superadmin", "admin"))
+    admin_btn_html = '''<a href="/?openAdmin=1" class="hub-admin-btn" title="Open Enterprise Admin Panel">
+        <span>⚙️</span>
+        <span>Admin</span>
+      </a>''' if can_admin else ''
     role_tag = role_labels.get(role, role.upper())
     parts = [p for p in uname.replace(".", " ").replace("_", " ").replace("-", " ").split() if p]
     if len(parts) >= 2:
@@ -7575,48 +7588,49 @@ body.dark #view-hub {{
 
 .hub-v-divider {{
   width: 1px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.18);
+  height: 28px;
+  background: rgba(255, 255, 255, 0.22);
 }}
 
 .valmore-hub-brand {{
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }}
 
 .vhb-icon {{
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   background: #ffffff;
   color: #0f1d2e;
-  border-radius: 4px;
+  border-radius: 5px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 900;
-  font-size: 12px;
+  font-size: 15px;
 }}
 
 .vhb-name {{
   font-family: Georgia, serif;
-  font-size: 15px;
-  color: #cbd5e1;
-  letter-spacing: 0.4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+  line-height: 1;
 }}
 
 .vhb-tag {{
-  font-size: 7.5px;
+  font-size: 8.5px;
   font-weight: 800;
-  letter-spacing: 1.8px;
-  color: #94a3b8;
-  margin-left: 2px;
+  letter-spacing: 2px;
+  color: #7ec832;
+  margin-left: 3px;
 }}
 
 .hub-center-group {{
   display: flex;
   align-items: center;
-  gap: 10px;
 }}
 
 .hub-subtitle-pill {{
@@ -7633,25 +7647,28 @@ body.dark #view-hub {{
   letter-spacing: 0.3px;
 }}
 
-.hub-live-badge {{
+.hub-admin-btn {{
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f8fafc;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 600;
-  color: #cbd5e1;
+  text-decoration: none;
+  font-family: inherit;
 }}
 
-.hub-live-pulse {{
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 6px #10b981;
+.hub-admin-btn:hover {{
+  background: rgba(126, 200, 50, 0.2);
+  border-color: #7ec832;
+  color: #a3e635;
+  transform: translateY(-1px);
 }}
 
 .hub-user-corner {{
@@ -8246,13 +8263,10 @@ body.dark .hc-status-pill.active {{
       <div class="hub-subtitle-pill">
         <span>🏢 Enterprise Document Control Hub</span>
       </div>
-      <div class="hub-live-badge">
-        <span class="hub-live-pulse"></span>
-        <span>Cloud Sync Active</span>
-      </div>
     </div>
 
     <div class="hub-user-corner">
+      {admin_btn_html}
       <button class="hub-theme-toggle" onclick="toggleHubTheme()" id="hub-theme-btn" title="Toggle Light / Dark Mode">
         <span id="hub-theme-ico">🌙</span>
         <span id="hub-theme-txt">Dark Mode</span>
@@ -8302,7 +8316,7 @@ body.dark .hc-status-pill.active {{
 
 <script>
 (function initHubTheme() {{
-  if (localStorage.getItem('dcr-dark') === '1') {{
+  if (localStorage.getItem('dcr_dark')) {{
     document.body.classList.add('dark');
     const ico = document.getElementById('hub-theme-ico');
     const txt = document.getElementById('hub-theme-txt');
@@ -8313,7 +8327,7 @@ body.dark .hc-status-pill.active {{
 
 function toggleHubTheme() {{
   const isDark = document.body.classList.toggle('dark');
-  localStorage.setItem('dcr-dark', isDark ? '1' : '0');
+  localStorage.setItem('dcr_dark', isDark ? '1' : '');
   const ico = document.getElementById('hub-theme-ico');
   const txt = document.getElementById('hub-theme-txt');
   if (ico) ico.textContent = isDark ? '☀️' : '🌙';
@@ -10945,7 +10959,6 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 
   <div style="flex:1"></div>
 
-  <a href="/hub" class="tb-hub-launcher" title="Return to Company Workspaces Launchpad"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2.2"/><circle cx="12" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/><circle cx="5" cy="19" r="2.2"/><circle cx="12" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/></svg><span class="tb-btn-text">Workspaces</span></a>
   <a href="/?ws={active_ws}" class="tb-btn">📊<span class="tb-btn-text"> Dashboard</span></a>
   <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
   <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
