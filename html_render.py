@@ -2852,6 +2852,14 @@ def _workspace_switcher_html(u, active_ws_id=None):
         dropdown_html = ""
 
     return f'''
+    <a href="/hub" class="tb-hub-launcher" title="Return to Company Workspaces Launchpad">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="5" cy="5" r="2.2"/><circle cx="12" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/>
+        <circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/>
+        <circle cx="5" cy="19" r="2.2"/><circle cx="12" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/>
+      </svg>
+      <span class="tb-btn-text">Workspaces</span>
+    </a>
     <div class="ws-switcher" id="ws-switcher" data-active-ws="{current_id}">
       <button class="{btn_class}" {btn_onclick} title="Active Workspace: {current_ws.get('name', 'Engineering & Projects')}">
         <span class="ws-icon">{current_ws.get('icon', '📁')}</span>
@@ -3021,6 +3029,36 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   font-size:10px;font-weight:800;color:#fff;flex-shrink:0;
 }
 .topbar-title-short{display:none}
+
+/* ── 9-Dots App Launcher (Return to Workspaces Launchpad) ── */
+.tb-hub-launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #f8fafc;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.tb-hub-launcher:hover {
+  background: rgba(126, 200, 50, 0.18);
+  border-color: #7ec832;
+  color: #a3e635;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(126, 200, 50, 0.2);
+}
+.tb-hub-launcher svg {
+  flex-shrink: 0;
+}
 
 /* ── Workspace Switcher (Topbar) ── */
 .ws-switcher {
@@ -6133,7 +6171,7 @@ async function login(){{
     const r=await fetch('/login',{{method:'POST',credentials:'include',
       headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{username:un,password:pw}})}});
     const d=await r.json();
-    if(d.ok) window.location='/';
+    if(d.ok) window.location=d.redirect_to||'/';
     else{{
       err.textContent=d.error||'Invalid credentials';
       err.style.display='block';
@@ -7154,6 +7192,1167 @@ function omAuditPage(dir) {{
 }}
 </script>
 </body></html>'''
+
+
+def render_launchpad(u):
+    """Render the executive Company Workspaces Launchpad (8-Department Grid Hub)."""
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    logo_name = "logo-login.png"
+    logo_file = os.path.join(static_dir, logo_name)
+    try:
+        logo_ver = str(int(os.path.getmtime(logo_file))) if os.path.exists(logo_file) else "1"
+        logo_src = url_for("static", filename=logo_name) + f"?v={logo_ver}"
+    except Exception:
+        logo_src = "/static/logo-login.png"
+
+    uname = (u or {}).get("username", "guest")
+    role = str((u or {}).get("role", "viewer")).strip().lower()
+    is_super = (role == "superadmin")
+    primary_ws = str((u or {}).get("primary_workspace") or "ENG").strip().upper()
+
+    role_labels = {
+        "superadmin": "SUPER ADMIN",
+        "admin": "DEPARTMENT ADMIN",
+        "editor": "DOCUMENT CONTROL ENGINEER",
+        "viewer": "AUTHORIZED VIEWER",
+    }
+    role_tag = role_labels.get(role, role.upper())
+    parts = [p for p in uname.replace(".", " ").replace("_", " ").replace("-", " ").split() if p]
+    if len(parts) >= 2:
+        avatar_txt = (parts[0][0] + parts[1][0]).upper()
+    elif parts:
+        avatar_txt = parts[0][:2].upper()
+    else:
+        avatar_txt = "U"
+
+    # Fetch all active company workspaces
+    try:
+        all_ws = db.get_workspaces(active_only=True) if hasattr(db, "get_workspaces") else []
+    except Exception:
+        all_ws = []
+
+    default_meta = {
+        "ENG": {
+            "code": "ENG", "name": "Engineering & Projects", "icon": "🏗️",
+            "desc": "EPC Submittals, Drawings, Material Approvals, IR, MIR, RFI & NOC Variation Orders.",
+            "bar": "linear-gradient(90deg, #7ec832, #00b4a6)", "glow": "rgba(126, 200, 50, 0.22)",
+            "codeColor": "#7ec832", "iconBg": "rgba(126, 200, 50, 0.12)", "iconBorder": "rgba(126, 200, 50, 0.35)",
+            "lbl1": "Projects", "lbl2": "Submittals"
+        },
+        "OM": {
+            "code": "O&M", "name": "Operation & Maintenance (O&M)", "icon": "⚙️",
+            "desc": "Facilities maintenance contracts, Work Orders, PPM schedules and SLA compliance metrics.",
+            "bar": "linear-gradient(90deg, #00b4a6, #38bdf8)", "glow": "rgba(0, 180, 166, 0.22)",
+            "codeColor": "#00b4a6", "iconBg": "rgba(0, 180, 166, 0.12)", "iconBorder": "rgba(0, 180, 166, 0.35)",
+            "lbl1": "Contracts", "lbl2": "Records"
+        },
+        "HR": {
+            "code": "HR", "name": "Human Resources", "icon": "👥",
+            "desc": "Personnel archives, employee onboarding, credential files, attendance and corporate policies.",
+            "bar": "linear-gradient(90deg, #8b5cf6, #ec4899)", "glow": "rgba(139, 92, 246, 0.22)",
+            "codeColor": "#8b5cf6", "iconBg": "rgba(139, 92, 246, 0.12)", "iconBorder": "rgba(139, 92, 246, 0.35)",
+            "lbl1": "Registers", "lbl2": "Documents"
+        },
+        "FIN": {
+            "code": "FIN", "name": "Finance & Accounting", "icon": "💰",
+            "desc": "Interim Payment Certificates (IPC), subcontractor invoices, project budgets and cost audits.",
+            "bar": "linear-gradient(90deg, #f59e0b, #fbbf24)", "glow": "rgba(245, 158, 11, 0.22)",
+            "codeColor": "#d97706", "iconBg": "rgba(245, 158, 11, 0.12)", "iconBorder": "rgba(245, 158, 11, 0.35)",
+            "lbl1": "Registers", "lbl2": "Documents"
+        },
+        "PROC": {
+            "code": "PROC", "name": "Procurement", "icon": "🛒",
+            "desc": "Purchase Orders (PO), vendor quotations, material requisition packages and approved suppliers.",
+            "bar": "linear-gradient(90deg, #06b6d4, #3b82f6)", "glow": "rgba(6, 182, 212, 0.22)",
+            "codeColor": "#06b6d4", "iconBg": "rgba(6, 182, 212, 0.12)", "iconBorder": "rgba(6, 182, 212, 0.35)",
+            "lbl1": "Registers", "lbl2": "Documents"
+        },
+        "WH": {
+            "code": "WH", "name": "Warehousing", "icon": "🏬",
+            "desc": "Central store inventory, Material Receipt Notes (MRN), site dispatch and stock balances.",
+            "bar": "linear-gradient(90deg, #eab308, #84cc16)", "glow": "rgba(234, 179, 8, 0.22)",
+            "codeColor": "#ca8a04", "iconBg": "rgba(234, 179, 8, 0.12)", "iconBorder": "rgba(234, 179, 8, 0.35)",
+            "lbl1": "Registers", "lbl2": "Documents"
+        },
+        "HSE": {
+            "code": "HSE", "name": "Health, Safety & Environment (HSE)", "icon": "🛡️",
+            "desc": "Occupational safety audits, site inspection checklists, incident registers and ISO certifications.",
+            "bar": "linear-gradient(90deg, #10b981, #059669)", "glow": "rgba(16, 185, 129, 0.22)",
+            "codeColor": "#10b981", "iconBg": "rgba(16, 185, 129, 0.12)", "iconBorder": "rgba(16, 185, 129, 0.35)",
+            "lbl1": "Registers", "lbl2": "Documents"
+        },
+        "TND": {
+            "code": "TND", "name": "Tendering", "icon": "📑",
+            "desc": "Tender submissions, BOQ bill of quantities, tender addendums, commercial bids and award tracking.",
+            "bar": "linear-gradient(90deg, #6366f1, #a855f7)", "glow": "rgba(99, 102, 241, 0.22)",
+            "codeColor": "#6366f1", "iconBg": "rgba(99, 102, 241, 0.12)", "iconBorder": "rgba(99, 102, 241, 0.35)",
+            "lbl1": "Registers", "lbl2": "Documents"
+        },
+    }
+
+    if not all_ws:
+        all_ws = [
+            {"id": k, "code": v["code"], "name": v["name"], "icon": v["icon"], "description": v["desc"]}
+            for k, v in default_meta.items()
+        ]
+
+    # Fetch user's authorized workspaces
+    try:
+        user_ws = db.get_user_workspaces(uname) if u and hasattr(db, "get_user_workspaces") else []
+    except Exception:
+        user_ws = []
+    allowed_ids = {str(w.get("id", "")).strip().upper() for w in user_ws}
+    if is_super:
+        allowed_ids = {str(w.get("id", "")).strip().upper() for w in all_ws}
+    elif not allowed_ids and primary_ws:
+        allowed_ids = {primary_ws}
+
+    # Fetch live record counts per project in one fast query
+    rec_counts_by_proj = {}
+    try:
+        rows = db.q("SELECT project_id, COUNT(*) as c FROM records GROUP BY project_id") or []
+        for r in rows:
+            if isinstance(r, dict) and r.get("project_id"):
+                rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
+    except Exception:
+        pass
+
+    cards_html_list = []
+    palette_cycle = list(default_meta.values())
+
+    for idx, ws in enumerate(all_ws):
+        ws_id = str(ws.get("id") or "").strip()
+        ws_id_up = ws_id.upper()
+        ws_code = str(ws.get("code") or ws_id).strip()
+        ws_name = str(ws.get("name") or ws_id).strip()
+        meta = default_meta.get(ws_id_up) or default_meta.get(ws_code.upper()) or palette_cycle[idx % len(palette_cycle)]
+
+        ws_icon = str(ws.get("icon") or "").strip()
+        if not ws_icon or ws_icon == "📁":
+            ws_icon = meta["icon"]
+
+        ws_desc = str(ws.get("description") or "").strip()
+        if not ws_desc or ws_desc in ("EPC & Site Submittals", "Facilities & Maintenance Contracts"):
+            ws_desc = meta["desc"]
+
+        is_lit = (ws_id_up in allowed_ids) or is_super
+        is_primary = (ws_id_up == primary_ws)
+
+        if is_lit:
+            try:
+                ws_projs = db.get_projects_for_user(uname, role, workspace_id=ws_id) if u else []
+            except Exception:
+                ws_projs = []
+            proj_cnt = len(ws_projs)
+            doc_cnt = sum(rec_counts_by_proj.get(p.get("id"), 0) for p in ws_projs)
+            val1 = f"{proj_cnt:,}"
+            val2 = f"{doc_cnt:,}"
+        else:
+            val1 = "&mdash;"
+            val2 = "&mdash;"
+
+        lbl1 = meta.get("lbl1", "Registers")
+        lbl2 = meta.get("lbl2", "Documents")
+        card_cls = "lit" if is_lit else "dimmed"
+        primary_badge = '<span class="hc-primary-pill">★ Primary</span>' if (is_primary and is_lit) else ''
+        status_badge = '<span class="hc-status-pill active">● Active</span>' if is_lit else '<span class="hc-status-pill locked">🔒 Locked</span>'
+
+        if is_lit:
+            onclick_attr = f"window.location.href='/?ws={ws_id}'"
+            action_html = """<button class="btn-enter-workspace" type="button">
+                <span>Enter Workspace</span>
+                <span class="btn-enter-arrow">➔</span>
+              </button>"""
+        else:
+            onclick_attr = "notifyRestrictedToast()"
+            action_html = """<button class="btn-enter-workspace" type="button" disabled>
+                <span>🔒 Restricted Access</span>
+                <span>&times;</span>
+              </button>
+              <div class="dim-tooltip">🔒 Access Restricted: Contact System Administrator to request permissions</div>"""
+
+        cards_html_list.append(f"""
+        <div class="h-card {card_cls}" data-ws-id="{ws_id}" data-lit="{'1' if is_lit else '0'}"
+             style="--card-bar:{meta['bar']};--card-glow:{meta['glow']};--card-code-color:{meta['codeColor']};--icon-bg:{meta['iconBg']};--icon-border:{meta['iconBorder']};"
+             onclick="{onclick_attr}">
+          <div>
+            <div class="hc-top">
+              <div class="hc-icon-title">
+                <div class="hc-icon">{ws_icon}</div>
+                <div class="hc-meta">
+                  <div style="display:flex;align-items:center;gap:5px;">
+                    <span class="hc-code">{ws_code}</span>
+                    {primary_badge}
+                  </div>
+                  <span class="hc-title">{ws_name}</span>
+                </div>
+              </div>
+              <div style="flex-shrink:0;">
+                {status_badge}
+              </div>
+            </div>
+            <div class="hc-desc">{ws_desc}</div>
+            <div class="hc-kpi-row">
+              <div class="hc-kpi-cell">
+                <div class="hc-kpi-num">{val1}</div>
+                <div class="hc-kpi-lbl">{lbl1}</div>
+              </div>
+              <div class="hc-kpi-cell">
+                <div class="hc-kpi-num">{val2}</div>
+                <div class="hc-kpi-lbl">{lbl2}</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            {action_html}
+          </div>
+        </div>
+        """)
+
+    cards_html = "\n".join(cards_html_list)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gas Chill &amp; Valmore &mdash; Company Workspaces Launchpad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {{
+  --brand-navy: #1a2f4e;
+  --brand-navy-dark: #0f1d2e;
+  --brand-navy-deep: #08111d;
+  --brand-lime: #7ec832;
+  --brand-teal: #00b4a6;
+  --bg-app-color: #f4f6fa;
+  --bg-app-pattern: radial-gradient(rgba(26, 47, 78, 0.06) 1px, transparent 1px);
+  --shell-bg: #0f2640;
+  --shell-border: rgba(255, 255, 255, 0.12);
+  --page-title-color: #0f1d2e;
+  --page-sub-color: #475569;
+  --card-lit-bg: #ffffff;
+  --card-lit-border: #dbe4ef;
+  --card-lit-shadow: 0 8px 24px -4px rgba(26, 47, 78, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+  --card-lit-shadow-hover: 0 16px 36px -6px rgba(26, 47, 78, 0.16), 0 0 20px -2px rgba(126, 200, 50, 0.25);
+  --card-dim-bg: #e7edf5;
+  --card-dim-border: #cbd6e4;
+  --card-dim-title: #475569;
+  --card-dim-text: #64748b;
+  --card-dim-num: #64748b;
+  --text-main: #0f1d2e;
+  --text-sub: #475569;
+  --text-muted: #64748b;
+  --kpi-pill-bg: #f8fafc;
+  --kpi-pill-border: #e2e8f0;
+  --btn-enter-bg: linear-gradient(135deg, #1a2f4e 0%, #0f1d2e 100%);
+  --btn-enter-border: 1px solid #1a2f4e;
+  --btn-enter-text: #ffffff;
+  --btn-enter-hover-bg: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  --btn-enter-hover-border: 1px solid #10b981;
+  --btn-enter-hover-text: #ffffff;
+  --btn-locked-bg: #dde4ee;
+  --btn-locked-text: #64748b;
+  --footer-bg: #e6ecf4;
+  --footer-border: #d4dde8;
+  --footer-text: #64748b;
+}}
+
+body.dark {{
+  --bg-app-color: #070d17;
+  --bg-app-pattern: radial-gradient(rgba(126, 200, 50, 0.07) 1px, transparent 1px);
+  --shell-bg: #091320;
+  --shell-border: rgba(255, 255, 255, 0.08);
+  --page-title-color: #FFFFFF;
+  --page-sub-color: #CBD5E1;
+  --card-lit-bg: linear-gradient(145deg, rgba(22, 38, 61, 0.92) 0%, rgba(13, 24, 40, 0.98) 100%);
+  --card-lit-border: rgba(255, 255, 255, 0.12);
+  --card-lit-shadow: 0 10px 24px -6px rgba(0, 0, 0, 0.6), 0 0 16px -2px rgba(126, 200, 50, 0.12);
+  --card-lit-shadow-hover: 0 16px 36px -6px rgba(0, 0, 0, 0.75), 0 0 24px -2px rgba(126, 200, 50, 0.35);
+  --card-dim-bg: rgba(13, 23, 38, 0.72);
+  --card-dim-border: rgba(255, 255, 255, 0.08);
+  --card-dim-title: #94A3B8;
+  --card-dim-text: #64748B;
+  --card-dim-num: #64748B;
+  --text-main: #f8fafc;
+  --text-sub: #cbd5e1;
+  --text-muted: #8da2bb;
+  --kpi-pill-bg: rgba(7, 13, 22, 0.6);
+  --kpi-pill-border: rgba(255, 255, 255, 0.06);
+  --btn-enter-bg: linear-gradient(135deg, rgba(5, 150, 105, 0.22) 0%, rgba(15, 23, 42, 0.9) 100%);
+  --btn-enter-border: 1px solid rgba(52, 211, 153, 0.4);
+  --btn-enter-text: #34D399;
+  --btn-enter-hover-bg: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  --btn-enter-hover-border: 1px solid #10b981;
+  --btn-enter-hover-text: #ffffff;
+  --btn-locked-bg: rgba(255, 255, 255, 0.03);
+  --btn-locked-text: #94A3B8;
+  --footer-bg: #060b13;
+  --footer-border: rgba(255, 255, 255, 0.06);
+  --footer-text: #64748B;
+  background-color: #070d17 !important;
+}}
+
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+html, body {{
+  min-height: 100vh;
+  width: 100vw;
+  overflow-x: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-app-color);
+  color: var(--text-main);
+  transition: background-color 0.25s ease, color 0.25s ease;
+  -webkit-font-smoothing: antialiased;
+}}
+
+#view-hub {{
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #f4f6fa;
+  background-image: radial-gradient(rgba(26, 47, 78, 0.06) 1px, transparent 1px);
+  background-size: 26px 26px;
+  transition: background-color 0.25s ease;
+}}
+
+body.dark #view-hub {{
+  background-color: #070d17 !important;
+  background-image:
+    radial-gradient(rgba(126, 200, 50, 0.07) 1px, transparent 1px),
+    radial-gradient(circle at 50% 12%, #15263d 0%, #0b1422 65%, #070d17 100%) !important;
+  background-size: 26px 26px, 100% 100% !important;
+  background-repeat: repeat, no-repeat !important;
+}}
+
+.hub-header {{
+  height: 54px;
+  background: var(--shell-bg);
+  border-bottom: 1px solid var(--shell-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+}}
+
+.hub-brand-cluster {{
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}}
+
+.gc-brand-box {{
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}}
+
+.gc-brand-box img {{
+  height: 28px;
+  width: auto;
+  object-fit: contain;
+}}
+
+.gc-brand-text {{
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.3px;
+  color: #ffffff;
+  line-height: 1;
+}}
+
+.gc-brand-text span {{
+  display: block;
+  font-size: 7.5px;
+  font-weight: 700;
+  color: #7ec832;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  margin-top: 3px;
+}}
+
+.hub-v-divider {{
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.18);
+}}
+
+.valmore-hub-brand {{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}}
+
+.vhb-icon {{
+  width: 18px;
+  height: 18px;
+  background: #ffffff;
+  color: #0f1d2e;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 12px;
+}}
+
+.vhb-name {{
+  font-family: Georgia, serif;
+  font-size: 15px;
+  color: #cbd5e1;
+  letter-spacing: 0.4px;
+}}
+
+.vhb-tag {{
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  color: #94a3b8;
+  margin-left: 2px;
+}}
+
+.hub-center-group {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}}
+
+.hub-subtitle-pill {{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(126, 200, 50, 0.12);
+  border: 1px solid rgba(126, 200, 50, 0.3);
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #a3e635;
+  letter-spacing: 0.3px;
+}}
+
+.hub-live-badge {{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #cbd5e1;
+}}
+
+.hub-live-pulse {{
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}}
+
+.hub-user-corner {{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}}
+
+.hub-theme-toggle {{
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+  font-family: inherit;
+}}
+
+.hub-theme-toggle:hover {{
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-color: #7ec832;
+}}
+
+.hub-u-info {{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}}
+
+.hub-avatar {{
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #7ec832, #00b4a6);
+  color: #0b1422;
+  font-weight: 900;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}}
+
+.hub-u-text {{
+  display: flex;
+  flex-direction: column;
+}}
+
+.hub-u-name {{
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+}}
+
+.hub-u-role {{
+  font-size: 9px;
+  font-weight: 800;
+  color: #7ec832;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}}
+
+.hub-signout-btn {{
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+}}
+
+.hub-signout-btn:hover {{
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}}
+
+.hub-content-wrap {{
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 12px 24px 14px;
+}}
+
+.hub-headline-bar {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}}
+
+.hub-headline-bar h1 {{
+  font-size: 19px;
+  font-weight: 900;
+  color: var(--page-title-color);
+  letter-spacing: -0.3px;
+}}
+
+.hub-headline-bar p {{
+  font-size: 11.5px;
+  color: var(--page-sub-color);
+  margin-top: 3px;
+  font-weight: 500;
+}}
+
+.hub-legend {{
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--card-lit-bg);
+  border: 1px solid var(--card-lit-border);
+  padding: 5px 12px;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}}
+
+.legend-lit {{
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #16a34a;
+  font-weight: 700;
+}}
+
+body.dark .legend-lit {{
+  color: #34d399;
+}}
+
+.legend-lit::before {{
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}}
+
+.legend-dim {{
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #64748b;
+  font-weight: 600;
+}}
+
+.hub-grid-8 {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  flex: 1;
+}}
+
+@media (min-width: 1240px) {{
+  .hub-grid-8 {{
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 1fr;
+    max-height: calc(100vh - 150px);
+  }}
+}}
+
+.h-card {{
+  border-radius: 12px;
+  padding: 13px 15px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}}
+
+.h-card.lit {{
+  background: var(--card-lit-bg);
+  border: 1.5px solid var(--card-lit-border);
+  box-shadow: var(--card-lit-shadow);
+  cursor: pointer;
+}}
+
+.h-card.lit::before {{
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5px;
+  background: var(--card-bar, linear-gradient(90deg, #7ec832, #00b4a6));
+}}
+
+.h-card.lit::after {{
+  content: '';
+  position: absolute;
+  top: -35px;
+  right: -35px;
+  width: 100px;
+  height: 100px;
+  background: radial-gradient(circle, var(--card-glow, rgba(126, 200, 50, 0.14)) 0%, transparent 70%);
+  pointer-events: none;
+}}
+
+.h-card.lit:hover {{
+  transform: translateY(-4px);
+  box-shadow: var(--card-lit-shadow-hover);
+}}
+
+.h-card.lit:hover .btn-enter-arrow {{
+  transform: translateX(4px);
+}}
+
+.h-card.lit:hover .hc-icon {{
+  transform: scale(1.08);
+}}
+
+.h-card.dimmed {{
+  background: var(--card-dim-bg);
+  border: 1px solid var(--card-dim-border);
+  cursor: not-allowed;
+  user-select: none;
+}}
+
+body.dark .h-card.dimmed {{
+  background: rgba(13, 23, 38, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}}
+
+.h-card.dimmed:hover {{
+  border-color: rgba(245, 158, 11, 0.4) !important;
+}}
+
+.hc-top {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  gap: 6px;
+}}
+
+.hc-icon-title {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}}
+
+.hc-icon {{
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}}
+
+.h-card.lit .hc-icon {{
+  background: var(--icon-bg, rgba(126, 200, 50, 0.12));
+  border: 1px solid var(--icon-border, rgba(126, 200, 50, 0.35));
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}}
+
+.h-card.dimmed .hc-icon {{
+  background: rgba(100, 116, 139, 0.1);
+  border: 1px solid rgba(100, 116, 139, 0.2);
+  color: var(--card-dim-title);
+  opacity: 0.7;
+}}
+
+.hc-meta {{
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}}
+
+.hc-code {{
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--card-code-color, var(--brand-teal));
+  letter-spacing: 0.6px;
+}}
+
+.h-card.dimmed .hc-code {{
+  color: var(--card-dim-text);
+}}
+
+.hc-title {{
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.15;
+}}
+
+.h-card.dimmed .hc-title {{
+  color: var(--card-dim-title);
+  opacity: 0.85;
+}}
+
+body.dark .h-card.dimmed .hc-title {{
+  color: #94A3B8 !important;
+  opacity: 1 !important;
+}}
+
+body.dark .h-card.dimmed .hc-desc {{
+  color: #64748B !important;
+  opacity: 1 !important;
+}}
+
+body.dark .h-card.dimmed .hc-icon {{
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  opacity: 0.75 !important;
+}}
+
+body.dark .h-card.dimmed .hc-code {{
+  color: #64748B !important;
+  opacity: 1 !important;
+}}
+
+body.dark .h-card.dimmed .hc-status-pill.locked {{
+  background: rgba(245, 158, 11, 0.12) !important;
+  color: #F59E0B !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}}
+
+body.dark .h-card.dimmed .btn-enter-workspace {{
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #94A3B8 !important;
+}}
+
+.hc-status-pill {{
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2.5px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}}
+
+.hc-primary-pill {{
+  font-size: 8.5px;
+  font-weight: 800;
+  background: rgba(234, 179, 8, 0.16);
+  color: #b45309;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  padding: 1.5px 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}}
+
+body.dark .hc-primary-pill {{
+  background: rgba(234, 179, 8, 0.2);
+  color: #facc15;
+  border-color: rgba(234, 179, 8, 0.45);
+}}
+
+.hc-status-pill.active {{
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  border: 1px solid rgba(22, 163, 74, 0.3);
+}}
+
+body.dark .hc-status-pill.active {{
+  background: rgba(5, 150, 105, 0.18);
+  color: #34d399;
+  border-color: rgba(5, 150, 105, 0.4);
+}}
+
+.hc-status-pill.locked {{
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--card-dim-text);
+  border: 1px solid rgba(100, 116, 139, 0.25);
+}}
+
+.hc-desc {{
+  font-size: 10.5px;
+  color: var(--text-sub);
+  line-height: 1.38;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}}
+
+.h-card.dimmed .hc-desc {{
+  color: var(--card-dim-text);
+}}
+
+.hc-kpi-row {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--kpi-pill-bg);
+  border: 1px solid var(--kpi-pill-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 9px;
+}}
+
+.hc-kpi-cell {{
+  text-align: center;
+}}
+
+.hc-kpi-num {{
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-main);
+  font-family: 'IBM Plex Mono', monospace;
+  line-height: 1.1;
+}}
+
+.h-card.dimmed .hc-kpi-num {{
+  color: var(--card-dim-num);
+}}
+
+.hc-kpi-lbl {{
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-top: 1px;
+}}
+
+.h-card.dimmed .hc-kpi-lbl {{
+  color: var(--card-dim-text);
+}}
+
+.btn-enter-workspace {{
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.18s ease;
+  font-family: inherit;
+}}
+
+.btn-enter-arrow {{
+  display: inline-block;
+  transition: transform 0.2s ease;
+}}
+
+.h-card.lit .btn-enter-workspace {{
+  background: var(--btn-enter-bg);
+  border: var(--btn-enter-border);
+  color: var(--btn-enter-text);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}}
+
+.h-card.lit:hover .btn-enter-workspace {{
+  background: var(--btn-enter-hover-bg) !important;
+  border: var(--btn-enter-hover-border) !important;
+  color: var(--btn-enter-hover-text) !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3) !important;
+}}
+
+.h-card.dimmed .btn-enter-workspace {{
+  background: var(--btn-locked-bg);
+  color: var(--btn-locked-text);
+  border: 1px solid var(--card-dim-border);
+  cursor: not-allowed;
+}}
+
+.hub-bottom-strip {{
+  height: 28px;
+  background: var(--footer-bg);
+  border-top: 1px solid var(--footer-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  font-size: 10px;
+  color: var(--footer-text);
+  flex-shrink: 0;
+}}
+
+.dim-tooltip {{
+  position: absolute;
+  bottom: 42px;
+  left: 10px;
+  right: 10px;
+  background: #0f172a;
+  border: 1px solid #f59e0b;
+  color: #fef3c7;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+  line-height: 1.35;
+}}
+
+.h-card.dimmed:hover .dim-tooltip {{
+  opacity: 1;
+  transform: translateY(0);
+}}
+
+#toast-box {{
+  position: fixed;
+  bottom: 36px;
+  right: 24px;
+  background: #0f172a;
+  border-left: 4px solid #7ec832;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.22s ease;
+  pointer-events: none;
+  z-index: 20000;
+}}
+
+#toast-box.show {{
+  opacity: 1;
+  transform: translateY(0);
+}}
+
+@media (max-width: 768px) {{
+  .hub-center-group {{ display: none; }}
+  .hub-header {{ padding: 0 14px; }}
+  .hub-content-wrap {{ padding: 12px 14px; }}
+  .hub-bottom-strip {{ flex-direction: column; height: auto; padding: 6px 14px; gap: 2px; text-align: center; }}
+}}
+</style>
+</head>
+<body>
+<div id="view-hub">
+  <header class="hub-header">
+    <div class="hub-brand-cluster">
+      <div class="gc-brand-box">
+        <img src="{logo_src}" alt="Gas Chill Logo" onerror="this.style.display='none'">
+        <div class="gc-brand-text">
+          GAS CHILL
+          <span>Energy. Redefined.</span>
+        </div>
+      </div>
+      <div class="hub-v-divider"></div>
+      <div class="valmore-hub-brand">
+        <div class="vhb-icon">V</div>
+        <span class="vhb-name">Valmore</span>
+        <span class="vhb-tag">HOLDING</span>
+      </div>
+    </div>
+
+    <div class="hub-center-group">
+      <div class="hub-subtitle-pill">
+        <span>🏢 Enterprise Document Control Hub</span>
+      </div>
+      <div class="hub-live-badge">
+        <span class="hub-live-pulse"></span>
+        <span>Cloud Sync Active</span>
+      </div>
+    </div>
+
+    <div class="hub-user-corner">
+      <button class="hub-theme-toggle" onclick="toggleHubTheme()" id="hub-theme-btn" title="Toggle Light / Dark Mode">
+        <span id="hub-theme-ico">🌙</span>
+        <span id="hub-theme-txt">Dark Mode</span>
+      </button>
+
+      <div class="hub-u-info">
+        <div class="hub-avatar">{avatar_txt}</div>
+        <div class="hub-u-text">
+          <span class="hub-u-name">{uname}</span>
+          <span class="hub-u-role">{role_tag}</span>
+        </div>
+      </div>
+
+      <form action="/logout" method="post" style="display:inline;margin:0;">
+        <button type="submit" class="hub-signout-btn" title="Sign Out">
+          <span>🚪</span>
+          <span>Sign Out</span>
+        </button>
+      </form>
+    </div>
+  </header>
+
+  <main class="hub-content-wrap">
+    <div class="hub-headline-bar">
+      <div>
+        <h1>Company Workspaces Launchpad</h1>
+        <p>Select your authorized workspace to access live engineering registers, contracts, and submittals.</p>
+      </div>
+      <div class="hub-legend">
+        <span class="legend-lit">Authorized Workspace (Active)</span>
+        <span class="legend-dim">🔒 Restricted (Contact Administrator)</span>
+      </div>
+    </div>
+
+    <div class="hub-grid-8" id="hub-grid-cards">
+      {cards_html}
+    </div>
+  </main>
+
+  <footer class="hub-bottom-strip">
+    <span>Gas Chill &amp; Valmore Holding &mdash; Enterprise Document Control System (DCR)</span>
+    <span>Designed &amp; Developed in-house by <strong>Mohamed Metwaly</strong></span>
+  </footer>
+</div>
+
+<div id="toast-box"></div>
+
+<script>
+(function initHubTheme() {{
+  if (localStorage.getItem('dcr-dark') === '1') {{
+    document.body.classList.add('dark');
+    const ico = document.getElementById('hub-theme-ico');
+    const txt = document.getElementById('hub-theme-txt');
+    if (ico) ico.textContent = '☀️';
+    if (txt) txt.textContent = 'Light Mode';
+  }}
+}})();
+
+function toggleHubTheme() {{
+  const isDark = document.body.classList.toggle('dark');
+  localStorage.setItem('dcr-dark', isDark ? '1' : '0');
+  const ico = document.getElementById('hub-theme-ico');
+  const txt = document.getElementById('hub-theme-txt');
+  if (ico) ico.textContent = isDark ? '☀️' : '🌙';
+  if (txt) txt.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+  notifyToast(isDark ? '🌙 Switched to Dark Mode' : '☀️ Switched to Light Mode');
+}}
+
+let _toastTimer = null;
+function notifyToast(msg) {{
+  const t = document.getElementById('toast-box');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
+}}
+
+function notifyRestrictedToast() {{
+  notifyToast('🔒 Access Restricted: Contact System Administrator to request permissions');
+}}
+
+window.addEventListener('keydown', (e) => {{
+  if (['input', 'textarea'].includes((document.activeElement?.tagName || '').toLowerCase())) return;
+  const num = parseInt(e.key, 10);
+  const cards = document.querySelectorAll('#hub-grid-cards .h-card');
+  if (num >= 1 && num <= cards.length) {{
+    const card = cards[num - 1];
+    const wsId = card.getAttribute('data-ws-id');
+    const isLit = card.getAttribute('data-lit') === '1';
+    if (isLit && wsId) {{
+      window.location.href = '/?ws=' + encodeURIComponent(wsId);
+    }} else {{
+      notifyRestrictedToast();
+    }}
+  }}
+}});
+</script>
+</body>
+</html>"""
 
 def render_dashboard(u, active_ws_id=None):
     btns, uname, rlbl, rbg = _user_info_html(u)
@@ -9746,7 +10945,8 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 
   <div style="flex:1"></div>
 
-  <a href="/" class="tb-btn">📊<span class="tb-btn-text"> Dashboard</span></a>
+  <a href="/hub" class="tb-hub-launcher" title="Return to Company Workspaces Launchpad"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2.2"/><circle cx="12" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/><circle cx="5" cy="19" r="2.2"/><circle cx="12" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/></svg><span class="tb-btn-text">Workspaces</span></a>
+  <a href="/?ws={active_ws}" class="tb-btn">📊<span class="tb-btn-text"> Dashboard</span></a>
   <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
   <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>

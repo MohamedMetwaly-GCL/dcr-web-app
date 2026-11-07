@@ -602,6 +602,30 @@ def _ensure_workspaces():
         exe("UPDATE workspaces SET description = 'Facilities & Maintenance Contracts' WHERE id = 'OM' AND description IS NULL")
         exe("UPDATE workspaces SET sort_order = 1 WHERE id = 'ENG'")
         exe("UPDATE workspaces SET sort_order = 2 WHERE id = 'OM'")
+        default_depts = [
+            ('HR', 'HR', 'Human Resources', 'الموارد البشرية', '👥', 'hr', 3, 'Personnel archives, employee onboarding, credential files, attendance and corporate policies.'),
+            ('FIN', 'FIN', 'Finance & Accounting', 'المالية والحسابات', '💰', 'finance', 4, 'Interim Payment Certificates (IPC), subcontractor invoices, project budgets and cost audits.'),
+            ('PROC', 'PROC', 'Procurement', 'المشتريات والتعاقدات', '🛒', 'procurement', 5, 'Purchase Orders (PO), vendor quotations, material requisition packages and approved suppliers.'),
+            ('WH', 'WH', 'Warehousing', 'المخازن والمستودعات', '🏬', 'warehousing', 6, 'Central store inventory, Material Receipt Notes (MRN), site dispatch and stock balances.'),
+            ('HSE', 'HSE', 'Health, Safety & Environment (HSE)', 'السلامة والصحة المهنية', '🛡️', 'hse', 7, 'Occupational safety audits, site inspection checklists, incident registers and ISO certifications.'),
+            ('TND', 'TND', 'Tendering', 'العطاءات والمناقصات', '📑', 'tendering', 8, 'Tender submissions, BOQ bill of quantities, tender addendums, commercial bids and award tracking.'),
+        ]
+        for ws_id, code, name, name_ar, icon, ws_type, s_ord, desc in default_depts:
+            existing = q(
+                "SELECT id, description, icon FROM workspaces WHERE UPPER(id) = %s OR UPPER(code) = %s OR LOWER(name) = LOWER(%s) LIMIT 1",
+                (ws_id, code, name),
+                one=True
+            )
+            if not existing:
+                exe("""INSERT INTO workspaces(id, code, name, name_ar, icon, type, sort_order, is_active, description)
+                       VALUES(%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                       ON CONFLICT (id) DO NOTHING""",
+                    (ws_id, code, name, name_ar, icon, ws_type, s_ord, desc))
+            else:
+                if not (existing.get("description") or "").strip():
+                    exe("UPDATE workspaces SET description = %s WHERE id = %s", (desc, existing["id"]))
+                if not (existing.get("icon") or "").strip() or existing.get("icon") == "📁":
+                    exe("UPDATE workspaces SET icon = %s WHERE id = %s", (icon, existing["id"]))
         exe("""
             WITH ranked AS (
                 SELECT id, ROW_NUMBER() OVER (ORDER BY created_at, id) + 2 as new_order

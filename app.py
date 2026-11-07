@@ -5,7 +5,7 @@ import db
 from utils import get_next_doc_no, get_next_plain_doc_no, doc_type_uses_revision
 
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
-from html_render import render_login, render_dashboard, render_register
+from html_render import render_login, render_launchpad, render_dashboard, render_register
 from security import validate_username, login_limiter, get_client_ip
 from blueprints.projects import projects_bp
 from blueprints.doc_types import doc_types_bp
@@ -129,7 +129,18 @@ def login():
             u     = db.get_user(uname)
             token = db.create_session(uname, u["role"])
             db.log_action(uname,"LOGIN",detail=f"Role: {u['role']}")
-            resp  = make_response(jsonify(ok=True, role=u["role"], username=uname))
+            try:
+                user_ws = db.get_user_workspaces(uname)
+            except Exception:
+                user_ws = []
+            is_multi_or_super = (str(u.get("role", "")).lower() == "superadmin") or (len(user_ws) > 1)
+            if is_multi_or_super:
+                redirect_to = "/hub"
+            elif len(user_ws) == 1:
+                redirect_to = f"/?ws={user_ws[0]['id']}"
+            else:
+                redirect_to = "/hub"
+            resp  = make_response(jsonify(ok=True, role=u["role"], username=uname, redirect_to=redirect_to))
             resp.set_cookie("dcr_token", token, httponly=True,
                             samesite="Lax", secure=IS_RENDER,
                             max_age=db.SESSION_TTL)
@@ -171,13 +182,28 @@ def logout():
     resp.delete_cookie("dcr_token")
     return resp
 
+@app.route("/hub")
+def launchpad_hub():
+    return render_launchpad(current_user())
+
 @app.route("/")
 def home():
+    u = current_user()
     ws_id = request.args.get("ws")
+    if not ws_id and u:
+        try:
+            user_ws = db.get_user_workspaces(u.get("username", ""))
+        except Exception:
+            user_ws = []
+        is_super = (str(u.get("role", "")).lower() == "superadmin")
+        if is_super or len(user_ws) > 1:
+            return render_launchpad(u)
+        elif len(user_ws) == 1:
+            ws_id = user_ws[0]["id"]
     try:
-        return render_dashboard(current_user(), active_ws_id=ws_id)
+        return render_dashboard(u, active_ws_id=ws_id)
     except TypeError:
-        return render_dashboard(current_user())
+        return render_dashboard(u)
 
 _recent_project_views = {}
 
