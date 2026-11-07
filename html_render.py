@@ -7202,6 +7202,159 @@ function omAuditPage(dir) {{
 </body></html>'''
 
 
+ADMIN_MODAL_CSS = """
+/* ── Overlay & Modal Base Styles ── */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 10000;
+  display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+.overlay.hidden { display: none !important; }
+.modal {
+  background: var(--wh, #ffffff); color: var(--tx, #0f172a); border-radius: 12px;
+  box-shadow: 0 25px 60px rgba(0,0,0,.45); width: 95%; max-width: 980px; max-height: 92vh;
+  display: flex; flex-direction: column; overflow: hidden; animation: mIn .18s ease;
+  border: 1px solid var(--bd, rgba(255,255,255,0.7));
+}
+body.dark .modal {
+  background: #1e293b; color: #f8fafc; border-color: rgba(255,255,255,0.1);
+  box-shadow: 0 25px 60px rgba(0,0,0,.8);
+}
+@keyframes mIn { from { transform: translateY(-12px); opacity: 0; } }
+.mhdr {
+  background: var(--surface, #f8fafc); border-bottom: 1px solid var(--bd, #e2e8f0);
+  padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+}
+body.dark .mhdr { background: #0f172a; border-bottom-color: #334155; }
+.mbody { padding: 0; overflow-y: auto; flex: 1; }
+.mfoot {
+  padding: 10px 18px; border-top: 1px solid var(--bd, #e2e8f0); display: flex;
+  justify-content: space-between; align-items: center; background: var(--surface, #f8fafc); flex-shrink: 0;
+}
+body.dark .mfoot { background: #0f172a; border-top-color: #334155; }
+.xbtn {
+  background: none; border: none; color: var(--tx-mu, #64748b); font-size: 18px;
+  cursor: pointer; opacity: .8; line-height: 1; padding: 4px 8px; border-radius: 4px;
+}
+.xbtn:hover { opacity: 1; color: #ef4444; background: rgba(0,0,0,0.06); }
+body.dark .xbtn:hover { background: rgba(255,255,255,0.08); color: #f87171; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid transparent; transition: all 0.15s ease;
+  font-family: inherit; text-decoration: none;
+}
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+.btn-pr { background: #7ec832; color: #ffffff; border-color: #7ec832; }
+.btn-pr:hover { background: #6eb32b; }
+.btn-sc { background: var(--surface, #f1f5f9); color: var(--tx, #334155); border: 1px solid var(--bd, #cbd5e1); }
+.btn-sc:hover { background: var(--bd, #e2e8f0); }
+body.dark .btn-sc { background: #334155; color: #f8fafc; border-color: #475569; }
+body.dark .btn-sc:hover { background: #475569; }
+.badge { display: inline-flex; align-items: center; justify-content: center; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+
+/* ── Modern User Management & Scoped RBAC Modal ── */
+.admin-modal-wrap { display: flex; flex-direction: column; height: 100%; }
+.admin-toolbar {
+  padding: 12px 18px; background: var(--surface, #ffffff); border-bottom: 1px solid var(--bd, #e2e8f0);
+  display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center;
+}
+body.dark .admin-toolbar { background: #1e293b; border-bottom-color: #334155; }
+.admin-toolbar-left, .admin-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.user-tbl-wrap {
+  overflow-x: auto; border-radius: 6px; border: 1px solid var(--bd, #e2e8f0);
+  background: var(--wh, #ffffff); margin: 14px 18px;
+}
+body.dark .user-tbl-wrap { background: #0f172a; border-color: #334155; }
+.user-tbl { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+.user-tbl th {
+  background: var(--bg, #f8fafc); color: var(--tx-mu, #64748b); font-weight: 600;
+  padding: 10px 14px; border-bottom: 1px solid var(--bd, #e2e8f0);
+  text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.5px; white-space: nowrap;
+}
+body.dark .user-tbl th { background: #0b1322; border-bottom-color: #334155; color: #94a3b8; }
+.user-tbl td {
+  padding: 10px 14px; border-bottom: 1px solid var(--bd, #e2e8f0);
+  color: var(--tx, #0f172a); vertical-align: middle;
+}
+body.dark .user-tbl td { border-bottom-color: #1e293b; color: #f8fafc; }
+.user-tbl tr:last-child td { border-bottom: none; }
+.user-tbl tr:hover { background: var(--row-hover, #f8fafc); }
+body.dark .user-tbl tr:hover { background: rgba(255, 255, 255, 0.04); }
+.u-avatar {
+  width: 28px; height: 28px; border-radius: 50%; background: #e0f2fe; color: #0284c7;
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 700;
+  font-size: 11px; margin-right: 8px; flex-shrink: 0;
+}
+body.dark .u-avatar { background: #0c4a6e; color: #38bdf8; }
+.u-name-cell { display: flex; align-items: center; font-weight: 600; white-space: nowrap; }
+.dept-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+  border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.dept-badge-eng { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+body.dark .dept-badge-eng { background: #1e3a5f; color: #93c5fd; border-color: #2563eb; }
+.dept-badge-om { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+body.dark .dept-badge-om { background: #064e3b; color: #6ee7b7; border-color: #059669; }
+.dept-badge-other { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+body.dark .dept-badge-other { background: #334155; color: #cbd5e1; border-color: #475569; }
+.uact-btn {
+  padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--bd, #e2e8f0); background: var(--wh, #ffffff); color: var(--tx, #0f172a);
+  display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;
+}
+body.dark .uact-btn { background: #1e293b; color: #f8fafc; border-color: #334155; }
+.uact-btn:hover { background: var(--bg, #f8fafc); border-color: var(--tx-mu, #64748b); }
+body.dark .uact-btn:hover { background: #334155; }
+.uact-btn-perm { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+body.dark .uact-btn-perm { background: #14532d; color: #86efac; border-color: #166534; }
+.uact-btn-perm:hover { background: #dcfce7; border-color: #86efac; }
+.uact-btn-del { color: #dc2626; border-color: transparent; background: transparent; }
+.uact-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
+body.dark .uact-btn-del:hover { background: #7f1d1d; border-color: #991b1b; }
+.tbl-input {
+  width: 100%; padding: 5px 8px; font-size: 11px; border: 1px solid var(--bd, #e2e8f0);
+  border-radius: 4px; background: var(--wh, #ffffff); color: var(--tx, #0f172a);
+  transition: border-color 0.15s; box-sizing: border-box;
+}
+body.dark .tbl-input { background: #0f172a; color: #f8fafc; border-color: #334155; }
+.tbl-input:focus { outline: none; border-color: var(--pr, #7ec832); }
+.tbl-select {
+  padding: 4px 6px; font-size: 11px; border: 1px solid var(--bd, #e2e8f0);
+  border-radius: 4px; background: var(--wh, #ffffff); color: var(--tx, #0f172a);
+  cursor: pointer; box-sizing: border-box;
+}
+body.dark .tbl-select { background: #0f172a; color: #f8fafc; border-color: #334155; }
+.tbl-select:focus { outline: none; border-color: var(--pr, #7ec832); }
+.add-user-card {
+  margin: 12px 18px; padding: 14px 16px; border-radius: 6px;
+  background: var(--surface, #ffffff); border: 1px solid var(--bd, #e2e8f0);
+}
+body.dark .add-user-card { background: #1e293b; border-color: #334155; }
+.perm-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.perm-table th {
+  background: var(--bg, #f8fafc); padding: 8px 12px; border-bottom: 1px solid var(--bd, #e2e8f0);
+  color: var(--tx-mu, #64748b); font-size: 10.5px; text-align: left; text-transform: uppercase;
+}
+body.dark .perm-table th { background: #0b1322; border-bottom-color: #334155; color: #94a3b8; }
+.perm-table td { padding: 8px 12px; border-bottom: 1px solid var(--bd, #e2e8f0); vertical-align: middle; }
+body.dark .perm-table td { border-bottom-color: #1e293b; color: #f8fafc; }
+.perm-table tr:hover { background: var(--row-hover, #f8fafc); }
+body.dark .perm-table tr:hover { background: rgba(255, 255, 255, 0.04); }
+.perm-check-cell { text-align: center; width: 110px; }
+.perm-toggle-switch { cursor: pointer; transform: scale(1.15); }
+
+#toast {
+  position: fixed; bottom: 24px; right: 24px; background: #0f172a; color: #fff;
+  padding: 10px 18px; border-radius: 8px; font-size: 12.5px; font-weight: 600;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3); z-index: 100000; opacity: 0;
+  transform: translateY(10px); pointer-events: none; transition: all 0.2s ease;
+}
+#toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+#toast.ok { background: #16a34a; }
+#toast.er { background: #dc2626; }
+"""
+
 def render_launchpad(u):
     """Render the executive Company Workspaces Launchpad (8-Department Grid Hub)."""
     static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -7225,10 +7378,10 @@ def render_launchpad(u):
         "viewer": "DOCUMENT CONTROL • VIEWER",
     }
     can_admin = (role in ("superadmin", "admin"))
-    admin_btn_html = '''<a href="/?openAdmin=1" class="hub-admin-btn" title="Open Enterprise Admin Panel">
+    admin_btn_html = '''<button type="button" class="hub-admin-btn" onclick="openAdmin()" title="Open Enterprise Admin Panel">
         <span>⚙️</span>
         <span>Admin</span>
-      </a>''' if can_admin else ''
+      </button>''' if can_admin else ''
     role_tag = role_labels.get(role, role.upper())
     parts = [p for p in uname.replace(".", " ").replace("_", " ").replace("-", " ").split() if p]
     if len(parts) >= 2:
@@ -7250,7 +7403,7 @@ def render_launchpad(u):
             "desc": "EPC Submittals, Drawings, Material Approvals, IR, MIR, RFI & NOC Variation Orders.",
             "bar": "linear-gradient(90deg, #7ec832, #00b4a6)", "glow": "rgba(126, 200, 50, 0.22)",
             "codeColor": "#7ec832", "iconBg": "rgba(126, 200, 50, 0.12)", "iconBorder": "rgba(126, 200, 50, 0.35)",
-            "lbl1": "Projects", "lbl2": "Submittals"
+            "lbl1": "Projects", "lbl2": "Records"
         },
         "OM": {
             "code": "O&M", "name": "Operation & Maintenance (O&M)", "icon": "⚙️",
@@ -7470,6 +7623,15 @@ def render_launchpad(u):
   --footer-bg: #e6ecf4;
   --footer-border: #d4dde8;
   --footer-text: #64748b;
+  --pr: #7ec832;
+  --surface: #ffffff;
+  --bg: #f8fafc;
+  --bd: #e2e8f0;
+  --tx: #0f1d2e;
+  --tx-mu: #64748b;
+  --mu: #64748b;
+  --wh: #ffffff;
+  --row-hover: #f1f5f9;
 }}
 
 body.dark {{
@@ -7504,6 +7666,14 @@ body.dark {{
   --footer-bg: #060b13;
   --footer-border: rgba(255, 255, 255, 0.06);
   --footer-text: #64748B;
+  --surface: #1e293b;
+  --bg: #0f172a;
+  --bd: #334155;
+  --tx: #f8fafc;
+  --tx-mu: #94a3b8;
+  --mu: #94a3b8;
+  --wh: #1e293b;
+  --row-hover: rgba(255, 255, 255, 0.05);
   background-color: #070d17 !important;
 }}
 
@@ -8238,6 +8408,8 @@ body.dark .hc-status-pill.active {{
   .hub-content-wrap {{ padding: 12px 14px; }}
   .hub-bottom-strip {{ flex-direction: column; height: auto; padding: 6px 14px; gap: 2px; text-align: center; }}
 }}
+
+{ADMIN_MODAL_CSS}
 </style>
 </head>
 <body>
@@ -8313,6 +8485,8 @@ body.dark .hc-status-pill.active {{
 </div>
 
 <div id="toast-box"></div>
+
+{SHARED_JS}
 
 <script>
 (function initHubTheme() {{
