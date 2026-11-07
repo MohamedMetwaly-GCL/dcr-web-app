@@ -13388,23 +13388,20 @@ function classifyLegacyLinkKind(row, dtTab, explicitUrl){{
     return 'approval';
   }}
 
-  // 2) Explicit Submit / Submission folder keywords (strictly avoiding 'submittal' like 'Material Submittal'):
-  if(/\\b(submit|submission)\\b/i.test(leg) || leg.includes('/submit') || leg.includes('\\\\submit') || leg.includes('/submission') || leg.includes('\\\\submission')) {{
+  // 2) Explicit Submit / Submission folder keywords (strictly avoiding 'submittal' like 'Material Submittal' or 'Document Submittal'):
+  const isSubmitFolder = (
+    /(?:^|[/\\\\_\\s.-])(?:submit|submission)(?:[/\\\\_\\s.-]|$)/i.test(leg) ||
+    leg.includes('/submit/') || leg.includes('\\\\submit\\\\') ||
+    leg.includes('/submission/') || leg.includes('\\\\submission\\\\')
+  ) && !/submittal/i.test(leg);
+  if(isSubmitFolder) {{
     return 'submission';
   }}
 
   const docLow = String(row.docNo || '').toLowerCase();
   if(/\\b(reply|replied)\\b/i.test(docLow)) return 'approval';
 
-  // 3) Check if path has directory separators:
-  // If the path contains slashes (e.g. 'D:\\Projects\\...\\5. MIR\\file.pdf') but neither submit nor reply folder:
-  // It is a flat document directly in the doc-type folder -> 'doc'!
-  const hasPathSeparators = leg.includes('/') || leg.includes('\\\\');
-  if(hasPathSeparators){{
-    return 'doc';
-  }}
-
-  // 4) Bare links without path text (e.g. drive.google.com/file/d/... without folders):
+  // 3) Status & Reply Date determination:
   const st = String(row.status || '').trim().toLowerCase();
   const isNotReplyStatus = !st || st === '-' || st === 'null' || st === 'none' ||
     st.includes('under review') || st.includes('pending') || st.includes('submitted') ||
@@ -13492,10 +13489,10 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
     return {{submission: sub, approval: app, part_a, part_b, part_c, part_d}};
   }}
 
-  // Any slot populated by Drive Sync OR a new DCR upload is already verified from Drive folder names!
-  const isVerifiedSubm = (e) => Boolean(e && (e.file_id || (e.uploaded_at && !e.legacy) || e.source === 'drive_sync'));
+  // An explicit new DCR upload has file_id, or uploaded_at without legacy flag
+  const isVerifiedSubm = (e) => Boolean(e && (e.file_id || (e.uploaded_at && !e.legacy)));
 
-  // If submission is a genuine DCR upload or verified Drive sync, NEVER convert it to approval
+  // If submission is a genuine DCR upload, NEVER convert it to approval
   if(sub && isVerifiedSubm(sub)){{
     return {{submission: sub, approval: app}};
   }}
