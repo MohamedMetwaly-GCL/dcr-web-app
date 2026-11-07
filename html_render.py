@@ -10060,22 +10060,22 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
             <span>📋 Consultant Replies (ردود الاستشاري)</span>
           </label>
         </div>
-        <div id="batch-drv-slot-cards-noc" style="display:none;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
-          <label id="batch-slot-card-part_a" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s">
+        <div id="batch-drv-slot-cards-noc" style="display:none;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
+          <label id="batch-slot-card-part_a" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part A: Notice of Change">
             <input type="radio" name="batch-drv-slot" value="part_a" onchange="onBatchSlotChange(this.value)" style="accent-color:#2563eb">
-            <span>🅰️ Part A — Notice of Change (تقديم إشعار التغيير)</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅰️ Part A: Notice of Change</span>
           </label>
-          <label id="batch-slot-card-part_b" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s">
+          <label id="batch-slot-card-part_b" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part B: Consultant Reply">
             <input type="radio" name="batch-drv-slot" value="part_b" onchange="onBatchSlotChange(this.value)" style="accent-color:#0f766e">
-            <span>🅱️ Part B — Consultant Reply (رد الاستشاري على Part A)</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅱️ Part B: Consultant Reply</span>
           </label>
-          <label id="batch-slot-card-part_c" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s">
+          <label id="batch-slot-card-part_c" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part C: Cost Claim">
             <input type="radio" name="batch-drv-slot" value="part_c" onchange="onBatchSlotChange(this.value)" style="accent-color:#0284c7">
-            <span>🅲 Part C — Cost & Time Claim (المطالبة المالية)</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅲 Part C: Cost Claim</span>
           </label>
-          <label id="batch-slot-card-part_d" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .15s">
+          <label id="batch-slot-card-part_d" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part D: Final Approval / VO">
             <input type="radio" name="batch-drv-slot" value="part_d" onchange="onBatchSlotChange(this.value)" style="accent-color:#16a34a">
-            <span>🅳 Part D — Final Approval / VO (الاعتماد النهائي)</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅳 Part D: Final Approval</span>
           </label>
         </div>
         <div id="batch-drv-target-path" style="font-size:11px;color:#0f766e;font-weight:600;display:flex;align-items:center;gap:6px;background:#f0fdfa;border:1px solid #ccfbf1;padding:6px 10px;border-radius:6px">
@@ -13394,10 +13394,22 @@ function isLegacyReplyFile(row, dtTab, explicitUrl){{
 
   // 2) Status-based determination:
   const st = String(row.status || '').trim().toLowerCase();
-  const isPendingStatus = !st || st === '-' || st === 'null' || st.includes('under review') || st.includes('pending') || st.includes('submitted');
+  const isNotReplyStatus = !st || st === '-' || st === 'null' || st === 'none' ||
+    st.includes('under review') || st.includes('pending') || st.includes('submitted') ||
+    st.includes('for information') || st.includes('information') || st.includes('info') ||
+    st.includes('cancelled') || st.includes('draft');
 
-  // If the status is 'Under Review' or 'Pending', there is NO consultant reply yet! -> Must be Submission!
-  if(isPendingStatus) return false;
+  // If the status is 'Under Review', 'Pending', 'For Information', etc., there is NO consultant reply! -> Must be Submission!
+  if(isNotReplyStatus) return false;
+
+  // 3) Consultant return date check: if consultant reply/return date is specifically empty, there is no reply
+  const hasEmptyReplyDate = (
+    (row.hasOwnProperty('actualReplyDate') && !String(row.actualReplyDate||'').trim()) ||
+    (row.hasOwnProperty('Rec. from Style') && !String(row['Rec. from Style']||'').trim()) ||
+    (row.hasOwnProperty('recFromStyle') && !String(row.recFromStyle||'').trim()) ||
+    (row.hasOwnProperty('replyDate') && !String(row.replyDate||'').trim())
+  );
+  if(hasEmptyReplyDate) return false;
 
   // Otherwise, the status is an actual returned status (e.g. Code A, Code B, Code C, Approved, Revise, Replied, etc.)
   return true;
@@ -13467,8 +13479,11 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
     return {{submission: sub, approval: app, part_a, part_b, part_c, part_d}};
   }}
 
-  // If submission is a genuine DCR upload, NEVER convert it to approval
-  if(sub && isDcrUpload(sub)){{
+  // Any slot populated by Drive Sync OR a new DCR upload is already verified from Drive folder names!
+  const isVerifiedSubm = (e) => Boolean(e && (e.file_id || (e.uploaded_at && !e.legacy) || e.source === 'drive_sync'));
+
+  // If submission is a genuine DCR upload or verified Drive sync, NEVER convert it to approval
+  if(sub && isVerifiedSubm(sub)){{
     return {{submission: sub, approval: app}};
   }}
 
@@ -13478,7 +13493,7 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
     }} else {{
       sub = {{url: leg, file_name: 'Current Drive Link', legacy: true}};
     }}
-  }} else if(sub && !app && !isDcrUpload(sub)){{
+  }} else if(sub && !app && !isVerifiedSubm(sub)){{
     const subUrl = (sub && (sub.url || '')) || leg;
     if(isLegacyReplyFile(row, dtTab || state.tab, subUrl)){{
       app = {{...sub, file_name: sub.file_name || 'Consultant Reply', legacy: true, consultant_status: row.status || sub.consultant_status || ''}};
@@ -13524,46 +13539,50 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const dtObj=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT || String(d.code||'').trim().toUpperCase()===curT)||{{}};
   const hasReply=isEng&&dtHasReplyCycle(dtObj);
   const slots=isNoc
-    ? [{{key:'part_a',title:'1. Part A — Notice of Change (تقديم إشعار التغيير)',pathSub:'Part A',emptyText:'No Part A file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
-       {{key:'part_b',title:'2. Part B — Consultant Reply (رد الاستشاري على Part A)',pathSub:'Part B',emptyText:'No Part B reply attached yet',color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
-       {{key:'part_c',title:'3. Part C — Cost & Time Claim (المطالبة المالية التفصيلية)',pathSub:'Part C',emptyText:'No Part C claim attached yet',color:'#0284c7',bg:'#f0f9ff',bd:'#bae6fd'}},
-       {{key:'part_d',title:'4. Part D — Final Approval / VO (الاعتماد المالي النهائي)',pathSub:'Part D',emptyText:'No Part D approval attached yet',color:initPartDTheme.color,bg:initPartDTheme.bg,bd:initPartDTheme.bd}}]
+    ? [{{key:'part_a',title:'Part A: Notice of Change',pathSub:'Part A',emptyText:'No Part A attached',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
+       {{key:'part_b',title:'Part B: Consultant Reply',pathSub:'Part B',emptyText:'No Part B attached',color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
+       {{key:'part_c',title:'Part C: Cost Claim',pathSub:'Part C',emptyText:'No Part C attached',color:'#0284c7',bg:'#f0f9ff',bd:'#bae6fd'}},
+       {{key:'part_d',title:'Part D: Final Approval',pathSub:'Part D',emptyText:'No Part D attached',color:initPartDTheme.color,bg:initPartDTheme.bg,bd:initPartDTheme.bd}}]
     : (hasReply
-      ? [{{key:'submission',title:'1. Submission Document (مستند التقديم)',pathSub:'Submit',emptyText:'No submission file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
-         {{key:'approval',title:'2. Consultant Reply (رد الاستشاري)',pathSub:'Replied',emptyText:'No consultant reply attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
-      : [{{key:'submission',title:'Document Attachment (مرفق المستند)',pathSub:'',emptyText:'No file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}}]);
+      ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
+         {{key:'approval',title:'2. Consultant Reply',pathSub:'Replied',emptyText:'No consultant reply attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
+      : [{{key:'submission',title:'Document Attachment',pathSub:'',emptyText:'No file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}}]);
   const grid=document.createElement('div');
-  grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:6px';
+  grid.style.cssText=isNoc
+    ? 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:6px'
+    : 'display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:6px';
 
   slots.forEach(s=>{{
     const card=document.createElement('div');
     const hdr=document.createElement('div');
-    let upBtn=null, progBarInner=null;
+    let upBtn=null, fldBtn=null, progBarInner=null;
     const applyCardTheme=(th)=>{{
       s.color=th.color;s.bg=th.bg;s.bd=th.bd;s.mixed=Boolean(th.mixed);s.bd2=th.bd2||th.bd;s.color2=th.color2||th.color;
       const bdCss=s.mixed
         ? `border-top:1.5px solid ${{s.bd}};border-left:1.5px solid ${{s.bd}};border-right:1.5px solid ${{s.bd2}};border-bottom:1.5px solid ${{s.bd2}}`
         : `border:1px solid ${{s.bd}}`;
-      card.style.cssText=`${{bdCss}};background:${{s.bg}};border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;transition:all .15s`;
-      hdr.style.cssText=`font-size:11px;font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center`;
-      if(upBtn)upBtn.style.cssText=`font-size:11px;padding:4px 10px;border-color:${{s.color}};color:${{s.color}};background:#fff`;
+      card.style.cssText=`${{bdCss}};background:${{s.bg}};border-radius:7px;padding:${{isNoc?'7px 8px':'10px 12px'}};display:flex;flex-direction:column;gap:${{isNoc?'4px':'6px'}};transition:all .15s;min-width:0;overflow:hidden`;
+      hdr.style.cssText=`font-size:${{isNoc?'10.5px':'11px'}};font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+      if(upBtn)upBtn.style.cssText=`font-size:10px;padding:${{isNoc?'3px 5px':'4px 10px'}};border-color:${{s.color}};color:${{s.color}};background:#fff;white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
       if(progBarInner)progBarInner.style.background=s.color;
     }};
     applyCardTheme(s);
     hdr.textContent=s.title;
+    hdr.title=s.title;
     card.appendChild(hdr);
 
     const pathSubName=s.pathSub!==undefined?s.pathSub:((s.key==='approval')?'Replied':'Submit');
     const dtName=dtObj.name||dtObj.code||state.tab||'Documents';
     const folderHint=document.createElement('div');
-    folderHint.style.cssText='font-size:10px;color:var(--mu);display:flex;align-items:center;gap:4px;margin-top:-2px';
+    folderHint.style.cssText='font-size:9.5px;color:var(--mu);display:flex;align-items:center;gap:3px;margin-top:-2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     const _projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
-    folderHint.innerHTML=`<span>📁 Drive Path:</span> <strong style="color:#334155">${{escHtml(_projLbl)}} ❯ ${{escHtml(dtName)}}${{(hasReply||isNoc)&&pathSubName?(' ❯ '+escHtml(pathSubName)):''}}</strong>`;
+    const pathText = isNoc ? `${{_projLbl}} ❯ NOC ❯ ${{pathSubName}}` : `${{_projLbl}} ❯ ${{dtName}}${{hasReply?(' ❯ '+pathSubName):''}}`;
+    folderHint.innerHTML=`<span>📁</span> <strong style="color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escHtml(pathText)}}">${{escHtml(pathText)}}</strong>`;
     card.appendChild(folderHint);
 
     const statusLine=document.createElement('div');
     statusLine.id='drv-slot-info-'+s.key;
-    statusLine.style.cssText='font-size:11px;color:#334155;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:22px';
+    statusLine.style.cssText='font-size:10.5px;color:#334155;display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-height:20px';
     card.appendChild(statusLine);
 
     const renderSlotInfo=(entry,pending)=>{{
@@ -13596,16 +13615,16 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         empty.style.cssText='color:#64748b;font-style:italic';
         empty.textContent=s.emptyText||(s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet');
         statusLine.appendChild(empty);
-        if(upBtn)upBtn.textContent='📤 Upload File';
+        if(upBtn)upBtn.textContent=isNoc?'📤 File':'📤 Upload File';
         return;
       }}
       const nameSpan=document.createElement('span');
-      nameSpan.style.cssText='font-weight:600;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      nameSpan.style.cssText='font-weight:600;max-width:'+(isNoc?'110px':'190px')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       if(entry.is_folder || vUrl.includes('/folders/')){{
-        const fCount=entry.file_count?` (${{entry.file_count}} files)`:'';
-        nameSpan.textContent='📁 '+(entry.folder_name||entry.file_name||'Document Folder')+fCount;
+        const fCount=entry.file_count?` (${{entry.file_count}})`:'';
+        nameSpan.textContent='📁 '+(entry.folder_name||entry.file_name||'Folder')+fCount;
       }}else{{
-        nameSpan.textContent=entry.file_name||(entry.legacy?'Linked Drive File':'Attached File');
+        nameSpan.textContent=entry.file_name||(entry.legacy?'Linked File':'Attached File');
         if(entry.file_size)nameSpan.textContent+=' ('+_fmtBytes(entry.file_size)+')';
       }}
       nameSpan.title=entry.file_name||vUrl;
@@ -13616,8 +13635,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       const vA=document.createElement('a');
       vA.href=_recId?'#':vUrl;
       if(!_recId){{vA.target='_blank';vA.rel='noopener';}}
-      vA.style.cssText=`padding:2px 8px;border-radius:4px;background:#fff;border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:10px;cursor:pointer`;
-      vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'👁 View Folder':'👁 View';
+      vA.style.cssText=`padding:2px 5px;border-radius:4px;background:#fff;border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:9.5px;cursor:pointer;white-space:nowrap`;
+      vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'👁 Folder':'👁 View';
       vA.onclick=(ev)=>{{
         if(_recId){{ev.preventDefault();openDocViewer(_recId,_slotKey,{{label:s.title}});}}
         else logFileAction('DRIVE_LINK_CLICK',row?.docNo||row?.nocNo||'',vUrl);
@@ -13629,8 +13648,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const dA=document.createElement('a');
         dA.href=_dlHref;
         if(!_recId){{dA.target='_blank';dA.rel='noopener';}}
-        dA.style.cssText='padding:2px 8px;border-radius:4px;background:#fff;border:1px solid #64748b;color:#334155;text-decoration:none;font-weight:600;font-size:10px';
-        dA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'⬇ ZIP':'⬇ Download';
+        dA.style.cssText='padding:2px 5px;border-radius:4px;background:#fff;border:1px solid #64748b;color:#334155;text-decoration:none;font-weight:600;font-size:9.5px;white-space:nowrap';
+        dA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'⬇ ZIP':'⬇ DL';
         dA.onclick=()=>{{if(!_recId)logFileAction('FILE_DOWNLOAD',row?.docNo||row?.nocNo||'',_dlHref);}};
         statusLine.appendChild(dA);
       }}
@@ -13638,7 +13657,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(CAN_EDIT && !(opts&&opts.readonly) && !entry.legacy && state.editId){{
         const unBtn=document.createElement('button');
         unBtn.type='button';
-        unBtn.style.cssText='padding:1px 6px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
+        unBtn.style.cssText='padding:1px 5px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
         unBtn.textContent='✕';
         unBtn.title='Remove this attachment and move it to Google Drive Trash';
         unBtn.onclick=async()=>{{
@@ -13669,14 +13688,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
 
     if(CAN_EDIT && !(opts&&opts.readonly)){{
       const ctrl=document.createElement('div');
-      ctrl.style.cssText='display:flex;align-items:center;gap:8px;margin-top:2px';
+      ctrl.style.cssText='display:flex;align-items:center;gap:'+(isNoc?'4px':'8px')+';margin-top:2px;flex-wrap:wrap';
       const fileInp=document.createElement('input');
       fileInp.type='file';fileInp.style.display='none';
       upBtn=document.createElement('button');
       upBtn.type='button';
       upBtn.className='btn btn-sc btn-sm';
-      upBtn.style.cssText=`font-size:11px;padding:4px 10px;border-color:${{s.color}};color:${{s.color}};background:#fff`;
-      upBtn.textContent=cur[s.key]?'🔄 Replace File':'📤 Upload File';
+      upBtn.style.cssText=`font-size:10px;padding:${{isNoc?'3px 5px':'4px 10px'}};border-color:${{s.color}};color:${{s.color}};background:#fff;white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
+      upBtn.textContent=cur[s.key]?(isNoc?'🔄 Replace':'🔄 Replace File'):(isNoc?'📤 File':'📤 Upload File');
       upBtn.onclick=()=>fileInp.click();
 
       const progWrap=document.createElement('div');
@@ -13749,11 +13768,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
 
       const folderInp=document.createElement('input');
       folderInp.type='file';folderInp.setAttribute('webkitdirectory','');folderInp.setAttribute('directory','');folderInp.style.display='none';
-      const fldBtn=document.createElement('button');
+      fldBtn=document.createElement('button');
       fldBtn.type='button';
       fldBtn.className='btn btn-sc btn-sm';
-      fldBtn.style.cssText=`font-size:11px;padding:4px 8px;border-color:#0f766e;color:#0f766e;background:#fff`;
-      fldBtn.textContent='📁 Upload Folder';
+      fldBtn.style.cssText=`font-size:${{isNoc?'10px':'11px'}};padding:${{isNoc?'3px 5px':'4px 8px'}};border-color:#0f766e;color:#0f766e;background:#fff;white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
+      fldBtn.textContent=isNoc?'📁 Folder':'📁 Upload Folder';
       fldBtn.title='Upload an uncompressed folder of files for this document';
       fldBtn.onclick=()=>folderInp.click();
 
