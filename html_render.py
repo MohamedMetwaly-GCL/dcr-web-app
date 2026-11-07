@@ -5948,13 +5948,20 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 }}
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
-.ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:24px}}
+.ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}}
 
-.valmore-logo {{ display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 36px; opacity: 0.8; }}
-.valmore-icon {{ width: 18px; height: 18px; background: #fff; color: #1a2f4e; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; font-weight: 800; font-size: 14px; }}
+.ll-brand-sep {{
+  width: 48px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 0 auto 16px;
+}}
+
+.valmore-logo {{ display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 32px; opacity: 0.95; }}
+.valmore-icon {{ width: 20px; height: 20px; background: #fff; color: #1a2f4e; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; font-weight: 900; font-size: 13px; }}
 .valmore-text {{ display: flex; align-items: baseline; }}
-.v-main {{ font-family: Georgia, serif; font-size: 16px; color: #fff; letter-spacing: 0.5px; }}
-.v-sub {{ font-family: 'Inter', sans-serif; font-size: 8px; color: #fff; letter-spacing: 2px; margin-left: 4px; font-weight: 600; text-transform: uppercase; }}
+.v-main {{ font-family: Georgia, serif; font-size: 17px; color: #fff; letter-spacing: 0.5px; font-weight: 700; }}
+.v-sub {{ font-family: 'Inter', sans-serif; font-size: 8.5px; color: #7ec832; letter-spacing: 2px; margin-left: 4px; font-weight: 800; text-transform: uppercase; }}
 
 /* Divider */
 .ll-divider{{
@@ -6059,8 +6066,9 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   .ll-logo {{ margin-bottom: 12px; }}
   .ll-logo img {{ width: 100px; height: auto; }}
   .ll-brand {{ font-size: 20px; margin-bottom: 2px; }}
-  .ll-tagline {{ font-size: 10px; margin-bottom: 16px; }}
-  .valmore-logo {{ margin-bottom: 16px; transform: scale(0.9); transform-origin: top center; height: 24px; }}
+  .ll-tagline {{ font-size: 10px; margin-bottom: 10px; }}
+  .ll-brand-sep {{ width: 36px; margin: 0 auto 10px; }}
+  .valmore-logo {{ margin-bottom: 14px; transform: scale(0.9); transform-origin: top center; height: 24px; }}
   .ll-desc {{ font-size: 11px; line-height: 1.4; margin-bottom: 16px; padding: 0 10px; }}
   .ll-stats {{ gap: 16px; margin-top: 0; }}
   .ll-stat-num {{ font-size: 16px; }}
@@ -6101,6 +6109,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
       </div>
       <div class="ll-brand">GAS CHILL</div>
       <div class="ll-tagline">Energy. Redefined.</div>
+      <div class="ll-brand-sep"></div>
       <div class="valmore-logo">
         <div class="valmore-icon"><span>V</span></div>
         <div class="valmore-text">
@@ -6110,7 +6119,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
       </div>
       <div class="ll-divider"></div>
       <div class="ll-desc">
-        Enterprise Document Control System — Managing engineering submissions across all active projects with precision.
+        Enterprise Document Control System — Unified hub managing company workspaces, registers, and submittals with precision.
       </div>
       <div class="ll-stats">
         <div class="ll-stat">
@@ -6127,7 +6136,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
         </div>
       </div>
     </div>
-    <div class="ll-footer">Gas Chill &nbsp;|&nbsp; Document Control System</div>
+    <div class="ll-footer">Gas Chill &nbsp;&bull;&nbsp; A Valmore Holding Company</div>
   </div>
 
   <!-- RIGHT: Clean Login Form -->
@@ -7806,15 +7815,16 @@ body.dark #view-hub {{
 .hub-subtitle-pill {{
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   background: rgba(126, 200, 50, 0.12);
-  border: 1px solid rgba(126, 200, 50, 0.3);
-  padding: 5px 14px;
+  border: 1px solid rgba(126, 200, 50, 0.35);
+  padding: 7px 20px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
   color: #a3e635;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
+  box-shadow: 0 0 16px rgba(126, 200, 50, 0.16);
 }}
 
 .hub-admin-btn {{
@@ -8479,7 +8489,7 @@ body.dark .hc-status-pill.active {{
   </main>
 
   <footer class="hub-bottom-strip">
-    <span>Gas Chill &amp; Valmore Holding &mdash; Enterprise Document Control System (DCR)</span>
+    <span>Gas Chill &mdash; Enterprise Document Control System (DCR)</span>
     <span>Designed &amp; Developed in-house by <strong>Mohamed Metwaly</strong></span>
   </footer>
 </div>
