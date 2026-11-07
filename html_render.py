@@ -11100,7 +11100,8 @@ function renderRows(){{
             const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
             box.appendChild(_chip('Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasSubm){{
-            if(_cyc){{
+            const isFlatDoc = Boolean(norm.is_flat_doc || (norm.submission && norm.submission.is_flat_doc));
+            if(_cyc && !isFlatDoc){{
               box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff','Submission',null));
             }}else{{
               box.appendChild(_chip('Doc','submission',norm.submission,'#0f766e','#f0fdfa','Document'));
@@ -13369,10 +13370,10 @@ function _getReplyStatusTheme(statusStr){{
   return {{color:'#d97706',bg:'#fffbeb',bd:'#fde68a',mixed:false}};
 }}
 
-function isLegacyReplyFile(row, dtTab, explicitUrl){{
-  if(!row) return false;
+function classifyLegacyLinkKind(row, dtTab, explicitUrl){{
+  if(!row) return 'doc';
   const leg = String(explicitUrl || row.fileLocation || row.driveLink || row.drive_link || row['Drive Link'] || row.url || '').trim().toLowerCase();
-  if(!leg || leg === '#' || leg === 'null' || leg === 'none') return false;
+  if(!leg || leg === '#' || leg === 'null' || leg === 'none') return null;
   
   const curTab = dtTab || (typeof state !== 'undefined' ? state.tab : '');
   const curT = String(curTab).trim().toUpperCase();
@@ -13380,39 +13381,51 @@ function isLegacyReplyFile(row, dtTab, explicitUrl){{
     String(d.id).trim().toUpperCase() === curT || 
     String(d.code || '').trim().toUpperCase() === curT
   ) || {{}};
-  if(!dtHasReplyCycle(dtObj)) return false;
+  if(!dtHasReplyCycle(dtObj)) return 'doc';
 
-  // 1) Explicit path/URL keywords:
-  // If the path contains 'submit' or 'subm', it is 100% in a Submit folder -> NOT a reply!
-  if(leg.includes('submit') || leg.includes('subm')) return false;
+  // 1) Explicit Reply / Approval folder keywords:
+  if(/\\b(repl|reply|replied|approval|approved)\\b/i.test(leg) || leg.includes('/replied') || leg.includes('\\\\replied') || leg.includes('/reply') || leg.includes('\\\\reply') || leg.includes('rec. from style')) {{
+    return 'approval';
+  }}
 
-  // If the path contains 'repl' or 'approv', it is 100% in a Replied/Approval folder -> It's a reply!
-  if(leg.includes('repl') || leg.includes('approv')) return true;
+  // 2) Explicit Submit / Submission folder keywords (strictly avoiding 'submittal' like 'Material Submittal'):
+  if(/\\b(submit|submission)\\b/i.test(leg) || leg.includes('/submit') || leg.includes('\\\\submit') || leg.includes('/submission') || leg.includes('\\\\submission')) {{
+    return 'submission';
+  }}
 
   const docLow = String(row.docNo || '').toLowerCase();
-  if(docLow.includes('reply') || docLow.includes('replied')) return true;
+  if(/\\b(reply|replied)\\b/i.test(docLow)) return 'approval';
 
-  // 2) Status-based determination:
+  // 3) Check if path has directory separators:
+  // If the path contains slashes (e.g. 'D:\\Projects\\...\\5. MIR\\file.pdf') but neither submit nor reply folder:
+  // It is a flat document directly in the doc-type folder -> 'doc'!
+  const hasPathSeparators = leg.includes('/') || leg.includes('\\\\');
+  if(hasPathSeparators){{
+    return 'doc';
+  }}
+
+  // 4) Bare links without path text (e.g. drive.google.com/file/d/... without folders):
   const st = String(row.status || '').trim().toLowerCase();
   const isNotReplyStatus = !st || st === '-' || st === 'null' || st === 'none' ||
     st.includes('under review') || st.includes('pending') || st.includes('submitted') ||
     st.includes('for information') || st.includes('information') || st.includes('info') ||
     st.includes('cancelled') || st.includes('draft');
+  if(isNotReplyStatus) return 'submission';
 
-  // If the status is 'Under Review', 'Pending', 'For Information', etc., there is NO consultant reply! -> Must be Submission!
-  if(isNotReplyStatus) return false;
-
-  // 3) Consultant return date check: if consultant reply/return date is specifically empty, there is no reply
-  const hasEmptyReplyDate = (
-    (row.hasOwnProperty('actualReplyDate') && !String(row.actualReplyDate||'').trim()) ||
-    (row.hasOwnProperty('Rec. from Style') && !String(row['Rec. from Style']||'').trim()) ||
-    (row.hasOwnProperty('recFromStyle') && !String(row.recFromStyle||'').trim()) ||
-    (row.hasOwnProperty('replyDate') && !String(row.replyDate||'').trim())
+  const replyDateVal = String(row.actualReplyDate || row._replyFmt || row['Rec. from Style'] || row.recFromStyle || row.replyDate || '').trim();
+  const hasConfiguredReplyCol = Boolean(
+    row.hasOwnProperty('actualReplyDate') ||
+    row.hasOwnProperty('Rec. from Style') ||
+    row.hasOwnProperty('recFromStyle') ||
+    row.hasOwnProperty('replyDate')
   );
-  if(hasEmptyReplyDate) return false;
+  if(hasConfiguredReplyCol && !replyDateVal) return 'submission';
 
-  // Otherwise, the status is an actual returned status (e.g. Code A, Code B, Code C, Approved, Revise, Replied, etc.)
-  return true;
+  return 'approval';
+}}
+
+function isLegacyReplyFile(row, dtTab, explicitUrl){{
+  return classifyLegacyLinkKind(row, dtTab, explicitUrl) === 'approval';
 }}
 
 function _getNocPartStatusKey(partLetter){{
@@ -13488,19 +13501,25 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
   }}
 
   if(!sub && !app && hasLeg){{
-    if(isLegacyReplyFile(row, dtTab || state.tab, leg)){{
+    const kind = classifyLegacyLinkKind(row, dtTab || state.tab, leg);
+    if(kind === 'approval'){{
       app = {{url: leg, file_name: 'Consultant Reply', legacy: true, consultant_status: row.status || ''}};
+    }} else if(kind === 'doc'){{
+      sub = {{url: leg, file_name: 'Document', legacy: true, is_flat_doc: true}};
     }} else {{
       sub = {{url: leg, file_name: 'Current Drive Link', legacy: true}};
     }}
   }} else if(sub && !app && !isVerifiedSubm(sub)){{
     const subUrl = (sub && (sub.url || '')) || leg;
-    if(isLegacyReplyFile(row, dtTab || state.tab, subUrl)){{
+    const kind = classifyLegacyLinkKind(row, dtTab || state.tab, subUrl);
+    if(kind === 'approval'){{
       app = {{...sub, file_name: sub.file_name || 'Consultant Reply', legacy: true, consultant_status: row.status || sub.consultant_status || ''}};
       sub = null;
+    }} else if(kind === 'doc'){{
+      sub = {{...sub, file_name: sub.file_name || 'Document', legacy: true, is_flat_doc: true}};
     }}
   }}
-  return {{submission: sub, approval: app}};
+  return {{submission: sub, approval: app, is_flat_doc: Boolean(sub && sub.is_flat_doc)}};
 }}
 
 function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}}){{

@@ -125,7 +125,9 @@ SYNC_SOURCE = "drive_sync"
 
 def classify_path_kind(full_path):
     """'part_a'..'part_d' if path contains 'part a'..'part d',
-    'approval' if the Drive path contains 'reply', 'submission' if it contains 'submit', else None.
+    'approval' if the Drive path contains 'reply' or 'replied' or 'approval',
+    'submission' if it contains 'submit' or 'submission' (strictly excluding 'submittal'),
+    else None (general document without a separate cycle folder).
 
     Same precedence as drive_service.get_item_priority (part_d..part_a / reply wins over submit).
     """
@@ -133,9 +135,9 @@ def classify_path_kind(full_path):
     m = re.search(r"\bpart[\s_-]*([abcd])\b", p)
     if m:
         return "part_" + m.group(1)
-    if "reply" in p:
+    if re.search(r"\b(reply|replied|approval|approved)\b", p):
         return SLOT_APPROVAL
-    if "submit" in p:
+    if re.search(r"\b(submit|submission)\b", p):
         return SLOT_SUBMISSION
     return None
 

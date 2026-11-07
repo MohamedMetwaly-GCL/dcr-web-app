@@ -70,9 +70,9 @@ def get_item_priority(full_path, mime_type):
         part_rank = {'d': 1, 'c': 3, 'b': 5, 'a': 7}.get(part_letter, 7)
         return part_rank if is_folder else (part_rank + 1)
 
-    if 'reply' in path_lower:
+    if re.search(r'\b(reply|replied|approval|approved)\b', path_lower):
         return 1 if is_folder else 2
-    elif 'submit' in path_lower:
+    elif re.search(r'\b(submit|submission)\b', path_lower):
         return 3 if is_folder else 4
 
     # If neither, treat as lowest priority
