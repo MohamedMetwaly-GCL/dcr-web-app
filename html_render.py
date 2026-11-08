@@ -11657,29 +11657,70 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   .dv-mob-back {{ display:none; }}
 
   @media (max-width: 768px) {{
+    #doc-viewer-modal {{
+      position: fixed !important;
+      inset: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      justify-content: stretch !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      z-index: 10600 !important;
+    }}
     #doc-viewer-modal .modal {{
-      width:100vw !important;
-      max-width:100vw !important;
-      height:100vh !important;
-      max-height:100vh !important;
-      border-radius:0 !important;
-      margin:0 !important;
+      width: 100vw !important;
+      max-width: 100vw !important;
+      height: 100% !important;
+      height: 100dvh !important;
+      max-height: 100% !important;
+      max-height: 100dvh !important;
+      border-radius: 0 !important;
+      margin: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
     }}
     #doc-viewer-modal .mhdr {{
-      padding:6px 12px !important;
-      min-height:38px !important;
+      padding: 6px 10px !important;
+      min-height: 42px !important;
+      background: #0f172a !important;
+      color: #fff !important;
+      border-bottom: 1px solid #1e293b !important;
+      gap: 8px !important;
+      align-items: center !important;
     }}
     #dv-title {{
-      font-size:12px !important;
-      line-height:1.35 !important;
-      max-height:38px !important;
-      overflow:hidden !important;
-      text-overflow:ellipsis !important;
-      display:-webkit-box !important;
-      -webkit-line-clamp:2 !important;
-      -webkit-box-orient:vertical !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      color: #f8fafc !important;
+      line-height: 1.35 !important;
+      max-height: 38px !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      display: -webkit-box !important;
+      -webkit-line-clamp: 2 !important;
+      -webkit-box-orient: vertical !important;
     }}
-    #dv-fs-btn {{ display:none !important; }}
+    #dv-title span {{
+      color: #94a3b8 !important;
+    }}
+    #dv-fs-btn {{ display: none !important; }}
+    #doc-viewer-modal .mhdr .xbtn {{
+      width: 30px !important;
+      height: 30px !important;
+      font-size: 17px !important;
+      font-weight: 800 !important;
+      background: rgba(255, 255, 255, 0.16) !important;
+      color: #fff !important;
+      border-radius: 50% !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      flex-shrink: 0 !important;
+      border: 1px solid rgba(255, 255, 255, 0.28) !important;
+      cursor: pointer !important;
+    }}
 
     .dv-mob-bar {{
       display:flex !important;
@@ -11770,13 +11811,43 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       display:none !important;
     }}
 
+    /* Compact Office Toolbars on mobile */
+    .dv-office-sub {{
+      display: none !important;
+    }}
+    #dv-office-box > div:first-child {{
+      padding: 3px 8px !important;
+      min-height: 26px !important;
+      gap: 4px !important;
+    }}
+
+    /* Mobile Footer: single horizontal scrollable row, Close button always pinned */
     #doc-viewer-modal .mfoot {{
-      padding:6px 10px !important;
-      gap:6px !important;
+      padding: 6px 10px !important;
+      gap: 6px !important;
+      background: #f8fafc !important;
+      border-top: 1px solid var(--bd) !important;
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      flex-shrink: 0 !important;
+    }}
+    #doc-viewer-modal #dv-foot-left {{
+      display: flex !important;
+      gap: 5px !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      -webkit-overflow-scrolling: touch !important;
+      flex: 1 !important;
+      min-width: 0 !important;
     }}
     #doc-viewer-modal .mfoot .btn {{
-      padding:5px 10px !important;
-      font-size:11px !important;
+      padding: 4px 8px !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
     }}
   }}
 </style>
@@ -14681,7 +14752,7 @@ function _dvRenderExcelView(f){{
       <div style="padding:4px 10px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0;min-height:30px">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:11px;font-weight:700;color:#16a34a">📊 High-Fidelity Office Preview</span>
-          <span style="font-size:10px;color:#64748b">(Original formatting, formulas, and colors)</span>
+          <span class="dv-office-sub" style="font-size:10px;color:#64748b">(Original formatting, formulas, and colors)</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           <button type="button" class="btn btn-sc btn-sm" onclick="dvToggleOfficeMode('${{f.id}}','inapp')" style="padding:2px 8px;font-size:11px;font-weight:600">📊 Switch to In-App Grid</button>
@@ -14807,7 +14878,7 @@ function _dvRenderWordView(f){{
       <div style="padding:4px 10px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0;min-height:30px">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:11px;font-weight:700;color:#1e40af">📝 High-Fidelity Word Preview</span>
-          <span style="font-size:10px;color:#64748b">(Original layout, photos, logos, and covers)</span>
+          <span class="dv-office-sub" style="font-size:10px;color:#64748b">(Original layout, photos, logos, and covers)</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           <button type="button" class="btn btn-sc btn-sm" onclick="dvToggleOfficeMode('${{f.id}}','inapp')" style="padding:2px 8px;font-size:11px;font-weight:600">📝 Switch to In-App Text</button>
