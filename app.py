@@ -22,8 +22,8 @@ from blueprints.drive_uploads import drive_uploads_bp
 from blueprints.drive_viewer import drive_viewer_bp
 
 app = Flask(__name__)
-APP_VERSION = "2.4.1"
-BUILD_ID = "20261108-rbac-sync"
+APP_VERSION = "2.4.2"
+BUILD_ID = "20261108-viewer-dl-perm"
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
 app.register_blueprint(projects_bp)

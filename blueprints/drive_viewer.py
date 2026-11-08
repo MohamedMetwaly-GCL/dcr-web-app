@@ -139,7 +139,7 @@ def _context(record_id, slot):
         return None, (jsonify(error="Attachment has no Drive id",
                               fallback_url=url if (is_superadmin(u) or entry.get("legacy")) else ""), 404)
 
-    can_dl = bool(can_edit(pid) or _is_workspace_admin(u, pid))
+    can_dl = bool(can_edit(pid) or _is_workspace_admin(u, pid) or (hasattr(db, "can_user_download") and db.can_user_download(u.get("username"), pid)))
     ctx = dict(user=u, rec=rec, pid=pid, dt_id=dt_id, slot=slot, entry=entry, kind=kind, target_id=target_id,
                can_download=can_dl, can_open_drive=_is_workspace_admin(u, pid), url=url)
     return ctx, None

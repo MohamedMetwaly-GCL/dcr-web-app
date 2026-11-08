@@ -222,6 +222,7 @@ CREATE TABLE IF NOT EXISTS user_workspaces (
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS workspace_id TEXT DEFAULT 'ENG';
 CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_workspace TEXT DEFAULT 'ENG';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS can_download BOOLEAN DEFAULT FALSE;
 """
 
 DEFAULT_OM_DOC_TYPES = [
@@ -701,12 +702,12 @@ def get_user(username):
     return q("SELECT * FROM users WHERE username=%s", (username,), one=True)
 
 def get_all_users():
-    return q("SELECT username, role, email, COALESCE(primary_workspace, 'ENG') as primary_workspace FROM users ORDER BY username")
+    return q("SELECT username, role, email, COALESCE(primary_workspace, 'ENG') as primary_workspace, COALESCE(can_download, FALSE) as can_download FROM users ORDER BY username")
 
-def add_user(username, pw, role="viewer", email=None, primary_workspace="ENG"):
+def add_user(username, pw, role="viewer", email=None, primary_workspace="ENG", can_download=False):
     ws = primary_workspace or "ENG"
-    exe("INSERT INTO users(username,pw_hash,role,email,primary_workspace) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-        (username, hash_pw(pw), role, email, ws))
+    exe("INSERT INTO users(username,pw_hash,role,email,primary_workspace,can_download) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+        (username, hash_pw(pw), role, email, ws, bool(can_download)))
     assign_user_workspace(username, ws, role)
 
 def delete_user(username):
@@ -728,6 +729,25 @@ def set_user_role(username, role):
 
 def set_user_email(username, email):
     exe("UPDATE users SET email=%s WHERE username=%s", (email, username))
+
+def set_user_can_download(username, can_download=False):
+    exe("UPDATE users SET can_download=%s WHERE username=%s", (bool(can_download), username))
+    return True
+
+def can_user_download(username, project_id=None):
+    """Check if a user is permitted to download files (superadmin/admin/editor always can; viewer if can_download flag is set)."""
+    if not username:
+        return False
+    try:
+        u = get_user(username)
+        if not u or not isinstance(u, dict):
+            return False
+        role = str(u.get("role", "")).strip().lower()
+        if role in ("superadmin", "admin", "editor"):
+            return True
+        return bool(u.get("can_download", False))
+    except Exception:
+        return False
 
 def set_user_project_dc(username, project_id, is_dc):
     exe("UPDATE user_projects SET is_dc=%s WHERE username=%s AND project_id=%s", (is_dc, username, project_id))
@@ -939,6 +959,7 @@ def get_users_for_admin(admin_username):
     if str(u.get("role", "")).strip().lower() == "superadmin":
         return q("""
             SELECT u.username, u.role, u.email, COALESCE(u.primary_workspace, 'ENG') as primary_workspace,
+                   COALESCE(u.can_download, FALSE) as can_download,
                    COALESCE(
                        (SELECT json_agg(json_build_object('workspace_id', uw.workspace_id, 'role', uw.role))
                         FROM user_workspaces uw WHERE uw.username = u.username), '[]'::json
@@ -953,6 +974,7 @@ def get_users_for_admin(admin_username):
 
     rows = q("""
         SELECT u.username, u.role, u.email, COALESCE(u.primary_workspace, 'ENG') as primary_workspace,
+               COALESCE(u.can_download, FALSE) as can_download,
                COALESCE(
                    (SELECT json_agg(json_build_object('workspace_id', uw.workspace_id, 'role', uw.role))
                     FROM user_workspaces uw WHERE uw.username = u.username), '[]'::json

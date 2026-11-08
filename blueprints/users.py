@@ -66,7 +66,8 @@ def api_users_action():
             if ws_id not in admin_ws:
                 ws_id = admin_ws[0] if admin_ws else "ENG"
 
-        db.add_user(uname, pw, role, email, primary_workspace=ws_id)
+        can_dl = bool(data.get("can_download", False))
+        db.add_user(uname, pw, role, email, primary_workspace=ws_id, can_download=can_dl)
         db.log_action(u["username"], "USER_CREATE",
                       detail=f"Created user '{uname}' (Role: {role}, Dept: {ws_id}, Email: {email or '—'})")
         return jsonify(ok=True)
@@ -88,6 +89,25 @@ def api_users_action():
         db.delete_user(uname)
         db.log_action(u["username"], "USER_DELETE", detail=f"Deleted user '{uname}'")
         return jsonify(ok=True)
+
+    if action == "toggle_download_permission":
+        uname = data.get("username", "").strip().lower()
+        can_dl = bool(data.get("can_download", False))
+        target_user = db.get_user(uname)
+        if not target_user:
+            return jsonify(ok=False, error="User not found"), 404
+        if target_user.get("role") == "superadmin" or uname == "admin":
+            return jsonify(ok=False, error="Superadmin permissions cannot be modified"), 400
+        if not is_super:
+            target_workspaces = [w["id"] for w in db.get_user_workspaces(uname)]
+            if not any(w in admin_ws for w in target_workspaces):
+                return jsonify(ok=False, error="Cannot modify user from another department"), 403
+
+        db.set_user_can_download(uname, can_dl)
+        status_txt = "Allowed" if can_dl else "Restricted"
+        db.log_action(u["username"], "DOWNLOAD_PERM_UPDATE",
+                      detail=f"Set file download permission for '{uname}' to {status_txt}")
+        return jsonify(ok=True, can_download=can_dl)
 
     if action == "change_password":
         uname = data.get("username", "")

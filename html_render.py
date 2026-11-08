@@ -4383,6 +4383,12 @@ async function openAdmin() {
           ${isSuper ? '<option value="superadmin">Super Admin</option>' : ''}
         </select></div>
         <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Password</label><input id="nu-pw" type="password" class="tbl-input" placeholder="••••••••"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Downloads</label>
+          <label style="display:flex;align-items:center;gap:4px;height:28px;font-size:11px;font-weight:600;cursor:pointer;background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1);padding:0 8px;border-radius:4px;">
+            <input type="checkbox" id="nu-can-dl" style="cursor:pointer;margin:0;">
+            <span>Allow 📥</span>
+          </label>
+        </div>
         <button class="btn btn-pr btn-sm" onclick="submitAddUser()" style="height:30px;padding:0 12px;">Create</button>
       </div>
     `;
@@ -5157,8 +5163,21 @@ function renderAdminTable() {
     const emailCol = `<input class="tbl-input email-input" id="email-inp-${escHtml(u.username)}" value="${escHtml(u.email || '')}" placeholder="Add email..." onblur="updUsrEmail('${escHtml(u.username)}', this.value)" style="border-color:transparent;background:transparent;" onfocus="this.style.borderColor='';this.style.background='var(--wh)';" onblur="this.style.borderColor='transparent';this.style.background='transparent';">`;
     
     // Actions column
+    const canDl = !!u.can_download;
+    const isGlobalOrEditor = u.role === 'superadmin' || u.role === 'admin' || u.role === 'editor';
+    const dlPill = isGlobalOrEditor
+      ? `<span class="badge" title="Full file download rights included with ${escHtml(u.role)} role" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 6px;font-weight:700;">📥 Full</span>`
+      : `<button type="button" class="uact-btn ${canDl ? 'dl-allowed' : 'dl-restricted'}"
+                 onclick="toggleUserDownloadPerm('${escHtml(u.username)}', ${!canDl})"
+                 title="${canDl ? 'File Downloads: Allowed (Click to Restrict)' : 'File Downloads: Restricted (Click to Allow)'}"
+                 style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;border-radius:6px;cursor:pointer;${canDl ? 'background:#ecfdf5;color:#047857;border:1px solid #10b981;' : 'background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;'}">
+           <span>${canDl ? '📥' : '🔒'}</span>
+           <span>${canDl ? 'Downloads: ON' : 'View Only'}</span>
+         </button>`;
+
     let actionsHtml = `
       <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
+        ${dlPill}
         <button class="uact-btn uact-btn-perm" id="perm-btn-${escHtml(u.username)}" onclick="openPermissionsModal('${escHtml(u.username)}')" title="Manage project & contract permissions">
           <span>⚙️</span><span>Permissions</span><span class="badge" style="background:#15803d;color:#fff;padding:1px 5px;font-size:10px;margin-left:2px;">${assignedCount}</span>
         </button>
@@ -5191,6 +5210,42 @@ function renderAdminTable() {
   
   html += `</tbody></table>`;
   tblWrap.innerHTML = html;
+}
+
+async function toggleUserDownloadPerm(username, canDownload, fromModal = false) {
+  try {
+    const r = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'toggle_download_permission',
+        username: username,
+        can_download: canDownload
+      })
+    });
+    if (r && r.ok) {
+      const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
+      if (u) {
+        u.can_download = !!canDownload;
+      }
+      toast(canDownload ? '📥 File downloads enabled for ' + username : '🔒 File downloads restricted for ' + username, 'ok');
+      renderAdminTable();
+      if (fromModal && window._ACTIVE_PERM_USER === username) {
+        openPermissionsModal(username);
+      }
+    } else {
+      toast((r && r.error) || 'Failed to update download permission', 'er');
+      if (fromModal) {
+        const chk = document.getElementById('perm-modal-dl-toggle');
+        if (chk) chk.checked = !canDownload;
+      }
+    }
+  } catch (err) {
+    toast('Error updating download permission: ' + err.message, 'er');
+    if (fromModal) {
+      const chk = document.getElementById('perm-modal-dl-toggle');
+      if (chk) chk.checked = !canDownload;
+    }
+  }
 }
 
 // ── Scoped Permissions Modal ─────────────────────────────────
@@ -5333,7 +5388,15 @@ function openPermissionsModal(username) {
   }
   
   document.getElementById('perm-title').innerHTML = `⚙️ Project / Contract Permissions — <strong>${escHtml(u.username)}</strong>`;
-  document.getElementById('perm-subtitle').innerHTML = `${deptBadge} <span style="margin-left:6px;color:var(--mu);">Scoped strictly to user's assigned department(s)</span>`;
+  const canDl = !!u.can_download;
+  const isGlobalOrEditor = u.role === 'superadmin' || u.role === 'admin' || u.role === 'editor';
+  const dlToggleHtml = isGlobalOrEditor
+    ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 7px;font-weight:700;">📥 Full File Downloads (${escHtml(u.role)})</span>`
+    : `<label style="display:inline-flex;align-items:center;gap:5px;background:${canDl ? '#ecfdf5' : '#f8fafc'};border:1px solid ${canDl ? '#10b981' : '#cbd5e1'};color:${canDl ? '#047857' : '#475569'};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px;">
+         <input type="checkbox" id="perm-modal-dl-toggle" ${canDl ? 'checked' : ''} onchange="toggleUserDownloadPerm('${escHtml(u.username)}', this.checked, true)" style="cursor:pointer;margin:0;">
+         <span>📥 Allow File Downloads</span>
+       </label>`;
+  document.getElementById('perm-subtitle').innerHTML = `${deptBadge} ${dlToggleHtml} <span style="margin-left:6px;color:var(--mu);">Scoped strictly to user's assigned department(s)</span>`;
   
   // Filter projects strictly to user's assigned departments (No cross-department leakage)
   let scopedProjects = _ADMIN_DATA.projects.filter(p => {
@@ -5689,6 +5752,7 @@ async function submitAddUser() {
   const dept = document.getElementById('nu-dept')?.value || 'ENG';
   const role = document.getElementById('nu-role')?.value || 'viewer';
   const pw = document.getElementById('nu-pw')?.value;
+  const canDl = !!document.getElementById('nu-can-dl')?.checked;
   
   if (!name || !pw) return toast('Username and password required', 'er');
   
@@ -5701,7 +5765,8 @@ async function submitAddUser() {
         email: email,
         workspace_id: dept,
         role: role,
-        password: pw
+        password: pw,
+        can_download: canDl
       })
     });
     if (r && r.ok) {
@@ -5907,7 +5972,7 @@ async function exportUsersCSV() {
         `"${String(u.username||'').replace(/"/g, '""')}"`,
         `"${String(u.email||'—').replace(/"/g, '""')}"`,
         `"${deptName}"`,
-        `"${String(u.role||'').toUpperCase()}"`,
+        `"${(u.role === 'viewer' && u.can_download) ? 'VIEWER (DL)' : String(u.role||'').toUpperCase()}"`,
         ...projCols,
         totalCol,
                 `"${String(projDetailedList).replace(/"/g, '""')}"`
