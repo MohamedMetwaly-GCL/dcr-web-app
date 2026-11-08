@@ -10786,6 +10786,7 @@ def render_register(u, proj, active_ws_id=None):
     uname    = u["username"] if u else "guest"
     role     = u["role"]     if u else "guest"
     editable = can_edit(pid)
+    can_dl   = bool(editable or (hasattr(db, "can_user_download") and db.can_user_download(uname, pid)))
     btns, _, rlbl, rbg = _user_info_html(u)
     sc_json  = json.dumps(STATUS_COLORS)
     custom_sc_json = json.dumps(proj.get("status_colors", {}))
@@ -11975,7 +11976,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 {SHARED_JS}
 <script>
 window._ACCESSIBLE_PROJECTS = {projs_json};
-const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'};
+const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'}, CAN_DOWNLOAD={'true' if can_dl else 'false'};
 const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
   'Accepted & to proceed with Part C':['bbf7d0','166534'],
@@ -12841,18 +12842,22 @@ function renderRows(){{
               : 'border:1px solid '+color;
             sp.style.cssText='display:inline-flex;align-items:center;justify-content:space-between;gap:3px;padding:1px 5px;border-radius:5px;'+bdStyle+';background:'+bg+';font-size:9.5px;font-weight:700;color:'+color+';white-space:nowrap;line-height:1.2';
             const lbl=document.createElement('span');lbl.textContent=label;
+            lbl.style.cursor='pointer';
+            lbl.title='View '+name;
+            lbl.onclick=(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}};
             if(isMix)lbl.style.color=themeObj.color;
             sp.appendChild(lbl);
             const v=document.createElement('a');
-            v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px'+(isMix?';color:'+themeObj.color2:'');
+            v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px;cursor:pointer'+(isMix?';color:'+themeObj.color2:'');
             v.href='#';v.title='View '+name;v.innerHTML=_eye;
             v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}});
             sp.appendChild(v);
             const dh=canDownloadUI()?docDownloadHref(row._id,slot,entry):'';
             if(dh){{
               const d=document.createElement('a');
-              d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px'+(isMix?';color:'+themeObj.color2:'');
-              d.href=dh;d.title=((entry.is_folder||String(entry.url||'').indexOf('/folders/')>-1)?'Download folder (ZIP) - ':'Download ')+name;d.innerHTML=_dl;
+              d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px;cursor:pointer'+(isMix?';color:'+themeObj.color2:'');
+              d.href=dh;d.setAttribute('download','');d.title=((entry.folder_id||entry.is_folder||String(entry.url||'').indexOf('/folders/')>-1)?'Download folder (ZIP) - ':'Download ')+name;d.innerHTML=_dl;
+              d.addEventListener('click',(ev)=>{{ev.stopPropagation();}});
               sp.appendChild(d);
             }}
             return sp;
@@ -14508,6 +14513,7 @@ function _resolveSlotLinks(entry){{
 
 /* ===== Document-type aware attachments + in-app document viewer ===== */
 function canDownloadUI(){{
+  if(typeof CAN_DOWNLOAD !== 'undefined') return !!CAN_DOWNLOAD;
   return (typeof CAN_EDIT!=='undefined') && !!CAN_EDIT;
 }}
 function dtHasReplyCycle(dt){{
@@ -14552,10 +14558,14 @@ function tabHasReplyCycle(){{
 function docDownloadHref(rid,slot,entry){{
   if(!entry)return '';
   const url=String(entry.url||'');
-  if(entry.is_folder||url.indexOf('/folders/')>-1)return '/api/drive/folder-zip/'+encodeURIComponent(rid)+'/'+slot;
-  let fid=entry.file_id||'';
+  if(entry.folder_id||entry.is_folder||url.indexOf('/folders/')>-1)return '/api/drive/folder-zip/'+encodeURIComponent(rid)+'/'+slot;
+  let fid=entry.file_id||entry.id||'';
+  if(!fid && Array.isArray(entry.files) && entry.files.length > 0){{
+    fid = entry.files[0].file_id || entry.files[0].id || '';
+  }}
   if(!fid){{const m=url.match(/\\/d\\/([a-zA-Z0-9_-]+)/)||url.match(/[?&]id=([a-zA-Z0-9_-]+)/);fid=m?m[1]:'';}}
-  return fid?('/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'/'+encodeURIComponent(fid)+'?dl=1'):'';
+  if(fid) return '/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'/'+encodeURIComponent(fid)+'?dl=1';
+  return '/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'?dl=1';
 }}
 
 const DV={{info:null,rid:'',slot:'',cur:-1,filter:'',label:'',imgZoom:1,imgRot:0,imgPanX:0,imgPanY:0,imgDrag:false,imgSX:0,imgSY:0,excelSheet:0,excelFilter:'',excelZoom:100,wordZoom:100}};

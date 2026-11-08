@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from urllib.parse import quote
 
-from flask import Blueprint, Response, jsonify, request, send_file
+from flask import Blueprint, Response, jsonify, request, send_file, redirect
 
 import attachments
 import db
@@ -679,15 +679,22 @@ def api_office_preview(record_id, slot, file_id):
         return jsonify(ok=False, error="Could not parse Office file for preview: %s" % str(e)), 422
 
 
+@drive_viewer_bp.route("/api/drive/stream/<record_id>/<slot>")
 @drive_viewer_bp.route("/api/drive/stream/<record_id>/<slot>/<file_id>")
 @drive_viewer_bp.route("/api/drive/stream/<record_id>/<slot>/<file_id>/<path:filename>")
-def api_stream(record_id, slot, file_id, filename=None):
+def api_stream(record_id, slot, file_id=None, filename=None):
     ctx, err = _context(record_id, slot)
     if err:
         return err
     download = request.args.get("dl") == "1"
     if download and not ctx["can_download"]:
         return jsonify(error="Download permission required"), 403
+    if not file_id:
+        if ctx["kind"] == "folder":
+            return redirect("/api/drive/folder-zip/%s/%s" % (quote(record_id, safe=""), slot))
+        file_id = ctx.get("target_id")
+    if not file_id:
+        return jsonify(error="Attachment has no file id"), 404
     try:
         token, http = _hooks()
         meta = _authorize_file(ctx, token, http, str(file_id))

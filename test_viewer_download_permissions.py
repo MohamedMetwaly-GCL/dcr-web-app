@@ -6,6 +6,7 @@ os.environ["SECRET_KEY"] = "test-secret-key-1234567890abcdef"
 os.environ["ALLOW_INSECURE_COOKIES_FOR_LOCAL_DEV"] = "1"
 
 import db
+import html_render
 import blueprints.drive_viewer as dv
 from app import app
 
@@ -102,6 +103,33 @@ class TestViewerDownloadPermissions(unittest.TestCase):
             mock_set.assert_called_once_with("noura", True)
             mock_log.assert_called_once()
             self.assertEqual(mock_log.call_args[0][1], "DOWNLOAD_PERM_UPDATE")
+
+    def test_render_register_can_download_flag(self):
+        mock_user = {"username": "hesham", "role": "viewer"}
+        mock_proj = {"id": "PEM-058", "code": "PEM-058", "name": "CFC District Cooling Plant Phase 2", "workspace_id": "ENG"}
+        
+        with patch("html_render.can_edit", return_value=False), \
+             patch("db.can_user_download", return_value=True), \
+             patch("db.get_projects_for_user", return_value=[mock_proj]), \
+             patch("db.get_doc_types", return_value=[]), \
+             patch("db.get_logo", return_value=None), \
+             patch("db.get_user_workspaces", return_value=[{"id": "ENG", "name": "Engineering"}]), \
+             patch("db.is_user_workspace_admin", return_value=False):
+            
+            html = html_render.render_register(mock_user, mock_proj)
+            self.assertIn("CAN_DOWNLOAD=true", html)
+            self.assertIn("CAN_EDIT=false", html)
+
+        with patch("html_render.can_edit", return_value=False), \
+             patch("db.can_user_download", return_value=False), \
+             patch("db.get_projects_for_user", return_value=[mock_proj]), \
+             patch("db.get_doc_types", return_value=[]), \
+             patch("db.get_logo", return_value=None), \
+             patch("db.get_user_workspaces", return_value=[{"id": "ENG", "name": "Engineering"}]), \
+             patch("db.is_user_workspace_admin", return_value=False):
+            
+            html = html_render.render_register(mock_user, mock_proj)
+            self.assertIn("CAN_DOWNLOAD=false", html)
 
 if __name__ == "__main__":
     unittest.main()
