@@ -22,8 +22,8 @@ from blueprints.drive_uploads import drive_uploads_bp
 from blueprints.drive_viewer import drive_viewer_bp
 
 app = Flask(__name__)
-APP_VERSION = "2.4.5"
-BUILD_ID = "20261108-darkmode-round2"
+APP_VERSION = "2.4.6"
+BUILD_ID = "20261108-fix-js-syntax-error"
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
 app.register_blueprint(projects_bp)

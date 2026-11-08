@@ -15713,7 +15713,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
 
     const statusLine=document.createElement('div');
     statusLine.id='drv-slot-info-'+s.key;
-    statusLine.style.cssText=`font-size:10.5px;color:${{isDark?'#cbd5e1':'#334155'}};display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-height:20px';
+    statusLine.style.cssText=`font-size:10.5px;color:${{isDark?'#cbd5e1':'#334155'}};display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-height:20px`;
     card.appendChild(statusLine);
 
     const renderSlotInfo=(entry,pending)=>{{
