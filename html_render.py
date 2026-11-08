@@ -1483,6 +1483,16 @@ body.ai-drawer-open #ai-fab-btn {
   pointer-events: none !important;
   transform: scale(0.85) !important;
 }
+body:has(.overlay:not(.hidden)) #ai-fab-btn,
+body:has(#doc-viewer-modal:not(.hidden)) #ai-fab-btn,
+body:has(#admin-modal:not(.hidden)) #ai-fab-btn,
+body:has(#permissions-modal:not(.hidden)) #ai-fab-btn,
+body.modal-open #ai-fab-btn {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: scale(0.7) !important;
+  visibility: hidden !important;
+}
 
 /* AI Assistant Topbar Button — Unified & Harmonious */
 .tb-btn.ai-btn, .tb-btn.ai-topbar-btn {
@@ -8455,10 +8465,75 @@ body.dark .hc-status-pill.active {{
 }}
 
 @media (max-width: 768px) {{
-  .hub-center-group {{ display: none; }}
-  .hub-header {{ padding: 0 14px; }}
-  .hub-content-wrap {{ padding: 12px 14px; }}
-  .hub-bottom-strip {{ flex-direction: column; height: auto; padding: 6px 14px; gap: 2px; text-align: center; }}
+  .hub-center-group {{ display: none !important; }}
+  .hub-header {{
+    height: auto !important;
+    min-height: 52px !important;
+    padding: 6px 10px !important;
+    gap: 8px !important;
+    align-items: center !important;
+  }}
+  .hub-brand-cluster {{
+    gap: 8px !important;
+  }}
+  .gc-brand-box img {{
+    height: 22px !important;
+  }}
+  .gc-brand-text {{
+    font-size: 13px !important;
+    line-height: 1 !important;
+  }}
+  .gc-brand-text span {{
+    font-size: 6px !important;
+    letter-spacing: 0.8px !important;
+    margin-top: 2px !important;
+  }}
+  .hub-v-divider {{
+    height: 20px !important;
+  }}
+  .vhb-icon {{
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 11px !important;
+  }}
+  .vhb-name {{
+    font-size: 13px !important;
+  }}
+  .vhb-tag {{
+    display: none !important;
+  }}
+  .hub-user-corner {{
+    gap: 5px !important;
+  }}
+  .hub-admin-btn {{
+    padding: 4px 7px !important;
+    font-size: 11px !important;
+  }}
+  .hub-theme-toggle {{
+    padding: 4px 7px !important;
+  }}
+  #hub-theme-txt {{
+    display: none !important;
+  }}
+  .hub-u-info {{
+    gap: 0 !important;
+  }}
+  .hub-u-text {{
+    display: none !important;
+  }}
+  .hub-avatar {{
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 11px !important;
+  }}
+  .hub-signout-btn {{
+    padding: 4px 7px !important;
+  }}
+  .hub-signout-btn span:last-child {{
+    display: none !important;
+  }}
+  .hub-content-wrap {{ padding: 12px 10px !important; }}
+  .hub-bottom-strip {{ flex-direction: column !important; height: auto !important; padding: 6px 10px !important; gap: 2px !important; text-align: center !important; }}
 }}
 
 {ADMIN_MODAL_CSS}
@@ -11568,6 +11643,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 
 <!-- DOCUMENT / FOLDER VIEWER MODAL -->
 <style>
+  #doc-viewer-modal {{ z-index:10600 !important; }}
   #doc-viewer-modal.dv-fs .modal {{ width:100vw !important; max-width:100vw !important; height:100vh !important; max-height:100vh !important; border-radius:0 !important; margin:0 !important; }}
   #doc-viewer-modal.dv-fs .modal .mhdr {{ padding:4px 12px !important; min-height:32px !important; }}
   #doc-viewer-modal.dv-fs .modal .mfoot {{ display:none !important; }}
@@ -11577,14 +11653,148 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   .dv-scroll::-webkit-scrollbar-thumb {{ background:#64748b; border-radius:5px; border:2px solid #e2e8f0; }}
   .dv-scroll::-webkit-scrollbar-thumb:hover {{ background:#475569; }}
   .dv-scroll::-webkit-scrollbar-corner {{ background:#e2e8f0; }}
+  .dv-mob-bar {{ display:none; }}
+  .dv-mob-back {{ display:none; }}
+
+  @media (max-width: 768px) {{
+    #doc-viewer-modal .modal {{
+      width:100vw !important;
+      max-width:100vw !important;
+      height:100vh !important;
+      max-height:100vh !important;
+      border-radius:0 !important;
+      margin:0 !important;
+    }}
+    #doc-viewer-modal .mhdr {{
+      padding:6px 12px !important;
+      min-height:38px !important;
+    }}
+    #dv-title {{
+      font-size:12px !important;
+      line-height:1.35 !important;
+      max-height:38px !important;
+      overflow:hidden !important;
+      text-overflow:ellipsis !important;
+      display:-webkit-box !important;
+      -webkit-line-clamp:2 !important;
+      -webkit-box-orient:vertical !important;
+    }}
+    #dv-fs-btn {{ display:none !important; }}
+
+    .dv-mob-bar {{
+      display:flex !important;
+      background:#f8fafc;
+      border-bottom:1px solid var(--bd);
+      padding:4px 8px;
+      gap:6px;
+      flex-shrink:0;
+    }}
+    .dv-mob-tab {{
+      flex:1;
+      padding:6px 10px;
+      font-size:11.5px;
+      font-weight:700;
+      border-radius:6px;
+      border:1px solid var(--bd);
+      background:#fff;
+      color:#475569;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:5px;
+      transition:all 0.15s ease;
+    }}
+    .dv-mob-tab.active {{
+      background:#eff6ff;
+      border-color:#3b82f6;
+      color:#1d4ed8;
+      box-shadow:0 1px 3px rgba(59,130,246,0.15);
+    }}
+    .dv-mob-back {{
+      display:inline-flex !important;
+      align-items:center;
+      gap:4px;
+      padding:2px 7px;
+      font-size:11px;
+      font-weight:700;
+      color:#1d4ed8;
+      background:#eff6ff;
+      border:1px solid #bfdbfe;
+      border-radius:5px;
+      cursor:pointer;
+      margin-right:6px;
+      flex-shrink:0;
+    }}
+
+    #dv-body-wrap {{
+      flex-direction:column !important;
+      position:relative !important;
+    }}
+
+    #doc-viewer-modal.mob-view-list #dv-side {{
+      display:flex !important;
+      width:100% !important;
+      max-width:100% !important;
+      flex:1 !important;
+      height:100% !important;
+      max-height:100% !important;
+      border-right:none !important;
+    }}
+    #doc-viewer-modal.mob-view-list #dv-pane {{
+      display:none !important;
+    }}
+
+    #doc-viewer-modal.mob-view-preview #dv-side {{
+      display:none !important;
+    }}
+    #doc-viewer-modal.mob-view-preview #dv-pane {{
+      display:flex !important;
+      width:100% !important;
+      min-width:100% !important;
+      flex:1 !important;
+      height:100% !important;
+      max-height:100% !important;
+    }}
+
+    #doc-viewer-modal.dv-single #dv-side {{
+      display:none !important;
+    }}
+    #doc-viewer-modal.dv-single #dv-pane {{
+      display:flex !important;
+      width:100% !important;
+      min-width:100% !important;
+      flex:1 !important;
+    }}
+    #doc-viewer-modal.dv-single .dv-mob-bar {{
+      display:none !important;
+    }}
+
+    #doc-viewer-modal .mfoot {{
+      padding:6px 10px !important;
+      gap:6px !important;
+    }}
+    #doc-viewer-modal .mfoot .btn {{
+      padding:5px 10px !important;
+      font-size:11px !important;
+    }}
+  }}
 </style>
-<div class="overlay hidden" id="doc-viewer-modal" style="z-index:1200">
+<div class="overlay hidden" id="doc-viewer-modal" style="z-index:10600">
   <div class="modal" style="max-width:1180px;width:96vw;height:88vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
     <div class="mhdr" style="gap:8px"><span id="dv-title" style="min-width:0;flex:1;word-break:break-word">Document</span>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
         <button type="button" id="dv-fs-btn" class="btn btn-sc btn-sm" onclick="dvToggleModalFullscreen()" title="Toggle Fullscreen Window" style="padding:3px 9px;font-size:11px">⛶ Fullscreen</button>
         <button class="xbtn" onclick="dvCloseModal()">✕</button>
       </div>
+    </div>
+    <div id="dv-mob-bar" class="dv-mob-bar" style="display:none">
+      <button type="button" id="dv-mob-tab-list" class="dv-mob-tab active" onclick="dvMobTab('list')">
+        📁 Files (<span id="dv-mob-cnt">0</span>)
+      </button>
+      <button type="button" id="dv-mob-tab-view" class="dv-mob-tab" onclick="dvMobTab('view')">
+        👁️ Preview
+      </button>
     </div>
     <div id="dv-body-wrap" style="flex:1;min-height:0;height:100%;overflow:hidden;display:flex;flex-direction:row">
       <div id="dv-side" style="width:310px;flex-shrink:0;height:100%;max-height:100%;min-height:0;border-right:1px solid var(--bd);display:none;flex-direction:column;background:#fff;overflow:hidden">
@@ -14213,13 +14423,41 @@ function _dvEl(id){{return document.getElementById(id);}}
 function _dvFmt(n){{return (typeof _fmtBytes==='function')?_fmtBytes(n):(n+' B');}}
 function dvCloseModal(){{
   const m=_dvEl('doc-viewer-modal');
-  if(m)m.classList.remove('dv-fs');
+  if(m){{
+    m.classList.remove('dv-fs','mob-view-list','mob-view-preview','dv-single');
+  }}
   const b=_dvEl('dv-fs-btn');
   if(b)b.textContent='⛶ Fullscreen';
   if(document.fullscreenElement){{try{{document.exitFullscreen();}}catch(_e){{}}}}
   closeM('doc-viewer-modal');
   const p=_dvEl('dv-pane');
   if(p)p.innerHTML='';
+  const fab=_dvEl('ai-fab-btn');
+  if(fab){{fab.style.opacity='';fab.style.pointerEvents='';fab.style.visibility='';}}
+}}
+function dvMobTab(tab){{
+  const m=_dvEl('doc-viewer-modal');
+  if(!m)return;
+  const btnList=_dvEl('dv-mob-tab-list');
+  const btnView=_dvEl('dv-mob-tab-view');
+  if(tab==='view'){{
+    m.classList.remove('mob-view-list');
+    m.classList.add('mob-view-preview');
+    if(btnView)btnView.classList.add('active');
+    if(btnList)btnList.classList.remove('active');
+  }}else{{
+    m.classList.remove('mob-view-preview');
+    m.classList.add('mob-view-list');
+    if(btnList)btnList.classList.add('active');
+    if(btnView)btnView.classList.remove('active');
+  }}
+}}
+function dvTogglePdfMode(fid){{
+  DV.pdfMode=DV.pdfMode||{{}};
+  DV.pdfMode[fid]=(DV.pdfMode[fid]==='cloud')?'direct':'cloud';
+  if(DV.info&&DV.info.files[DV.cur]){{
+    dvSelect(DV.cur);
+  }}
 }}
 function dvToggleModalFullscreen(){{
   const m=_dvEl('doc-viewer-modal');
@@ -14277,6 +14515,8 @@ async function openDocViewer(rid,slot,opts){{
   _dvEl('dv-side').style.display='none';
   _dvEl('dv-foot-left').innerHTML='';
   _dvSetBusy('Loading...');
+  const fab=_dvEl('ai-fab-btn');
+  if(fab){{fab.style.opacity='0';fab.style.pointerEvents='none';fab.style.visibility='hidden';}}
   openM('doc-viewer-modal');
   try{{
     const r=await fetch('/api/drive/view-info/'+encodeURIComponent(rid)+'/'+slot);
@@ -14296,6 +14536,19 @@ function _dvRender(){{
   _dvEl('dv-title').innerHTML=escHtml(head)+' <span style="font-weight:500;color:var(--mu);font-size:11px;margin-left:6px">'
     +(isFolder?(j.files.length+' file'+(j.files.length===1?'':'s')+' · '):'')+total+'</span>';
   const showSide=isFolder&&j.files.length>0;
+  const m=_dvEl('doc-viewer-modal');
+  const mobBar=_dvEl('dv-mob-bar');
+  if(m){{
+    if(showSide){{
+      m.classList.remove('dv-single');
+      if(mobBar){{mobBar.style.display='';}}
+      const cnt=_dvEl('dv-mob-cnt');if(cnt)cnt.textContent=j.files.length;
+      dvMobTab('list');
+    }}else{{
+      m.classList.add('dv-single');
+      if(mobBar){{mobBar.style.display='none';}}
+    }}
+  }}
   _dvEl('dv-side').style.display=showSide?'flex':'none';
   _dvEl('dv-search').value='';
   _dvRenderList();
@@ -14678,17 +14931,27 @@ function dvSelect(i){{
   DV.excelSheet=0;DV.excelFilter='';DV.excelZoom=100;DV.wordZoom=100;
   const f=j.files[i];
   _dvRenderList();
+  if(window.innerWidth<=768){{
+    dvMobTab('view');
+  }}
   const pane=_dvEl('dv-pane');
   const noCopy=!j.can_download;
+  const mobBack=(j.kind==='folder'&&j.files.length>1)?'<button type="button" class="dv-mob-back" onclick="dvMobTab(\'list\')">← Files</button>':'';
   let body='';
   if(f.preview==='pdf'){{
-    const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
+    const isMob=window.innerWidth<=768||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    DV.pdfMode=DV.pdfMode||{{}};
+    const pdfMode=DV.pdfMode[f.id]||(isMob&&f.drive_embed_url?'cloud':'direct');
+    const pdfSrc=(pdfMode==='cloud'&&f.drive_embed_url)?f.drive_embed_url:(f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH'));
+    const toggleBtn=f.drive_embed_url?`<button type="button" class="btn btn-sc btn-sm" onclick="dvTogglePdfMode('${{f.id}}')" style="padding:2px 8px;font-size:11px;font-weight:600" title="Switch PDF View Mode">${{pdfMode==='cloud'?'📄 Direct Stream':'☁️ Cloud Preview'}}</button>`:'';
+    const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:4px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
     const pdfTools = `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">`
-      +(!noCopy?`<a href="${{f.stream_url}}" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:11px;text-decoration:none">🔗 Open in New Tab</a>`:'')
+      +toggleBtn
+      +(!noCopy?`<a href="${{f.stream_url}}" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:11px;text-decoration:none">🔗 Open</a>`:'')
       +`</div>`;
     pane.innerHTML='<div style="padding:4px 10px;border-bottom:1px solid var(--bd);background:#fff;font-size:11.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0;min-height:30px">'
-      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;min-width:0">'+_dvIcon(f)+' <span style="color:#0f172a">'+escHtml(f.name)+'</span>'+subLabel+' <span style="color:var(--mu);font-weight:500;white-space:nowrap;font-size:10.5px">('+_dvFmt(f.size)+')</span></span>'+pdfTools+'</div>'
-      +'<iframe id="dv-pdf-frame" allowfullscreen title="'+escHtml(f.name)+'" src="'+f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH')+'" style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>';
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px;min-width:0">'+mobBack+_dvIcon(f)+' <span style="color:#0f172a">'+escHtml(f.name)+'</span>'+subLabel+' <span style="color:var(--mu);font-weight:500;white-space:nowrap;font-size:10.5px">('+_dvFmt(f.size)+')</span></span>'+pdfTools+'</div>'
+      +'<iframe id="dv-pdf-frame" allowfullscreen title="'+escHtml(f.name)+'" src="'+pdfSrc+'" style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>';
     pane.style.display='flex';pane.style.flexDirection='column';
     _dvRenderFooter();
     return;
@@ -14723,7 +14986,7 @@ function dvSelect(i){{
   }}
   const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
   pane.innerHTML='<div style="padding:6px 12px;border-bottom:1px solid var(--bd);background:#fff;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0">'
-    +'<span style="word-break:break-all">'+_dvIcon(f)+' '+escHtml(f.name)+subLabel+'</span><span style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
+    +'<span style="word-break:break-all;display:flex;align-items:center;gap:4px">'+mobBack+_dvIcon(f)+' '+escHtml(f.name)+subLabel+'</span><span style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
   pane.style.display='flex';pane.style.flexDirection='column';
   if(f.preview==='image')_dvBindImgStage();
   if(f.preview==='excel'||f.preview==='word')_dvLoadOfficePreview(f);

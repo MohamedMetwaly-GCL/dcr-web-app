@@ -206,12 +206,14 @@ def _file_dict(f, rid, slot, can_dl):
     kind = preview_kind(f.get("name"), f.get("mimeType"))
     fid_q = quote(str(f["id"]), safe="")
     rid_q = quote(rid, safe="")
-    base = "/api/drive/stream/%s/%s/%s" % (rid_q, slot, fid_q)
+    fname = f.get("name") or "file"
+    fname_q = quote(fname, safe="")
+    base = "/api/drive/stream/%s/%s/%s/%s" % (rid_q, slot, fid_q, fname_q)
     office_url = ("/api/drive/office-preview/%s/%s/%s" % (rid_q, slot, fid_q)) if kind in ("excel", "word") else ""
     drive_embed_url = "https://drive.google.com/file/d/%s/preview" % fid_q
     return {
         "id": f["id"],
-        "name": f.get("name") or "file",
+        "name": fname,
         "size": int(f.get("size") or 0),
         "mime": f.get("mimeType") or "",
         "subfolder": f.get("subfolder") or "",
@@ -678,7 +680,8 @@ def api_office_preview(record_id, slot, file_id):
 
 
 @drive_viewer_bp.route("/api/drive/stream/<record_id>/<slot>/<file_id>")
-def api_stream(record_id, slot, file_id):
+@drive_viewer_bp.route("/api/drive/stream/<record_id>/<slot>/<file_id>/<path:filename>")
+def api_stream(record_id, slot, file_id, filename=None):
     ctx, err = _context(record_id, slot)
     if err:
         return err
