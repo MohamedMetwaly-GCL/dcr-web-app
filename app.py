@@ -22,8 +22,8 @@ from blueprints.drive_uploads import drive_uploads_bp
 from blueprints.drive_viewer import drive_viewer_bp
 
 app = Flask(__name__)
-APP_VERSION = "2.4.3"
-BUILD_ID = "20261108-register-dl-badge"
+APP_VERSION = "2.4.4"
+BUILD_ID = "20261108-darkmode-polish"
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
 app.register_blueprint(projects_bp)

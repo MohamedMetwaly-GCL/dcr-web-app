@@ -2946,6 +2946,27 @@ html{scroll-behavior:smooth}
 body{font-family:'Inter','Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
 body.dark{--pr:#60a5fa;--pl:#93c5fd;--ac:#7ec832;--bg:#0f172a;--wh:#162132;--bd:#304257;
   --tx:#e2e8f0;--mu:#9fb0c6;--shell-bg:#0a1929;--shell-bg2:#0f2238;--bg2:#0f172a}
+/* Global Dark Mode Scrollbars */
+body.dark, body.dark * {
+  scrollbar-color: #334155 #0f172a;
+}
+body.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+body.dark ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+body.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+body.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+body.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
+}
 /* ── TOPBAR: Dark Navy Shell ── */
 #topbar{
   background:var(--shell-bg);
@@ -8783,16 +8804,50 @@ body.dark .kpi.pu .kval{{color:#c4b5fd}}
 body.dark .klbl,body.dark .ktrend,body.dark .psel-bar label{{color:#b8c8da}}
 body.dark .clbl{{color:#93c5fd}}
 body.dark .stitle{{color:#93c5fd;border-color:#93c5fd}}
-body.dark .dt-tbl th{{background:#1e3a5f;color:#e2e8f0}}
-body.dark .dt-tbl td{{border-color:#334155;color:#cbd5e1}}
-body.dark .dt-tbl tr:hover td{{background:#142235}}
-body.dark .dt-tbl .alt td{{background:#132031}}
+/* Comprehensive .dt-tbl Dark Mode Styling (Fixes Image 1 & Image 4) */
+body.dark .dt-tbl{{background:#162132;color:#e2e8f0}}
+body.dark .dt-tbl th{{background:#1e3a5f!important;color:#e2e8f0!important;border-color:#334155!important}}
+body.dark .dt-tbl th:first-child{{background:#1e3a5f!important}}
+body.dark .dt-tbl td{{background:#162132;border-color:#253648!important;color:#cbd5e1}}
+body.dark .dt-tbl td:first-child{{background:#162132!important;color:#38bdf8!important}}
+body.dark .dt-tbl tr:nth-child(even) td{{background:#121c2b!important}}
+body.dark .dt-tbl tr:nth-child(even) td:first-child{{background:#121c2b!important}}
+body.dark .dt-tbl tr:hover td{{background:#1a2a3d!important}}
+body.dark .dt-tbl tr:hover td:first-child{{background:#1a2a3d!important}}
+body.dark .dt-tbl .alt td{{background:#121c2b!important}}
+body.dark .dt-tbl .alt td:first-child{{background:#121c2b!important}}
+body.dark #exec-content .dt-tbl td:first-child{{color:#f1f5f9!important}}
+
 body.dark #topbar{{background:#0f2640}}
 body.dark .pchdr{{background:#1e3a5f}}
 body.dark .pcbody{{color:#dbe7f3}}
 body.dark select,body.dark input{{background:#1e293b;color:#e2e8f0;border-color:#334155}}
 body.dark .tbtn{{background:#1e293b;color:#e2e8f0;border-color:#334155}}
-body.dark .ov-row{{border-color:#334155;color:#cbd5e1}}
+
+/* Overdue Tab styling (Fixes Image 5) */
+body.dark .ov-row{{border-color:#304257!important;color:#cbd5e1}}
+body.dark .ov-row:hover{{background:#1a2a3d!important}}
+body.dark .ov-sub{{color:#94a3b8!important}}
+body.dark .ov-badge{{background:rgba(239,68,68,.2)!important;color:#fca5a5!important;border:1px solid rgba(239,68,68,.4)!important}}
+body.dark .ov-badge.warn{{background:rgba(245,158,11,.2)!important;color:#fcd34d!important;border:1px solid rgba(245,158,11,.4)!important}}
+body.dark .ov-dt-code, body.dark .ov-row span[style*="background:#f0f4f8"]{{background:#1e293b!important;color:#93c5fd!important;border:1px solid #334155!important}}
+
+/* Daily Digest Dark Mode Card Titles and Badges (Fixes Image 2) */
+body.dark .digest-card-rcv .panel-title, body.dark #tab-daily-digest .panel[style*="#3b82f6"] .panel-title, body.dark #tab-om-daily-digest .panel[style*="#3b82f6"] div[style*="#1e40af"]{{color:#60a5fa!important}}
+body.dark .digest-card-iss .panel-title, body.dark #tab-daily-digest .panel[style*="#f97316"] .panel-title, body.dark #tab-om-daily-digest .panel[style*="#f97316"] div[style*="#c2410c"]{{color:#fb923c!important}}
+body.dark .digest-card-rep .panel-title, body.dark #tab-daily-digest .panel[style*="#22c55e"] .panel-title, body.dark #tab-om-daily-digest .panel[style*="#22c55e"] div[style*="#166534"]{{color:#4ade80!important}}
+body.dark #tab-daily-digest .panel div[style*="background:#f1f5f9"], body.dark .digest-badge-rcv{{background:rgba(59,130,246,.18)!important;color:#93c5fd!important;border:1px solid rgba(59,130,246,.35)!important}}
+body.dark #tab-daily-digest .panel div[style*="background:#fef3c7"], body.dark .digest-badge-iss{{background:rgba(249,115,22,.18)!important;color:#fdba74!important;border:1px solid rgba(249,115,22,.35)!important}}
+body.dark #tab-daily-digest .panel div[style*="background:#dcfce7"], body.dark .digest-badge-rep{{background:rgba(34,197,94,.18)!important;color:#86efac!important;border:1px solid rgba(34,197,94,.35)!important}}
+
+/* Audit Log Table Styling (Fixes Image 3) */
+body.dark #aud-tbl th{{background:#1e3a5f!important;color:#e2e8f0!important;box-shadow:0 1px 0 rgba(255,255,255,.08)!important}}
+body.dark #aud-tbl td{{background:#162132;border-color:#253648!important;color:#cbd5e1}}
+body.dark #aud-tbl tr:nth-child(even) td, body.dark #aud-tbl tr.alt td{{background:#121c2b!important}}
+body.dark #aud-tbl tr:hover td{{background:#1a2a3d!important}}
+body.dark .aud-old-val{{color:#f87171!important}}
+body.dark .aud-new-val{{color:#4ade80!important}}
+body.dark .aud-ts{{color:#94a3b8!important}}
 body.dark .prog{{background:#334155}}
 body.dark .addcard{{background:linear-gradient(180deg,#132031,#0f1a29);border-color:#304257;color:#b8c8da}}
 body.dark .addcard:hover{{background:linear-gradient(180deg,#17263a,#122033);border-color:#60a5fa;color:#dbe7f3}}
@@ -10387,16 +10442,20 @@ function filterOverdue(){{
     (a.discipline||'').localeCompare(b.discipline||''));
   const list=document.getElementById('ov-list');
   if(!data.length){{list.innerHTML='<div style="text-align:center;padding:32px;color:var(--mu)">✅ No overdue documents</div>';return;}}
+  const isDark = document.body.classList.contains('dark');
   list.innerHTML=data.map(r=>{{
     const bg=r.days_overdue>21?'er':r.days_overdue>14?'warn':'warn';
+    const dtStyle = isDark
+      ? 'font-size:10px;background:#1e293b;color:#93c5fd;border:1px solid #334155;padding:2px 7px;border-radius:4px;white-space:nowrap'
+      : 'font-size:10px;background:#f0f4f8;color:#475569;border:1px solid #cbd5e1;padding:2px 7px;border-radius:4px;white-space:nowrap';
     return `<div class="ov-row">
       <span class="ov-badge ${{bg}}">${{r.days_overdue}}d</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.docNo}}</div>
-        <div style="color:var(--mu);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.title||'—'}}</div>
+        <div class="ov-sub" style="color:var(--mu);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.title||'—'}}</div>
       </div>
       <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{r.discipline||'—'}}</span>
-      <span style="font-size:10px;background:#f0f4f8;padding:2px 7px;border-radius:4px;white-space:nowrap">${{r.dt_code}}</span>
+      <span class="ov-dt-code" style="${{dtStyle}}">${{r.dt_code}}</span>
       <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{(r.issuedDate||'').slice(0,10)}}</span>
     </div>`;
   }}).join('');
@@ -10429,38 +10488,54 @@ async function loadDailyDigest() {{
     
     let html = '';
     
+    const isDark = document.body.classList.contains('dark');
     // Received Card
-    html += '<div class="panel" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:#1e40af;font-size:16px;">📥 Received (' + (r.received||[]).length + ')</div><div style="margin-top:12px;">';
+    html += '<div class="panel digest-card-rcv" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:' + (isDark ? '#60a5fa' : '#1e40af') + ';font-size:16px;">📥 Received (' + (r.received||[]).length + ')</div><div style="margin-top:12px;">';
     if((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents received.</div>';
     (r.received||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
       html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
-      if((doc.project_name || doc.project_id)) html += '<div style="font-size:8px;background:#f1f5f9;color:#475569;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #cbd5e1;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
+      if((doc.project_name || doc.project_id)) {{
+        const bStyle = isDark
+          ? 'font-size:8px;background:rgba(59,130,246,0.18);color:#93c5fd;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(59,130,246,0.35);flex-shrink:0;'
+          : 'font-size:8px;background:#f1f5f9;color:#475569;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #cbd5e1;flex-shrink:0;';
+        html += '<div class="digest-badge-rcv" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
+      }}
       html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
     }});
     html += '</div></div>';
 
     // Issued Card
-    html += '<div class="panel" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:#c2410c;font-size:16px;">📤 Issued (' + (r.issued||[]).length + ')</div><div style="margin-top:12px;">';
+    html += '<div class="panel digest-card-iss" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:' + (isDark ? '#fb923c' : '#c2410c') + ';font-size:16px;">📤 Issued (' + (r.issued||[]).length + ')</div><div style="margin-top:12px;">';
     if((r.issued||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents issued.</div>';
     (r.issued||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
       html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
-      if((doc.project_name || doc.project_id)) html += '<div style="font-size:8px;background:#fef3c7;color:#b45309;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #fde68a;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
+      if((doc.project_name || doc.project_id)) {{
+        const bStyle = isDark
+          ? 'font-size:8px;background:rgba(249,115,22,0.18);color:#fdba74;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(249,115,22,0.35);flex-shrink:0;'
+          : 'font-size:8px;background:#fef3c7;color:#b45309;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #fde68a;flex-shrink:0;';
+        html += '<div class="digest-badge-iss" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
+      }}
       html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
     }});
     html += '</div></div>';
 
     // Replied Card
-    html += '<div class="panel" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:#166534;font-size:16px;">✅ Replied (' + (r.replied||[]).length + ')</div><div style="margin-top:12px;">';
+    html += '<div class="panel digest-card-rep" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:' + (isDark ? '#4ade80' : '#166534') + ';font-size:16px;">✅ Replied (' + (r.replied||[]).length + ')</div><div style="margin-top:12px;">';
     if((r.replied||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents replied.</div>';
     (r.replied||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
       html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
-      if((doc.project_name || doc.project_id)) html += '<div style="font-size:8px;background:#dcfce7;color:#15803d;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #bbf7d0;flex-shrink:0;">'+(doc.project_name||doc.project_id)+'</div>';
+      if((doc.project_name || doc.project_id)) {{
+        const bStyle = isDark
+          ? 'font-size:8px;background:rgba(34,197,94,0.18);color:#86efac;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(34,197,94,0.35);flex-shrink:0;'
+          : 'font-size:8px;background:#dcfce7;color:#15803d;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #bbf7d0;flex-shrink:0;';
+        html += '<div class="digest-badge-rep" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
+      }}
       html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div>';
       if(doc.status) html += '<div style="font-size:9px;font-weight:700;color:var(--tx2);">Status: ' + doc.status + '</div>';
       html += '</div>';
@@ -10723,27 +10798,50 @@ async function loadAudit(reset=false){{
       tr.className=i%2===0?'':'alt';
       const ts=new Date(r.ts);
       const tsStr=ts.toLocaleDateString('en-GB')+' '+ts.toLocaleTimeString('en-US',{{hour:'2-digit',minute:'2-digit',hour12:true}});
-      const actionColor=ACTION_COLORS[r.action]||'#374151';
-      const actionBg=
+      const isDark = document.body.classList.contains('dark');
+      let actionColor = ACTION_COLORS[r.action] || '#374151';
+      let actionBg =
         (r.action==='ADD'||r.action==='USER_CREATE'||r.action==='IMPORT_EXCEL'||r.action==='IMPORT_PROJECT') ? '#bbf7d0' :
         (r.action==='EDIT'||r.action==='PROJECT_ASSIGN'||r.action==='USER_EDIT') ? '#dbeafe' :
         (r.action==='DELETE'||r.action==='USER_DELETE'||r.action==='LOGIN_FAIL'||r.action==='ACCESS DENIED'||r.action==='EXPORT_PDF'||r.action==='SECURITY_ALERT'||r.action==='BRUTE_FORCE_BLOCKED'||r.action==='LOGIN_LOCKOUT'||r.action==='FILE_REJECTED') ? '#fee2e2' :
         (r.action==='PROJECT VIEW'||r.action==='TAB_VIEW'||r.action==='DOC_VIEW'||r.action==='DRIVE_LINK_CLICK') ? '#e0f2fe' : (r.action==='FILE_DOWNLOAD') ? '#f3e8ff' :
         (r.action==='AI QUERY') ? '#ede9fe' :
         (r.action==='SEARCH') ? '#fef3c7' :
-        (r.action==='EXPORT_EXCEL'||r.action==='PASSWORD_CHANGE') ? '#f3e8ff' : '#f1f5f9';
+        (r.action==='EXPORT_EXCEL'||r.action==='PASSWORD_CHANGE'||r.action==='DOWNLOAD_PERM_UPDATE') ? '#f3e8ff' : '#f1f5f9';
+
+      if (isDark) {{
+        actionBg =
+          (r.action==='ADD'||r.action==='USER_CREATE'||r.action==='IMPORT_EXCEL'||r.action==='IMPORT_PROJECT') ? 'rgba(34,197,94,0.18)' :
+          (r.action==='EDIT'||r.action==='PROJECT_ASSIGN'||r.action==='USER_EDIT') ? 'rgba(59,130,246,0.18)' :
+          (r.action==='DELETE'||r.action==='USER_DELETE'||r.action==='LOGIN_FAIL'||r.action==='ACCESS DENIED'||r.action==='EXPORT_PDF'||r.action==='SECURITY_ALERT'||r.action==='BRUTE_FORCE_BLOCKED'||r.action==='LOGIN_LOCKOUT'||r.action==='FILE_REJECTED') ? 'rgba(239,68,68,0.22)' :
+          (r.action==='PROJECT VIEW'||r.action==='TAB_VIEW'||r.action==='DOC_VIEW'||r.action==='DRIVE_LINK_CLICK') ? 'rgba(14,165,233,0.18)' :
+          (r.action==='FILE_DOWNLOAD'||r.action==='EXPORT_EXCEL'||r.action==='PASSWORD_CHANGE'||r.action==='DOWNLOAD_PERM_UPDATE') ? 'rgba(168,85,247,0.22)' :
+          (r.action==='AI QUERY') ? 'rgba(139,92,246,0.2)' :
+          (r.action==='SEARCH') ? 'rgba(245,158,11,0.2)' : 'rgba(148,163,184,0.16)';
+        actionColor =
+          (r.action==='ADD'||r.action==='USER_CREATE'||r.action==='IMPORT_EXCEL'||r.action==='IMPORT_PROJECT') ? '#86efac' :
+          (r.action==='EDIT'||r.action==='PROJECT_ASSIGN'||r.action==='USER_EDIT') ? '#93c5fd' :
+          (r.action==='DELETE'||r.action==='USER_DELETE'||r.action==='LOGIN_FAIL'||r.action==='ACCESS DENIED'||r.action==='EXPORT_PDF'||r.action==='SECURITY_ALERT'||r.action==='BRUTE_FORCE_BLOCKED'||r.action==='LOGIN_LOCKOUT'||r.action==='FILE_REJECTED') ? '#fca5a5' :
+          (r.action==='PROJECT VIEW'||r.action==='TAB_VIEW'||r.action==='DOC_VIEW'||r.action==='DRIVE_LINK_CLICK') ? '#7dd3fc' :
+          (r.action==='FILE_DOWNLOAD'||r.action==='EXPORT_EXCEL'||r.action==='PASSWORD_CHANGE'||r.action==='DOWNLOAD_PERM_UPDATE') ? '#d8b4fe' :
+          (r.action==='AI QUERY') ? '#c4b5fd' :
+          (r.action==='SEARCH') ? '#fcd34d' : '#cbd5e1';
+      }}
+
       const projRaw=_auditProjMap[r.project_id]||r.project_id||'';
       const projDisplay=_val(projRaw);
       const docDisplay=r.doc_no?`<span style="color:var(--pr);font-weight:600">${{r.doc_no}}</span>`:_dash;
-      const oldDisplay=r.old_value?`<span style="color:#dc2626">${{r.old_value}}</span>`:_dash;
-      const newDisplay=r.new_value?`<span style="color:#166534">${{r.new_value}}</span>`:_dash;
+      const oldColor = isDark ? '#f87171' : '#dc2626';
+      const newColor = isDark ? '#4ade80' : '#166534';
+      const oldDisplay=r.old_value?`<span class="aud-old-val" style="color:${{oldColor}};font-weight:600;">${{r.old_value}}</span>`:_dash;
+      const newDisplay=r.new_value?`<span class="aud-new-val" style="color:${{newColor}};font-weight:600;">${{r.new_value}}</span>`:_dash;
       const ipDisplay=r.ip_address?`<span style="font-family:monospace;color:var(--mu);font-size:9.5px">${{r.ip_address}}</span>`:_dash;
       const devDisplay=r.device?`<span style="color:var(--tx);font-size:9.5px">${{r.device}}</span>`:_dash;
 
       tr.innerHTML=`
-        <td style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
+        <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
         <td style="font-weight:600;font-size:11px">${{r.username||''}}</td>
-        <td><span style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
+        <td><span style="background:${{actionBg}};color:${{actionColor}};border:1px solid ${{isDark?actionColor+'40':'transparent'}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
         <td style="font-size:10px;color:var(--mu)" title="${{r.project_id||''}}">${{projDisplay}}</td>
         <td style="font-size:11px" title="${{r.doc_no||''}}">${{docDisplay}}</td>
         <td style="font-size:10px;color:var(--mu)" title="${{r.field_name||''}}">${{_val(r.field_name)}}</td>
