@@ -4139,7 +4139,7 @@ SHARED_JS = """
 </div>
 
 <!-- PERMISSIONS MODAL -->
-<div class="overlay hidden" id="permissions-modal" style="z-index: 1060;">
+<div class="overlay hidden" id="permissions-modal" style="z-index: 10500;">
   <div class="modal" style="max-width:720px; width:92%; max-height:85vh; display:flex; flex-direction:column;">
     <div class="mhdr" style="padding:12px 18px; display:flex; justify-content:space-between; align-items:center;">
       <div>
@@ -7219,6 +7219,8 @@ ADMIN_MODAL_CSS = """
   -webkit-backdrop-filter: blur(5px);
 }
 .overlay.hidden { display: none !important; }
+#admin-modal { z-index: 10000 !important; }
+#permissions-modal { z-index: 10500 !important; }
 .modal {
   background: var(--wh, #ffffff); color: var(--tx, #0f172a); border-radius: 12px;
   box-shadow: 0 25px 60px rgba(0,0,0,.45); width: 95%; max-width: 980px; max-height: 92vh;
@@ -7591,7 +7593,7 @@ def render_launchpad(u):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gas Chill &amp; Valmore &mdash; Company Workspaces Launchpad</title>
+<title>Gas Chill &mdash; Company Workspaces Launchpad</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
