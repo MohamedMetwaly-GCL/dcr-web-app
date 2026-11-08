@@ -11644,6 +11644,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
 <!-- DOCUMENT / FOLDER VIEWER MODAL -->
 <style>
   #doc-viewer-modal {{ z-index:10600 !important; }}
+  #doc-viewer-modal.hidden {{ display: none !important; }}
   #doc-viewer-modal.dv-fs .modal {{ width:100vw !important; max-width:100vw !important; height:100vh !important; max-height:100vh !important; border-radius:0 !important; margin:0 !important; }}
   #doc-viewer-modal.dv-fs .modal .mhdr {{ padding:4px 12px !important; min-height:32px !important; }}
   #doc-viewer-modal.dv-fs .modal .mfoot {{ display:none !important; }}
@@ -11657,7 +11658,10 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   .dv-mob-back {{ display:none; }}
 
   @media (max-width: 768px) {{
-    #doc-viewer-modal {{
+    #doc-viewer-modal.hidden {{
+      display: none !important;
+    }}
+    #doc-viewer-modal:not(.hidden) {{
       position: fixed !important;
       inset: 0 !important;
       display: flex !important;
