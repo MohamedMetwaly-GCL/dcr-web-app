@@ -11789,10 +11789,10 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       </div>
     </div>
     <div id="dv-mob-bar" class="dv-mob-bar" style="display:none">
-      <button type="button" id="dv-mob-tab-list" class="dv-mob-tab active" onclick="dvMobTab('list')">
+      <button type="button" id="dv-mob-tab-list" class="dv-mob-tab active" onclick="dvMobTab(0)">
         📁 Files (<span id="dv-mob-cnt">0</span>)
       </button>
-      <button type="button" id="dv-mob-tab-view" class="dv-mob-tab" onclick="dvMobTab('view')">
+      <button type="button" id="dv-mob-tab-view" class="dv-mob-tab" onclick="dvMobTab(1)">
         👁️ Preview
       </button>
     </div>
@@ -14435,12 +14435,13 @@ function dvCloseModal(){{
   const fab=_dvEl('ai-fab-btn');
   if(fab){{fab.style.opacity='';fab.style.pointerEvents='';fab.style.visibility='';}}
 }}
-function dvMobTab(tab){{
+function dvMobTab(mode){{
   const m=_dvEl('doc-viewer-modal');
   if(!m)return;
+  const isView = (mode===1 || mode==='view');
   const btnList=_dvEl('dv-mob-tab-list');
   const btnView=_dvEl('dv-mob-tab-view');
-  if(tab==='view'){{
+  if(isView){{
     m.classList.remove('mob-view-list');
     m.classList.add('mob-view-preview');
     if(btnView)btnView.classList.add('active');
@@ -14543,7 +14544,7 @@ function _dvRender(){{
       m.classList.remove('dv-single');
       if(mobBar){{mobBar.style.display='';}}
       const cnt=_dvEl('dv-mob-cnt');if(cnt)cnt.textContent=j.files.length;
-      dvMobTab('list');
+      dvMobTab(0);
     }}else{{
       m.classList.add('dv-single');
       if(mobBar){{mobBar.style.display='none';}}
@@ -14932,11 +14933,11 @@ function dvSelect(i){{
   const f=j.files[i];
   _dvRenderList();
   if(window.innerWidth<=768){{
-    dvMobTab('view');
+    dvMobTab(1);
   }}
   const pane=_dvEl('dv-pane');
   const noCopy=!j.can_download;
-  const mobBack=(j.kind==='folder'&&j.files.length>1)?'<button type="button" class="dv-mob-back" onclick="dvMobTab(\'list\')">← Files</button>':'';
+  const mobBack=(j.kind==='folder'&&j.files.length>1)?'<button type="button" class="dv-mob-back" onclick="dvMobTab(0)">← Files</button>':'';
   let body='';
   if(f.preview==='pdf'){{
     const isMob=window.innerWidth<=768||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
