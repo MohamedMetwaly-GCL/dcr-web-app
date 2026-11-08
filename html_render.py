@@ -5391,7 +5391,7 @@ function renderPermTable(projects) {
         <td style="padding:10px 14px;text-align:center;width:90px;">
           <input type="checkbox" class="perm-toggle-switch" id="chk-access-${escHtml(p.id)}" ${hasAccess ? 'checked' : ''} onchange="togglePermAccess('${escHtml(username)}', '${escHtml(p.id)}', this.checked)" style="cursor:pointer;transform:scale(1.2);">
         </td>
-        <td style="padding:10px 14px;text-align:center;width:160px;">
+        <td id="dt-cell-${escHtml(p.id)}" style="padding:10px 14px;text-align:center;width:160px;">
           ${hasAccess ? `
             <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(p.id)}" onclick="toggleDocTypesPanel('${escHtml(p.id)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
               <span>📄</span>
@@ -5401,7 +5401,7 @@ function renderPermTable(projects) {
           ` : '<span style="color:var(--mu);font-size:11px;">—</span>'}
         </td>
       </tr>
-      <tr id="dt-box-${escHtml(p.id)}" class="perm-dt-box" style="display:none;background:#f8fafc;border-bottom:2px solid var(--bd,#e2e8f0);">
+      <tr id="dt-box-${escHtml(p.id)}" class="perm-dt-box" style="display:none;background:var(--bg,#f8fafc);border-bottom:2px solid var(--bd,#e2e8f0);">
         <td colspan="3" style="padding:10px 18px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
             <span style="font-size:11px;font-weight:700;color:var(--tx);">Allowed Document Types for ${escHtml(p.name)}:</span>
@@ -5425,12 +5425,12 @@ function renderPermTable(projects) {
 
 window._PROJECT_DOC_TYPES_CACHE = {};
 
-async function toggleDocTypesPanel(pid) {
+async function toggleDocTypesPanel(pid, forceOpen) {
   const box = document.getElementById('dt-box-' + pid);
   if (!box) return;
-  const isHidden = box.style.display === 'none';
-  box.style.display = isHidden ? 'table-row' : 'none';
-  if (!isHidden) return;
+  const shouldOpen = (typeof forceOpen === 'boolean') ? forceOpen : (box.style.display === 'none');
+  box.style.display = shouldOpen ? 'table-row' : 'none';
+  if (!shouldOpen) return;
 
   const chipsDiv = document.getElementById('dt-chips-' + pid);
   if (!chipsDiv) return;
@@ -5456,7 +5456,7 @@ async function toggleDocTypesPanel(pid) {
   allDts.forEach(d => {
     const isChecked = !allowed || allowed.includes(String(d.id).toUpperCase()) || allowed.includes(String(d.code).toUpperCase());
     html += `
-      <label style="display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--bd);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;user-select:none;">
+      <label style="display:inline-flex;align-items:center;gap:5px;background:var(--surface,#fff);color:var(--tx);border:1px solid var(--bd);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;user-select:none;">
         <input type="checkbox" class="dt-chk-${escHtml(pid)}" value="${escHtml(d.id)}" data-code="${escHtml(d.code)}" ${isChecked ? 'checked' : ''} onchange="onDocTypeCheckboxChange('${escHtml(pid)}')">
         <strong>${escHtml(d.code)}</strong>
         <span style="color:var(--mu);font-size:10px;">${escHtml(d.name)}</span>
@@ -5529,10 +5529,28 @@ function filterPermProjects(query) {
   });
 }
 
-async function togglePermAccess(username, pid, enable) {
+async function togglePermAccess(username, pid, enable, autoExpand = true) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   const statusEl = document.getElementById('perm-save-status');
   if (statusEl) statusEl.textContent = 'Saving...';
+  
+  // Real-time DOM update: Show/hide document types button and box immediately without reload
+  const dtCell = document.getElementById('dt-cell-' + pid);
+  const box = document.getElementById('dt-box-' + pid);
+  if (dtCell) {
+    if (enable) {
+      dtCell.innerHTML = `
+        <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(pid)}" onclick="toggleDocTypesPanel('${escHtml(pid)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
+          <span>📄</span>
+          <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">All</span>
+          <span>▾</span>
+        </button>
+      `;
+    } else {
+      dtCell.innerHTML = '<span style="color:var(--mu);font-size:11px;">—</span>';
+      if (box) box.style.display = 'none';
+    }
+  }
   
   try {
     await apiFetch('/api/users', {
@@ -5557,9 +5575,31 @@ async function togglePermAccess(username, pid, enable) {
     }
     if (statusEl) statusEl.textContent = '✔ Changes saved.';
     setTimeout(() => { if (statusEl) statusEl.textContent = 'Permissions are applied immediately.'; }, 2000);
+    
+    // Automatically open document types panel so user can immediately choose tabs
+    if (enable && autoExpand) {
+      toggleDocTypesPanel(pid, true);
+    }
   } catch (e) {
     toast('Failed to update permission: ' + e.message, 'er');
     if (statusEl) statusEl.textContent = 'Failed to save.';
+    // Revert UI on network failure
+    const chk = document.getElementById('chk-access-' + pid);
+    if (chk) chk.checked = !enable;
+    if (dtCell) {
+      if (!enable) {
+        dtCell.innerHTML = `
+          <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(pid)}" onclick="toggleDocTypesPanel('${escHtml(pid)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
+            <span>📄</span>
+            <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">All</span>
+            <span>▾</span>
+          </button>
+        `;
+      } else {
+        dtCell.innerHTML = '<span style="color:var(--mu);font-size:11px;">—</span>';
+        if (box) box.style.display = 'none';
+      }
+    }
   }
 }
 
@@ -5601,7 +5641,7 @@ async function permSelectAll(e) {
     const chk = document.getElementById('chk-access-' + pid);
     if (chk && !chk.checked) {
       chk.checked = true;
-      await togglePermAccess(username, pid, true);
+      await togglePermAccess(username, pid, true, false);
     }
   }
 }
@@ -5616,7 +5656,7 @@ async function permClearAll(e) {
     const chk = document.getElementById('chk-access-' + pid);
     if (chk && chk.checked) {
       chk.checked = false;
-      await togglePermAccess(username, pid, false);
+      await togglePermAccess(username, pid, false, false);
     }
   }
 }
