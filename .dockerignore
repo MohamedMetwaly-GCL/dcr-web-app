@@ -1,0 +1,17 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+*.log
+server.err.log
+server.out.log
+scratch/
+legacy_prs/
+backup_*.json
+dump.txt
+dump.py
+dump_docx.py
+dump_excel.csv
