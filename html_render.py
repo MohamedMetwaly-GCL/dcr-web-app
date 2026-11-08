@@ -2945,7 +2945,7 @@ BASE_CSS = """
 html{scroll-behavior:smooth}
 body{font-family:'Inter','Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
 body.dark{--pr:#60a5fa;--pl:#93c5fd;--ac:#7ec832;--bg:#0f172a;--wh:#162132;--bd:#304257;
-  --tx:#e2e8f0;--mu:#9fb0c6;--shell-bg:#0a1929;--shell-bg2:#0f2238;--bg2:#0f172a}
+  --tx:#e2e8f0;--mu:#9fb0c6;--shell-bg:#0a1929;--shell-bg2:#0f2238;--bg2:#0f172a;--row-hover:#17263b}
 /* Global Dark Mode Scrollbars */
 body.dark, body.dark * {
   scrollbar-color: #334155 #0f172a;
@@ -2966,6 +2966,138 @@ body.dark ::-webkit-scrollbar-thumb:hover {
 }
 body.dark input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(0.85);
+}
+
+/* ── Dark Mode: User Management & Permissions Tables (Fixes Image 2) ── */
+body.dark .user-tbl-wrap, body.dark .perm-tbl-wrap {
+  background: #0f172a !important;
+  border-color: #304257 !important;
+}
+body.dark .user-tbl th, body.dark .perm-table th {
+  background: #162438 !important;
+  color: #94a3b8 !important;
+  border-bottom-color: #253648 !important;
+}
+body.dark .user-tbl td, body.dark .perm-table td {
+  border-bottom-color: #1e293b !important;
+  color: #e2e8f0 !important;
+}
+body.dark .user-tbl tr:hover, body.dark .user-tbl tr:hover td,
+body.dark .perm-table tr:hover, body.dark .perm-table tr:hover td {
+  background: #17263b !important;
+}
+body.dark .uact-btn.dl-allowed, body.dark .user-tbl .badge[style*="#ecfdf5"] {
+  background: rgba(16, 185, 129, 0.16) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+}
+body.dark .uact-btn.dl-restricted {
+  background: rgba(100, 116, 139, 0.16) !important;
+  color: #cbd5e1 !important;
+  border-color: #334155 !important;
+}
+body.dark .user-tbl .badge[style*="#f1f5f9"] {
+  background: #1e293b !important;
+  color: #cbd5e1 !important;
+}
+body.dark .user-tbl .badge[style*="#f0fdf4"] {
+  background: rgba(34, 197, 94, 0.16) !important;
+  color: #86efac !important;
+}
+body.dark .dept-badge {
+  background: rgba(99, 102, 241, 0.2) !important;
+  color: #a5b4fc !important;
+  border: 1px solid rgba(99, 102, 241, 0.35) !important;
+}
+body.dark .dept-role-pill {
+  background: #162438 !important;
+  border-color: #304257 !important;
+}
+body.dark .dept-role-pill span {
+  color: #e2e8f0 !important;
+}
+body.dark #admin-modal select.tbl-select,
+body.dark #admin-modal input.tbl-input,
+body.dark #permissions-modal select.tbl-select,
+body.dark #permissions-modal input.tbl-input {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+body.dark #admin-add-card, body.dark #admin-audit-card {
+  background: #162438 !important;
+  border-color: #304257 !important;
+}
+
+/* ── Dark Mode: Edit Document Attachments Box (Fixes Image 1 & Image 3) ── */
+body.dark #dcr-drive-upload-box .drv-slot-card {
+  background: #132032 !important;
+  border-color: #2a3b50 !important;
+}
+body.dark #dcr-drive-upload-box .drv-slot-card strong {
+  color: #cbd5e1 !important;
+}
+body.dark #dcr-drive-upload-box .drv-slot-card div[id^="drv-slot-info"] {
+  color: #cbd5e1 !important;
+}
+body.dark #dcr-drive-upload-box .drv-slot-card button:not(.btn-pr),
+body.dark #dcr-drive-upload-box .drv-slot-card a {
+  background: #1e293b !important;
+}
+
+/* ── Dark Mode: Batch Drive Upload Modal (Fixes Image 4) ── */
+body.dark #batch-drive-modal .modal {
+  background: #0f1c2e !important;
+  color: #e2e8f0 !important;
+}
+body.dark #batch-drv-slot-wrap {
+  background: #162438 !important;
+  border-color: #253648 !important;
+}
+body.dark #batch-drive-modal label[id^="batch-slot-card"] {
+  background: #162438 !important;
+  color: #cbd5e1 !important;
+  border-color: #304257 !important;
+}
+body.dark #batch-drive-modal label[id^="batch-slot-card"][style*="#2563eb"] {
+  background: rgba(37, 99, 235, 0.2) !important;
+  color: #93c5fd !important;
+  border-color: #3b82f6 !important;
+}
+body.dark #batch-drv-target-path {
+  background: rgba(15, 118, 110, 0.2) !important;
+  border-color: rgba(20, 184, 166, 0.35) !important;
+  color: #5eead4 !important;
+}
+body.dark #batch-drive-modal table thead tr, body.dark .batch-drv-th-row {
+  background: #162438 !important;
+  color: #94a3b8 !important;
+  border-bottom-color: #253648 !important;
+}
+body.dark #batch-drive-modal table th {
+  color: #94a3b8 !important;
+}
+body.dark #batch-drive-modal table td {
+  border-bottom-color: #253648 !important;
+  color: #e2e8f0 !important;
+}
+body.dark #batch-drv-overall {
+  background: #162438 !important;
+  border: 1px solid #253648 !important;
+}
+
+/* ── Dark Mode: NOC Summary Footer (Fixes Image 5) ── */
+body.dark #noc-summary {
+  background: #0f172a !important;
+  border-top-color: #253648 !important;
+}
+body.dark #noc-summary .noc-kpi-card, body.dark #noc-summary > div > div {
+  background: #162132 !important;
+  border-color: #253648 !important;
+  color: #e2e8f0 !important;
+}
+body.dark #noc-summary div[style*="color:#64748b"] {
+  color: #94a3b8 !important;
 }
 /* ── TOPBAR: Dark Navy Shell ── */
 #topbar{
@@ -11481,7 +11613,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <table id="regtbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
     <div class="empty hidden" id="empty" style="display:none"><div style="font-size:48px;margin-bottom:10px">📁</div><p style="color:var(--mu)">No records yet — click ➕ Add to create one</p></div>
   </div>
-  <div id="noc-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);background:#f8fafc">
+  <div id="noc-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);">
     <div id="noc-summary-inner" style="display:flex;flex-wrap:wrap;gap:10px"></div>
   </div>
 </div>
@@ -11780,7 +11912,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
       <div style="max-height:340px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px">
         <table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead>
-            <tr style="background:#f8fafc;border-bottom:1px solid var(--bd);text-align:left;color:var(--mu)">
+            <tr class="batch-drv-th-row" style="border-bottom:1px solid var(--bd);text-align:left;color:var(--mu)">
               <th style="padding:7px 8px">#</th>
               <th style="padding:7px 8px">File Name</th>
               <th style="padding:7px 8px;width:75px">Size</th>
@@ -14539,7 +14671,7 @@ function renderNocSummary(rows){{
   }}
   
   const h=[];
-  const mkCard=(lbl,val,sub)=>`<div style="flex:1;min-width:140px;background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
+  const mkCard=(lbl,val,sub)=>`<div style="flex:1;min-width:140px;background:var(--wh,#fff);border:1px solid var(--bd);border-radius:8px;padding:10px 12px" class="noc-kpi-card">
     <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{lbl}}</div>
     <div style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${{val}}</div>
     <div style="font-size:10px;color:var(--mu);margin-top:3px">${{sub}}</div>
@@ -14548,12 +14680,12 @@ function renderNocSummary(rows){{
   h.push(mkCard('Visible NOCs', String((rows||[]).length), 'Filtered rows'));
   h.push(mkCard('Submitted Cost', formatCurrencyValue(totals.submittedCost), 'Visible total'));
   
-  h.push(`<div style="flex:2.5;min-width:280px;background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;">
+  h.push(`<div style="flex:2.5;min-width:280px;background:var(--wh,#fff);border:1px solid var(--bd);border-radius:8px;padding:10px 12px" class="noc-kpi-card;display:flex;flex-direction:column;justify-content:center;">
     <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;text-align:center;">Final Approval</div>
     <div style="display:flex;justify-content:space-between;align-items:center;">
       <div style="flex:1;text-align:center">
         <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Request value</div>
-        <div style="font-size:14px;font-weight:600;color:#64748b;margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
+        <div style="font-size:14px;font-weight:600;color:var(--tx-mu,#64748b);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
       </div>
       <div style="width:1px;background:var(--bd);align-self:stretch;margin:0 12px;"></div>
       <div style="flex:1;text-align:center">
@@ -15272,7 +15404,10 @@ document.addEventListener('keydown',function(ev){{
 
 function _getReplyStatusTheme(statusStr){{
   const raw=String(statusStr||'').trim();
-  if(!raw)return {{color:'#0f766e',bg:'#f0fdfa',bd:'#99f6e4',mixed:false}};
+  const isDark=typeof document!=='undefined'&&document.body&&document.body.classList.contains('dark');
+  if(!raw)return isDark
+    ? {{color:'#2dd4bf',bg:'rgba(15,118,110,0.18)',bd:'rgba(45,212,191,0.35)',mixed:false}}
+    : {{color:'#0f766e',bg:'#f0fdfa',bd:'#99f6e4',mixed:false}};
   
   if(typeof SC !== 'undefined' && SC && SC[raw]){{
     const [bgHex, fgHex] = SC[raw];
@@ -15308,17 +15443,34 @@ function _getReplyStatusTheme(statusStr){{
   }}
   if(hasGreen&&hasRed){{
     return {{
-      color:'#15803d',
-      color2:'#dc2626',
-      bg:'linear-gradient(135deg, #dcfce7 0%, #dcfce7 48%, #fee2e2 52%, #fee2e2 100%)',
-      bd:'#16a34a',
-      bd2:'#dc2626',
+      color:isDark?'#4ade80':'#15803d',
+      color2:isDark?'#f87171':'#dc2626',
+      bg:isDark
+        ? 'linear-gradient(135deg, rgba(34,197,94,0.18) 0%, rgba(34,197,94,0.18) 48%, rgba(239,68,68,0.18) 52%, rgba(239,68,68,0.18) 100%)'
+        : 'linear-gradient(135deg, #dcfce7 0%, #dcfce7 48%, #fee2e2 52%, #fee2e2 100%)',
+      bd:isDark?'#22c55e':'#16a34a',
+      bd2:isDark?'#ef4444':'#dc2626',
       mixed:true
     }};
   }}
-  if(hasRed)return {{color:'#dc2626',bg:'#fef2f2',bd:'#fca5a5',mixed:false}};
-  if(hasGreen)return {{color:'#16a34a',bg:'#f0fdf4',bd:'#bbf7d0',mixed:false}};
-  return {{color:'#d97706',bg:'#fffbeb',bd:'#fde68a',mixed:false}};
+  if(hasRed)return {{
+    color:isDark?'#f87171':'#dc2626',
+    bg:isDark?'rgba(239,68,68,0.18)':'#fef2f2',
+    bd:isDark?'rgba(248,113,113,0.35)':'#fca5a5',
+    mixed:false
+  }};
+  if(hasGreen)return {{
+    color:isDark?'#4ade80':'#16a34a',
+    bg:isDark?'rgba(34,197,94,0.18)':'#f0fdf4',
+    bd:isDark?'rgba(74,222,128,0.35)':'#bbf7d0',
+    mixed:false
+  }};
+  return {{
+    color:isDark?'#fbbf24':'#d97706',
+    bg:isDark?'rgba(245,158,11,0.18)':'#fffbeb',
+    bd:isDark?'rgba(251,191,36,0.35)':'#fde68a',
+    mixed:false
+  }};
 }}
 
 function classifyLegacyLinkKind(row, dtTab, explicitUrl){{
@@ -15504,8 +15656,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const currentNocPartStatus=(pLetter)=>{{
     return _getNocPartStatus(row, pLetter, formRoot) || (pLetter==='B'?cur.part_b?.consultant_status:cur.part_d?.consultant_status) || '';
   }};
-  const replyThemeFor=(hasFile)=>hasFile?_getReplyStatusTheme(currentStatus()):{{color:'#475569',bg:'#f8fafc',bd:'#cbd5e1'}};
-  const nocPartThemeFor=(pLetter,hasFile)=>hasFile?_getReplyStatusTheme(currentNocPartStatus(pLetter)):{{color:'#475569',bg:'#f8fafc',bd:'#cbd5e1'}};
+  const isDark=typeof document!=='undefined'&&document.body&&document.body.classList.contains('dark');
+  const defaultEmptyTheme=isDark
+    ? {{color:'#94a3b8',bg:'#132032',bd:'#2a3b50'}}
+    : {{color:'#475569',bg:'#f8fafc',bd:'#cbd5e1'}};
+  const replyThemeFor=(hasFile)=>hasFile?_getReplyStatusTheme(currentStatus()):defaultEmptyTheme;
+  const nocPartThemeFor=(pLetter,hasFile)=>hasFile?_getReplyStatusTheme(currentNocPartStatus(pLetter)):defaultEmptyTheme;
   const initReplyTheme=replyThemeFor(Boolean(cur.approval));
   const initPartBTheme=nocPartThemeFor('B',Boolean(cur.part_b));
   const initPartDTheme=nocPartThemeFor('D',Boolean(cur.part_d));
@@ -15513,14 +15669,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const dtObj=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT || String(d.code||'').trim().toUpperCase()===curT)||{{}};
   const hasReply=isEng&&dtHasReplyCycle(dtObj);
   const slots=isNoc
-    ? [{{key:'part_a',title:'Part A: Notice of Change',pathSub:'Part A',emptyText:'No Part A attached',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
+    ? [{{key:'part_a',title:'Part A: Notice of Change',pathSub:'Part A',emptyText:'No Part A attached',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
        {{key:'part_b',title:'Part B: Consultant Reply',pathSub:'Part B',emptyText:'No Part B attached',color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
-       {{key:'part_c',title:'Part C: Cost Claim',pathSub:'Part C',emptyText:'No Part C attached',color:'#0284c7',bg:'#f0f9ff',bd:'#bae6fd'}},
+       {{key:'part_c',title:'Part C: Cost Claim',pathSub:'Part C',emptyText:'No Part C attached',color:isDark?'#38bdf8':'#0284c7',bg:isDark?'rgba(2,132,199,0.15)':'#f0f9ff',bd:isDark?'rgba(56,189,248,0.35)':'#bae6fd'}},
        {{key:'part_d',title:'Part D: Final Approval',pathSub:'Part D',emptyText:'No Part D attached',color:initPartDTheme.color,bg:initPartDTheme.bg,bd:initPartDTheme.bd}}]
     : (hasReply
-      ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}},
+      ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
          {{key:'approval',title:'2. Consultant Reply',pathSub:'Replied',emptyText:'No consultant reply attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
-      : [{{key:'submission',title:'Document Attachment',pathSub:'',emptyText:'No file attached yet',color:'#2563eb',bg:'#eff6ff',bd:'#bfdbfe'}}]);
+      : [{{key:'submission',title:'Document Attachment',pathSub:'',emptyText:'No file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}]);
   const grid=document.createElement('div');
   grid.style.cssText=isNoc
     ? 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:6px'
@@ -15528,6 +15684,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
 
   slots.forEach(s=>{{
     const card=document.createElement('div');
+    card.className='drv-slot-card';
     const hdr=document.createElement('div');
     let upBtn=null, fldBtn=null, progBarInner=null;
     const applyCardTheme=(th)=>{{
@@ -15537,7 +15694,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         : `border:1px solid ${{s.bd}}`;
       card.style.cssText=`${{bdCss}};background:${{s.bg}};border-radius:7px;padding:${{isNoc?'7px 8px':'10px 12px'}};display:flex;flex-direction:column;gap:${{isNoc?'4px':'6px'}};transition:all .15s;min-width:0;overflow:hidden`;
       hdr.style.cssText=`font-size:${{isNoc?'10.5px':'11px'}};font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
-      if(upBtn)upBtn.style.cssText=`font-size:10px;padding:${{isNoc?'3px 5px':'4px 10px'}};border-color:${{s.color}};color:${{s.color}};background:#fff;white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
+      if(upBtn)upBtn.style.cssText=`font-size:10px;padding:${{isNoc?'3px 5px':'4px 10px'}};border-color:${{s.color}};color:${{s.color}};background:${{isDark?'#1e293b':'#fff'}};white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
       if(progBarInner)progBarInner.style.background=s.color;
     }};
     applyCardTheme(s);
@@ -15551,12 +15708,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     folderHint.style.cssText='font-size:9.5px;color:var(--mu);display:flex;align-items:center;gap:3px;margin-top:-2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     const _projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
     const pathText = isNoc ? `${{_projLbl}} ❯ NOC ❯ ${{pathSubName}}` : `${{_projLbl}} ❯ ${{dtName}}${{hasReply?(' ❯ '+pathSubName):''}}`;
-    folderHint.innerHTML=`<span>📁</span> <strong style="color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escHtml(pathText)}}">${{escHtml(pathText)}}</strong>`;
+    folderHint.innerHTML=`<span>📁</span> <strong style="color:${{isDark?'#cbd5e1':'#334155'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escHtml(pathText)}}">${{escHtml(pathText)}}</strong>`;
     card.appendChild(folderHint);
 
     const statusLine=document.createElement('div');
     statusLine.id='drv-slot-info-'+s.key;
-    statusLine.style.cssText='font-size:10.5px;color:#334155;display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-height:20px';
+    statusLine.style.cssText=`font-size:10.5px;color:${{isDark?'#cbd5e1':'#334155'}};display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-height:20px';
     card.appendChild(statusLine);
 
     const renderSlotInfo=(entry,pending)=>{{
@@ -15609,7 +15766,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       const vA=document.createElement('a');
       vA.href=_recId?'#':vUrl;
       if(!_recId){{vA.target='_blank';vA.rel='noopener';}}
-      vA.style.cssText=`padding:2px 5px;border-radius:4px;background:#fff;border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:9.5px;cursor:pointer;white-space:nowrap`;
+      vA.style.cssText=`padding:2px 5px;border-radius:4px;background:${{isDark?'#1e293b':'#fff'}};border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:9.5px;cursor:pointer;white-space:nowrap`;
       vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'👁 Folder':'👁 View';
       vA.onclick=(ev)=>{{
         if(_recId){{ev.preventDefault();openDocViewer(_recId,_slotKey,{{label:s.title}});}}
@@ -15622,7 +15779,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const dA=document.createElement('a');
         dA.href=_dlHref;
         if(!_recId){{dA.target='_blank';dA.rel='noopener';}}
-        dA.style.cssText='padding:2px 5px;border-radius:4px;background:#fff;border:1px solid #64748b;color:#334155;text-decoration:none;font-weight:600;font-size:9.5px;white-space:nowrap';
+        dA.style.cssText=`padding:2px 5px;border-radius:4px;background:${{isDark?'#1e293b':'#fff'}};border:1px solid ${{isDark?'#475569':'#64748b'}};color:${{isDark?'#cbd5e1':'#334155'}};text-decoration:none;font-weight:600;font-size:9.5px;white-space:nowrap`;
         dA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'⬇ ZIP':'⬇ DL';
         dA.onclick=()=>{{if(!_recId)logFileAction('FILE_DOWNLOAD',row?.docNo||row?.nocNo||'',_dlHref);}};
         statusLine.appendChild(dA);
@@ -15668,7 +15825,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       upBtn=document.createElement('button');
       upBtn.type='button';
       upBtn.className='btn btn-sc btn-sm';
-      upBtn.style.cssText=`font-size:10px;padding:${{isNoc?'3px 5px':'4px 10px'}};border-color:${{s.color}};color:${{s.color}};background:#fff;white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
+      upBtn.style.cssText=`font-size:10px;padding:${{isNoc?'3px 5px':'4px 10px'}};border-color:${{s.color}};color:${{s.color}};background:${{isDark?'#1e293b':'#fff'}};white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
       upBtn.textContent=cur[s.key]?(isNoc?'🔄 Replace':'🔄 Replace File'):(isNoc?'📤 File':'📤 Upload File');
       upBtn.onclick=()=>fileInp.click();
 
@@ -15745,7 +15902,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       fldBtn=document.createElement('button');
       fldBtn.type='button';
       fldBtn.className='btn btn-sc btn-sm';
-      fldBtn.style.cssText=`font-size:${{isNoc?'10px':'11px'}};padding:${{isNoc?'3px 5px':'4px 8px'}};border-color:#0f766e;color:#0f766e;background:#fff;white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
+      fldBtn.style.cssText=`font-size:${{isNoc?'10px':'11px'}};padding:${{isNoc?'3px 5px':'4px 8px'}};border-color:#0f766e;color:${{isDark?'#2dd4bf':'#0f766e'}};background:${{isDark?'#1e293b':'#fff'}};white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
       fldBtn.textContent=isNoc?'📁 Folder':'📁 Upload Folder';
       fldBtn.title='Upload an uncompressed folder of files for this document';
       fldBtn.onclick=()=>folderInp.click();
