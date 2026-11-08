@@ -813,8 +813,8 @@ def is_user_workspace_admin(username, workspace_id=None):
     if workspace_id:
         ws_upper = str(workspace_id).strip().upper()
         row = q("SELECT role FROM user_workspaces WHERE username=%s AND UPPER(workspace_id)=%s", (username, ws_upper), one=True)
-        if row and str(row.get("role", "")).strip().lower() in ("admin", "superadmin"):
-            return True
+        if row is not None and row.get("role"):
+            return str(row.get("role", "")).strip().lower() in ("admin", "superadmin")
         if str(u.get("role", "")).strip().lower() in ("admin", "superadmin") and ((u.get("primary_workspace") or "ENG").upper() == ws_upper or (ws_upper == "ENG" and not u.get("primary_workspace"))):
             return True
         return False
@@ -833,13 +833,20 @@ def get_admin_workspaces_for_user(username):
         return [str(w["id"]).upper() for w in get_workspaces(active_only=True)]
 
     ws_ids = set()
+    explicit_roles = {}
+    rows = q("SELECT workspace_id, role FROM user_workspaces WHERE username=%s", (username,))
+    for r in (rows or []):
+        if r.get("workspace_id"):
+            wid = str(r["workspace_id"]).strip().upper()
+            role = str(r.get("role", "")).strip().lower()
+            explicit_roles[wid] = role
+            if role in ("admin", "superadmin"):
+                ws_ids.add(wid)
+
     if str(u.get("role", "")).strip().lower() in ("admin", "superadmin"):
         pw = (u.get("primary_workspace") or "ENG").upper()
-        ws_ids.add(pw)
-    rows = q("SELECT workspace_id FROM user_workspaces WHERE username=%s AND LOWER(role) IN ('admin', 'superadmin')", (username,))
-    for r in rows:
-        if r.get("workspace_id"):
-            ws_ids.add(str(r["workspace_id"]).upper())
+        if pw not in explicit_roles or explicit_roles[pw] in ("admin", "superadmin"):
+            ws_ids.add(pw)
     return list(ws_ids)
 
 def assign_user_workspace(username, workspace_id, role="viewer"):
@@ -1255,15 +1262,33 @@ def get_projects_for_user(username, role=None, workspace_id=None):
     if user_role == "superadmin":
         return get_projects(workspace_id=workspace_id)
     if user_role == "admin":
-        admin_ws = get_admin_workspaces_for_user(username)
+        admin_ws = [str(w).strip().upper() for w in (get_admin_workspaces_for_user(username) or [])]
         if workspace_id:
-            if workspace_id in admin_ws:
+            ws_up = str(workspace_id).strip().upper()
+            if ws_up in admin_ws or (not admin_ws and ws_up == "ENG"):
                 return get_projects(workspace_id=workspace_id)
-            return []
+            # Not an admin of this workspace: fall back to assigned projects in this workspace
+            user_projs = get_user_projects(username)
+            pids = [p["project_id"] for p in user_projs if p.get("project_id")]
+            if not pids:
+                return []
+            return get_projects(pids, workspace_id=workspace_id)
         else:
             all_projs = []
-            for aws in admin_ws:
-                all_projs.extend(get_projects(workspace_id=aws))
+            seen_ids = set()
+            ws_list = admin_ws if admin_ws else ["ENG"]
+            for aws in ws_list:
+                for p in get_projects(workspace_id=aws):
+                    if p["id"] not in seen_ids:
+                        seen_ids.add(p["id"])
+                        all_projs.append(p)
+            user_projs = get_user_projects(username)
+            pids = [p["project_id"] for p in user_projs if p.get("project_id") and p["project_id"] not in seen_ids]
+            if pids:
+                for p in get_projects(pids):
+                    if p["id"] not in seen_ids:
+                        seen_ids.add(p["id"])
+                        all_projs.append(p)
             return all_projs
     user_projs = get_user_projects(username)
     pids = [p["project_id"] for p in user_projs if p.get("project_id")]

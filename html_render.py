@@ -4712,7 +4712,7 @@ function openUserDeptsModal(username) {
     const desc = w.description || w.name_ar || '';
     
     rowsHtml += `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid var(--bd);border-radius:8px;background:var(--wh);margin-bottom:8px;transition:all 0.15s;">
+      <div class="dept-checkboxes" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid var(--bd);border-radius:8px;background:var(--wh);margin-bottom:8px;transition:all 0.15s;">
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;user-select:none;margin:0;">
           <input type="checkbox" id="modal-dept-chk-${w.id}" ${isAssigned ? 'checked' : ''}
                  onchange="toggleModalUserDept('${escHtml(username)}', '${w.id}', this.checked)"
