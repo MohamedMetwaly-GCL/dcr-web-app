@@ -304,4 +304,21 @@ r_recovered = R.resolve_upload_destination("p", "PR", "submission", d_pr, st_bad
 assert r_recovered["folder_id"] == d_pr.id_of("9. Requisition (PR)"), "Must invalidate bad revision cache and rediscover proper folder"
 print("bad revision cache recovery OK")
 
+# Internal subfolders inside 9. Requisition (PR) must not cause ambiguity
+pr_tree_internal = {
+    "PROJ_PR2": {
+        "9. Requisition (PR)": {
+            "PR-373 REV00": {},
+            "PR-321 REV00": {},
+            "PR-359 REV00": {},
+        }
+    }
+}
+d_pr2 = FakeDrive(pr_tree_internal)
+st_pr2 = FakeStore({"drive_folder_id": d_pr2.id_of("PROJ_PR2")},
+                   {"PR": {"code": "PR", "name": "Requisition"}})
+r_pr2 = R.resolve_upload_destination("p", "PR", "submission", d_pr2, st_pr2, flat=True)
+assert r_pr2["folder_id"] == d_pr2.id_of("9. Requisition (PR)"), "Must upload to 9. Requisition (PR) and ignore internal document folders"
+print("internal revision subfolders inside category folder ignored OK")
+
 print("ALL DRIVE ROUTING TESTS PASSED")

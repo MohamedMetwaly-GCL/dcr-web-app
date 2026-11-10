@@ -141,7 +141,8 @@ def resolve_hierarchical_subfolder(service, dt_folder_id, project, direction="",
         top_score = scored_comps[0][0]
         chosen_comps = [c for s, c in scored_comps if s == top_score]
     else:
-        chosen_comps = children
+        # None of the child folders match any company / party alias; upload directly to parent folder
+        return dt_folder_id
 
     final_candidates = []
     for comp in chosen_comps:
@@ -423,11 +424,17 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
     if destination_folder_id and folder_is_usable(service, destination_folder_id):
         slot_id = destination_folder_id
     elif flat:
-        slot_id = resolve_hierarchical_subfolder(
-            service, dt_folder_id, project,
-            direction=direction, party=party,
-            from_party=from_party, to_party=to_party, doc_no=doc_no
-        )
+        is_letter = str(dt.get("code") or "").upper() in ("LTR", "L", "LETTERS", "COR", "CORRESPONDENCE") or \
+                    any(k in str(dt.get("name") or "").lower() for k in ("letter", "correspond"))
+        has_party_or_dir = bool(direction or party or from_party or to_party)
+        if is_letter or has_party_or_dir:
+            slot_id = resolve_hierarchical_subfolder(
+                service, dt_folder_id, project,
+                direction=direction, party=party,
+                from_party=from_party, to_party=to_party, doc_no=doc_no
+            )
+        else:
+            slot_id = dt_folder_id
     elif slot_id and not folder_is_usable(service, slot_id):
         slot_id = ""
     if not slot_id:
