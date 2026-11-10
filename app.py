@@ -22,8 +22,8 @@ from blueprints.drive_uploads import drive_uploads_bp
 from blueprints.drive_viewer import drive_viewer_bp
 
 app = Flask(__name__)
-APP_VERSION = "2.4.6"
-BUILD_ID = "20261108-fix-js-syntax-error"
+APP_VERSION = "2.4.7"
+BUILD_ID = "20261110-drive-folder-routing-fix"
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
 app.register_blueprint(projects_bp)

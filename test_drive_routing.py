@@ -271,4 +271,37 @@ for part_slot, folder_label in (("part_a", "Part A"), ("part_b", "Part B"), ("pa
     assert res_noc["folder_id"] == d_noc.id_of(folder_label), f"Expected {folder_label} for {part_slot}"
 print("NOC 4-part slot routing OK")
 
+# ---- Numbered category folder matching and revision subfolder penalty (e.g. PR-373 REV00 vs 9. Requisition (PR))
+assert R.score_folder_name("9. Requisition (PR)", "PR", "Requisition") == 98
+assert R.score_folder_name("PR-373 REV00", "PR", "Requisition") < 50
+assert R.score_folder_name("PR-321 REV00", "PR", "Requisition") < 50
+assert R.score_folder_name("2. Drawing - Document Submittal (DS)", "DS", "Document Submittal") == 98
+
+pr_tree = {
+    "PROJ_PR": {
+        "PR-373 REV00": {},
+        "PR-321 REV00": {},
+        "PR-359 REV00": {},
+        "9. Requisition (PR)": {},
+    }
+}
+d_pr = FakeDrive(pr_tree)
+st_pr = FakeStore({"drive_folder_id": d_pr.id_of("PROJ_PR")},
+                  {"PR": {"code": "PR", "name": "Requisition"}})
+
+# Must resolve directly to 9. Requisition (PR) without ambiguity
+r_pr = R.resolve_upload_destination("p", "PR", "submission", d_pr, st_pr, flat=True)
+assert r_pr["folder_id"] == d_pr.id_of("9. Requisition (PR)"), "Must choose 9. Requisition (PR) over revision subfolders"
+assert st_pr.dts["PR"]["drive_folder_id"] == d_pr.id_of("9. Requisition (PR)")
+print("numbered category vs revision subfolder routing OK")
+
+# Bad cache recovery: if an older session cached a bad revision folder name, ignore it and re-discover
+st_bad_cache = FakeStore({"drive_folder_id": d_pr.id_of("PROJ_PR")},
+                         {"PR": {"code": "PR", "name": "Requisition",
+                                 "drive_folder_id": d_pr.id_of("PR-373 REV00"),
+                                 "drive_folder_name": "PR-373 REV00"}})
+r_recovered = R.resolve_upload_destination("p", "PR", "submission", d_pr, st_bad_cache, flat=True)
+assert r_recovered["folder_id"] == d_pr.id_of("9. Requisition (PR)"), "Must invalidate bad revision cache and rediscover proper folder"
+print("bad revision cache recovery OK")
+
 print("ALL DRIVE ROUTING TESTS PASSED")

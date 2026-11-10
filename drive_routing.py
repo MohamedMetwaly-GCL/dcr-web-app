@@ -171,19 +171,39 @@ def resolve_hierarchical_subfolder(service, dt_folder_id, project, direction="",
 
 def score_folder_name(folder_name, code, name, direction=""):
     """Score how well a Drive folder name matches a doc type (code + display name)."""
-    f_tokens, f_norm = _tokens(folder_name), _norm(folder_name)
+    raw_name = str(folder_name or "").strip()
+    f_tokens, f_norm = _tokens(raw_name), _norm(raw_name)
     c_norm, n_norm = _norm(code), _norm(name)
     c_tokens = _tokens(code)
+    n_tokens = _tokens(name)
     if not f_norm:
         return 0
+
+    unindexed = re.sub(r"^\d+[\s._-]+", "", raw_name).strip()
+    u_tokens, u_norm = _tokens(unindexed), _norm(unindexed)
+
+    has_code_in_parens = bool(c_norm and re.search(r"[\(\[]\s*" + re.escape(str(code).strip()) + r"\s*[\)\]]", raw_name, re.I))
+    has_code_token = bool(c_tokens and any(t in f_tokens for t in c_tokens))
+    has_name_token = bool(n_tokens and any(t in f_tokens for t in n_tokens))
+
     if f_norm in (c_norm, n_norm):
         score = SCORE_EXACT
+    elif has_code_in_parens and has_name_token:
+        # Full category folder with name & parenthesized code, e.g. '9. Requisition (PR)'
+        score = 98
+    elif has_code_in_parens:
+        # Parenthesized code, e.g. '9. (PR)'
+        score = 95
     elif c_tokens and f_tokens[:len(c_tokens)] == c_tokens:
         score = SCORE_PREFIX
-    elif c_tokens and any(f_tokens[i:i + len(c_tokens)] == c_tokens
-                        for i in range(len(f_tokens) - len(c_tokens) + 1)):
+    elif has_code_token and has_name_token:
+        # Both code and name present, e.g. 'Requisition PR'
+        score = 92
+    elif has_code_token:
         score = SCORE_TOKEN
     elif n_norm and (" " + n_norm + " ") in (" " + f_norm + " "):
+        score = SCORE_NAME_IN
+    elif n_tokens and (f_tokens[:len(n_tokens)] == n_tokens or u_tokens[:len(n_tokens)] == n_tokens):
         score = SCORE_NAME_IN
     else:
         score = 0
@@ -206,7 +226,14 @@ def score_folder_name(folder_name, code, name, direction=""):
             elif inc_hit:
                 score -= 35
 
-    return score
+    # Penalize specific document / revision subfolders (e.g. 'PR-373 REV00')
+    if score > 0:
+        if re.search(r"\b(rev|revision)[._\s-]*\d+\b", raw_name, re.I):
+            score -= 40
+        if c_norm and re.search(r"\b" + re.escape(str(code).strip()) + r"[-_]\d+\b", raw_name, re.I):
+            score -= 30
+
+    return max(0, score)
 
 
 def match_doc_type_folder(folders, code, name, direction=""):
@@ -361,7 +388,13 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
         cached_name = str(dt.get("drive_folder_name") or "").lower()
         opposite_inc = is_outgoing and any(k in cached_name for k in ("incom", "receiv", "وارد"))
         opposite_out = is_incoming and any(k in cached_name for k in ("outgo", "issu", "sent", "صادر"))
-        if cand_id and not (opposite_inc or opposite_out) and folder_is_usable(service, cand_id):
+        is_bad_rev_folder = bool(
+            cached_name and (
+                re.search(r"\b(rev|revision)[._\s-]*\d+\b", cached_name, re.I) or
+                (dt.get("code") and re.search(r"\b" + re.escape(str(dt.get("code")).strip()) + r"[-_]\d+\b", cached_name, re.I))
+            )
+        )
+        if cand_id and not (opposite_inc or opposite_out or is_bad_rev_folder) and folder_is_usable(service, cand_id):
             dt_folder_id = cand_id
             source = "cache"
 
