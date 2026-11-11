@@ -22,8 +22,8 @@ from blueprints.drive_uploads import drive_uploads_bp
 from blueprints.drive_viewer import drive_viewer_bp
 
 app = Flask(__name__)
-APP_VERSION = "2.4.8"
-BUILD_ID = "20261110-pr-hierarchical-flat-fix"
+APP_VERSION = "2.4.9"
+BUILD_ID = "20261111-security-hardening"
 app.secret_key = SECRET_KEY
 app.config.update(**SESSION_CONFIG)
 app.register_blueprint(projects_bp)
@@ -73,6 +73,19 @@ def enforce_login_and_project_scope():
             return jsonify(error="Forbidden"), 403
         return "Forbidden", 403
     return None
+
+
+@app.after_request
+def apply_security_headers(response):
+    """Apply safe, non-intrusive security headers to all HTTP responses."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    is_https = IS_RENDER or request.is_secure or (request.headers.get("X-Forwarded-Proto", "").lower() == "https")
+    if is_https:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
 
 # ── Pages ─────────────────────────────────────────────────────
 @app.route("/ping")
@@ -143,8 +156,9 @@ def login():
             else:
                 redirect_to = "/hub"
             resp  = make_response(jsonify(ok=True, role=u["role"], username=uname, redirect_to=redirect_to))
+            is_https = IS_RENDER or request.is_secure or (request.headers.get("X-Forwarded-Proto", "").lower() == "https")
             resp.set_cookie("dcr_token", token, httponly=True,
-                            samesite="Lax", secure=IS_RENDER,
+                            samesite="Lax", secure=is_https,
                             max_age=db.SESSION_TTL)
             return resp
 

@@ -10,9 +10,14 @@ import os
 import datetime
 
 # ── Deployment environment ────────────────────────────────────
-# True when running on Railway (or any host that sets RENDER=true).
+# True when running in production on Railway or Render.
 # Controls secure cookies and debug mode.
-IS_RENDER = bool(os.environ.get("RENDER"))
+IS_RENDER = bool(
+    os.environ.get("RENDER")
+    or os.environ.get("RAILWAY_ENVIRONMENT")
+    or os.environ.get("RAILWAY_PROJECT_ID")
+    or os.environ.get("RAILWAY_SERVICE_ID")
+)
 
 # ── Secret key ───────────────────────────────────────────────
 # Must be set as a Railway environment variable before deploying.
