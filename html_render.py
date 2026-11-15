@@ -25,7 +25,7 @@ import os
 
 import db
 from flask import url_for
-from auth import can_edit
+from auth import can_edit, is_project_admin, get_allowed_doc_type_filter, get_user_doc_type_scope
 from utils import STATUS_COLORS
 
 ABOUT_MODAL_HTML = """
@@ -6509,45 +6509,78 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     completed_records = 0
     pending_records = 0
     overdue_records = 0
-    
+    doc_types_breakdown = []
+
     if pids:
+        dt_scope = get_user_doc_type_scope(u, pids) if u else {}
+        dt_info_map = {}  # (pid, dt_id_upper) -> (code, name)
+        dt_agg = {}       # (code, name) -> {"code": ..., "name": ..., "count": 0, "completed": 0}
         try:
-            counts = db.q("""
-                SELECT 
-                    COUNT(*) as total,
-                    COUNT(CASE WHEN data->>'status' ILIKE '%complete%' OR data->>'status' ILIKE '%close%' OR data->>'status' ILIKE '%approved%' THEN 1 END) as completed,
-                    COUNT(CASE WHEN data->>'status' ILIKE '%open%' OR data->>'status' ILIKE '%progress%' OR data->>'status' ILIKE '%pending%' OR data->>'status' ILIKE '%review%' THEN 1 END) as pending
-                FROM records 
-                WHERE project_id = ANY(%s)
-            """, (pids,), one=True)
-            if counts:
-                total_records = counts.get("total", 0) or 0
-                completed_records = counts.get("completed", 0) or 0
-                pending_records = counts.get("pending", 0) or 0
+            dt_rows = db.q(
+                """SELECT project_id, id, code, name
+                   FROM doc_types
+                   WHERE project_id = ANY(%s)
+                   ORDER BY sort_order, code, id""",
+                (pids,),
+            ) or []
+            for dt in dt_rows:
+                p_id = dt.get("project_id")
+                dt_id = dt.get("id")
+                dt_c = dt.get("code") or dt_id or "DOC"
+                dt_n = dt.get("name") or dt_c
+                if not db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_c):
+                    continue
+                dt_info_map[(p_id, str(dt_id or "").strip().upper())] = (dt_c, dt_n)
+                agg_key = (dt_c, dt_n)
+                if agg_key not in dt_agg:
+                    dt_agg[agg_key] = {"code": dt_c, "name": dt_n, "count": 0, "completed": 0}
+        except Exception:
+            dt_info_map = {}
+            dt_agg = {}
+
+        try:
+            rec_rows = db.q(
+                """SELECT project_id, dt_id, COALESCE(data->>'status', '') AS status_val
+                   FROM records
+                   WHERE project_id = ANY(%s)""",
+                (pids,),
+            ) or []
+            for r in rec_rows:
+                p_id = r.get("project_id")
+                dt_id = r.get("dt_id")
+                dt_key = (p_id, str(dt_id or "").strip().upper())
+                dt_meta = dt_info_map.get(dt_key)
+                dt_code_hint = dt_meta[0] if dt_meta else ""
+                if not db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code_hint):
+                    continue
+                total_records += 1
+                st_low = str(r.get("status_val") or "").lower()
+                is_comp = any(k in st_low for k in ("complete", "close", "approved"))
+                is_pend = any(k in st_low for k in ("open", "progress", "pending", "review"))
+                if is_comp:
+                    completed_records += 1
+                if is_pend:
+                    pending_records += 1
+                if dt_meta is None:
+                    fallback_code = str(dt_id or "DOC")
+                    dt_meta = (fallback_code, fallback_code)
+                    if dt_meta not in dt_agg:
+                        dt_agg[dt_meta] = {"code": dt_meta[0], "name": dt_meta[1], "count": 0, "completed": 0}
+                dt_agg[dt_meta]["count"] += 1
+                if is_comp:
+                    dt_agg[dt_meta]["completed"] += 1
         except Exception:
             pass
+
+        doc_types_breakdown = sorted(
+            dt_agg.values(),
+            key=lambda item: (-int(item.get("count") or 0), str(item.get("code") or "")),
+        )
         try:
-            overdue_list = db.get_overdue_records(project_ids=pids)
+            overdue_list = db.get_overdue_records(project_ids=pids, doc_type_scope=dt_scope)
             overdue_records = len(overdue_list) if overdue_list else 0
         except Exception:
             overdue_records = 0
-
-    # Dynamic Doc Types Breakdown
-    doc_types_breakdown = []
-    if pids:
-        try:
-            dt_rows = db.q("""
-                SELECT dt.code, dt.name, COUNT(r.id) as count,
-                       COUNT(CASE WHEN r.data->>'status' ILIKE '%complete%' OR r.data->>'status' ILIKE '%close%' OR r.data->>'status' ILIKE '%approved%' THEN 1 END) as completed
-                FROM doc_types dt
-                LEFT JOIN records r ON r.project_id = dt.project_id AND UPPER(r.dt_id) = UPPER(dt.id)
-                WHERE dt.project_id = ANY(%s)
-                GROUP BY dt.code, dt.name
-                ORDER BY count DESC, dt.code
-            """, (pids,))
-            doc_types_breakdown = dt_rows if isinstance(dt_rows, list) else []
-        except Exception:
-            doc_types_breakdown = []
 
     dt_cards_html = ""
     for dt in doc_types_breakdown:
@@ -7752,15 +7785,63 @@ def render_launchpad(u):
     elif not allowed_ids and primary_ws:
         allowed_ids = {primary_ws}
 
-    # Fetch live record counts per project in one fast query
+    # Pre-resolve accessible projects per lit workspace and compute doc-type-scoped record counts
+    ws_projs_map = {}
+    all_lit_pids = []
+    seen_lit_pids = set()
+    for ws in all_ws:
+        ws_id = str(ws.get("id") or "").strip()
+        ws_id_up = ws_id.upper()
+        is_lit = (ws_id_up in allowed_ids) or is_super
+        if is_lit and u:
+            try:
+                ws_projs = db.get_projects_for_user(uname, role, workspace_id=ws_id)
+            except Exception:
+                ws_projs = []
+            ws_projs_map[ws_id] = ws_projs
+            for p in ws_projs:
+                pid_val = p.get("id")
+                if pid_val and pid_val not in seen_lit_pids:
+                    seen_lit_pids.add(pid_val)
+                    all_lit_pids.append(pid_val)
+
     rec_counts_by_proj = {}
-    try:
-        rows = db.q("SELECT project_id, COUNT(*) as c FROM records GROUP BY project_id") or []
-        for r in rows:
-            if isinstance(r, dict) and r.get("project_id"):
-                rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
-    except Exception:
-        pass
+    if all_lit_pids:
+        try:
+            dt_scope = get_user_doc_type_scope(u, all_lit_pids)
+            if dt_scope is None:
+                rows = db.q(
+                    "SELECT project_id, COUNT(*) as c FROM records WHERE project_id = ANY(%s) GROUP BY project_id",
+                    (all_lit_pids,),
+                ) or []
+                for r in rows:
+                    if isinstance(r, dict) and r.get("project_id"):
+                        rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
+            else:
+                dt_code_rows = db.q(
+                    "SELECT project_id, id, code FROM doc_types WHERE project_id = ANY(%s)",
+                    (all_lit_pids,),
+                ) or []
+                dt_code_map = {
+                    (d["project_id"], str(d.get("id") or "").strip().upper()): str(d.get("code") or "")
+                    for d in dt_code_rows if isinstance(d, dict)
+                }
+                rows = db.q(
+                    "SELECT project_id, dt_id, COUNT(*) as c FROM records WHERE project_id = ANY(%s) GROUP BY project_id, dt_id",
+                    (all_lit_pids,),
+                ) or []
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    p_id = r.get("project_id")
+                    dt_id = r.get("dt_id")
+                    if not p_id:
+                        continue
+                    dt_code = dt_code_map.get((p_id, str(dt_id or "").strip().upper()), "")
+                    if db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code):
+                        rec_counts_by_proj[p_id] = rec_counts_by_proj.get(p_id, 0) + int(r.get("c") or 0)
+        except Exception:
+            pass
 
     cards_html_list = []
     palette_cycle = list(default_meta.values())
@@ -7784,10 +7865,7 @@ def render_launchpad(u):
         is_primary = (ws_id_up == primary_ws)
 
         if is_lit:
-            try:
-                ws_projs = db.get_projects_for_user(uname, role, workspace_id=ws_id) if u else []
-            except Exception:
-                ws_projs = []
+            ws_projs = ws_projs_map.get(ws_id, [])
             proj_cnt = len(ws_projs)
             doc_cnt = sum(rec_counts_by_proj.get(p.get("id"), 0) for p in ws_projs)
             val1 = f"{proj_cnt:,}"
@@ -10048,7 +10126,7 @@ function renderCards(d,pid){{
           <span>${{p.pct}}%</span><span style="font-size:9.5px;color:var(--mu);font-weight:600">done</span>
         </div>
         <div style="display:flex;gap:4px;align-items:center">
-          ${{(ROLE==='superadmin'||ROLE==='admin')&&!pid?`
+          ${{p.can_admin&&!pid?`
             <button type="button" class="pcard-btn pcard-move" title="Move project up" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">▲</button>
             <button type="button" class="pcard-btn pcard-move" title="Move project down" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">▼</button>
           `:''}}
@@ -10069,17 +10147,56 @@ function renderCards(d,pid){{
 
 // ── Overview Charts ───────────────────────────────────────
 async function moveProject(id,delta){{
+  if(moveProject._busy)return;
+  const adminIndices=[];
+  for(let i=0;i<STATS.length;i++){{
+    if(STATS[i]&&STATS[i].can_admin)adminIndices.push(i);
+  }}
   const idx=STATS.findIndex(p=>p.id===id);
-  const next=idx+delta;
-  if(idx<0||next<0||next>=STATS.length)return;
-  [STATS[idx],STATS[next]]=[STATS[next],STATS[idx]];
-  const order=STATS.map(p=>p.id);
-  await apiFetch('/api/projects/reorder',{{method:'POST',body:JSON.stringify({{order}})}});
-  document.getElementById('proj-sel').innerHTML=
-    '<option value="">All Projects</option>'+
-    STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
-  renderAll(_currentPid,_currentDisc);
-  toast('Project order updated','ok');
+  const adminPos=adminIndices.indexOf(idx);
+  const targetPos=adminPos+delta;
+  if(idx<0||adminPos<0||targetPos<0||targetPos>=adminIndices.length)return;
+  const next=adminIndices[targetPos];
+  const prevStats=STATS.slice();
+  const nextStats=STATS.slice();
+  [nextStats[idx],nextStats[next]]=[nextStats[next],nextStats[idx]];
+  const order=nextStats.filter(p=>p&&p.can_admin).map(p=>p.id);
+  const wsSet=new Set(STATS.map(p=>p&&p.workspace_id).filter(Boolean));
+  const hasMixed=!STATS.every(p=>p&&p.can_admin)||wsSet.size>1;
+  const wsScope=hasMixed?'ALL':(wsSet.size===1?[...wsSet][0]:'{active_ws}');
+  moveProject._busy=true;
+  try{{
+    const res=await apiFetch('/api/projects/reorder',{{method:'POST',body:JSON.stringify({{order,workspace_id:wsScope}})}});
+    if(!res||res.ok===false||res.error)throw new Error((res&&res.error)||'Failed to save project order');
+    let finalStats=nextStats;
+    if(Array.isArray(res.order)&&res.order.length){{
+      const rank=new Map(res.order.map((pid,i)=>[pid,i]));
+      finalStats=nextStats.slice().sort((a,b)=>{{
+        const ra=rank.has(a.id)?rank.get(a.id):999999;
+        const rb=rank.has(b.id)?rank.get(b.id):999999;
+        return ra-rb;
+      }});
+    }}
+    STATS=finalStats;
+    const sel=document.getElementById('proj-sel');
+    if(sel){{
+      sel.innerHTML='<option value="">All Projects</option>'+
+        STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
+    }}
+    renderAll(_currentPid,_currentDisc);
+    toast('Project order updated','ok');
+  }}catch(err){{
+    STATS=prevStats;
+    const sel=document.getElementById('proj-sel');
+    if(sel){{
+      sel.innerHTML='<option value="">All Projects</option>'+
+        STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
+    }}
+    renderAll(_currentPid,_currentDisc);
+    toast(err&&err.message?err.message:'Failed to reorder projects','err');
+  }}finally{{
+    moveProject._busy=false;
+  }}
 }}
 
 function renderCharts(d){{
@@ -11030,9 +11147,8 @@ def render_register(u, proj, active_ws_id=None):
 
     dts       = db.get_doc_types(pid)
     try:
-        from auth import is_superadmin
-        if u and not is_superadmin(u) and not (hasattr(db, 'is_user_workspace_admin') and db.is_user_workspace_admin(u.get('username'))):
-            allowed_dts = db.get_user_project_doc_types(u['username'], pid) if hasattr(db, 'get_user_project_doc_types') else None
+        if u:
+            allowed_dts = get_allowed_doc_type_filter(pid, u)
             if allowed_dts is not None:
                 allowed_set = {str(x).upper() for x in allowed_dts}
                 dts = [d for d in dts if str(d['id']).upper() in allowed_set or str(d.get('code', '')).upper() in allowed_set]
@@ -11069,7 +11185,7 @@ def render_register(u, proj, active_ws_id=None):
         f'<span>{dt["code"]}</span><span class="tcnt" id="cnt-{dt["id"]}">0</span></button>'
         for dt in dts)
 
-    _can_manage_proj = role in ('superadmin', 'admin') or (hasattr(db, 'is_user_workspace_admin') and db.is_user_workspace_admin(u.get('username'), proj.get('workspace_id', 'ENG')))
+    _can_manage_proj = bool(u and is_project_admin(pid, u))
     _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _can_manage_proj else ''
     _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _can_manage_proj else ''
     _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _can_manage_proj else ''

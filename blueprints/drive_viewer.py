@@ -26,7 +26,7 @@ from flask import Blueprint, Response, jsonify, request, send_file, redirect
 import attachments
 import db
 import drive_upload
-from auth import can_edit, can_view_project, current_user, is_superadmin
+from auth import can_edit, can_view_project, current_user, is_superadmin, is_project_admin, can_access_doc_type
 
 logger = logging.getLogger(__name__)
 drive_viewer_bp = Blueprint("drive_viewer", __name__)
@@ -78,8 +78,7 @@ def preview_kind(name, mime):
 
 def _is_workspace_admin(u, pid):
     try:
-        proj = db.get_project(pid) or {}
-        return bool(is_superadmin(u) or db.is_user_workspace_admin(u.get("username"), proj.get("workspace_id") or "ENG"))
+        return is_project_admin(pid, u)
     except Exception:
         return False
 
@@ -103,13 +102,8 @@ def _context(record_id, slot):
         except Exception:
             pass
         return None, (jsonify(error="Forbidden"), 403)
-    if not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
-        allowed = db.get_user_project_doc_types(u["username"], pid)
-        if allowed is not None:
-            allowed_set = {str(x).upper() for x in allowed}
-            dt_obj = db.get_doc_type(pid, dt_id) or {}
-            if str(dt_id).upper() not in allowed_set and str(dt_obj.get("code") or "").upper() not in allowed_set:
-                return None, (jsonify(error="Document type access denied"), 403)
+    if not can_access_doc_type(pid, dt_id, u):
+        return None, (jsonify(error="Document type access denied"), 403)
 
     att = rec.get("attachments") if isinstance(rec.get("attachments"), dict) else {}
     if slot == "legacy":

@@ -16,7 +16,7 @@ from google import genai
 from google.genai import types
 
 import db
-from auth import current_user, can_view_project, get_allowed_project_ids
+from auth import current_user, can_view_project, get_allowed_project_ids, _resolve_project, get_user_doc_type_scope
 from blueprints import ai_tools
 
 ai_bp = Blueprint("ai", __name__)
@@ -526,7 +526,7 @@ def _build_gemini_contents(prompt: str, history: list = None) -> list:
     return contents
 
 
-def execute_tool_call(fn_name: str, fn_args: dict, allowed_project_ids: list) -> dict:
+def execute_tool_call(fn_name: str, fn_args: dict, allowed_project_ids: list, doc_type_scope: dict = None) -> dict:
     """Executes a tool with forced backend RBAC injection."""
     import json
     func = getattr(ai_tools, fn_name, None) or TOOL_REGISTRY.get(fn_name)
@@ -534,9 +534,11 @@ def execute_tool_call(fn_name: str, fn_args: dict, allowed_project_ids: list) ->
         logger.error("Unknown tool called: %s", fn_name)
         return {"error": f"Unknown tool: {fn_name}"}
 
-    # CRITICAL SECURITY BOUNDARY: Forced injection of user's authorized projects
+    # CRITICAL SECURITY BOUNDARY: Forced injection of user's authorized projects & doc types
     safe_args = dict(fn_args or {})
     safe_args["allowed_project_ids"] = allowed_project_ids
+    if doc_type_scope is not None:
+        safe_args["doc_type_scope"] = doc_type_scope
 
     try:
         raw_res = func(**safe_args)
@@ -557,6 +559,7 @@ def _call_gemini_agent(
     history: list = None,
     custom_instruction: str = None,
     active_project_id: str = None,
+    doc_type_scope: dict = None,
 ):
     """Executes the native Gemini Tool Calling Agent loop."""
     # If _call_gemini_api was mocked in test suites, return its mocked response
@@ -574,12 +577,14 @@ def _call_gemini_agent(
     client = genai.Client(api_key=api_key)
     system_inst = custom_instruction or SYSTEM_INSTRUCTION
 
-    # Dynamically inject registered registers from DB so Gemini always knows all available registers across all projects
+    # Dynamically inject ONLY permitted document registers so hidden doc types never leak into prompts
     try:
-        reg_types = ai_tools.get_registered_doc_types()
+        reg_types = ai_tools.get_registered_doc_types(doc_type_scope=doc_type_scope)
         if reg_types:
             dt_list_str = ", ".join([f"{d['code']} ({d['name']})" for d in reg_types if d.get('code')])
-            system_inst += f"\n\nDynamic System Registers: Registers configured in this system across projects include:\n{dt_list_str}."
+            system_inst += f"\n\nDynamic System Registers: Permitted registers for this user include:\n{dt_list_str}."
+        elif doc_type_scope is not None:
+            system_inst += "\n\nDynamic System Registers: User has restricted or empty document-type permissions. Only state what authorized tool outputs explicitly return."
     except Exception:
         pass
 
@@ -689,7 +694,7 @@ def _call_gemini_agent(
                         )
                         continue
 
-                result = execute_tool_call(fn_name, fn_args, allowed_project_ids)
+                result = execute_tool_call(fn_name, fn_args, allowed_project_ids, doc_type_scope=doc_type_scope)
                 tool_results.append({"name": fn_name, "args": fn_args, "result": result})
                 func_response_parts.append(
                     types.Part.from_function_response(name=fn_name, response={"result": result})
@@ -725,6 +730,7 @@ def _execute_deterministic_fallback(
     allowed_project_ids: list,
     history: list = None,
     active_project_id: str = None,
+    doc_type_scope: dict = None,
 ) -> str:
     """Provides an instant, zero-503 Python response if Gemini is unavailable."""
     p_low = (prompt or "").lower()
@@ -816,7 +822,11 @@ def _execute_deterministic_fallback(
 
     # ── CASE 1: NOC Financial Query ──────────────────────────
     if detected_dt == "NOC" or any(w in p_low for w in ["noc", "change", "تكلفة", "cost", "مالي", "أوامر تغيير", "مطالبات"]):
-        fin = ai_tools.get_noc_financials(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
+        fin = ai_tools.get_noc_financials(
+            allowed_project_ids=allowed_project_ids,
+            project_code=matched_proj_code,
+            doc_type_scope=doc_type_scope,
+        )
         proj_title = fin.get("project_display_name") or (fin.get("project_scope")[0] if fin.get("project_scope") else None) or "All Projects"
         by_project = fin.get("by_project") or []
 
@@ -888,6 +898,7 @@ def _execute_deterministic_fallback(
             doc_type=detected_dt,
             discipline=detected_disc,
             limit=25,
+            doc_type_scope=doc_type_scope,
         )
         proj_title = ov.get("project_display_name") or (ov.get("project_scope")[0] if ov.get("project_scope") else None) or "All Projects"
         records = ov.get("records", [])
@@ -921,7 +932,11 @@ def _execute_deterministic_fallback(
 
     # ── CASE 3: KPI / Project Summary Query ───────────────────
     if any(w in p_low for w in ["kpi", "تقرير", "ملخص", "summary", "إجمالي", "موقف", "breakdown", "overview", "status breakdown"]) or (global_query and not detected_dt and not detected_keyword):
-        summary = ai_tools.get_project_summary(allowed_project_ids=allowed_project_ids, project_code=matched_proj_code)
+        summary = ai_tools.get_project_summary(
+            allowed_project_ids=allowed_project_ids,
+            project_code=matched_proj_code,
+            doc_type_scope=doc_type_scope,
+        )
         proj_title = summary.get("project_display_name") or (summary.get("project_scope")[0] if summary.get("project_scope") else None) or "All Projects"
         stat_lines = []
         for p in summary.get("projects", []):
@@ -998,6 +1013,7 @@ def _execute_deterministic_fallback(
         status=detected_status,
         latest_revision_only=use_latest_rev,
         limit=50,
+        doc_type_scope=doc_type_scope,
     )
 
     proj_title = search_res.get("project_display_name") or (
@@ -1118,9 +1134,10 @@ PROJECT_ALIASES = ai_tools.PROJECT_ALIASES
 def _dedup_latest_revisions(records):
     return ai_tools._dedup_latest_revisions(records)
 
-def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history=None):
+def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history=None, doc_type_scope=None):
     """Context builder for backward compatibility."""
     p_low = (user_prompt or "").lower()
+    scope_norm = ai_tools._normalize_doc_type_scope(doc_type_scope)
     
     # 1. Projects
     projs_clause, projs_params = ai_tools._build_project_in_clause("id", list(target_project_ids))
@@ -1132,7 +1149,7 @@ def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history
 
     # 2. KPIs
     lines.append("### 2. REGISTER SUMMARY BY PROJECT:")
-    stats = db.get_dashboard_stats(project_ids=target_project_ids)
+    stats = db.get_dashboard_stats(project_ids=target_project_ids, doc_type_scope=scope_norm)
     if stats:
         for s in stats:
             lines.append(f"- Project [{s.get('code')}]: Total={s.get('total')}, Approved={s.get('approved')}")
@@ -1142,10 +1159,19 @@ def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history
     if "noc" in p_low or "cost" in p_low or "مالي" in p_low or active_tab == "NOC":
         lines.append("### 3. NOTICE OF CHANGE (NOC) FINANCIAL & APPROVAL SUMMARY:")
         noc_clause, noc_params = ai_tools._build_project_in_clause("r.project_id", list(target_project_ids))
-        nocs = db.q(f"SELECT r.project_id, r.data FROM records r WHERE UPPER(r.dt_id) = 'NOC' AND {noc_clause}", noc_params)
+        nocs = db.q(
+            f"SELECT r.project_id, r.dt_id, COALESCE(dt.code, r.dt_id, '') AS dt_code, r.data "
+            f"FROM records r LEFT JOIN doc_types dt ON (dt.id = r.dt_id AND dt.project_id = r.project_id) "
+            f"WHERE UPPER(r.dt_id) = 'NOC' AND {noc_clause}",
+            noc_params,
+        )
         total_sub = 0.0
         total_app = 0.0
         for n in nocs:
+            if not ai_tools._is_record_dt_allowed(
+                n.get("project_id"), n.get("dt_id"), scope_norm, dt_code=str(n.get("dt_code") or "NOC").strip().upper()
+            ):
+                continue
             d = n.get("data") or {}
             try:
                 sub = float(d.get("submittedCost") or 0)
@@ -1161,7 +1187,7 @@ def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history
 
     # 4. Overdue
     try:
-        overdues = db.get_overdue_records(project_ids=target_project_ids)
+        overdues = db.get_overdue_records(project_ids=target_project_ids, doc_type_scope=scope_norm)
     except Exception:
         overdues = []
     if overdues:
@@ -1213,6 +1239,7 @@ def _build_ai_context(target_project_ids, user_prompt="", active_tab="", history
         status="approved" if any(w in p_low for w in ["معتمد", "معتمدة", "approved"]) else None,
         latest_revision_only=True,
         limit=50,
+        doc_type_scope=scope_norm,
     )
     records = search_data.get("records", [])
 
@@ -1347,15 +1374,18 @@ def api_ai_query():
             user_allowed = []
 
         if not user_allowed and active_pid:
-            p_obj = db.get_project(active_pid)
-            if p_obj and (p_obj.get("workspace_id") or "ENG").upper() == ws_id:
-                user_allowed = [active_pid]
+            canon_proj = _resolve_project(active_pid)
+            canon_active = canon_proj["id"] if canon_proj else None
+            if canon_active and can_view_project(canon_active, u):
+                if (canon_proj.get("workspace_id") or "ENG").upper() == ws_id:
+                    user_allowed = [canon_active]
 
         if not user_allowed:
             ws_label = "Operation & Maintenance (O&M)" if ws_id == "OM" else ("Engineering & Projects" if ws_id == "ENG" else ws_id)
             return jsonify(reply=f"You do not have access to any projects/contracts in {ws_label}."), 200
 
         target_pids = user_allowed
+        dt_scope = get_user_doc_type_scope(u, target_pids)
 
         # Short-circuit for simple greetings/generic conversation
         p_clean = re.sub(r"[^\w\s]", "", prompt).strip().lower()
@@ -1428,6 +1458,7 @@ def api_ai_query():
             history=history,
             custom_instruction=custom_inst,
             active_project_id=active_pid,
+            doc_type_scope=dt_scope,
         )
 
         if err == "NO_API_KEY":
@@ -1443,6 +1474,7 @@ def api_ai_query():
                 target_pids,
                 history=history,
                 active_project_id=active_pid,
+                doc_type_scope=dt_scope,
             )
             if fallback_reply:
                 return jsonify(reply=fallback_reply), 200

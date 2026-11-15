@@ -13,7 +13,16 @@ import uuid
 from flask import Blueprint, jsonify, request
 
 import db
-from auth import current_user, can_edit, can_view_project, get_allowed_project_ids, is_superadmin
+from auth import (
+    current_user,
+    can_edit,
+    can_view_project,
+    get_allowed_project_ids,
+    get_user_doc_type_scope,
+    is_superadmin,
+    can_access_doc_type,
+    _resolve_project,
+)
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 
 records_bp = Blueprint("records", __name__)
@@ -90,25 +99,54 @@ def api_search_global():
     ws_filter = str(request.args.get("workspace_id", "")).strip() or None
     user_projs = db.get_projects_for_user(u.get("username", ""), role=u.get("role"), workspace_id=ws_filter)
 
-    allowed_scope = set()
+    allowed_ids = []
+    seen_pids = set()
     for p in user_projs:
-        if p.get("id"):
-            allowed_scope.add(p["id"])
-        if p.get("code"):
-            allowed_scope.add(p["code"])
-        if p.get("name"):
-            allowed_scope.add(p["name"])
-    allowed_list = list(allowed_scope)
+        canon_pid = str(p.get("id") or "").strip()
+        if canon_pid and canon_pid not in seen_pids:
+            seen_pids.add(canon_pid)
+            allowed_ids.append(canon_pid)
 
     is_sa = str(u.get("role", "")).strip().lower() == "superadmin"
     user_scope = "all" if is_sa and not ws_filter else "filtered"
 
-    if not allowed_list or len(q_str) < 2:
+    if not allowed_ids or len(q_str) < 2:
+        return jsonify(query=q_str, total_found=0, user_scope=user_scope, results=[])
+
+    if project_filter and project_filter.upper() != "ALL":
+        proj_filter = _resolve_project(project_filter)
+        canon_filter = proj_filter["id"] if proj_filter else None
+        if not canon_filter or canon_filter not in seen_pids:
+            return jsonify(query=q_str, total_found=0, user_scope=user_scope, results=[])
+        target_pids = [canon_filter]
+    else:
+        target_pids = allowed_ids
+
+    dt_scope = get_user_doc_type_scope(u, target_pids)
+    scope_branches = []
+    scope_params = []
+    if dt_scope is None:
+        scope_branches.append("p.id = ANY(%s)")
+        scope_params.append(target_pids)
+    else:
+        unrestricted_pids = []
+        for pid in target_pids:
+            allowed_dts = dt_scope.get(pid)
+            if allowed_dts is None:
+                unrestricted_pids.append(pid)
+            elif allowed_dts:
+                scope_branches.append("(p.id = %s AND UPPER(r.dt_id) = ANY(%s))")
+                scope_params.extend([pid, sorted(allowed_dts)])
+        if unrestricted_pids:
+            scope_branches.insert(0, "p.id = ANY(%s)")
+            scope_params.insert(0, unrestricted_pids)
+
+    if not scope_branches:
         return jsonify(query=q_str, total_found=0, user_scope=user_scope, results=[])
 
     like_param = f"%{q_str}%"
     where_clauses = [
-        "(p.id = ANY(%s) OR p.code = ANY(%s))",
+        "(" + " OR ".join(scope_branches) + ")",
         """(
             r.data->>'docNo' ILIKE %s
             OR r.data->>'title' ILIKE %s
@@ -117,15 +155,11 @@ def api_search_global():
             OR r.data::text ILIKE %s
         )"""
     ]
-    params = [allowed_list, allowed_list, like_param, like_param, like_param, like_param, like_param]
+    params = scope_params + [like_param, like_param, like_param, like_param, like_param]
 
     if dt_id and dt_id.upper() != "ALL":
         where_clauses.append("UPPER(r.dt_id) = UPPER(%s)")
         params.append(dt_id)
-
-    if project_filter and project_filter.upper() != "ALL":
-        where_clauses.append("(p.id = %s OR p.code = %s)")
-        params.extend([project_filter, project_filter])
 
     if status_filter and status_filter.upper() != "ALL":
         if "REVISE" in status_filter.upper():
@@ -172,7 +206,7 @@ def api_search_global():
             r.created_at,
             COUNT(*) OVER() AS total_count
         FROM records r
-        JOIN projects p ON r.project_id = p.id OR r.project_id = p.code
+        JOIN projects p ON r.project_id = p.id
         WHERE {where_sql}
         ORDER BY r.created_at DESC NULLS LAST
         LIMIT %s;
@@ -230,14 +264,8 @@ def api_records(pid, dt_id):
         return jsonify(error="LOGIN_REQUIRED"), 403
     if not can_view_project(pid, u):
         return jsonify(error="Forbidden"), 403
-    if not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
-        allowed_dts = db.get_user_project_doc_types(u["username"], pid)
-        if allowed_dts is not None:
-            allowed_set = {str(x).upper() for x in allowed_dts}
-            dt_obj = db.get_doc_type(pid, dt_id)
-            dt_code = str(dt_obj.get("code") or "").upper() if dt_obj else ""
-            if str(dt_id).upper() not in allowed_set and dt_code not in allowed_set:
-                return jsonify(error="Document type access denied"), 403
+    if not can_access_doc_type(pid, dt_id, u):
+        return jsonify(error="Document type access denied"), 403
     search  = request.args.get("search","")
     is_pr   = _is_pr_doc_type(pid, dt_id)
     records = db.get_records(pid, dt_id, search=search, search_pr_items=is_pr)
@@ -286,6 +314,12 @@ def api_records(pid, dt_id):
 def api_letter_parent_options(pid):
     if not can_view_project(pid):
         return jsonify(error="Forbidden"), 403
+    ltr_dts = [d for d in (db.get_doc_types(pid) or []) if _is_ltr_doc_type(pid, d.get("id"))]
+    if ltr_dts:
+        if not any(can_access_doc_type(pid, d.get("id")) for d in ltr_dts):
+            return jsonify(error="Document type access denied"), 403
+    elif not can_access_doc_type(pid, "LTR"):
+        return jsonify(error="Document type access denied"), 403
     exclude_id = str(request.args.get("record_id","") or "").strip() or None
     return jsonify(options=db.get_letter_parent_options(pid, exclude_id))
 
@@ -294,14 +328,18 @@ def api_letter_parent_options(pid):
 def api_letter_thread(pid, record_id):
     if not can_view_project(pid):
         return jsonify(error="Forbidden"), 403
+    resolved = _resolve_project(pid)
+    canon_pid = resolved["id"] if resolved else pid
     full_row = db.get_record_by_id(record_id)
     if not full_row:
         return jsonify(error="Not found"), 404
-    if full_row.get("_project_id") != pid:
+    if full_row.get("_project_id") != canon_pid:
         return jsonify(error="Invalid project"), 400
-    if not _is_ltr_doc_type(pid, full_row.get("_dt_id", "")):
+    if not can_access_doc_type(canon_pid, full_row.get("_dt_id", "")):
+        return jsonify(error="Document type access denied"), 403
+    if not _is_ltr_doc_type(canon_pid, full_row.get("_dt_id", "")):
         return jsonify(error="Not an LTR record"), 400
-    thread = db.get_letter_thread(pid, record_id)
+    thread = db.get_letter_thread(canon_pid, record_id)
     if not thread:
         return jsonify(error="Thread not found"), 404
     return jsonify(thread)
@@ -311,17 +349,36 @@ def api_letter_thread(pid, record_id):
 def api_letter_timeline(pid, record_id):
     if not can_view_project(pid):
         return jsonify(error="Forbidden"), 403
+    resolved = _resolve_project(pid)
+    canon_pid = resolved["id"] if resolved else pid
     full_row = db.get_record_by_id(record_id)
     if not full_row:
         return jsonify(error="Not found"), 404
-    if full_row.get("_project_id") != pid:
+    if full_row.get("_project_id") != canon_pid:
         return jsonify(error="Invalid project"), 400
-    if not _is_ltr_doc_type(pid, full_row.get("_dt_id", "")):
+    if not can_access_doc_type(canon_pid, full_row.get("_dt_id", "")):
+        return jsonify(error="Document type access denied"), 403
+    if not _is_ltr_doc_type(canon_pid, full_row.get("_dt_id", "")):
         return jsonify(error="Not an LTR record"), 400
-    timeline = db.get_letter_timeline(pid, record_id)
+    timeline = db.get_letter_timeline(canon_pid, record_id)
     if not timeline:
         return jsonify(error="Timeline not found"), 404
     return jsonify(timeline)
+
+
+def _reject_record_ownership(u, pid, dt_id, rec_id, existing):
+    """404 + audit entry for an update whose record id is owned by another project / document type.
+    The response never reveals where the record lives; the audit detail (admin-only) does."""
+    stored = ""
+    if existing:
+        stored = " (stored in project '%s' / type '%s')" % (existing.get("_project_id"), existing.get("_dt_id"))
+    try:
+        db.log_action(u.get("username", "") if u else "unknown", "ACCESS DENIED",
+                      project_id=pid, dt_id=dt_id, record_id=rec_id,
+                      detail="Record ownership mismatch on update attempt%s" % stored)
+    except Exception:
+        pass
+    return jsonify(error="Record not found in this project / document type"), 404
 
 
 @records_bp.route("/api/records/<pid>/<dt_id>", methods=["POST"])
@@ -336,17 +393,19 @@ def api_save_record(pid, dt_id):
                 pass
         return jsonify(error="LOGIN_REQUIRED"), 403
     u      = current_user()
-    if not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
-        allowed_dts = db.get_user_project_doc_types(u["username"], pid)
-        if allowed_dts is not None:
-            allowed_set = {str(x).upper() for x in allowed_dts}
-            dt_obj = db.get_doc_type(pid, dt_id)
-            dt_code = str(dt_obj.get("code") or "").upper() if dt_obj else ""
-            if str(dt_id).upper() not in allowed_set and dt_code not in allowed_set:
-                return jsonify(error="Document type access denied"), 403
+    if not can_access_doc_type(pid, dt_id, u):
+        return jsonify(error="Document type access denied"), 403
     uname  = u["username"] if u else "unknown"
     data   = request.get_json(silent=True) or {}
     rec_id = data.pop("_id", None)
+    if rec_id is not None and not isinstance(rec_id, str):
+        return jsonify(error="Invalid record id"), 400
+    # Finding B: an existing record may only be updated inside the project / document type that
+    # stores it. Authorization above covers the *supplied* pid/dt_id, so the stored ownership must
+    # match them; mismatches are rejected, never silently moved or overwritten.
+    existing = db.get_record_by_id(rec_id) if rec_id else None
+    if existing and (existing.get("_project_id") != pid or existing.get("_dt_id") != dt_id):
+        return _reject_record_ownership(u, pid, dt_id, rec_id, existing)
     clean  = {k:v for k,v in data.items() if not k.startswith("_") and k != "attachments"}
     if _is_ltr_doc_type(pid, dt_id):
         direction_key = _ltr_field_key(pid, dt_id, "direction")
@@ -372,10 +431,14 @@ def api_save_record(pid, dt_id):
         else:
             clean[parent_ref_key] = ""
     if rec_id:
-        full_row = db.get_record_by_id(rec_id) or {}
+        full_row = existing or {}
         # Extract only stored document fields for diff (exclude _ meta keys)
         old_data = {k: v for k, v in full_row.items() if not k.startswith("_")}
-        db.save_record(pid, dt_id, rec_id, clean)
+        try:
+            db.save_record(pid, dt_id, rec_id, clean)
+        except db.RecordOwnershipError:
+            # Lost a race with a concurrent create of the same id elsewhere: the atomic SQL guard refused.
+            return _reject_record_ownership(u, pid, dt_id, rec_id, None)
         for field, new_val in clean.items():
             old_val = old_data.get(field,"")
             if str(old_val).strip() != str(new_val or "").strip():
@@ -415,6 +478,8 @@ def api_delete_record(rec_id):
         except Exception:
             pass
         return jsonify(error="Forbidden"), 403
+    if not can_access_doc_type(pid, dt_id, u):
+        return jsonify(error="Document type access denied"), 403
     db.delete_record(rec_id)
     db.log_action(
         u["username"], "DELETE",
@@ -441,7 +506,7 @@ def api_bulk_delete_records():
     if not recs:
         return jsonify(ok=True, deleted=0)
 
-    blocked = next((r for r in recs if not can_edit(r.get("project_id", ""))), None)
+    blocked = next((r for r in recs if not can_edit(r.get("project_id", "")) or not can_access_doc_type(r.get("project_id", ""), r.get("dt_id", ""), u)), None)
     if blocked:
         return jsonify(error="Forbidden"), 403
 
@@ -469,6 +534,8 @@ def api_get_pr_items(record_id):
     dt_id = full_row.get("_dt_id", "")
     if not can_view_project(pid):
         return jsonify(error="Forbidden"), 403
+    if not can_access_doc_type(pid, dt_id):
+        return jsonify(error="Document type access denied"), 403
     if not _is_pr_doc_type(pid, dt_id):
         return jsonify(error="Not a PR document"), 400
     items = db.get_pr_items(record_id)
@@ -482,9 +549,11 @@ def api_save_pr_items(record_id):
         return jsonify(error="Not found"), 404
     pid   = full_row.get("_project_id", "")
     dt_id = full_row.get("_dt_id", "")
+    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_access_doc_type(pid, dt_id):
+        return jsonify(error="Document type access denied"), 403
     if not _is_pr_doc_type(pid, dt_id):
         return jsonify(error="Not a PR document"), 400
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
     items = data.get("items") if isinstance(data, dict) else data
     if not isinstance(items, list):

@@ -54,8 +54,16 @@ def require_login(fn):
     return wrapper
 
 
+def _resolve_project(project_id):
+    """Look up a project by canonical id (or unambiguous code/name alias) and return its normalized dict or None."""
+    pid = str(project_id or "").strip()
+    if not pid:
+        return None
+    return db.resolve_project_alias(pid)
+
+
 def get_allowed_project_ids(user=None, workspace_id=None):
-    """Return the project ids the given/current user may view."""
+    """Return the canonical project ids the given/current user may view."""
     u = user or current_user()
     if not u:
         return []
@@ -71,38 +79,41 @@ def get_allowed_project_ids(user=None, workspace_id=None):
         admin_ws = db.get_admin_workspaces_for_user(u.get("username")) if hasattr(db, "get_admin_workspaces_for_user") else []
         if admin_ws:
             all_projs = []
+            seen_admin = set()
             for aws in admin_ws:
-                all_projs.extend([p["id"] for p in db.get_projects(workspace_id=aws)])
+                for p in db.get_projects(workspace_id=aws):
+                    if p["id"] not in seen_admin:
+                        seen_admin.add(p["id"])
+                        all_projs.append(p["id"])
             user_projs = db.get_user_projects(u.get("username"))
             assigned_raw = [p["project_id"] for p in user_projs if p.get("project_id")]
             if assigned_raw:
-                matched = db.get_projects(assigned_raw)
-                for p in matched:
-                    if p["id"] not in all_projs:
-                        all_projs.append(p["id"])
+                resolved_ids = db.resolve_project_identifiers(assigned_raw)
+                if resolved_ids:
+                    for p in db.get_projects(resolved_ids):
+                        if p["id"] not in seen_admin:
+                            seen_admin.add(p["id"])
+                            all_projs.append(p["id"])
             return all_projs
-        elif u.get("role") in ("superadmin", "admin"):
-            return [p["id"] for p in db.get_projects(workspace_id=workspace_id)]
 
     user_projs = db.get_user_projects(u.get("username"))
     assigned_raw = [p["project_id"] for p in user_projs if p.get("project_id")]
     if not assigned_raw:
         return []
-    matched_projs = db.get_projects(assigned_raw, workspace_id=workspace_id)
-    if matched_projs:
-        resolved = []
-        seen = set()
-        for p in matched_projs:
-            pid = p.get("id")
-            if pid and pid not in seen:
-                seen.add(pid)
-                resolved.append(pid)
-        for a in assigned_raw:
-            if a not in seen and not any(a == p.get("code") or a == p.get("name") for p in matched_projs):
-                seen.add(a)
-                resolved.append(a)
-        return resolved
-    return assigned_raw
+    resolved_ids = db.resolve_project_identifiers(assigned_raw, workspace_id=workspace_id)
+    if not resolved_ids:
+        return []
+    matched_projs = db.get_projects(resolved_ids, workspace_id=workspace_id)
+    if not matched_projs:
+        return []
+    resolved = []
+    seen = set()
+    for p in matched_projs:
+        pid = p.get("id")
+        if pid and pid not in seen:
+            seen.add(pid)
+            resolved.append(pid)
+    return resolved
 
 
 def has_project_access(username, project_id, role=None):
@@ -110,24 +121,24 @@ def has_project_access(username, project_id, role=None):
     if not username or not project_id:
         return False
     user_role = str(role or "").strip().lower()
-    if user_role in ("superadmin", "admin"):
+    if not user_role:
+        u = db.get_user(username)
+        user_role = str((u or {}).get("role") or "").strip().lower()
+    if user_role == "superadmin":
+        return True
+    proj = _resolve_project(project_id)
+    if not proj:
+        return False
+    canon_id = proj["id"]
+    ws_id = proj.get("workspace_id") or "ENG"
+    if db.is_user_workspace_admin(username, ws_id):
         return True
     user_projects = db.get_user_projects(username)
     assigned_raw = [p["project_id"] for p in user_projects if p.get("project_id")]
     if not assigned_raw:
         return False
-    target = str(project_id).strip().upper()
-    if any(str(a).strip().upper() == target for a in assigned_raw):
-        return True
-    matched_projs = db.get_projects(assigned_raw)
-    for p in matched_projs:
-        if str(p.get("id", "")).strip().upper() == target:
-            return True
-        if str(p.get("code", "")).strip().upper() == target:
-            return True
-        if str(p.get("name", "")).strip().upper() == target:
-            return True
-    return False
+    canonical_assigned = set(db.resolve_project_identifiers(assigned_raw))
+    return canon_id in canonical_assigned
 
 
 def can_view_project(project_id, user=None):
@@ -135,9 +146,113 @@ def can_view_project(project_id, user=None):
     u = user or current_user()
     if not u or not project_id:
         return False
-    if u["role"] in ("superadmin", "admin"):
+    if is_superadmin(u):
         return True
-    return has_project_access(u["username"], project_id, u.get("role"))
+    return has_project_access(u.get("username"), project_id, u.get("role"))
+
+
+def is_project_admin(project_id, user=None):
+    """Return True if the current/given user is superadmin or admin of project_id's workspace."""
+    u = user or current_user()
+    if not u or not project_id:
+        return False
+    if is_superadmin(u):
+        return True
+    proj = _resolve_project(project_id)
+    if not proj:
+        return False
+    ws_id = proj.get("workspace_id") or "ENG"
+    return db.is_user_workspace_admin(u.get("username"), ws_id)
+
+
+def get_allowed_doc_type_filter(project_id, user=None):
+    """Return None when user can access all doc types in project_id, else list of allowed IDs/codes.
+
+    Fails closed (`[]`) when unauthenticated, project is missing/ambiguous, or the user holds
+    no canonical/unambiguous assignment row for the project.
+    """
+    u = user or current_user()
+    if not u or not project_id:
+        return []
+    proj = _resolve_project(project_id)
+    if not proj:
+        return []
+    canon_pid = proj["id"]
+    if is_project_admin(canon_pid, u):
+        return None
+    return db.get_user_project_doc_types(u.get("username"), canon_pid)
+
+
+def can_access_doc_type(project_id, dt_id, user=None):
+    """Return True if user may access dt_id within project_id."""
+    u = user or current_user()
+    if not u or not project_id or not dt_id:
+        return False
+    proj = _resolve_project(project_id)
+    canon_pid = proj["id"] if proj else project_id
+    if not can_view_project(canon_pid, u):
+        return False
+    allowed_dts = get_allowed_doc_type_filter(canon_pid, user=u)
+    if allowed_dts is None:
+        return True
+    allowed_set = {str(x).strip().upper() for x in allowed_dts if str(x).strip()}
+    if not allowed_set:
+        return False
+    dt_obj = db.get_doc_type(canon_pid, dt_id)
+    dt_code = str(dt_obj.get("code") or "").strip().upper() if dt_obj else ""
+    return str(dt_id).strip().upper() in allowed_set or (bool(dt_code) and dt_code in allowed_set)
+
+
+def filter_allowed_doc_types(project_id, doc_types, user=None):
+    """Filter a list of doc_type dicts to those permitted for user in project_id."""
+    u = user or current_user()
+    if not u:
+        return []
+    allowed_dts = get_allowed_doc_type_filter(project_id, user=u)
+    if allowed_dts is None:
+        return list(doc_types or [])
+    allowed_set = {str(x).strip().upper() for x in allowed_dts if str(x).strip()}
+    if not allowed_set:
+        return []
+    return [
+        d for d in (doc_types or [])
+        if str(d.get("id", "")).strip().upper() in allowed_set
+        or str(d.get("code", "")).strip().upper() in allowed_set
+    ]
+
+
+def get_user_doc_type_scope(user=None, project_ids=None):
+    """Return None if user has unrestricted doc-type access across all project_ids,
+    else a dict {pid: set_of_uppercase_allowed_ids_or_None} for filtering aggregates."""
+    u = user or current_user()
+    if not u:
+        return {}
+    if is_superadmin(u):
+        return None
+    scope = {}
+    has_restriction = False
+    for raw_pid in (project_ids or []):
+        pid = str(raw_pid or "").strip()
+        if not pid:
+            continue
+        allowed = get_allowed_doc_type_filter(pid, user=u)
+        if allowed is None:
+            scope[pid] = None
+            continue
+        has_restriction = True
+        allowed_set = {str(x).strip().upper() for x in allowed if str(x).strip()}
+        expanded = set(allowed_set)
+        if allowed_set:
+            for dt in (db.get_doc_types(pid) or []):
+                dt_id = str(dt.get("id", "")).strip().upper()
+                dt_code = str(dt.get("code", "")).strip().upper()
+                if dt_id in allowed_set or dt_code in allowed_set:
+                    if dt_id:
+                        expanded.add(dt_id)
+                    if dt_code:
+                        expanded.add(dt_code)
+        scope[pid] = expanded
+    return scope if has_restriction else None
 
 
 def is_superadmin(user=None):
@@ -203,14 +318,14 @@ def require_admin(fn):
     return wrapper
 
 
-def can_edit(project_id):
-    """Return True if the current user has write access to project_id."""
-    u = current_user()
-    if not u:
+def can_edit(project_id, user=None):
+    """Return True if the current/given user has write access to project_id."""
+    u = user or current_user()
+    if not u or not project_id:
         return False
     if is_superadmin(u):
         return True
-    proj = db.get_project(project_id)
+    proj = _resolve_project(project_id)
     if not proj:
         return False
     ws_id = proj.get("workspace_id") or "ENG"

@@ -16,7 +16,7 @@ import attachments
 import db
 import drive_routing
 import drive_upload
-from auth import can_edit, current_user, is_superadmin
+from auth import can_edit, current_user, is_superadmin, can_access_doc_type
 from config import SECRET_KEY
 from security import DANGEROUS_EXTS_INSIDE_ARCHIVE
 
@@ -110,14 +110,8 @@ def _check_write_access(pid, dt_id):
         except Exception:
             pass
         return None, (jsonify(error="Forbidden"), 403)
-    if not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
-        allowed_dts = db.get_user_project_doc_types(u["username"], pid)
-        if allowed_dts is not None:
-            allowed_set = {str(x).upper() for x in allowed_dts}
-            dt_obj = db.get_doc_type(pid, dt_id)
-            dt_code = str(dt_obj.get("code") or "").upper() if dt_obj else ""
-            if str(dt_id).upper() not in allowed_set and dt_code not in allowed_set:
-                return None, (jsonify(error="Document type access denied"), 403)
+    if not can_access_doc_type(pid, dt_id, u):
+        return None, (jsonify(error="Document type access denied"), 403)
     return u, None
 
 

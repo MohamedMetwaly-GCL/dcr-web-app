@@ -21,23 +21,28 @@ import re
 from flask import Blueprint, request, jsonify
 
 import db
-from auth import can_edit, current_user
+from auth import can_edit, can_view_project, can_access_doc_type, current_user, is_project_admin
 
 columns_bp = Blueprint("columns", __name__)
 
 
-def _col_project_id(col_id):
-    row = db.q("SELECT project_id FROM columns_config WHERE id=%s", (col_id,), one=True)
-    return row["project_id"] if row else None
+def _col_scope(col_id):
+    row = db.q("SELECT project_id, dt_id FROM columns_config WHERE id=%s", (col_id,), one=True)
+    if not row:
+        return None, None
+    return row.get("project_id"), row.get("dt_id")
 
 
 @columns_bp.route("/api/columns/<pid>/<dt_id>")
 def api_columns(pid, dt_id):
+    if not can_view_project(pid): return jsonify(error="Forbidden"), 403
+    if not can_access_doc_type(pid, dt_id): return jsonify(error="Document type access denied"), 403
     return jsonify(db.get_columns(pid, dt_id))
 
 @columns_bp.route("/api/columns/<pid>/<dt_id>", methods=["POST"])
 def api_add_column(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_access_doc_type(pid, dt_id): return jsonify(error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     col_type = data.get("col_type","text")
     list_name = data.get("list_name")
@@ -56,26 +61,29 @@ def api_add_column(pid, dt_id):
 
 @columns_bp.route("/api/columns/visibility/<int:col_id>", methods=["POST"])
 def api_col_visibility(col_id):
-    pid = _col_project_id(col_id)
+    pid, dt_id = _col_scope(col_id)
     if not pid: return jsonify(error="Column not found"), 404
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_access_doc_type(pid, dt_id): return jsonify(error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     db.set_col_visible(col_id, data.get("visible", True))
     return jsonify(ok=True)
 
 @columns_bp.route("/api/columns/<int:col_id>", methods=["DELETE"])
 def api_delete_col(col_id):
-    pid = _col_project_id(col_id)
+    pid, dt_id = _col_scope(col_id)
     if not pid: return jsonify(error="Column not found"), 404
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_access_doc_type(pid, dt_id): return jsonify(error="Document type access denied"), 403
     db.delete_col(col_id)
     return jsonify(ok=True)
 
 @columns_bp.route("/api/columns/rename/<int:col_id>", methods=["POST"])
 def api_rename_col(col_id):
-    pid = _col_project_id(col_id)
+    pid, dt_id = _col_scope(col_id)
     if not pid: return jsonify(error="Column not found"), 404
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_access_doc_type(pid, dt_id): return jsonify(error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     label = data.get("label","").strip()
     if not label: return jsonify(error="Label required"), 400
@@ -84,13 +92,17 @@ def api_rename_col(col_id):
 
 @columns_bp.route("/api/col_width/<pid>/<dt_id>", methods=["GET"])
 def api_get_col_widths(pid, dt_id):
+    if not can_view_project(pid): return jsonify(error="Forbidden"), 403
+    if not can_access_doc_type(pid, dt_id): return jsonify(error="Document type access denied"), 403
     return jsonify(db.get_col_widths(pid, dt_id))
 
 @columns_bp.route("/api/col_width/<pid>/<dt_id>", methods=["POST"])
 def api_save_col_width(pid, dt_id):
     u = current_user()
-    if not u or u.get("role") not in ("superadmin","admin"):
+    if not u or not is_project_admin(pid, u):
         return jsonify(error="Superadmin only"), 403
+    if not can_access_doc_type(pid, dt_id, u):
+        return jsonify(error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     col_key   = data.get("col_key","")
     width_px  = int(data.get("width_px", 120))
@@ -101,6 +113,7 @@ def api_save_col_width(pid, dt_id):
 @columns_bp.route("/api/columns/reorder/<pid>/<dt_id>", methods=["POST"])
 def api_reorder_cols(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_access_doc_type(pid, dt_id): return jsonify(error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     db.reorder_columns(pid, dt_id, data.get("order", []))
     return jsonify(ok=True)
@@ -113,6 +126,7 @@ def api_col_reorder():
     col_id = data.get("col_id")
     new_order = data.get("new_order", 0)
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    if not dt_id or not can_access_doc_type(pid, dt_id): return jsonify(error="Document type access denied"), 403
     # Get all columns and rebuild sort_order
     cols = db.get_columns(pid, dt_id)
     # Move col_id to new_order position

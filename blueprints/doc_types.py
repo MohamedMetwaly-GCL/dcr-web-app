@@ -14,28 +14,52 @@ changed from @app.route to @doc_types_bp.route.
 from flask import Blueprint, request, jsonify
 
 import db
-from auth import can_edit
+from auth import (
+    current_user,
+    can_edit,
+    can_view_project,
+    is_project_admin,
+    get_allowed_doc_type_filter,
+    filter_allowed_doc_types,
+    can_access_doc_type,
+)
 
 doc_types_bp = Blueprint("doc_types", __name__)
 
 
+def _can_manage_doc_types(pid, user, dt_id=None):
+    """Allow project schema/doc-type administration for project admins and unrestricted editors."""
+    if not user or not can_edit(pid, user):
+        return False
+    if is_project_admin(pid, user):
+        return True
+    # Restricted users (non-None allowed_doc_types) cannot add, rename, reorder, or delete doc types.
+    if get_allowed_doc_type_filter(pid, user) is not None:
+        return False
+    if dt_id and not can_access_doc_type(pid, dt_id, user):
+        return False
+    return True
+
+
 @doc_types_bp.route("/api/doc_types/<pid>")
 def api_doc_types(pid):
-    from auth import current_user, is_superadmin
     u = current_user()
+    if not u or not can_view_project(pid, u):
+        return jsonify(error="Forbidden"), 403
     dts = db.get_doc_types(pid)
-    if request.args.get("all") == "1":
+    if request.args.get("all") == "1" and is_project_admin(pid, u):
         return jsonify(dts)
-    if u and not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username")):
-        allowed_dts = db.get_user_project_doc_types(u["username"], pid)
-        if allowed_dts is not None:
-            allowed_set = {str(x).upper() for x in allowed_dts}
-            dts = [d for d in dts if str(d["id"]).upper() in allowed_set or str(d.get("code", "")).upper() in allowed_set]
-    return jsonify(dts)
+    return jsonify(filter_allowed_doc_types(pid, dts, u))
 
 @doc_types_bp.route("/api/doc_types/<pid>", methods=["POST"])
 def api_add_doc_type(pid):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    u = current_user()
+    if not u:
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    if not can_edit(pid, u):
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    if not _can_manage_doc_types(pid, u):
+        return jsonify(error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     code = data.get("code","").strip().upper()
     name = data.get("name","").strip()
@@ -53,7 +77,11 @@ def api_add_doc_type(pid):
 
 @doc_types_bp.route("/api/doc_types/<pid>/<dt_id>", methods=["PATCH"])
 def api_rename_doc_type(pid, dt_id):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    u = current_user()
+    if not u or not can_edit(pid, u):
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    if not _can_manage_doc_types(pid, u, dt_id):
+        return jsonify(error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     new_code = data.get("code", "").strip().upper()
     new_name = data.get("name", "").strip()
@@ -74,7 +102,11 @@ def api_rename_doc_type(pid, dt_id):
 
 @doc_types_bp.route("/api/doc_types/<pid>/reorder", methods=["POST"])
 def api_reorder_doc_types(pid):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    u = current_user()
+    if not u or not can_edit(pid, u):
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    if not _can_manage_doc_types(pid, u):
+        return jsonify(error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     order = data.get("order", [])
     for i, dt_id in enumerate(order):
@@ -83,6 +115,15 @@ def api_reorder_doc_types(pid):
 
 @doc_types_bp.route("/api/doc_types/<pid>/<dt_id>", methods=["DELETE"])
 def api_delete_doc_type(pid, dt_id):
-    if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    u = current_user()
+    if not u or not can_edit(pid, u):
+        return jsonify(error="LOGIN_REQUIRED"), 403
+    if not _can_manage_doc_types(pid, u, dt_id):
+        try:
+            db.log_action(u.get("username", ""), "ACCESS DENIED", project_id=pid, dt_id=dt_id,
+                          detail="Unauthorized document-type deletion attempt")
+        except Exception:
+            pass
+        return jsonify(error="Document type access denied"), 403
     db.delete_doc_type(pid, dt_id)
     return jsonify(ok=True)

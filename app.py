@@ -41,7 +41,18 @@ app.register_blueprint(drive_uploads_bp)
 app.register_blueprint(drive_viewer_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
-from auth import current_user, can_edit, can_view_project, get_allowed_project_ids
+from auth import (
+    current_user,
+    can_edit,
+    can_view_project,
+    get_allowed_project_ids,
+    is_superadmin,
+    is_project_admin,
+    can_access_doc_type,
+    filter_allowed_doc_types,
+    get_user_doc_type_scope,
+    _resolve_project,
+)
 
 PUBLIC_ENDPOINTS = {"login", "logout", "static", "magic_master_view", "api_magic_data"}
 
@@ -277,7 +288,10 @@ def api_save_holidays():
 # ── API: Records ──────────────────────────────────────────────
 @app.route("/api/counts/<pid>")
 def api_counts(pid):
-    dts = db.get_doc_types(pid)
+    u = current_user()
+    if not u or not can_view_project(pid, u):
+        return jsonify(error="Forbidden"), 403
+    dts = filter_allowed_doc_types(pid, db.get_doc_types(pid), u)
     return jsonify({dt["id"]: db.count_records(pid, dt["id"]) for dt in dts})
 
 @app.route("/api/dashboard_stats")
@@ -285,13 +299,17 @@ def api_dashboard_stats():
     u = current_user()
     ws_id = request.args.get("ws") or request.args.get("workspace_id") or "ENG"
     allowed = get_allowed_project_ids(u, workspace_id=ws_id)
-    stats = db.get_dashboard_stats(project_ids=allowed, workspace_id=ws_id)
+    dt_scope = get_user_doc_type_scope(u, allowed)
+    stats = db.get_dashboard_stats(project_ids=allowed, workspace_id=ws_id, doc_type_scope=dt_scope)
     for s in stats:
         s["can_edit"] = can_edit(s["id"])
+        s["can_admin"] = is_project_admin(s["id"], u)
     return jsonify(stats)
 
 @app.route("/api/next_doc_no/<pid>/<dt_id>")
 def api_next_doc_no(pid, dt_id):
+    if not can_access_doc_type(pid, dt_id):
+        return jsonify(error="Document type access denied"), 403
     records = db.get_records(pid, dt_id)
     doc_nos = [str(r.get("docNo", "")).strip() for r in records if str(r.get("docNo", "")).strip()]
     if not doc_nos:
@@ -374,7 +392,7 @@ def api_audit_log_event():
 @app.route("/api/audit")
 def api_audit():
     u = current_user()
-    if not u or u.get("role") not in ("superadmin","admin"):
+    if not u or (not is_superadmin(u) and not db.is_user_workspace_admin(u.get("username"))):
         return jsonify(error="Admin only"), 403
     pid      = request.args.get("pid")
     username = request.args.get("username")
@@ -382,14 +400,25 @@ def api_audit():
     offset   = int(request.args.get("offset","0"))
     ws_filter = request.args.get("workspace_id")
 
-    is_super = (str(u.get("role", "")).lower() == "superadmin")
+    is_super = is_superadmin(u)
     if not is_super:
         try:
-            admin_ws = db.get_admin_workspaces_for_user(u["username"])
-            dept_projs = [p["id"] for p in db.get_projects_for_user(u["username"], u.get("role"), workspace_id=ws_filter)]
+            admin_ws = [str(w).strip().upper() for w in (db.get_admin_workspaces_for_user(u["username"]) or [])]
+            if ws_filter:
+                ws_up = str(ws_filter).strip().upper()
+                target_ws = [ws_up] if ws_up in admin_ws else []
+            else:
+                target_ws = admin_ws
+            dept_projs = []
+            seen_pids = set()
+            for tws in target_ws:
+                for p in db.get_projects(workspace_id=tws):
+                    if p["id"] not in seen_pids:
+                        seen_pids.add(p["id"])
+                        dept_projs.append(p["id"])
             dept_users = [usr["username"] for usr in db.get_users_for_admin(u["username"])]
-            if pid and pid not in dept_projs:
-                return jsonify(rows=[], users=[], actions=[], projects=[])
+            if (pid and pid not in dept_projs) or not dept_projs:
+                return jsonify(rows=[], users=dept_users if target_ws else [], actions=[], projects=[])
             rows = db.get_audit_log(project_id=pid, username=username,
                                     action=action, limit=100, offset=offset,
                                     allowed_project_ids=dept_projs, allowed_usernames=dept_users)
@@ -445,13 +474,14 @@ def api_audit():
 @app.route("/api/audit-sequence", methods=["GET"])
 def api_audit_sequence():
     u = current_user()
-    if not u or str(u.get("role", "")).lower() not in ("superadmin", "admin"):
-        return jsonify(error="Superadmin/Admin only"), 403
-    
     pid = request.args.get("project_id")
     dt_id = request.args.get("dt_id")
+    if not u:
+        return jsonify(error="LOGIN_REQUIRED"), 403
     if not pid or not dt_id:
         return jsonify(error="Project ID and Document Type ID are required"), 400
+    if not is_project_admin(pid, u):
+        return jsonify(error="Superadmin/Admin only"), 403
     
     records = db.q("SELECT COALESCE(data->>'docNo', '') AS docno FROM records WHERE project_id=%s AND dt_id=%s", (pid, dt_id))
     
@@ -552,7 +582,7 @@ def api_save_distribution(pid):
     try:
         u = current_user()
         if not u: return jsonify(error="LOGIN_REQUIRED"), 403
-        if not (u["role"] in ("superadmin", "admin") or db.user_is_dc(u["username"], pid)):
+        if not (is_project_admin(pid, u) or (can_view_project(pid, u) and db.user_is_dc(u["username"], pid))):
             return jsonify(error="Forbidden – DC role required"), 403
         body = request.get_json(silent=True) or {}
         doc_type_id = body.get("doc_type_id", "").strip()
@@ -583,7 +613,7 @@ def update_project_settings_route(pid):
     try:
         u = current_user()
         if not u: return jsonify(error="LOGIN_REQUIRED"), 403
-        if u["role"] not in ("admin", "superadmin"):
+        if not is_project_admin(pid, u):
             return jsonify(error="Forbidden. Only Admins can modify project settings."), 403
             
         body = request.get_json()
@@ -899,20 +929,19 @@ def api_daily_digest(pid):
         
         projects_to_check = []
         if pid == "all":
-            from auth import get_allowed_project_ids
             ws = request.args.get("workspace_id") or request.args.get("ws")
             projects_to_check = get_allowed_project_ids(u, workspace_id=ws)
         else:
             if not can_view_project(pid): return jsonify(error="Forbidden"), 403
-            all_projs = db.get_projects()
-            matched = next((p["id"] for p in all_projs if p.get("id") == pid or p.get("code") == pid), pid)
-            projects_to_check = [matched]
+            resolved = _resolve_project(pid)
+            if not resolved: return jsonify(error="Forbidden"), 403
+            projects_to_check = [resolved["id"]]
             
         combined_digest = {"received": [], "issued": [], "replied": []}
         for p_id in projects_to_check:
             try:
-                # All users authorized for the project see its daily digest records
-                all_dts = db.get_doc_types(p_id)
+                # Filter digest document types strictly to those the current user is allowed to read.
+                all_dts = filter_allowed_doc_types(p_id, db.get_doc_types(p_id), u)
                 assigned_dt_ids = [dt["id"] for dt in all_dts]
                 if assigned_dt_ids:
                     target_date = request.args.get("date")
