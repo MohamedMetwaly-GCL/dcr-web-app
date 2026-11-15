@@ -1663,48 +1663,21 @@ def resolve_project_identifiers(raw_identifiers, workspace_id=None):
     Rules (Finding 1):
     1. Exact ``projects.id`` matches strictly on canonical ID and never expands to aliases.
     2. Unique case-insensitive ``projects.id`` matches strictly on that canonical ID.
-    3. Legacy ``code`` / ``name`` aliases resolve ONLY when unambiguous across ALL projects
+    3. Multiple case-insensitive ID matches are rejected before alias lookup.
+    4. Legacy ``code`` / ``name`` aliases resolve ONLY when unambiguous across ALL projects
        (exactly one distinct canonical ``projects.id`` matches). Ambiguous aliases (>= 2 matches)
        are rejected and resolve to nothing.
     """
     raw_list = _clean_project_ids(raw_identifiers)
     if not raw_list:
         return []
-    all_projs = q("SELECT * FROM projects ORDER BY id") or []
-    if not all_projs:
-        return []
-
-    by_exact_id = {}
-    by_ci_id = {}
-    by_alias = {}
-    for p in all_projs:
-        canon_id = str(p.get("id") or "").strip()
-        if not canon_id:
-            continue
-        by_exact_id[canon_id] = p
-        by_ci_id.setdefault(canon_id.upper(), []).append(p)
-        for field in ("code", "name"):
-            val = str(p.get(field) or "").strip().upper()
-            if val:
-                by_alias.setdefault(val, set()).add(canon_id)
+    project_index = _build_project_resolution_index()
 
     ws_up = str(workspace_id).strip().upper() if workspace_id else None
     resolved = []
     seen = set()
     for raw in raw_list:
-        canon_proj = None
-        if raw in by_exact_id:
-            canon_proj = by_exact_id[raw]
-        else:
-            raw_up = raw.upper()
-            ci_matches = by_ci_id.get(raw_up) or []
-            if len(ci_matches) == 1:
-                canon_proj = ci_matches[0]
-            else:
-                alias_ids = by_alias.get(raw_up) or set()
-                if len(alias_ids) == 1:
-                    only_id = next(iter(alias_ids))
-                    canon_proj = by_exact_id.get(only_id)
+        canon_proj = _resolve_single_project_from_index(raw, *project_index)
         if not canon_proj:
             continue
         if ws_up:
