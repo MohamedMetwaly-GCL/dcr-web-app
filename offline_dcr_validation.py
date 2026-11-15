@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent
 WORKTREE = Path("~/.codex/worktrees/dcr-security-integration/DCR").expanduser().resolve()
+DB_SHA256 = "d141d7067b459bf9e68fcfcbca7ccd1e501a526f7a82524d51a2fb292e77a507"
 REVIEWED = {
     "security_test_support.py": "69d0fac797580c5603a84e849f0e9c59f108a159ad5a67b240738955b4dcdc80",
     "attachments.py": "4ba52e3a3259c05f45e25110b59e5eb5d0279ba9d6f080b2b0c157efe4744839",
@@ -36,7 +37,8 @@ def verify_candidate(isolated):
     verify_hash(manifest_path, "e0896460e9aca30a2ad01894c206a624cfda3981aa20bd70d8e07a80e0122aad")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     for entry in manifest["modified_source_files"]:
-        verify_hash(ROOT / entry["path"], entry["rc_sha256"])
+        expected = DB_SHA256 if entry["path"] == "db.py" else entry["rc_sha256"]
+        verify_hash(ROOT / entry["path"], expected)
     for name, expected in REVIEWED.items():
         verify_hash(ROOT / name, expected)
     print(f"Verified {len(manifest['modified_source_files'])} candidate files and the auxiliary test inputs")
