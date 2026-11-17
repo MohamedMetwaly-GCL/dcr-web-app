@@ -50,6 +50,14 @@ def _is_ltr_doc_type(pid, dt_id):
     name = str(dt.get("name","")).strip().lower()
     return code == "LTR" or "letter" in name or "correspondence" in name
 
+def _is_mhr_doc_type(pid, dt_id):
+    if str(dt_id or "").strip().upper() == "MHR":
+        return True
+    dt = db.get_doc_type(pid, dt_id)
+    if not dt:
+        return False
+    return str(dt.get("code") or "").strip().upper() == "MHR"
+
 def _norm_ltr_text(v):
     return "".join(ch for ch in str(v or "").strip().lower() if ch.isalnum())
 
@@ -407,6 +415,17 @@ def api_save_record(pid, dt_id):
     if existing and (existing.get("_project_id") != pid or existing.get("_dt_id") != dt_id):
         return _reject_record_ownership(u, pid, dt_id, rec_id, existing)
     clean  = {k:v for k,v in data.items() if not k.startswith("_") and k != "attachments"}
+    if _is_mhr_doc_type(pid, dt_id):
+        try:
+            year_val, month_val = db.normalize_mhr_period(clean)
+            clean["year"] = year_val
+            clean["month"] = month_val
+            if str(dt_id or "").strip().upper() != "MHR":
+                db.ensure_unique_mhr_period(pid, dt_id, rec_id or "", clean)
+        except db.InvalidMhrPeriodError as e:
+            return jsonify(error=str(e)), 400
+        except db.DuplicateMhrPeriodError as e:
+            return jsonify(error=str(e), code="DUPLICATE_MHR_PERIOD"), 409
     if _is_ltr_doc_type(pid, dt_id):
         direction_key = _ltr_field_key(pid, dt_id, "direction")
         issued_key = _ltr_field_key(pid, dt_id, "issuedDate")
@@ -436,6 +455,10 @@ def api_save_record(pid, dt_id):
         old_data = {k: v for k, v in full_row.items() if not k.startswith("_")}
         try:
             db.save_record(pid, dt_id, rec_id, clean)
+        except db.InvalidMhrPeriodError as e:
+            return jsonify(error=str(e)), 400
+        except db.DuplicateMhrPeriodError as e:
+            return jsonify(error=str(e), code="DUPLICATE_MHR_PERIOD"), 409
         except db.RecordOwnershipError:
             # Lost a race with a concurrent create of the same id elsewhere: the atomic SQL guard refused.
             return _reject_record_ownership(u, pid, dt_id, rec_id, None)
@@ -447,7 +470,12 @@ def api_save_record(pid, dt_id):
                     str(old_val)[:200],str(new_val)[:200])
     else:
         rec_id = str(uuid.uuid4())
-        db.save_record(pid, dt_id, rec_id, clean)
+        try:
+            db.save_record(pid, dt_id, rec_id, clean)
+        except db.InvalidMhrPeriodError as e:
+            return jsonify(error=str(e)), 400
+        except db.DuplicateMhrPeriodError as e:
+            return jsonify(error=str(e), code="DUPLICATE_MHR_PERIOD"), 409
         db.log_action(uname,"ADD",pid,dt_id,rec_id,
             clean.get("docNo",""),detail="New document added")
     return jsonify(ok=True, id=rec_id)

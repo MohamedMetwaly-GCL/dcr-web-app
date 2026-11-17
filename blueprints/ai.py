@@ -101,6 +101,34 @@ SYSTEM_INSTRUCTION = (
 )
 
 
+HSE_COMPLIANCE_GUIDANCE = (
+    "### 🛡️ OSHA & Egyptian Labor Law Decision 211/2003 Compliance Reference:\n"
+    "- **Work at Height & Scaffolds (OSHA 1926.451 / Egypt Decision 211 Art. 18):** Fall protection mandatory at >= 1.8m (construction) / 1.2m (general); Competent Person inspection tag (Green/Yellow/Red); Top Rail (95-115cm), Mid Rail (~50cm), Toe Board (>=10cm); Full Body Harness + double shock-absorbing lanyard anchored >= 2,270 kg (5,000 lbs); <10 min suspension trauma rescue plan.\n"
+    "- **Hot Work (NFPA 51B / OSHA 1910.252 / Decision 211):** 35-ft (11m) clearance from flammables or fire blankets; calibrated gas test at 0% LEL; dedicated Fire Watcher during work and 30-60 min post-work; upright cylinders with flashback arrestors.\n"
+    "- **Confined Space & LOTO (OSHA 1910.146 / 1910.147):** Test O2 (19.5%-23.5%), LEL (<10%), H2S (<10 ppm), CO (<25 ppm) across top/mid/bottom; continuous ventilation, external Attendant, rescue tripod; 6-step LOTO lockout/tagout (Notify -> Shutdown -> Isolate -> Lock/Tag -> Dissipate Stored Energy -> Verify Zero Energy; 1 worker = 1 lock = 1 key).\n"
+    "- **Fire Extinguishers (NFPA 10 / Law 12/2003):** Monthly check of unobstructed location, green pressure gauge (CO2 by weight), intact pull pin/tamper seal, hose/nozzle, body corrosion, and valid inspection tag; mounting handle <= 1.5m (<=18kg) or <= 1.0m (>18kg), >=10cm above floor.\n"
+    "- **Egypt Law 12/2003 Book V & Decisions 211/2003 & 134/2003:** Employer duty for physical/chemical/mechanical/fire protection, 85 dBA 8-hr noise limit, initial & periodic medical exams, Safety Committee + full-time HSE staff when >= 50 workers, legal inspection logs (FEI, injuries, medical, twice-yearly evacuation drills).\n"
+    "- **Safety Violation / NCR Drafting Format:** When drafting a Safety Violation Report or NCR, structure clearly with: Reference No., Topic/Title, Severity/Risk Level, Technical Observation Description, Probable Root Cause, Immediate Corrective Action (Stop Work / Containment), Preventive Action (Controls & TBT), and OSHA / Decision 211 Regulatory Reference."
+)
+
+
+HSE_SYSTEM_INSTRUCTION = (
+    "You are the DCR Health, Safety & Environment (HSE) AI Assistant for Gas Chill contracting & site safety teams.\n"
+    "You assist HSE managers and safety officers strictly within their authorized HSE sites using the tools: "
+    "get_hse_kpis, search_hse_records, and get_expiring_permits_and_equipment.\n\n"
+    "HSE Registers include: PTW (Permit to Work), OBS (Safety Observations), INC (Incidents & First Aid: FAC/MTC/LTI), "
+    "SVP (Safety Violations & Penalties), TBT (Toolbox Talks), FEI (Fire & Equipment Inspections), JSA (Job Safety Analysis), "
+    "CEV (Contractor Evaluations), EVAC (Evacuation Drills), MHR (Man-Hours), WKR (Worker Register).\n\n"
+    "Guidelines:\n"
+    "1. Use `get_hse_kpis` for LTI-Free Days, Any-Injury-Free Days, LTIF, TRIR, Severity Rate (per 1M man-hours), and man-hours totals.\n"
+    "2. Use `get_expiring_permits_and_equipment` for overdue/expiring PTW permits, expiring/expired FEI extinguishers, or stale OBS (>30 days Open).\n"
+    "3. Use `search_hse_records` to query PTW, OBS, INC, SVP, FEI, JSA, CEV, and EVAC records.\n"
+    "4. Never fabricate incident counts, KPIs, or permit statuses, and never refer to ENG/OM engineering submittals in HSE responses.\n"
+    "5. Respond concisely in the user's language (English or fluent Egyptian technical Arabic with backticked codes).\n\n"
+    + HSE_COMPLIANCE_GUIDANCE
+)
+
+
 # ─────────────────────────────────────────────────────────────
 # GEMINI TOOL SCHEMAS & DECLARATIONS
 # (Notice: allowed_project_ids is strictly omitted from schemas)
@@ -238,6 +266,54 @@ get_document_history_declaration = types.FunctionDeclaration(
     ),
 )
 
+get_hse_kpis_declaration = types.FunctionDeclaration(
+    name="get_hse_kpis",
+    description=(
+        "Retrieves RBAC-scoped HSE metrics: LTI-Free Days streak, Any-Injury-Free Days streak, "
+        "LTIF, TRIR, Severity Rate per 1,000,000 worked man-hours, man-hours total, and OBS/PTW/FEI counts."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "project_code": types.Schema(type=types.Type.STRING, description="Optional HSE project code or ID."),
+            "year": types.Schema(type=types.Type.INTEGER, description="Optional year filter (e.g. 2026)."),
+            "warn_days": types.Schema(type=types.Type.INTEGER, description="Warning window in days for expiring PTW/FEI (default 30)."),
+        },
+    ),
+)
+
+search_hse_records_declaration = types.FunctionDeclaration(
+    name="search_hse_records",
+    description=(
+        "Searches authorized HSE records across PTW, OBS, INC, SVP, FEI, JSA, CEV, and EVAC "
+        "by register type, keyword, status, or project."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "project_code": types.Schema(type=types.Type.STRING, description="Optional HSE project code or ID."),
+            "doc_type": types.Schema(type=types.Type.STRING, description="Optional HSE register code: PTW, OBS, INC, SVP, FEI, JSA, CEV, EVAC."),
+            "keyword": types.Schema(type=types.Type.STRING, description="Keyword matching doc no, subject/title, location, equipment ref, or description."),
+            "status": types.Schema(type=types.Type.STRING, description="Optional status filter (e.g. Open, Closed)."),
+            "limit": types.Schema(type=types.Type.INTEGER, description="Max records to return (default 25, max 100)."),
+        },
+    ),
+)
+
+get_expiring_permits_and_equipment_declaration = types.FunctionDeclaration(
+    name="get_expiring_permits_and_equipment",
+    description="Lists expiring or overdue PTW permits, expiring/expired FEI fire extinguishers/equipment, and stale open observations (>30d).",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "project_code": types.Schema(type=types.Type.STRING, description="Optional HSE project code or ID."),
+            "warn_days": types.Schema(type=types.Type.INTEGER, description="Warning window in days (default 30)."),
+            "alert_type": types.Schema(type=types.Type.STRING, description="Optional filter: ptw, fei, or obs."),
+            "limit": types.Schema(type=types.Type.INTEGER, description="Max alert items to return (default 30)."),
+        },
+    ),
+)
+
 DCR_TOOL = types.Tool(
     function_declarations=[
         search_submittals_declaration,
@@ -248,12 +324,23 @@ DCR_TOOL = types.Tool(
     ]
 )
 
+DCR_HSE_TOOL = types.Tool(
+    function_declarations=[
+        get_hse_kpis_declaration,
+        search_hse_records_declaration,
+        get_expiring_permits_and_equipment_declaration,
+    ]
+)
+
 TOOL_REGISTRY = {
     "search_submittals": ai_tools.search_submittals,
     "get_project_summary": ai_tools.get_project_summary,
     "get_noc_financials": ai_tools.get_noc_financials,
     "get_overdue_submittals": ai_tools.get_overdue_submittals,
     "get_document_history": ai_tools.get_document_history,
+    "get_hse_kpis": ai_tools.get_hse_kpis,
+    "search_hse_records": ai_tools.search_hse_records,
+    "get_expiring_permits_and_equipment": ai_tools.get_expiring_permits_and_equipment,
 }
 
 
@@ -560,6 +647,7 @@ def _call_gemini_agent(
     custom_instruction: str = None,
     active_project_id: str = None,
     doc_type_scope: dict = None,
+    tool_list: list = None,
 ):
     """Executes the native Gemini Tool Calling Agent loop."""
     # If _call_gemini_api was mocked in test suites, return its mocked response
@@ -600,7 +688,7 @@ def _call_gemini_agent(
 
     config = types.GenerateContentConfig(
         system_instruction=system_inst,
-        tools=[DCR_TOOL],
+        tools=tool_list or [DCR_TOOL],
         temperature=0.2,
         max_output_tokens=1500,
     )
@@ -644,7 +732,7 @@ def _call_gemini_agent(
                 # Context-bleed guard: Strip bled project_code on global queries
                 if is_global_prompt(prompt):
                     fn_args["project_code"] = None
-                else:
+                elif fn_name not in ("get_hse_kpis", "search_hse_records", "get_expiring_permits_and_equipment"):
                     curr_intent = _extract_inquiry_intent_from_text(prompt)
                     # Project switch guard: If current user prompt explicitly specifies a project, ensure fn_args uses current project
                     curr_parsed_proj = curr_intent.get("project_code")
@@ -724,6 +812,114 @@ def _call_gemini_agent(
 # ─────────────────────────────────────────────────────────────
 # ZERO-503 DETERMINISTIC FALLBACK (Pure Python Resilient Generator)
 # ─────────────────────────────────────────────────────────────
+
+def _execute_hse_deterministic_fallback(
+    prompt: str,
+    allowed_project_ids: list,
+    active_project_id: str = None,
+    doc_type_scope: dict = None,
+) -> str:
+    """Offline RBAC-scoped HSE fallback providing KPIs, alerts, register search, NCR drafts, and compliance notes."""
+    p_low = (prompt or "").lower()
+    is_english = not bool(re.search(r"[\u0600-\u06FF]", prompt or ""))
+    proj_filter = active_project_id if (active_project_id and str(active_project_id).upper() != "ALL") else None
+
+    # 1. Draft Safety Violation / NCR guidance
+    if any(w in p_low for w in ("ncr", "violation", "draft", "مخالفة", "عدم مطابقة", "تقرير مخالفة")):
+        return (
+            "### 📝 Draft Safety Violation / Non-Conformance Report (NCR)\n\n"
+            f"**Reference Observation:** {(prompt or '').strip()[:160]}\n"
+            "- **Risk Severity:** High / Stop-Work Review Required\n"
+            "- **Immediate Corrective Action:** Stop unsafe activity, secure area, verify PPE / Permit-to-Work & LOTO controls.\n"
+            "- **Root Cause Verification:** Check JSA briefing, Toolbox Talk coverage, and supervisor inspection.\n"
+            "- **Preventive Action:** Update risk controls, brief team via TBT, and attach Close-Out evidence.\n"
+            "- **Regulatory Reference:** OSHA 29 CFR 1926 / 1910, NFPA 10/51B & Egypt Labor Law 12/2003 (Decision 211/2003).\n\n"
+            + HSE_COMPLIANCE_GUIDANCE
+        )
+
+    # 2. Expiring permits / equipment / stale OBS alerts
+    if any(w in p_low for w in ("expir", "overdue", "alert", "stale", "soon", "valid", "منتهي", "قريب", "ساري", "تنبيه")):
+        res = ai_tools.get_expiring_permits_and_equipment(
+            allowed_project_ids=allowed_project_ids,
+            project_code=proj_filter,
+            doc_type_scope=doc_type_scope,
+        )
+        alerts = res.get("alerts") or []
+        if not alerts:
+            msg = "No expiring or overdue PTW permits, FEI equipment, or stale observations (>30d) in your authorized HSE scope."
+            return msg if is_english else f"✅ لا توجد تصاريح أو طفايات منتهية/قريبة الانتهاء أو ملاحظات متأخرة (>30 يوم) في نطاق صلاحيتك."
+        lines = ["| Register | Ref No. | Title | Project | Alert Detail |", "| :--- | :--- | :--- | :--- | :--- |"]
+        for a in alerts[:20]:
+            lines.append(
+                f"| `{a.get('dt_code')}` | `{a.get('doc_no')}` | {str(a.get('title') or '').replace('|', '-')} | "
+                f"`{a.get('project_code')}` | {str(a.get('detail') or '').replace('|', '-')} |"
+            )
+        hdr = f"### ⚠️ HSE Expiry & Overdue Alerts ({res.get('total_alerts', 0)} found)"
+        return hdr + "\n\n" + "\n".join(lines)
+
+    # 3. Compliance / NCR standards guidance before record search so regulatory questions never misroute
+    if any(w in p_low for w in ("osha", "211", "134", "law", "loto", "scaffold", "confined", "hot work", "ncr", "قرار", "سقال", "مغلق", "لحام")):
+        return HSE_COMPLIANCE_GUIDANCE
+
+    # 4. Search specific HSE register records if mentioned (skip if asking executive rates/KPIs)
+    if not any(w in p_low for w in ("ltif", "trir", "severity", "man-hour", "manhour", "streak", "kpi")):
+        detected_code = None
+        for code in ai_tools.HSE_AI_SEARCH_CODES:
+            if re.search(rf"(?<![a-zA-Z]){code}(?![a-zA-Z])", prompt or "", re.IGNORECASE):
+                detected_code = code
+                break
+        if not detected_code:
+            alias_map = (
+                ("permit", "PTW"), ("تصريح", "PTW"),
+                ("observation", "OBS"), ("ملاحظ", "OBS"),
+                ("incident", "INC"), ("accident", "INC"), ("حادث", "INC"),
+                ("violation", "SVP"), ("penalty", "SVP"), ("مخالف", "SVP"),
+                ("extinguish", "FEI"), ("طفاي", "FEI"),
+                ("drill", "EVAC"), ("إخلاء", "EVAC"),
+                ("evaluation", "CEV"), ("تقييم", "CEV"),
+            )
+            for tok, code in alias_map:
+                if tok in p_low:
+                    detected_code = code
+                    break
+        if detected_code:
+            srch = ai_tools.search_hse_records(
+                allowed_project_ids=allowed_project_ids,
+                project_code=proj_filter,
+                doc_type=detected_code,
+                doc_type_scope=doc_type_scope,
+            )
+            recs = srch.get("records") or []
+            if not recs:
+                return f"No `{detected_code}` records found in your authorized HSE projects."
+            lines = ["| Doc No | Title | Status | Date | Location | Project |", "| :--- | :--- | :--- | :--- | :--- | :--- |"]
+            for r in recs[:20]:
+                lines.append(
+                    f"| `{r.get('doc_no')}` | {str(r.get('title') or '').replace('|', '-')} | {r.get('status') or '—'} | "
+                    f"{r.get('issued_date') or '—'} | {r.get('location') or '—'} | `{r.get('project_code')}` |"
+                )
+            return f"### 🛡️ HSE `{detected_code}` Records ({len(recs)} shown)\n\n" + "\n".join(lines)
+
+    # 5. Default HSE KPI summary
+    k = ai_tools.get_hse_kpis(
+        allowed_project_ids=allowed_project_ids,
+        project_code=proj_filter,
+        doc_type_scope=doc_type_scope,
+    )
+    ltif_str = f"{k['ltif']:.2f}" if k.get("ltif") is not None else "N/A (No MHR)"
+    trir_str = f"{k['trir']:.2f}" if k.get("trir") is not None else "N/A"
+    sev_str = f"{k['severity_rate']:.2f}" if k.get("severity_rate") is not None else "N/A"
+    return (
+        "### 🛡️ HSE Executive KPIs Summary\n\n"
+        f"- **LTI-Free Days Streak:** {k.get('lti_free_days') if k.get('lti_free_days') is not None else '—'}\n"
+        f"- **Any-Injury-Free Days Streak:** {k.get('any_injury_free_days') if k.get('any_injury_free_days') is not None else '—'}\n"
+        f"- **Total Worked Man-Hours:** {k.get('man_hours', 0):,.0f}\n"
+        f"- **LTIF (per 1M hrs):** {ltif_str} | **TRIR:** {trir_str} | **Severity Rate:** {sev_str}\n"
+        f"- **Observations (OBS):** {k['observations']['open']} Open / {k['observations']['closed']} Closed ({k['observations']['stale']} Stale >30d)\n"
+        f"- **Permits (PTW):** {k['permits']['open']} Open ({k['permits']['expiring']} Expiring, {k['permits']['overdue']} Overdue)\n"
+        f"- **Fire Equipment (FEI):** {k['equipment']['expiring']} Expiring, {k['equipment']['expired']} Expired"
+    )
+
 
 def _execute_deterministic_fallback(
     prompt: str,
@@ -1381,7 +1577,10 @@ def api_ai_query():
                     user_allowed = [canon_active]
 
         if not user_allowed:
-            ws_label = "Operation & Maintenance (O&M)" if ws_id == "OM" else ("Engineering & Projects" if ws_id == "ENG" else ws_id)
+            ws_label = (
+                "Health, Safety & Environment (HSE)" if ws_id == "HSE"
+                else ("Operation & Maintenance (O&M)" if ws_id == "OM" else ("Engineering & Projects" if ws_id == "ENG" else ws_id))
+            )
             return jsonify(reply=f"You do not have access to any projects/contracts in {ws_label}."), 200
 
         target_pids = user_allowed
@@ -1396,7 +1595,16 @@ def api_ai_query():
         is_greeting = any(g == p_clean or p_clean.startswith(g) for g in greeting_words) and len(prompt.split()) <= 4
 
         if is_greeting:
-            if ws_id == "OM":
+            if ws_id == "HSE":
+                reply = (
+                    "أهلاً بك يا باشمهندس! 👋 أنا مساعد السلامة والصحة المهنية (DCR HSE AI).\n\n"
+                    "يمكنني مساعدتك فوراً في:\n"
+                    "- 🛡️ **مؤشرات السلامة:** أيام بدون إصابات (LTI-Free)، ومعدلات LTIF / TRIR / Severity وساعات العمل.\n"
+                    "- ⚠️ **التنبيهات والتصاريح:** تصاريح العمل السارية والمنتهية (PTW) وفحص طفايات الحريق (FEI).\n"
+                    "- ⚖️ **الامتثال وصياغة تقارير المخالفات (NCR):** معايير OSHA وقانون العمل المصري (قرار 211).\n\n"
+                    "تفضل بسؤالي عن مؤشرات الموقع أو أي تصريح أو معيار سلامة!"
+                )
+            elif ws_id == "OM":
                 reply = (
                     "أهلاً بك يا باشمهندس! 👋 أنا مساعدك الذكي لقسم التشغيل والصيانة (O&M).\n\n"
                     "أنا جاهز لمساعدتك فوراً في:\n"
@@ -1417,7 +1625,16 @@ def api_ai_query():
             return jsonify(reply=reply), 200
 
         custom_inst = None
-        if ws_id == "OM":
+        selected_tools = [DCR_TOOL]
+        if ws_id == "HSE":
+            projs_info = db.get_projects(target_pids)
+            p_lines = "\n".join([f"- '{p.get('code', p['id'])}': {p.get('name', p['id'])}" for p in projs_info])
+            custom_inst = (
+                f"{HSE_SYSTEM_INSTRUCTION}\n\n"
+                f"HSE sites currently accessible to this user:\n{p_lines}"
+            )
+            selected_tools = [DCR_HSE_TOOL]
+        elif ws_id == "OM":
             projs_info = db.get_projects(target_pids)
             p_lines = "\n".join([f"- '{p.get('code', p['id'])}': {p.get('name', p['id'])}" for p in projs_info])
             custom_inst = (
@@ -1459,6 +1676,7 @@ def api_ai_query():
             custom_instruction=custom_inst,
             active_project_id=active_pid,
             doc_type_scope=dt_scope,
+            tool_list=selected_tools,
         )
 
         if err == "NO_API_KEY":
@@ -1469,13 +1687,21 @@ def api_ai_query():
                 "[AI Assistant Gemini Unavailable] Triggering zero-503 deterministic fallback. Gemini error: %s",
                 err,
             )
-            fallback_reply = _execute_deterministic_fallback(
-                prompt,
-                target_pids,
-                history=history,
-                active_project_id=active_pid,
-                doc_type_scope=dt_scope,
-            )
+            if ws_id == "HSE":
+                fallback_reply = _execute_hse_deterministic_fallback(
+                    prompt,
+                    target_pids,
+                    active_project_id=active_pid,
+                    doc_type_scope=dt_scope,
+                )
+            else:
+                fallback_reply = _execute_deterministic_fallback(
+                    prompt,
+                    target_pids,
+                    history=history,
+                    active_project_id=active_pid,
+                    doc_type_scope=dt_scope,
+                )
             if fallback_reply:
                 return jsonify(reply=fallback_reply), 200
 

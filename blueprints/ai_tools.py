@@ -1910,6 +1910,229 @@ def get_document_history(
     }
 
 
+# ─────────────────────────────────────────────────────────────
+# HSE TOOLS (Phase 3 - Workspace-Scoped Safety Intelligence)
+# ─────────────────────────────────────────────────────────────
+HSE_AI_SEARCH_CODES = ("PTW", "OBS", "INC", "SVP", "FEI", "JSA", "CEV", "EVAC")
+
+
+def _resolve_hse_target_projects(allowed_project_ids: list, project_code: str = None) -> list:
+    """Resolve accessible HSE workspace projects strictly within allowed_project_ids."""
+    candidates = _resolve_target_projects(allowed_project_ids, project_code=project_code)
+    if not candidates:
+        return []
+    cand_ids = [str(p.get("id") or "").strip() for p in candidates if p.get("id")]
+    if not cand_ids:
+        return []
+    try:
+        ph, params = _build_project_in_clause("id", cand_ids)
+        rows = db.q(
+            f"SELECT id, code, name, COALESCE(workspace_id, 'ENG') AS workspace_id "
+            f"FROM projects WHERE {ph} AND UPPER(COALESCE(workspace_id, 'ENG')) = 'HSE' ORDER BY code, id",
+            params,
+        ) or []
+        return rows
+    except Exception as e:
+        logger.error("Error filtering HSE target projects: %s", e)
+        return []
+
+
+def _fetch_scoped_hse_records(hse_projects: list, scope_norm, dt_filter_codes=None) -> tuple:
+    """Fetch normalized raw records strictly filtered to hse_projects and allowed_doc_types."""
+    if not hse_projects:
+        return [], {}, {}
+    proj_meta = {p["id"]: p for p in hse_projects}
+    pids = list(proj_meta.keys())
+    dt_code_map = _get_proj_dt_code_map(pids)
+    try:
+        p_clause, p_params = _build_project_in_clause("project_id", pids)
+        rows = db.q(
+            f"SELECT id, project_id, dt_id, data, created_at, updated_at "
+            f"FROM records WHERE {p_clause} ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST",
+            p_params,
+        ) or []
+    except Exception as e:
+        logger.error("Error fetching HSE records: %s", e)
+        return [], dt_code_map, proj_meta
+
+    allowed_codes = {str(c).strip().upper() for c in dt_filter_codes} if dt_filter_codes else None
+    scoped = []
+    for row in rows:
+        pid = str(row.get("project_id") or "").strip()
+        dt_id = row.get("dt_id")
+        dt_code = dt_code_map.get((pid, str(dt_id or "").strip().upper())) or str(dt_id or "").strip().upper()
+        if allowed_codes is not None and dt_code not in allowed_codes:
+            continue
+        if not _is_record_dt_allowed(pid, dt_id, scope_norm, dt_code=dt_code):
+            continue
+        scoped.append(row)
+    return scoped, dt_code_map, proj_meta
+
+
+def get_hse_kpis(
+    allowed_project_ids: list,
+    project_code: str = None,
+    year: int = None,
+    warn_days: int = 30,
+    doc_type_scope: dict = None,
+) -> dict:
+    """Retrieve RBAC-scoped HSE KPIs: LTI-free streak, any-injury streak, LTIF, TRIR, severity rate, and man-hours."""
+    import hse_analytics
+
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
+    hse_projs = _resolve_hse_target_projects(allowed_project_ids, project_code=project_code)
+    if not hse_projs:
+        empty = hse_analytics.compute_hse_kpis([], year=year, warn_days=warn_days)
+        return {
+            "projects": [],
+            "lti_free_days": None,
+            "any_injury_free_days": None,
+            "ltif": None,
+            "trir": None,
+            "severity_rate": None,
+            "man_hours": 0.0,
+            **empty,
+            "message": "No accessible HSE project found.",
+        }
+
+    raw_rows, dt_code_map, proj_meta = _fetch_scoped_hse_records(hse_projs, scope_norm)
+    norm_docs = hse_analytics.normalize_hse_records(raw_rows, dt_code_lookup=dt_code_map, project_meta=proj_meta)
+    kpis = hse_analytics.compute_hse_kpis(norm_docs, year=year, warn_days=warn_days)
+    return {
+        "projects": [{"id": p["id"], "code": p.get("code") or p["id"], "name": p.get("name") or p["id"]} for p in hse_projs],
+        "lti_free_days": kpis["streaks"]["lti_free"]["days"],
+        "any_injury_free_days": kpis["streaks"]["any_injury_free"]["days"],
+        "ltif": kpis["rates"]["ltif"],
+        "trir": kpis["rates"]["trir"],
+        "severity_rate": kpis["rates"]["severity_rate"],
+        "man_hours": kpis["man_hours"],
+        **kpis,
+    }
+
+
+def search_hse_records(
+    allowed_project_ids: list,
+    project_code: str = None,
+    doc_type: str = None,
+    keyword: str = None,
+    status: str = None,
+    limit: int = 25,
+    doc_type_scope: dict = None,
+) -> dict:
+    """Search PTW, OBS, INC, SVP, FEI, JSA, CEV, and EVAC records within allowed HSE projects and doc types."""
+    import hse_analytics
+
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
+    hse_projs = _resolve_hse_target_projects(allowed_project_ids, project_code=project_code)
+    if not hse_projs:
+        return {"count": 0, "total_matches": 0, "projects": [], "records": [], "message": "No accessible HSE project found."}
+
+    req_dt = str(doc_type or "").strip().upper()
+    if req_dt:
+        if req_dt not in HSE_AI_SEARCH_CODES:
+            return {"count": 0, "total_matches": 0, "projects": hse_projs, "records": []}
+        dt_codes = {req_dt}
+    else:
+        dt_codes = set(HSE_AI_SEARCH_CODES)
+
+    raw_rows, dt_code_map, proj_meta = _fetch_scoped_hse_records(hse_projs, scope_norm, dt_filter_codes=dt_codes)
+    kw_raw = str(keyword or "").strip().lower()
+    kw_norm = _normalize_arabic(kw_raw)
+    st_req = str(status or "").strip().lower()
+    max_items = max(1, min(100, int(limit or 25)))
+
+    matched = []
+    for row in raw_rows:
+        norm = hse_analytics.normalize_hse_record(row, dt_code_lookup=dt_code_map, project_meta=proj_meta)
+        if not norm:
+            continue
+        raw_data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        if st_req:
+            rec_st = str(norm.get("status") or "").strip().lower()
+            raw_cond = str(raw_data.get("extinguisherStatus") or "").strip().lower()
+            if st_req != rec_st and st_req not in rec_st and st_req not in raw_cond:
+                continue
+        if kw_raw:
+            blob = " ".join(
+                str(v or "") for v in (
+                    norm.get("doc_no"),
+                    norm.get("title"),
+                    norm.get("subtype"),
+                    norm.get("location"),
+                    norm.get("injury_class"),
+                    raw_data.get("description"),
+                    raw_data.get("rootCause"),
+                    raw_data.get("correctiveAction"),
+                    raw_data.get("equipmentRef"),
+                    raw_data.get("extinguisherType"),
+                    raw_data.get("conditionNotes"),
+                    raw_data.get("remarks"),
+                    raw_data.get("scenario"),
+                )
+            )
+            blob_low = blob.lower()
+            blob_norm = _normalize_arabic(blob)
+            if kw_raw not in blob_low and (not kw_norm or kw_norm not in blob_norm):
+                continue
+
+        valid_or_exp = (
+            norm["valid_until"].isoformat() if norm["dt_code"] == "PTW" and norm.get("valid_until")
+            else (norm["expiry_date"].isoformat() if norm.get("expiry_date") else None)
+        )
+        matched.append({
+            "record_id": norm["id"],
+            "project_id": norm["project_id"],
+            "project_code": norm["project_code"],
+            "dt_code": norm["dt_code"],
+            "doc_no": norm["doc_no"] or norm["id"],
+            "title": norm["title"],
+            "subtype": norm["subtype"],
+            "location": norm["location"],
+            "status": norm["status"] or str(raw_data.get("extinguisherStatus") or ""),
+            "issued_date": norm["date"].isoformat() if norm.get("date") else None,
+            "valid_or_expiry_date": valid_or_exp,
+            "injury_class": norm["injury_class"] or None,
+            "lost_days": norm["lost_days"] if norm["dt_code"] == "INC" else 0,
+        })
+
+    return {
+        "count": len(matched[:max_items]),
+        "total_matches": len(matched),
+        "projects": [{"id": p["id"], "code": p.get("code") or p["id"], "name": p.get("name") or p["id"]} for p in hse_projs],
+        "records": matched[:max_items],
+    }
+
+
+def get_expiring_permits_and_equipment(
+    allowed_project_ids: list,
+    project_code: str = None,
+    warn_days: int = 30,
+    alert_type: str = None,
+    limit: int = 30,
+    doc_type_scope: dict = None,
+) -> dict:
+    """List expiring/overdue PTW permits, expiring/expired FEI equipment, and stale OBS alerts."""
+    import hse_analytics
+
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
+    hse_projs = _resolve_hse_target_projects(allowed_project_ids, project_code=project_code)
+    if not hse_projs:
+        return {"total_alerts": 0, "counts": {"total": 0}, "warn_days": warn_days, "alerts": []}
+
+    raw_rows, dt_code_map, proj_meta = _fetch_scoped_hse_records(
+        hse_projs, scope_norm, dt_filter_codes={"PTW", "FEI", "OBS"}
+    )
+    norm_docs = hse_analytics.normalize_hse_records(raw_rows, dt_code_lookup=dt_code_map, project_meta=proj_meta)
+    alerts_data = hse_analytics.compute_hse_alerts(norm_docs, warn_days=warn_days, alert_filter=alert_type)
+    max_items = max(1, min(100, int(limit or 30)))
+    return {
+        "total_alerts": len(alerts_data["alerts"]),
+        "counts": alerts_data["counts"],
+        "warn_days": alerts_data["warn_days"],
+        "alerts": alerts_data["alerts"][:max_items],
+    }
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("=== DCR AI TOOLS ALIAS RESOLVER & RBAC VERIFICATION ===")

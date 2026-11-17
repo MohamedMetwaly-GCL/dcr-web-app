@@ -192,3 +192,45 @@ def doc_type_has_reply_cycle(dt):
     if any(h in name for h in _NO_CYCLE_NAME_HINTS):
         return False
     return any(h in name for h in _CYCLE_NAME_HINTS)
+
+
+HSE_CLOSEOUT_CODES = frozenset({"PTW", "OBS", "SVP", "INC", "JSA"})
+
+
+def is_hse_closeout_doc_type(dt):
+    """True when an HSE document type supports a dual Close-Out attachment in SLOT_APPROVAL."""
+    dt = dt or {}
+    flag = dt.get("has_closeout_slot")
+    if isinstance(flag, bool):
+        return flag
+    code = str(dt.get("code") or dt.get("id") or "").strip().upper()
+    return code in HSE_CLOSEOUT_CODES
+
+
+def doc_type_allows_approval_slot(dt, workspace_id="ENG"):
+    """True when SLOT_APPROVAL is permitted for `(dt, workspace_id)`."""
+    ws = str(workspace_id or "ENG").strip().upper()
+    if ws == "HSE":
+        return is_hse_closeout_doc_type(dt)
+    if ws == "ENG":
+        return doc_type_has_reply_cycle(dt)
+    return False
+
+
+def resolve_hse_closeout_status(current_status="", requested_status=""):
+    """Resolve English HSE close-out lifecycle status (`Open` -> `Closed`) on SLOT_APPROVAL upload.
+
+    Returns `(closeout_status, new_record_status_or_None)` so HSE close-out uploads
+    never emit engineering consultant review codes (`Code A/B/C/D`).
+    """
+    cur = str(current_status or "").strip()
+    req = str(requested_status or "").strip()
+    cur_low = cur.lower()
+    req_low = req.lower()
+    if req_low in ("closed", "مغلق"):
+        return "Closed", ("Closed" if cur != "Closed" else None)
+    if cur_low in ("open", "مفتوح") or cur == "مغلق":
+        return "Closed", "Closed"
+    if cur_low == "closed":
+        return "Closed", ("Closed" if cur != "Closed" else None)
+    return "Closed", None

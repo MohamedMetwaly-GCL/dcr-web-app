@@ -20,6 +20,7 @@ from blueprints.exporting import exporting_bp
 from blueprints.ai import ai_bp
 from blueprints.drive_uploads import drive_uploads_bp
 from blueprints.drive_viewer import drive_viewer_bp
+from blueprints.hse import hse_bp
 
 app = Flask(__name__)
 APP_VERSION = "2.4.9"
@@ -39,6 +40,7 @@ app.register_blueprint(exporting_bp)
 app.register_blueprint(ai_bp, url_prefix="/api/ai")
 app.register_blueprint(drive_uploads_bp)
 app.register_blueprint(drive_viewer_bp)
+app.register_blueprint(hse_bp)
 
 # ── Auth helpers (extracted to auth.py — Step 2 refactor) ─────
 from auth import (
@@ -54,7 +56,7 @@ from auth import (
     _resolve_project,
 )
 
-PUBLIC_ENDPOINTS = {"login", "logout", "static", "magic_master_view", "api_magic_data"}
+PUBLIC_ENDPOINTS = {"login", "logout", "static", "magic_master_view", "api_magic_data", "hse.public_qr_verify"}
 
 
 @app.before_request

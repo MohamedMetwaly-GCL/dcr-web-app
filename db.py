@@ -920,14 +920,24 @@ def set_user_can_download(username, can_download=False):
     return True
 
 def can_user_download(username, project_id=None):
-    """Check if a user is permitted to download files (superadmin/admin/editor always can; viewer if can_download flag is set)."""
+    """Check if a user is permitted to download files (workspace-aware when project_id is provided)."""
     if not username:
         return False
     try:
         u = get_user(username)
         if not u or not isinstance(u, dict):
             return False
-        role = str(u.get("role", "")).strip().lower()
+        global_role = str(u.get("role", "")).strip().lower()
+        if global_role == "superadmin":
+            return True
+        if project_id:
+            proj = get_project(project_id) or resolve_project_alias(project_id)
+            if not proj:
+                return False
+            ws_id = proj.get("workspace_id") or "ENG"
+            role = get_user_workspace_role(username, ws_id)
+        else:
+            role = global_role
         if role in ("superadmin", "admin", "editor"):
             return True
         return bool(u.get("can_download", False))
@@ -2017,7 +2027,46 @@ def delete_project(pid):
     for tbl in ("records","columns_config","doc_types","dropdown_lists","logos","user_projects","projects"):
         exe(f"DELETE FROM {tbl} WHERE {'id' if tbl=='projects' else 'project_id'}=%s", (pid,))
 
+def _seed_hse_project(pid):
+    from hse_defaults import HSE_LISTS, HSE_REGISTERS, HSE_SUBTYPES, hse_columns
+
+    for order, (code, name, source) in enumerate(HSE_REGISTERS):
+        data = {"legacy_source": source, "legacy_subtypes": HSE_SUBTYPES.get(code, {})}
+        exe(
+            """INSERT INTO doc_types(id,project_id,name,code,sort_order,data)
+               VALUES(%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING""",
+            (code, pid, name, code, order, json.dumps(data, ensure_ascii=False)),
+        )
+        for sort_order, (key, label, col_type, list_name) in enumerate(hse_columns(code)):
+            exe(
+                """INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
+                   VALUES(%s,%s,%s,%s,%s,%s,true,%s) ON CONFLICT DO NOTHING""",
+                (pid, code, key, label, col_type, list_name, sort_order),
+            )
+    for list_name, values in HSE_LISTS.items():
+        for order, value in enumerate(values):
+            meta = None
+            if list_name == "hse_doc_status":
+                meta = "pending" if value == "Open" else ("approved" if value == "Closed" else None)
+            elif list_name == "hse_extinguisher_status":
+                meta = (
+                    "approved" if value == "Valid"
+                    else ("rejected" if value in ("Expired", "Out of Service") else "pending")
+                )
+            elif list_name == "hse_jsa_status":
+                meta = "approved" if value == "Approved" else "pending"
+            exe(
+                """INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)
+                   VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)
+                   DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)""",
+                (pid, list_name, value, order, meta),
+            )
+
+
 def _seed_project(pid, workspace_id="ENG"):
+    if str(workspace_id or "").upper() == "HSE":
+        _seed_hse_project(pid)
+        return
     if str(workspace_id or "").upper() == "OM":
         for code, name, order in DEFAULT_OM_DOC_TYPES:
             exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
@@ -2295,14 +2344,55 @@ class RecordOwnershipError(Exception):
     """An existing record id was addressed through a different project / document type."""
 
 
-def save_record(pid, dt_id, rec_id, data: dict):
-    # 'attachments' is server-managed (see attachments.py): never accepted from the client
-    clean = {k: v for k, v in data.items() if not k.startswith("_") and k != "attachments"}
-    jdata = json.dumps(clean)
-    # On update, carry over existing 'attachments' so a normal record edit can never wipe them.
-    # Finding B: an existing row is only updated when it already belongs to (pid, dt_id). The WHERE
-    # guard is evaluated atomically by PostgreSQL on conflict, so a record id owned by another
-    # project / document type is never overwritten (and never moved): zero rows are affected.
+class InvalidMhrPeriodError(ValueError):
+    """MHR record is missing a valid reporting year or month (1-12)."""
+
+
+class DuplicateMhrPeriodError(ValueError):
+    """An MHR record already exists for this project and reporting year/month."""
+
+
+def normalize_mhr_period(data):
+    """Extract and validate integer `(year, month)` from an MHR record payload."""
+    payload = data if isinstance(data, dict) else {}
+    raw_year = "" if payload.get("year") is None else str(payload.get("year")).strip()
+    raw_month = "" if payload.get("month") is None else str(payload.get("month")).strip()
+    if not raw_year or not raw_month:
+        raise InvalidMhrPeriodError("MHR records require both reporting year and month (1-12).")
+    try:
+        year_val = int(raw_year)
+        month_val = int(raw_month)
+    except ValueError:
+        raise InvalidMhrPeriodError("Reporting year and month must be integers (month 1-12).") from None
+    if year_val < 1900 or year_val > 2200:
+        raise InvalidMhrPeriodError("Reporting year must be between 1900 and 2200.")
+    if month_val < 1 or month_val > 12:
+        raise InvalidMhrPeriodError("Reporting month must be between 1 and 12.")
+    return year_val, month_val
+
+
+def ensure_unique_mhr_period(pid, dt_id, rec_id, data):
+    """Validate and enforce unique `(project_id, year, month)` for MHR records; return `(year, month)`."""
+    year_val, month_val = normalize_mhr_period(data)
+    q("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"mhr:{pid}:{year_val}:{month_val}",))
+    rows = q(
+        "SELECT id, data FROM records WHERE project_id=%s AND dt_id=%s AND id <> %s",
+        (pid, dt_id, rec_id or ""),
+    )
+    for row in rows:
+        rdata = row.get("data") if isinstance(row.get("data"), dict) else {}
+        try:
+            ex_year, ex_month = normalize_mhr_period(rdata)
+        except InvalidMhrPeriodError:
+            continue
+        if ex_year == year_val and ex_month == month_val:
+            raise DuplicateMhrPeriodError(
+                f"Man-hours for project '{pid}' and reporting month {year_val:04d}-{month_val:02d} are already logged."
+            )
+    return year_val, month_val
+
+
+def _upsert_record_row(pid, dt_id, rec_id, jdata):
     affected = exe("""INSERT INTO records(id,project_id,dt_id,data,updated_at) VALUES(%s,%s,%s,%s::jsonb,NOW())
            ON CONFLICT(id) DO UPDATE SET data = EXCLUDED.data ||
                CASE WHEN records.data ? 'attachments'
@@ -2315,6 +2405,23 @@ def save_record(pid, dt_id, rec_id, data: dict):
     if affected == 0:
         raise RecordOwnershipError(
             "Record %r does not belong to project %r / document type %r" % (rec_id, pid, dt_id))
+
+
+def save_record(pid, dt_id, rec_id, data: dict):
+    # 'attachments' is server-managed (see attachments.py): never accepted from the client
+    clean = {k: v for k, v in data.items() if not k.startswith("_") and k != "attachments"}
+    # On update, carry over existing 'attachments' so a normal record edit can never wipe them.
+    # Finding B: an existing row is only updated when it already belongs to (pid, dt_id). The WHERE
+    # guard is evaluated atomically by PostgreSQL on conflict, so a record id owned by another
+    # project / document type is never overwritten (and never moved): zero rows are affected.
+    if str(dt_id or "").strip().upper() == "MHR":
+        with transaction():
+            year_val, month_val = ensure_unique_mhr_period(pid, dt_id, rec_id, clean)
+            clean["year"] = year_val
+            clean["month"] = month_val
+            _upsert_record_row(pid, dt_id, rec_id, json.dumps(clean))
+    else:
+        _upsert_record_row(pid, dt_id, rec_id, json.dumps(clean))
     invalidate_dashboard_cache(pid)
 
 def get_record_by_doc_no(pid, dt_id, doc_no):

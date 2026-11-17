@@ -25,6 +25,63 @@ from security import validate_username
 users_bp = Blueprint("users", __name__)
 
 
+def _target_workspace_ids(target_user):
+    uname = str((target_user or {}).get("username") or "").strip().lower()
+    if not uname:
+        return set()
+    rows = db.get_user_workspaces(uname) or []
+    ws_ids = {str(w.get("id") or "").strip().upper() for w in rows if w.get("id")}
+    if not ws_ids:
+        primary = str((target_user or {}).get("primary_workspace") or "").strip().upper()
+        if primary:
+            ws_ids.add(primary)
+    return ws_ids
+
+
+def _is_peer_or_higher_admin(target_user):
+    if not target_user:
+        return False
+    uname = str(target_user.get("username") or "").strip().lower()
+    global_role = str(target_user.get("role") or "").strip().lower()
+    if uname == "admin" or global_role in ("superadmin", "admin"):
+        return True
+    admin_ws = db.get_admin_workspaces_for_user(uname) or []
+    return bool(admin_ws)
+
+
+def _can_manage_target_user(actor, target_user, admin_ws, require_exclusive_workspace=False):
+    """Verify actor may manage target_user under scoped Department Admin RBAC."""
+    if is_superadmin(actor):
+        return True, None
+    actor_uname = str((actor or {}).get("username") or "").strip().lower()
+    target_uname = str((target_user or {}).get("username") or "").strip().lower()
+    if not target_uname:
+        return False, (jsonify(ok=False, error="User not found"), 404)
+
+    admin_ws_set = {str(w).strip().upper() for w in (admin_ws or []) if str(w).strip()}
+    if not admin_ws_set:
+        return False, (jsonify(ok=False, error="Forbidden"), 403)
+
+    if target_uname == actor_uname:
+        return False, (jsonify(ok=False, error="Cannot modify or delete your own admin account"), 403)
+
+    target_global_role = str(target_user.get("role") or "").strip().lower()
+    if target_global_role == "superadmin" or target_uname == "admin":
+        return False, (jsonify(ok=False, error="Cannot modify superadmin account"), 403)
+
+    if _is_peer_or_higher_admin(target_user):
+        return False, (jsonify(ok=False, error="Cannot modify peer admin account"), 403)
+
+    target_ws = _target_workspace_ids(target_user)
+    if not target_ws or not (target_ws & admin_ws_set):
+        return False, (jsonify(ok=False, error="Cannot modify user from another department"), 403)
+
+    if require_exclusive_workspace and not (target_ws <= admin_ws_set):
+        return False, (jsonify(ok=False, error="Cannot perform global account changes on a multi-department user"), 403)
+
+    return True, None
+
+
 @users_bp.route("/api/users")
 @require_admin
 def api_users():
@@ -33,8 +90,15 @@ def api_users():
         return jsonify(error="LOGIN_REQUIRED"), 403
     users = db.get_users_for_admin(u["username"])
     all_projects = db.get_all_user_projects()
+    allowed_pids = None
+    if not is_superadmin(u):
+        admin_ws = [str(w).strip().upper() for w in (db.get_admin_workspaces_for_user(u["username"]) or [])]
+        allowed_pids = {p["id"] for ws in admin_ws for p in (db.get_projects(workspace_id=ws) or [])}
     for usr in users:
-        usr["projects"] = all_projects.get(usr["username"], [])
+        projs = all_projects.get(usr["username"], [])
+        if allowed_pids is not None:
+            projs = [p for p in projs if p.get("project_id") in allowed_pids]
+        usr["projects"] = projs
     return jsonify(users)
 
 
@@ -46,25 +110,40 @@ def api_users_action():
     u = current_user() or {"username": "admin"}
     is_super = is_superadmin(u)
     admin_ws = db.get_admin_workspaces_for_user(u["username"]) if not is_super else []
+    admin_ws_upper = [str(w).strip().upper() for w in (admin_ws or []) if str(w).strip()]
 
     if action == "add":
-        uname = data.get("username", "").strip().lower()
+        uname = str(data.get("username") or "").strip().lower()
         pw    = data.get("password", "")
-        role  = data.get("role", "viewer")
+        role  = str(data.get("role") or "viewer").strip().lower()
         email = data.get("email", "")
-        ws_id = data.get("workspace_id") or data.get("primary_workspace") or "ENG"
+        raw_ws = str(data.get("workspace_id") or data.get("primary_workspace") or "").strip().upper()
 
         if not uname or not pw:
             return jsonify(ok=False, error="Username and password required"), 400
         is_valid, err_msg, _ = validate_username(uname)
         if not is_valid:
             return jsonify(ok=False, error=err_msg), 400
+        if len(str(pw)) < 4:
+            return jsonify(ok=False, error="Min 4 characters"), 400
 
         if not is_super:
             if role == "superadmin":
                 return jsonify(ok=False, error="Cannot create superadmin"), 403
-            if ws_id not in admin_ws:
-                ws_id = admin_ws[0] if admin_ws else "ENG"
+            if role not in ("viewer", "editor"):
+                return jsonify(ok=False, error="Department admins can only create viewer or editor users"), 403
+            if raw_ws and raw_ws not in admin_ws_upper:
+                return jsonify(ok=False, error="Cannot create user in another department"), 403
+            if not admin_ws_upper:
+                return jsonify(ok=False, error="Forbidden"), 403
+            ws_id = raw_ws or admin_ws_upper[0]
+        else:
+            if role not in ("viewer", "editor", "admin", "superadmin"):
+                return jsonify(ok=False, error="Invalid role"), 400
+            ws_id = raw_ws or "ENG"
+
+        if db.get_user(uname):
+            return jsonify(ok=False, error="User already exists"), 409
 
         can_dl = bool(data.get("can_download", False))
         db.add_user(uname, pw, role, email, primary_workspace=ws_id, can_download=can_dl)
@@ -73,7 +152,7 @@ def api_users_action():
         return jsonify(ok=True)
 
     if action == "delete":
-        uname = data.get("username", "")
+        uname = str(data.get("username") or "").strip().lower()
         if uname == "admin":
             return jsonify(ok=False, error="Cannot delete super admin"), 400
         target_user = db.get_user(uname)
@@ -81,27 +160,25 @@ def api_users_action():
             return jsonify(ok=False, error="User not found"), 404
         if target_user.get("role") == "superadmin":
             return jsonify(ok=False, error="Cannot delete super admin"), 403
-        if not is_super:
-            target_workspaces = [w["id"] for w in db.get_user_workspaces(uname)]
-            if not any(w in admin_ws for w in target_workspaces):
-                return jsonify(ok=False, error="Cannot delete user from another department"), 403
+        allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=True)
+        if not allowed:
+            return err_resp
 
         db.delete_user(uname)
         db.log_action(u["username"], "USER_DELETE", detail=f"Deleted user '{uname}'")
         return jsonify(ok=True)
 
     if action == "toggle_download_permission":
-        uname = data.get("username", "").strip().lower()
+        uname = str(data.get("username") or "").strip().lower()
         can_dl = bool(data.get("can_download", False))
         target_user = db.get_user(uname)
         if not target_user:
             return jsonify(ok=False, error="User not found"), 404
-        if target_user.get("role") == "superadmin" or uname == "admin":
+        if is_super and (target_user.get("role") == "superadmin" or uname == "admin"):
             return jsonify(ok=False, error="Superadmin permissions cannot be modified"), 400
-        if not is_super:
-            target_workspaces = [w["id"] for w in db.get_user_workspaces(uname)]
-            if not any(w in admin_ws for w in target_workspaces):
-                return jsonify(ok=False, error="Cannot modify user from another department"), 403
+        allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=True)
+        if not allowed:
+            return err_resp
 
         db.set_user_can_download(uname, can_dl)
         status_txt = "Allowed" if can_dl else "Restricted"
@@ -110,24 +187,24 @@ def api_users_action():
         return jsonify(ok=True, can_download=can_dl)
 
     if action == "change_password":
-        uname = data.get("username", "")
+        uname = str(data.get("username") or "").strip().lower()
+        pw = data.get("password", "")
         target_user = db.get_user(uname)
         if not target_user:
             return jsonify(ok=False, error="User not found"), 404
-        if not is_super:
-            if target_user.get("role") == "superadmin":
-                return jsonify(ok=False, error="Cannot change password of super admin"), 403
-            target_workspaces = [w["id"] for w in db.get_user_workspaces(uname)]
-            if not any(w in admin_ws for w in target_workspaces):
-                return jsonify(ok=False, error="Cannot modify user from another department"), 403
+        allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=True)
+        if not allowed:
+            return err_resp
+        if len(str(pw)) < 4:
+            return jsonify(ok=False, error="Min 4 characters"), 400
 
-        db.change_pw(uname, data.get("password", ""))
+        db.change_pw(uname, pw)
         db.log_action(u["username"], "PASSWORD_CHANGE", detail=f"Admin changed password for user '{uname}'")
         return jsonify(ok=True)
 
     if action == "update_role":
-        uname = data.get("username", "").strip().lower()
-        role = data.get("role", "viewer")
+        uname = str(data.get("username") or "").strip().lower()
+        role = str(data.get("role") or "viewer").strip().lower()
         target_user = db.get_user(uname)
         if not target_user:
             return jsonify(ok=False, error="User not found"), 404
@@ -136,43 +213,50 @@ def api_users_action():
         if not is_super:
             if role == "superadmin":
                 return jsonify(ok=False, error="Cannot promote to superadmin"), 403
-            if target_user.get("role") == "superadmin":
-                return jsonify(ok=False, error="Cannot change role of super admin"), 403
-            target_workspaces = [w["id"] for w in db.get_user_workspaces(uname)]
-            if not any(w in admin_ws for w in target_workspaces):
-                return jsonify(ok=False, error="Cannot modify user from another department"), 403
+            if role not in ("viewer", "editor"):
+                return jsonify(ok=False, error="Department admins can only assign viewer or editor roles"), 403
+            allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=True)
+            if not allowed:
+                return err_resp
 
         if not db.set_user_role(uname, role):
             return jsonify(ok=False, error="Invalid role"), 400
+        if not is_super and role in ("viewer", "editor"):
+            primary_ws = str(target_user.get("primary_workspace") or "").strip().upper()
+            target_ws = primary_ws if primary_ws in admin_ws_upper else (admin_ws_upper[0] if admin_ws_upper else "")
+            if target_ws:
+                db.set_user_workspace_role(uname, target_ws, role)
         db.log_action(u["username"], "ROLE_UPDATE", detail=f"Updated role of '{uname}' to '{role}'")
         return jsonify(ok=True)
 
     if action == "update_email":
-        uname = data.get("username", "").strip().lower()
+        uname = str(data.get("username") or "").strip().lower()
         target_user = db.get_user(uname)
         if not target_user:
             return jsonify(ok=False, error="User not found"), 404
-        if not is_super:
-            if target_user.get("role") == "superadmin":
-                return jsonify(ok=False, error="Cannot modify super admin"), 403
-            target_workspaces = [w["id"] for w in db.get_user_workspaces(uname)]
-            if not any(w in admin_ws for w in target_workspaces):
-                return jsonify(ok=False, error="Cannot modify user from another department"), 403
+        allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=True)
+        if not allowed:
+            return err_resp
 
         db.set_user_email(uname, data.get("email", ""))
         db.log_action(u["username"], "USER_EDIT", detail=f"Updated email for '{uname}' to '{data.get('email')}'")
         return jsonify(ok=True)
 
     if action == "assign":
-        uname = data.get("username", "")
+        uname = str(data.get("username") or "").strip().lower()
         pid = data.get("project_id", "")
         is_dc = data.get("is_dc", False)
         if not is_super:
             proj = db.get_project(pid)
             proj_ws = str(proj.get("workspace_id") or "ENG").upper() if proj else "ENG"
-            admin_ws_upper = [str(w).upper() for w in admin_ws]
             if not proj or proj_ws not in admin_ws_upper:
                 return jsonify(ok=False, error="Cannot assign project from another department"), 403
+            target_user = db.get_user(uname)
+            if not target_user:
+                return jsonify(ok=False, error="User not found"), 404
+            allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=False)
+            if not allowed:
+                return err_resp
 
         db.assign_project(uname, pid, is_dc)
         if "doc_types" in data:
@@ -182,14 +266,19 @@ def api_users_action():
         return jsonify(ok=True)
 
     if action == "unassign":
-        uname = data.get("username", "")
+        uname = str(data.get("username") or "").strip().lower()
         pid = data.get("project_id", "")
         if not is_super:
             proj = db.get_project(pid)
             proj_ws = str(proj.get("workspace_id") or "ENG").upper() if proj else "ENG"
-            admin_ws_upper = [str(w).upper() for w in admin_ws]
             if not proj or proj_ws not in admin_ws_upper:
                 return jsonify(ok=False, error="Cannot unassign project from another department"), 403
+            target_user = db.get_user(uname)
+            if not target_user:
+                return jsonify(ok=False, error="User not found"), 404
+            allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=False)
+            if not allowed:
+                return err_resp
 
         db.unassign_project(uname, pid)
         db.log_action(u["username"], "PROJECT_UNASSIGN", project_id=pid,
@@ -197,42 +286,60 @@ def api_users_action():
         return jsonify(ok=True)
 
     if action == "update_workspace_role":
-        uname = data.get("username", "").strip().lower()
-        ws_id = data.get("workspace_id", "").strip().upper()
-        ws_role = data.get("role", "viewer").strip().lower()
+        uname = str(data.get("username") or "").strip().lower()
+        ws_id = str(data.get("workspace_id") or "").strip().upper()
+        ws_role = str(data.get("role") or "viewer").strip().lower()
         if not uname or not ws_id:
             return jsonify(ok=False, error="Username and workspace_id required"), 400
+        if ws_role not in ("viewer", "editor", "admin"):
+            return jsonify(ok=False, error="Invalid role"), 400
         target_user = db.get_user(uname)
         if not target_user:
             return jsonify(ok=False, error="User not found"), 404
-        if target_user.get("role") == "superadmin" or uname == "admin":
-            return jsonify(ok=False, error="Cannot modify superadmin"), 400
         if not is_super:
-            if ws_id not in admin_ws:
+            if ws_id not in admin_ws_upper:
                 return jsonify(ok=False, error="Cannot modify department outside your authority"), 403
             if ws_role in ("admin", "superadmin"):
                 return jsonify(ok=False, error="Cannot grant admin privileges"), 403
+            allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=False)
+            if not allowed:
+                return err_resp
+        elif target_user.get("role") == "superadmin" or uname == "admin":
+            return jsonify(ok=False, error="Cannot modify superadmin"), 400
 
         db.set_user_workspace_role(uname, ws_id, ws_role)
+        primary_ws = str(target_user.get("primary_workspace") or "ENG").strip().upper()
+        target_ws = _target_workspace_ids(target_user)
+        should_sync_global = (
+            ws_id == primary_ws
+            and ws_role in ("viewer", "editor")
+            and str(target_user.get("role") or "").strip().lower() != "superadmin"
+            and (is_super or (target_ws <= set(admin_ws_upper)))
+        )
+        if should_sync_global:
+            db.set_user_role(uname, ws_role)
         db.log_action(u["username"], "WORKSPACE_ROLE_UPDATE",
                       detail=f"Updated role of '{uname}' in '{ws_id}' to '{ws_role}'")
         return jsonify(ok=True)
 
     if action == "set_doc_type_permissions":
-        uname = data.get("username", "").strip().lower()
-        pid = data.get("project_id", "").strip()
+        uname = str(data.get("username") or "").strip().lower()
+        pid = str(data.get("project_id") or "").strip()
         doc_types = data.get("doc_types")
         if not uname or not pid:
             return jsonify(ok=False, error="Username and project_id required"), 400
         if not is_super:
             proj = db.get_project(pid)
             proj_ws = str(proj.get("workspace_id") or "ENG").upper() if proj else "ENG"
-            admin_ws_upper = [str(w).upper() for w in admin_ws]
             if not proj or proj_ws not in admin_ws_upper:
                 return jsonify(ok=False, error="Cannot modify project outside your department"), 403
         target_user = db.get_user(uname)
         if not target_user:
             return jsonify(ok=False, error="User not found"), 404
+        if not is_super:
+            allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=False)
+            if not allowed:
+                return err_resp
 
         db.set_user_project_doc_types(uname, pid, doc_types)
         dt_desc = "ALL" if doc_types is None else (", ".join(str(d) for d in doc_types) if doc_types else "NONE")
@@ -241,7 +348,7 @@ def api_users_action():
         return jsonify(ok=True)
 
     if action == "update_workspaces":
-        uname = data.get("username", "").strip().lower()
+        uname = str(data.get("username") or "").strip().lower()
         ws_ids = data.get("workspaces", [])
         if not isinstance(ws_ids, list) or not ws_ids:
             return jsonify(ok=False, error="User must belong to at least one department"), 400
@@ -258,20 +365,22 @@ def api_users_action():
         return jsonify(ok=True)
 
     if action in ("assign_workspace", "update_workspace", "update_department"):
-        uname = data.get("username", "").strip().lower()
-        ws_id = data.get("workspace_id") or data.get("department", "")
+        uname = str(data.get("username") or "").strip().lower()
+        ws_id = str(data.get("workspace_id") or data.get("department") or "").strip().upper()
         target_user = db.get_user(uname)
         if not target_user:
             return jsonify(ok=False, error="User not found"), 404
-        ws_role = data.get("role") or target_user.get("role", "viewer")
+        ws_role = str(data.get("role") or target_user.get("role", "viewer")).strip().lower()
         if not is_super:
-            if ws_id not in admin_ws:
+            if ws_id not in admin_ws_upper:
                 return jsonify(ok=False, error="Cannot assign workspace outside your authority"), 403
             if ws_role == "superadmin":
                 return jsonify(ok=False, error="Cannot grant superadmin"), 403
-            target_workspaces = [w["id"] for w in db.get_user_workspaces(uname)]
-            if not any(w in admin_ws for w in target_workspaces):
-                return jsonify(ok=False, error="Cannot modify user from another department"), 403
+            if ws_role not in ("viewer", "editor"):
+                return jsonify(ok=False, error="Cannot grant admin privileges"), 403
+            allowed, err_resp = _can_manage_target_user(u, target_user, admin_ws_upper, require_exclusive_workspace=True)
+            if not allowed:
+                return err_resp
         if hasattr(db, "set_user_primary_workspace"):
             db.set_user_primary_workspace(uname, ws_id)
         db.assign_user_workspace(uname, ws_id, ws_role)
@@ -289,6 +398,9 @@ def api_user_projects(username):
         allowed_users = [usr["username"] for usr in db.get_users_for_admin(u["username"])]
         if username not in allowed_users:
             return jsonify(error="Forbidden"), 403
+        admin_ws = [str(w).strip().upper() for w in (db.get_admin_workspaces_for_user(u["username"]) or [])]
+        allowed_pids = {p["id"] for ws in admin_ws for p in (db.get_projects(workspace_id=ws) or [])}
+        return jsonify([p for p in db.get_user_projects(username) if p.get("project_id") in allowed_pids])
     return jsonify(db.get_user_projects(username))
 
 

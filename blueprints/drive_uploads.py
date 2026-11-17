@@ -138,12 +138,19 @@ def api_create_upload_session():
     if not proj:
         return jsonify(error="Project not found"), 404
     ws_id = str(proj.get("workspace_id") or "ENG").strip().upper()
-    if (slot == attachments.SLOT_APPROVAL or slot in attachments.NOC_SLOTS) and ws_id != "ENG":
-        return jsonify(error="Approval / NOC slots are only available in the Engineering & Projects workspace"), 400
+    if slot in attachments.NOC_SLOTS and ws_id != "ENG":
+        return jsonify(error="NOC slots are only available in the Engineering & Projects workspace"), 400
     dt_meta = db.get_doc_type(pid, dt_id) or {}
-    has_cycle = attachments.doc_type_has_reply_cycle(dt_meta)
-    if (slot == attachments.SLOT_APPROVAL or slot in attachments.NOC_SLOTS) and not has_cycle:
-        return jsonify(error="This document type has no consultant reply cycle"), 400
+    if ws_id == "HSE":
+        has_cycle = attachments.doc_type_allows_approval_slot(dt_meta, ws_id)
+        if slot == attachments.SLOT_APPROVAL and not has_cycle:
+            return jsonify(error="Close-Out attachment slot is only available for PTW, OBS, SVP, INC, and JSA in HSE"), 400
+    else:
+        if slot == attachments.SLOT_APPROVAL and ws_id != "ENG":
+            return jsonify(error="Approval / NOC slots are only available in the Engineering & Projects workspace"), 400
+        has_cycle = attachments.doc_type_has_reply_cycle(dt_meta)
+        if (slot == attachments.SLOT_APPROVAL or slot in attachments.NOC_SLOTS) and not has_cycle:
+            return jsonify(error="This document type has no consultant reply cycle"), 400
 
     rec = None
     if record_id:
@@ -201,6 +208,7 @@ def api_create_upload_session():
     ticket = sign_upload_ticket({
         "pid": pid,
         "dt_id": dt_id,
+        "ws_id": ws_id,
         "record_id": record_id,
         "slot": slot,
         "folder_id": dest["folder_id"],
@@ -301,10 +309,23 @@ def api_upload_complete():
     if parents and t["folder_id"] not in parents:
         return jsonify(error="File parent folder does not match authorized destination folder"), 400
 
+    proj = db.get_project(pid) or {}
+    ws_id = str(t.get("ws_id") or proj.get("workspace_id") or "ENG").strip().upper()
+    is_hse = (ws_id == "HSE")
+
     view_url = remote.get("webViewLink") or attachments.drive_view_url(file_id)
     extra = {"url": view_url}
-    if slot == attachments.SLOT_APPROVAL and rec.get("status"):
-        extra["consultant_status"] = str(rec.get("status"))
+    new_record_status = None
+    old_record_status = str(rec.get("status") or "").strip()
+    if slot == attachments.SLOT_APPROVAL:
+        if is_hse:
+            # HSE close-out attachments never carry ENG consultant review codes (Code A/B/C/D).
+            closeout_status, new_record_status = attachments.resolve_hse_closeout_status(
+                old_record_status, body.get("closeout_status")
+            )
+            extra["closeout_status"] = closeout_status
+        elif rec.get("status"):
+            extra["consultant_status"] = str(rec.get("status"))
     elif slot == attachments.SLOT_PART_B:
         pb_st = rec.get("partBStatus") or rec.get("part_b_status") or rec.get("Part B Status") or rec.get("status")
         if pb_st:
@@ -381,6 +402,23 @@ def api_upload_complete():
         db.q("""UPDATE records SET data = data || jsonb_build_object('fileLocation', %s::text), updated_at = NOW()
                 WHERE id = %s RETURNING id""", (view_url, record_id))
 
+    if new_record_status and new_record_status != old_record_status:
+        db.q("""UPDATE records SET data = data || jsonb_build_object('status', %s::text), updated_at = NOW()
+                WHERE id = %s RETURNING id""", (new_record_status, record_id))
+        db.invalidate_dashboard_cache(pid)
+        try:
+            db.log_action(
+                u["username"], "EDIT",
+                project_id=pid, dt_id=dt_id, record_id=record_id,
+                doc_no=rec.get("docNo", ""),
+                field_name="status",
+                old_value=old_record_status,
+                new_value=new_record_status,
+                detail=f"HSE close-out attachment updated status from '{old_record_status}' to '{new_record_status}'",
+            )
+        except Exception:
+            pass
+
     try:
         db.log_action(
             u["username"], "FILE_UPLOAD",
@@ -393,13 +431,16 @@ def api_upload_complete():
     except Exception:
         pass
 
-    return jsonify(
+    res_payload = dict(
         ok=True,
         record_id=record_id,
         slot=slot,
         attachment=meta,
         attachments=db.get_record_attachments(record_id),
     )
+    if new_record_status:
+        res_payload["status"] = new_record_status
+    return jsonify(res_payload)
 
 
 @drive_uploads_bp.route("/api/drive/attachment/<record_id>/<slot>", methods=["DELETE"])
