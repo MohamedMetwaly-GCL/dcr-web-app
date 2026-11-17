@@ -368,16 +368,21 @@ class TestStep4UserManagement(unittest.TestCase):
         orig_bp_current_user = users_bp.current_user
         orig_is_super = users_bp.is_superadmin
         orig_admin_ws = db.get_admin_workspaces_for_user
+        orig_get_user = db.get_user
+        orig_get_user_ws = db.get_user_workspaces
         orig_get_proj = db.get_project
         orig_assign_p = db.assign_project
         orig_is_ws_admin = getattr(db, 'is_user_workspace_admin', None)
         db.is_user_workspace_admin = lambda u, ws=None: True
 
         mock_om_admin = {'username': 'a.raffat', 'role': 'admin', 'primary_workspace': 'OM'}
+        mock_cfo = {'username': 'cfo', 'role': 'viewer', 'primary_workspace': 'OM'}
         auth.current_user = lambda: mock_om_admin
         users_bp.current_user = lambda: mock_om_admin
         users_bp.is_superadmin = lambda u: False
-        db.get_admin_workspaces_for_user = lambda u: ['OM']
+        db.get_admin_workspaces_for_user = lambda u: ['OM'] if u == 'a.raffat' else []
+        db.get_user = lambda uname: mock_cfo if uname == 'cfo' else (mock_om_admin if uname == 'a.raffat' else None)
+        db.get_user_workspaces = lambda uname: [{'id': 'OM', 'user_role': 'viewer'}] if uname == 'cfo' else []
 
         captured = {}
         def mock_get_proj(pid):
@@ -432,6 +437,8 @@ class TestStep4UserManagement(unittest.TestCase):
             users_bp.current_user = orig_bp_current_user
             users_bp.is_superadmin = orig_is_super
             db.get_admin_workspaces_for_user = orig_admin_ws
+            db.get_user = orig_get_user
+            db.get_user_workspaces = orig_get_user_ws
             db.get_project = orig_get_proj
             db.assign_project = orig_assign_p
             if orig_is_ws_admin:

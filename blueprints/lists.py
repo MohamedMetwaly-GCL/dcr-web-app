@@ -14,7 +14,7 @@ changed from @app.route to @lists_bp.route.
 from flask import Blueprint, jsonify, request
 
 import db
-from auth import current_user, can_edit
+from auth import current_user, can_edit, is_project_admin
 
 lists_bp = Blueprint("lists", __name__)
 
@@ -64,7 +64,7 @@ def api_lists_meta(pid):
 @lists_bp.route("/api/lists_meta/<pid>", methods=["POST"])
 def api_set_list_meta(pid):
     u = current_user()
-    if not u or u.get("role") not in ("superadmin","admin"):
+    if not u or not is_project_admin(pid, u):
         return jsonify(error="Admin only"), 403
     data = request.get_json(silent=True) or {}
     db.set_list_item_meta(pid, data.get("list_name",""),

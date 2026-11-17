@@ -25,7 +25,7 @@ import os
 
 import db
 from flask import url_for
-from auth import can_edit
+from auth import can_edit, is_project_admin, get_allowed_doc_type_filter, get_user_doc_type_scope
 from utils import STATUS_COLORS
 
 ABOUT_MODAL_HTML = """
@@ -2334,6 +2334,23 @@ function openAiDrawer() {
   }
   _aiAssistantState.currentWs = currentWs;
 
+  const titleEl = document.querySelector('#ai-assistant-drawer .ai-drawer-title');
+  const chipsEl = document.querySelector('#ai-assistant-drawer .ai-quick-chips');
+  if (currentWs === 'HSE') {
+    if (titleEl) titleEl.textContent = 'DCR HSE Safety Assistant';
+    if (chipsEl) {
+      chipsEl.innerHTML = `
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show current HSE KPIs, LTI-Free streak, LTIF, and TRIR.')">🛡️ HSE KPIs &amp; Rates</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all expiring permits (PTW) and fire extinguishers (FEI) within 30 days.')">⚠️ Expiring PTW / FEI</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Draft an HSE safety violation NCR per OSHA and Egyptian Decision 211.')">📝 Draft Safety NCR</button>
+      `;
+    }
+  } else if (currentWs === 'OM') {
+    if (titleEl) titleEl.textContent = 'DCR O&M Assistant';
+  } else {
+    if (titleEl) titleEl.textContent = 'DCR Engineering Assistant';
+  }
+
   updateAiScopeBadge();
 
   if (_aiAssistantState.messages.length === 0) {
@@ -2433,8 +2450,17 @@ function toggleAiDrawer() {
 function initAiWelcomeMessage() {
   const activeWs = resolveActiveWorkspace();
   const isOM = activeWs === 'OM';
+  const isHSE = activeWs === 'HSE';
   let welcomeText = '';
-  if (isOM) {
+  if (isHSE) {
+    welcomeText =
+      "Hello! I am your **DCR HSE Safety & Compliance Assistant** powered by Gemini Flash.\n\n" +
+      "I have real-time, RBAC-scoped access to your authorized HSE sites and can help with:\n" +
+      "- 🛡️ **Safety KPIs & Streaks:** LTI-Free Days, LTIF, TRIR, Severity Rate & Man-Hours\n" +
+      "- ⚠️ **Permits & Equipment Alerts:** Overdue/expiring PTWs, FEI extinguishers & stale observations\n" +
+      "- ⚖️ **Compliance & NCR Drafting:** OSHA 29 CFR 1910/1926, NFPA 10/51B & Egyptian Labor Law Decision 211/2003\n\n" +
+      "*How can I help keep your sites safe today?*";
+  } else if (isOM) {
     welcomeText = 
       "Hello! I am your **DCR Operation & Maintenance (O&M) AI Assistant** powered by Gemini Flash.\n\n" +
       "I have real-time, read-only access to your maintenance contracts, facilities, and registers:\n" +
@@ -4487,7 +4513,7 @@ async function openAdmin() {
         </select>
         <select id="admin-role-filter" class="tbl-select" style="padding:6px 10px;font-weight:600;min-width:110px;font-size:11.5px;" onchange="renderAdminTable()">
           <option value="">All Roles</option>
-          <option value="superadmin">Super Admin</option>
+          ${isSuper ? '<option value="superadmin">Super Admin</option>' : ''}
           <option value="admin">Admin</option>
           <option value="editor">Editor</option>
           <option value="viewer">Viewer</option>
@@ -4532,8 +4558,7 @@ async function openAdmin() {
         <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Role</label><select id="nu-role" class="tbl-select" style="width:100%">
           <option value="editor">Editor</option>
           <option value="viewer">Viewer</option>
-          <option value="admin">Admin</option>
-          ${isSuper ? '<option value="superadmin">Super Admin</option>' : ''}
+          ${isSuper ? '<option value="admin">Admin</option><option value="superadmin">Super Admin</option>' : ''}
         </select></div>
         <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Password</label><input id="nu-pw" type="password" class="tbl-input" placeholder="••••••••"></div>
         <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Downloads</label>
@@ -5164,6 +5189,7 @@ function renderAdminTable() {
   const roleVal = document.getElementById('admin-role-filter')?.value || '';
   const searchVal = (document.getElementById('admin-user-search')?.value || '').trim().toLowerCase();
   const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
+  const currentUsername = String((_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.username) || '').toLowerCase();
   
   const filteredUsers = (_ADMIN_DATA.users || []).filter(u => {
     if (deptVal) {
@@ -5207,37 +5233,39 @@ function renderAdminTable() {
   
   filteredUsers.forEach(u => {
     const isProtected = u.username === 'admin';
+    const isSelf = String(u.username || '').toLowerCase() === currentUsername;
     const initial = (u.username || '?').charAt(0).toUpperCase();
     const assignedCount = (u.projects || []).length;
-    const wsId = u.primary_workspace || 'ENG';
     const isSuperAdminUser = (u.role === 'superadmin' || isProtected);
-    const userWsIds = (u.workspaces && u.workspaces.length > 0)
-      ? u.workspaces.map(w => w.workspace_id)
-      : [u.primary_workspace || 'ENG'];
-    const hasEng = userWsIds.includes('ENG');
-    const hasOm = userWsIds.includes('OM');
+    const uWsList = (u.workspaces && u.workspaces.length > 0)
+      ? u.workspaces
+      : [{ workspace_id: (u.primary_workspace || 'ENG'), role: (u.role || 'viewer') }];
+    const wsMap = Object.fromEntries(uWsList.map(item => [String(item.workspace_id || '').toUpperCase(), item.role]));
+    const availableWorkspaces = _ADMIN_DATA.workspaces || [];
+    const adminWsList = (_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.workspaces || []).map(w => String(w.id || w.workspace_id || '').toUpperCase());
+    const userAllWsIds = Array.from(new Set(uWsList.map(item => String(item.workspace_id || '').toUpperCase()).filter(Boolean)));
+    const isPeerOrHigherAdmin = (isSuperAdminUser || u.role === 'admin' || uWsList.some(item => item.role === 'admin' || item.role === 'superadmin'));
+    const isExclusiveToAdminWs = userAllWsIds.length > 0 && userAllWsIds.every(id => adminWsList.includes(id));
+    const isMultiDeptUser = !isSuper && !isExclusiveToAdminWs && userAllWsIds.some(id => adminWsList.includes(id));
+    const canManageDeptRole = isSuper || (!isSelf && !isPeerOrHigherAdmin);
+    const canEditGlobalAccount = isSuper ? !isProtected : (!isProtected && !isSelf && !isPeerOrHigherAdmin && isExclusiveToAdminWs);
+    const canManagePerms = isSuper || (!isSelf && !isPeerOrHigherAdmin);
 
     // Department & per-department role column (Compact Responsive Badges)
     let deptCol = '';
     let roleCol = '';
-
-    const uWsList = (u.workspaces && u.workspaces.length > 0)
-      ? u.workspaces
-      : [{ workspace_id: (u.primary_workspace || 'ENG'), role: (u.role || 'viewer') }];
-    const wsMap = Object.fromEntries(uWsList.map(item => [item.workspace_id, item.role]));
+    let scopedSingleRole = '';
 
     if (isSuperAdminUser) {
       deptCol = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;">🌐 All Departments</span>';
       roleCol = '<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;">Super Admin</span>';
     } else {
-      const availableWorkspaces = _ADMIN_DATA.workspaces || [];
-      const adminWsList = (_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.workspaces || []).map(w => w.id || w.workspace_id);
-      const assignedWorkspaces = availableWorkspaces.filter(w => (w.id in wsMap));
-      const allAssigned = (availableWorkspaces.length > 0 && assignedWorkspaces.length === availableWorkspaces.length);
+      const assignedWorkspaces = availableWorkspaces.filter(w => (String(w.id || '').toUpperCase() in wsMap));
+      const allAssigned = (isSuper && availableWorkspaces.length > 1 && assignedWorkspaces.length === availableWorkspaces.length);
 
       if (allAssigned) {
-        const commonRole = wsMap[availableWorkspaces[0]?.id] || 'viewer';
-        const isUniform = availableWorkspaces.every(w => wsMap[w.id] === commonRole);
+        const commonRole = wsMap[String(availableWorkspaces[0]?.id || '').toUpperCase()] || 'viewer';
+        const isUniform = availableWorkspaces.every(w => wsMap[String(w.id || '').toUpperCase()] === commonRole);
         deptCol = `
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;display:inline-flex;align-items:center;gap:4px;">
@@ -5278,29 +5306,35 @@ function renderAdminTable() {
         roleCol = '<span style="color:var(--mu);font-size:11px;">—</span>';
       } else {
         const pills = assignedWorkspaces.map(w => {
-          const wsRole = wsMap[w.id] || 'viewer';
-          const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '🏗️' : '📁'));
+          const wsCodeUp = String(w.id || '').toUpperCase();
+          const wsRole = wsMap[wsCodeUp] || 'viewer';
+          const icon = w.icon || (wsCodeUp === 'HSE' ? '🛡️' : (wsCodeUp === 'OM' ? '⚙️' : (wsCodeUp === 'ENG' ? '🏗️' : '📁')));
           const code = w.code || w.id;
-          const canManageThisWs = isSuper || adminWsList.includes(w.id);
+          const canManageThisWs = isSuper || (canManageDeptRole && adminWsList.includes(wsCodeUp));
 
           return `
             <span class="dept-role-pill" style="display:inline-flex;align-items:center;gap:4px;background:var(--wh);border:1px solid var(--bd);padding:2px 6px;border-radius:6px;font-size:11px;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
               <span style="font-weight:700;color:var(--tx);font-family:monospace;">${icon} ${escHtml(code)}:</span>
               ${canManageThisWs ? `
                 <select class="tbl-select" style="padding:0 3px;font-size:10.5px;height:20px;font-weight:600;color:var(--brand-teal);border:none;background:transparent;cursor:pointer;"
-                        onchange="updUsrWsRole('${escHtml(u.username)}', '${w.id}', this.value)">
+                        onchange="updUsrWsRole('${escHtml(u.username)}', '${escHtml(w.id)}', this.value)">
                   <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
                   <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
                   ${isSuper ? `<option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>` : ''}
                 </select>
-              ` : `<strong style="font-size:10px;text-transform:uppercase;color:var(--mu);">${wsRole}</strong>`}
+              ` : `<strong style="font-size:10px;text-transform:uppercase;color:var(--mu);">${escHtml(wsRole)}</strong>`}
             </span>
           `;
         }).join('');
 
+        if (!isSuper && assignedWorkspaces.length === 1) {
+          scopedSingleRole = String(wsMap[String(assignedWorkspaces[0].id || '').toUpperCase()] || u.role || 'viewer');
+        }
+
         deptCol = `
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
             ${pills}
+            ${isMultiDeptUser ? '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;" title="Shared across multiple departments — global account controls are managed by Super Admin">🌐 Multi-Dept</span>' : ''}
             ${isSuper ? `
               <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;font-size:10px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="Add or remove departments for ${escHtml(u.username)}">
                 <span>➕/✏️</span>
@@ -5308,40 +5342,51 @@ function renderAdminTable() {
             ` : ''}
           </div>
         `;
-        roleCol = `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${assignedWorkspaces.length} ${assignedWorkspaces.length === 1 ? 'Dept' : 'Depts'}</span>`;
+        roleCol = scopedSingleRole
+          ? `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${escHtml(scopedSingleRole.toUpperCase())}</span>`
+          : `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${assignedWorkspaces.length} ${assignedWorkspaces.length === 1 ? 'Dept' : 'Depts'}</span>`;
       }
     }
     
     // Email column
-    const emailCol = `<input class="tbl-input email-input" id="email-inp-${escHtml(u.username)}" value="${escHtml(u.email || '')}" placeholder="Add email..." onblur="updUsrEmail('${escHtml(u.username)}', this.value)" style="border-color:transparent;background:transparent;" onfocus="this.style.borderColor='';this.style.background='var(--wh)';" onblur="this.style.borderColor='transparent';this.style.background='transparent';">`;
+    const emailCol = canEditGlobalAccount
+      ? `<input class="tbl-input email-input" id="email-inp-${escHtml(u.username)}" value="${escHtml(u.email || '')}" placeholder="Add email..." style="border-color:transparent;background:transparent;" onfocus="this.style.borderColor='';this.style.background='var(--wh)';" onblur="this.style.borderColor='transparent';this.style.background='transparent';updUsrEmail('${escHtml(u.username)}', this.value);">`
+      : `<span style="color:var(--mu);font-size:12px;">${escHtml(u.email || '—')}</span>`;
     
     // Actions column
     const canDl = !!u.can_download;
-    const isGlobalOrEditor = u.role === 'superadmin' || u.role === 'admin' || u.role === 'editor';
+    const effectiveRole = (!isSuper && scopedSingleRole) ? scopedSingleRole : (isPeerOrHigherAdmin ? (isSuperAdminUser ? 'superadmin' : 'admin') : (u.role || 'viewer'));
+    const isGlobalOrEditor = effectiveRole === 'superadmin' || effectiveRole === 'admin' || effectiveRole === 'editor';
     const dlPill = isGlobalOrEditor
-      ? `<span class="badge" title="Full file download rights included with ${escHtml(u.role)} role" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 6px;font-weight:700;">📥 Full</span>`
-      : `<button type="button" class="uact-btn ${canDl ? 'dl-allowed' : 'dl-restricted'}"
+      ? `<span class="badge" title="Full file download rights included with ${escHtml(effectiveRole)} role" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 6px;font-weight:700;">📥 Full</span>`
+      : (canEditGlobalAccount
+        ? `<button type="button" class="uact-btn ${canDl ? 'dl-allowed' : 'dl-restricted'}"
                  onclick="toggleUserDownloadPerm('${escHtml(u.username)}', ${!canDl})"
                  title="${canDl ? 'File Downloads: Allowed (Click to Restrict)' : 'File Downloads: Restricted (Click to Allow)'}"
                  style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;border-radius:6px;cursor:pointer;${canDl ? 'background:#ecfdf5;color:#047857;border:1px solid #10b981;' : 'background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;'}">
            <span>${canDl ? '📥' : '🔒'}</span>
            <span>${canDl ? 'Downloads: ON' : 'View Only'}</span>
-         </button>`;
+         </button>`
+        : `<span class="badge" title="Global download setting managed by Super Admin" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 6px;font-weight:700;">${canDl ? '📥 Downloads: ON' : '🔒 View Only'}</span>`);
+
+    const lockLabel = isProtected ? '🔒 Protected' : (isSelf ? '👤 You' : (isPeerOrHigherAdmin ? '🔒 Admin' : '🌐 Multi-Dept'));
 
     let actionsHtml = `
       <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
         ${dlPill}
-        <button class="uact-btn uact-btn-perm" id="perm-btn-${escHtml(u.username)}" onclick="openPermissionsModal('${escHtml(u.username)}')" title="Manage project & contract permissions">
-          <span>⚙️</span><span>Permissions</span><span class="badge" style="background:#15803d;color:#fff;padding:1px 5px;font-size:10px;margin-left:2px;">${assignedCount}</span>
-        </button>
-        ${!isProtected ? `
+        ${canManagePerms ? `
+          <button class="uact-btn uact-btn-perm" id="perm-btn-${escHtml(u.username)}" onclick="openPermissionsModal('${escHtml(u.username)}')" title="Manage project & contract permissions">
+            <span>⚙️</span><span>Permissions</span><span class="badge" style="background:#15803d;color:#fff;padding:1px 5px;font-size:10px;margin-left:2px;">${assignedCount}</span>
+          </button>
+        ` : ''}
+        ${canEditGlobalAccount ? `
           <button class="uact-btn" onclick="chgPw('${escHtml(u.username)}')" title="Reset Password">
             <span>🔑</span>
           </button>
           <button class="uact-btn uact-btn-del" onclick="delUsr('${escHtml(u.username)}')" title="Delete User">
             <span>🗑️</span>
           </button>
-        ` : '<span style="font-size:10px;color:var(--mu);padding:0 6px;">🔒 Protected</span>'}
+        ` : `<span style="font-size:10px;color:var(--mu);padding:0 6px;">${lockLabel}</span>`}
       </div>
     `;
     
@@ -5417,10 +5462,11 @@ async function updUsrWsRole(username, wsId, role) {
       const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
       if (u) {
         if (!u.workspaces) u.workspaces = [];
-        const existing = u.workspaces.find(w => w.workspace_id === wsId);
+        const wsIdUp = String(wsId || '').toUpperCase();
+        const existing = u.workspaces.find(w => String(w.workspace_id || '').toUpperCase() === wsIdUp);
         if (existing) existing.role = role;
         else u.workspaces.push({ workspace_id: wsId, role: role });
-        if ((u.primary_workspace || 'ENG') === wsId) u.role = role;
+        if (String(u.primary_workspace || 'ENG').toUpperCase() === wsIdUp || u.workspaces.length === 1) u.role = role;
       }
       toast('✔ Role updated for ' + wsId, 'ok');
       renderAdminTable();
@@ -5524,37 +5570,69 @@ function openPermissionsModal(username) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   if (!u) return toast('User not found', 'er');
   window._ACTIVE_PERM_USER = username;
-  
-  const allowedWs = (u.workspaces && u.workspaces.length > 0)
-    ? u.workspaces.map(w => w.workspace_id)
-    : [u.primary_workspace || 'ENG'];
-  
-  const hasEng = allowedWs.includes('ENG');
-  const hasOm = allowedWs.includes('OM');
+
+  const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
+  const currentUsername = String((_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.username) || '').toLowerCase();
+  const isSelf = String(u.username || '').toLowerCase() === currentUsername;
+  const isProtected = u.username === 'admin';
+  const uWsList = (u.workspaces && u.workspaces.length > 0)
+    ? u.workspaces
+    : [{ workspace_id: (u.primary_workspace || 'ENG'), role: (u.role || 'viewer') }];
+  const wsMap = Object.fromEntries(uWsList.map(w => [String(w.workspace_id || '').toUpperCase(), w.role]));
+  const allowedWs = Array.from(new Set(uWsList.map(w => String(w.workspace_id || '').toUpperCase()).filter(Boolean)));
+  const adminWsList = (_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.workspaces || []).map(w => String(w.id || w.workspace_id || '').toUpperCase());
+  const scopedWsIds = isSuper ? allowedWs : allowedWs.filter(id => adminWsList.includes(id));
+  const isPeerOrHigherAdmin = (u.role === 'superadmin' || isProtected || u.role === 'admin' || uWsList.some(item => item.role === 'admin' || item.role === 'superadmin'));
+  const isExclusiveToAdminWs = allowedWs.length > 0 && allowedWs.every(id => adminWsList.includes(id));
+  const canEditGlobalAccount = isSuper ? !isProtected : (!isProtected && !isSelf && !isPeerOrHigherAdmin && isExclusiveToAdminWs);
+
+  const wsMetaLookup = Object.fromEntries((_ADMIN_DATA.workspaces || []).map(w => [String(w.id || '').toUpperCase(), w]));
+  const getWsMeta = (wsId) => {
+    const id = String(wsId || 'ENG').toUpperCase();
+    const w = wsMetaLookup[id];
+    const fallbacks = {
+      ENG: { icon: '📐', code: 'ENG', name: 'Engineering & Projects', cls: 'dept-badge-eng', style: '' },
+      OM: { icon: '⚙️', code: 'O&M', name: 'Operation & Maintenance (O&M)', cls: 'dept-badge-om', style: '' },
+      HSE: { icon: '🛡️', code: 'HSE', name: 'Health, Safety & Environment (HSE)', cls: '', style: 'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;' }
+    };
+    const fb = fallbacks[id] || { icon: '📁', code: id, name: id, cls: '', style: 'background:#f1f5f9;color:#334155;' };
+    const icon = (w && w.icon) || fb.icon;
+    const code = (w && w.code) || fb.code;
+    let name = (w && w.name) || fb.name;
+    if (id === 'HSE' && !name.includes('(HSE)')) name = `${name} (HSE)`;
+    if (id === 'OM' && !name.includes('(O&M)')) name = `${name} (O&M)`;
+    return { id, icon, code, name, cls: fb.cls, style: fb.style };
+  };
+
   let deptBadge = '';
-  if (hasEng && hasOm) {
+  const availWsCount = (_ADMIN_DATA.workspaces || []).length;
+  if (isSuper && availWsCount > 1 && allowedWs.length >= availWsCount) {
     deptBadge = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:600;">🌐 All Departments</span>';
-  } else if (hasOm) {
-    deptBadge = '<span class="dept-badge dept-badge-om">⚙️ Operation & Maintenance (O&M)</span>';
   } else {
-    deptBadge = '<span class="dept-badge dept-badge-eng">📐 Engineering & Projects</span>';
+    deptBadge = allowedWs.map(id => {
+      const m = getWsMeta(id);
+      return `<span class="dept-badge ${m.cls}" style="${m.style}">${m.icon} ${escHtml(m.name)}</span>`;
+    }).join(' ');
   }
-  
+
   document.getElementById('perm-title').innerHTML = `⚙️ Project / Contract Permissions — <strong>${escHtml(u.username)}</strong>`;
   const canDl = !!u.can_download;
-  const isGlobalOrEditor = u.role === 'superadmin' || u.role === 'admin' || u.role === 'editor';
+  const effectiveRole = (!isSuper && scopedWsIds.length === 1) ? (wsMap[scopedWsIds[0]] || u.role || 'viewer') : (u.role || 'viewer');
+  const isGlobalOrEditor = effectiveRole === 'superadmin' || effectiveRole === 'admin' || effectiveRole === 'editor';
   const dlToggleHtml = isGlobalOrEditor
-    ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 7px;font-weight:700;">📥 Full File Downloads (${escHtml(u.role)})</span>`
-    : `<label style="display:inline-flex;align-items:center;gap:5px;background:${canDl ? '#ecfdf5' : '#f8fafc'};border:1px solid ${canDl ? '#10b981' : '#cbd5e1'};color:${canDl ? '#047857' : '#475569'};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px;">
-         <input type="checkbox" id="perm-modal-dl-toggle" ${canDl ? 'checked' : ''} onchange="toggleUserDownloadPerm('${escHtml(u.username)}', this.checked, true)" style="cursor:pointer;margin:0;">
-         <span>📥 Allow File Downloads</span>
-       </label>`;
+    ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 7px;font-weight:700;">📥 Full File Downloads (${escHtml(effectiveRole)})</span>`
+    : (canEditGlobalAccount
+      ? `<label style="display:inline-flex;align-items:center;gap:5px;background:${canDl ? '#ecfdf5' : '#f8fafc'};border:1px solid ${canDl ? '#10b981' : '#cbd5e1'};color:${canDl ? '#047857' : '#475569'};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px;">
+           <input type="checkbox" id="perm-modal-dl-toggle" ${canDl ? 'checked' : ''} onchange="toggleUserDownloadPerm('${escHtml(u.username)}', this.checked, true)" style="cursor:pointer;margin:0;">
+           <span>📥 Allow File Downloads</span>
+         </label>`
+      : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 7px;font-weight:700;margin-left:6px;">${canDl ? '📥 Downloads: ON' : '🔒 View Only'} (Shared Account)</span>`);
   document.getElementById('perm-subtitle').innerHTML = `${deptBadge} ${dlToggleHtml} <span style="margin-left:6px;color:var(--mu);">Scoped strictly to user's assigned department(s)</span>`;
   
-  // Filter projects strictly to user's assigned departments (No cross-department leakage)
+  // Filter projects strictly to user's assigned departments AND actor's allowed workspaces (No cross-department leakage)
   let scopedProjects = _ADMIN_DATA.projects.filter(p => {
-    const pWs = p.workspace_id || 'ENG';
-    return allowedWs.includes(pWs);
+    const pWs = String(p.workspace_id || 'ENG').toUpperCase();
+    return allowedWs.includes(pWs) && (isSuper || adminWsList.includes(pWs));
   });
   
   window._ACTIVE_PERM_PROJECTS = scopedProjects;
@@ -5593,16 +5671,24 @@ function renderPermTable(projects) {
       <tbody>
   `;
   
+  const wsMetaLookup = Object.fromEntries((_ADMIN_DATA.workspaces || []).map(w => [String(w.id || '').toUpperCase(), w]));
   projects.forEach(p => {
     const access = assignedMap[p.id];
     const hasAccess = !!access;
     const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • Client: ${escHtml(p.client)}</span>` : '';
-    const isOm = p.workspace_id === 'OM';
+    const pWsId = String(p.workspace_id || 'ENG').toUpperCase();
+    const pWs = wsMetaLookup[pWsId];
+    const wsIcon = (pWs && pWs.icon) || (pWsId === 'HSE' ? '🛡️' : (pWsId === 'OM' ? '⚙️' : '📐'));
+    const wsCode = (pWs && pWs.code) || (pWsId === 'OM' ? 'O&M' : pWsId);
+    const wsBadgeCls = pWsId === 'OM' ? 'dept-badge-om' : (pWsId === 'ENG' ? 'dept-badge-eng' : '');
+    const wsBadgeStyle = pWsId === 'HSE'
+      ? 'font-size:9.5px;padding:1px 6px;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;'
+      : 'font-size:9.5px;padding:1px 6px;';
     
-    const allowedDts = (access && access.allowed_doc_types) || null;
-    const dtLabel = (allowedDts && allowedDts.length > 0) ? `${allowedDts.length} types` : 'All';
-    const dtBadgeBg = (allowedDts && allowedDts.length > 0) ? '#fef3c7' : '#e0f2fe';
-    const dtBadgeColor = (allowedDts && allowedDts.length > 0) ? '#92400e' : '#0369a1';
+    const allowedDts = (access && Array.isArray(access.allowed_doc_types)) ? access.allowed_doc_types : null;
+    const dtLabel = allowedDts === null ? 'All' : (allowedDts.length === 0 ? '0 types (None)' : `${allowedDts.length} types`);
+    const dtBadgeBg = allowedDts === null ? '#e0f2fe' : (allowedDts.length === 0 ? '#fee2e2' : '#fef3c7');
+    const dtBadgeColor = allowedDts === null ? '#0369a1' : (allowedDts.length === 0 ? '#991b1b' : '#92400e');
 
     html += `
       <tr class="perm-row" data-pid="${escHtml(p.id)}" data-text="${escHtml((p.code + ' ' + p.name + ' ' + (p.client||'')).toLowerCase())}" style="border-bottom:1px solid var(--bd,#f1f5f9);">
@@ -5610,7 +5696,7 @@ function renderPermTable(projects) {
           <div style="font-weight:700;color:var(--tx);display:flex;align-items:center;gap:6px;">
             <span>${escHtml(p.code)}</span>
             <span style="font-weight:500;color:var(--tx-mu,#64748b);">${escHtml(p.name)}</span>
-            <span class="dept-badge ${isOm?'dept-badge-om':'dept-badge-eng'}" style="font-size:9.5px;padding:1px 6px;">${isOm?'⚙️ O&M':'📐 ENG'}</span>
+            <span class="dept-badge ${wsBadgeCls}" style="${wsBadgeStyle}">${wsIcon} ${escHtml(wsCode)}</span>
           </div>
           ${clientText}
         </td>
@@ -5671,7 +5757,9 @@ async function toggleDocTypesPanel(pid, forceOpen) {
   const username = window._ACTIVE_PERM_USER;
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   const pAccess = (u && u.projects ? u.projects.find(p => p.project_id === pid) : null);
-  const allowed = (pAccess && pAccess.allowed_doc_types) ? pAccess.allowed_doc_types.map(x => String(x).toUpperCase()) : null;
+  const allowed = (pAccess && Array.isArray(pAccess.allowed_doc_types))
+    ? pAccess.allowed_doc_types.map(x => String(x).toUpperCase())
+    : null;
 
   if (allDts.length === 0) {
     chipsDiv.innerHTML = '<span style="color:var(--mu);font-size:11px;">No document types configured for this project.</span>';
@@ -5713,10 +5801,10 @@ async function onDocTypeCheckboxChange(pid) {
 
   const badgeEl = document.getElementById('dt-badge-' + pid);
   if (badgeEl) {
-    const label = docTypesPayload ? `${docTypesPayload.length} types` : 'All';
+    const label = docTypesPayload === null ? 'All' : (docTypesPayload.length === 0 ? '0 types (None)' : `${docTypesPayload.length} types`);
     badgeEl.textContent = label;
-    badgeEl.style.background = docTypesPayload ? '#fef3c7' : '#e0f2fe';
-    badgeEl.style.color = docTypesPayload ? '#92400e' : '#0369a1';
+    badgeEl.style.background = docTypesPayload === null ? '#e0f2fe' : (docTypesPayload.length === 0 ? '#fee2e2' : '#fef3c7');
+    badgeEl.style.color = docTypesPayload === null ? '#0369a1' : (docTypesPayload.length === 0 ? '#991b1b' : '#92400e');
   }
 
   try {
@@ -6509,45 +6597,78 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     completed_records = 0
     pending_records = 0
     overdue_records = 0
-    
+    doc_types_breakdown = []
+
     if pids:
+        dt_scope = get_user_doc_type_scope(u, pids) if u else {}
+        dt_info_map = {}  # (pid, dt_id_upper) -> (code, name)
+        dt_agg = {}       # (code, name) -> {"code": ..., "name": ..., "count": 0, "completed": 0}
         try:
-            counts = db.q("""
-                SELECT 
-                    COUNT(*) as total,
-                    COUNT(CASE WHEN data->>'status' ILIKE '%complete%' OR data->>'status' ILIKE '%close%' OR data->>'status' ILIKE '%approved%' THEN 1 END) as completed,
-                    COUNT(CASE WHEN data->>'status' ILIKE '%open%' OR data->>'status' ILIKE '%progress%' OR data->>'status' ILIKE '%pending%' OR data->>'status' ILIKE '%review%' THEN 1 END) as pending
-                FROM records 
-                WHERE project_id = ANY(%s)
-            """, (pids,), one=True)
-            if counts:
-                total_records = counts.get("total", 0) or 0
-                completed_records = counts.get("completed", 0) or 0
-                pending_records = counts.get("pending", 0) or 0
+            dt_rows = db.q(
+                """SELECT project_id, id, code, name
+                   FROM doc_types
+                   WHERE project_id = ANY(%s)
+                   ORDER BY sort_order, code, id""",
+                (pids,),
+            ) or []
+            for dt in dt_rows:
+                p_id = dt.get("project_id")
+                dt_id = dt.get("id")
+                dt_c = dt.get("code") or dt_id or "DOC"
+                dt_n = dt.get("name") or dt_c
+                if not db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_c):
+                    continue
+                dt_info_map[(p_id, str(dt_id or "").strip().upper())] = (dt_c, dt_n)
+                agg_key = (dt_c, dt_n)
+                if agg_key not in dt_agg:
+                    dt_agg[agg_key] = {"code": dt_c, "name": dt_n, "count": 0, "completed": 0}
+        except Exception:
+            dt_info_map = {}
+            dt_agg = {}
+
+        try:
+            rec_rows = db.q(
+                """SELECT project_id, dt_id, COALESCE(data->>'status', '') AS status_val
+                   FROM records
+                   WHERE project_id = ANY(%s)""",
+                (pids,),
+            ) or []
+            for r in rec_rows:
+                p_id = r.get("project_id")
+                dt_id = r.get("dt_id")
+                dt_key = (p_id, str(dt_id or "").strip().upper())
+                dt_meta = dt_info_map.get(dt_key)
+                dt_code_hint = dt_meta[0] if dt_meta else ""
+                if not db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code_hint):
+                    continue
+                total_records += 1
+                st_low = str(r.get("status_val") or "").lower()
+                is_comp = ("not closed" not in st_low) and any(k in st_low for k in ("complete", "close", "approved"))
+                is_pend = any(k in st_low for k in ("open", "progress", "pending", "review"))
+                if is_comp:
+                    completed_records += 1
+                if is_pend:
+                    pending_records += 1
+                if dt_meta is None:
+                    fallback_code = str(dt_id or "DOC")
+                    dt_meta = (fallback_code, fallback_code)
+                    if dt_meta not in dt_agg:
+                        dt_agg[dt_meta] = {"code": dt_meta[0], "name": dt_meta[1], "count": 0, "completed": 0}
+                dt_agg[dt_meta]["count"] += 1
+                if is_comp:
+                    dt_agg[dt_meta]["completed"] += 1
         except Exception:
             pass
+
+        doc_types_breakdown = sorted(
+            dt_agg.values(),
+            key=lambda item: (-int(item.get("count") or 0), str(item.get("code") or "")),
+        )
         try:
-            overdue_list = db.get_overdue_records(project_ids=pids)
+            overdue_list = db.get_overdue_records(project_ids=pids, doc_type_scope=dt_scope)
             overdue_records = len(overdue_list) if overdue_list else 0
         except Exception:
             overdue_records = 0
-
-    # Dynamic Doc Types Breakdown
-    doc_types_breakdown = []
-    if pids:
-        try:
-            dt_rows = db.q("""
-                SELECT dt.code, dt.name, COUNT(r.id) as count,
-                       COUNT(CASE WHEN r.data->>'status' ILIKE '%complete%' OR r.data->>'status' ILIKE '%close%' OR r.data->>'status' ILIKE '%approved%' THEN 1 END) as completed
-                FROM doc_types dt
-                LEFT JOIN records r ON r.project_id = dt.project_id AND UPPER(r.dt_id) = UPPER(dt.id)
-                WHERE dt.project_id = ANY(%s)
-                GROUP BY dt.code, dt.name
-                ORDER BY count DESC, dt.code
-            """, (pids,))
-            doc_types_breakdown = dt_rows if isinstance(dt_rows, list) else []
-        except Exception:
-            doc_types_breakdown = []
 
     dt_cards_html = ""
     for dt in doc_types_breakdown:
@@ -6810,6 +6931,8 @@ body.dark .om-header-bar, body.dark .om-kpi-card, body.dark .om-card, body.dark 
 }}
 body.dark .om-kpi-lbl, body.dark .om-header-sub, body.dark .om-card-client {{ color: #94a3b8; }}
 body.dark .om-kpi-val, body.dark .om-card-title, body.dark .om-header-title {{ color: #f1f5f9; }}
+body.dark .om-kpi-val.success {{ color: #4ade80; }}
+body.dark .om-kpi-val.warning {{ color: #fbbf24; }}
 body.dark .om-code-badge {{ background: rgba(0, 180, 166, 0.2); color: #5eead4; }}
 
 /* ── Toolbar & Tabs Styling matching Engineering ── */
@@ -7479,6 +7602,1087 @@ function omAuditPage(dir) {{
 </body></html>'''
 
 
+HSE_DASHBOARD_CSS = """
+body { display:flex; flex-direction:column; min-height:100vh; overflow-x:hidden; background:var(--bg); }
+.wrap { max-width:1480px; margin:0 auto; padding:16px 14px; flex:1; width:100%; }
+.hse-header-bar {
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;
+  background:var(--wh); padding:13px 18px; border-radius:10px; border:1px solid var(--bd);
+  border-left:4px solid #10b981; box-shadow:0 1px 3px rgba(0,0,0,0.05); flex-wrap:wrap; gap:12px;
+}
+.hse-header-title { font-size:16px; font-weight:800; color:var(--tx); display:flex; align-items:center; gap:8px; }
+.hse-header-sub { font-size:11px; color:var(--mu); margin-top:2px; }
+.psel-bar {
+  display:flex; align-items:center; gap:8px; background:var(--wh); padding:7px 10px;
+  border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.07); border:1px solid var(--bd);
+  margin-bottom:14px; flex-wrap:wrap;
+}
+.psel-bar select, .psel-bar input {
+  padding:5px 9px; border:1.5px solid var(--bd); border-radius:var(--rd);
+  font-family:inherit; font-size:11.5px; background:var(--bg); color:var(--tx); outline:none;
+}
+.tbtn {
+  padding:5px 10px; border:1.5px solid var(--bd); border-radius:var(--rd); background:var(--wh);
+  cursor:pointer; font-size:11px; font-weight:600; font-family:inherit; transition:all .15s ease;
+  color:var(--tx); white-space:nowrap; display:inline-flex; align-items:center; gap:4px;
+}
+.tbtn:hover { background:var(--bg); border-color:var(--brand-teal); color:var(--brand-teal); }
+.tbtn.active { background:var(--brand-navy) !important; color:#fff !important; border-color:var(--brand-navy) !important; }
+.hse-hero-grid {
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; margin-bottom:14px;
+}
+.hse-kpi-card {
+  background:var(--wh); border:1px solid var(--bd); border-radius:10px; padding:13px 15px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04); display:flex; flex-direction:column; gap:5px;
+  border-top:3px solid var(--bd);
+}
+.hse-kpi-card.tone-good { border-top-color:#16a34a; }
+.hse-kpi-card.tone-warn { border-top-color:#f59e0b; }
+.hse-kpi-card.tone-bad { border-top-color:#ef4444; }
+.hse-kpi-card.tone-info { border-top-color:#0284c7; }
+.hse-kpi-lbl { font-size:10.5px; font-weight:700; color:var(--mu); text-transform:uppercase; letter-spacing:.4px; }
+.hse-kpi-val { font-size:26px; font-weight:800; color:var(--tx); font-variant-numeric:tabular-nums; line-height:1.1; }
+.hse-kpi-val.good { color:#16a34a; }
+.hse-kpi-val.warn { color:#d97706; }
+.hse-kpi-val.bad { color:#dc2626; }
+.hse-kpi-val.info { color:#0284c7; }
+.hse-kpi-sub { font-size:11px; color:var(--mu); display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.om-kpi-grid {
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:14px;
+}
+.om-kpi-card {
+  background:var(--wh); border:1px solid var(--bd); border-radius:10px; padding:12px 14px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04); display:flex; flex-direction:column; gap:4px;
+}
+.om-kpi-lbl { font-size:10.5px; font-weight:700; color:var(--mu); text-transform:uppercase; letter-spacing:0.4px; }
+.om-kpi-val { font-size:22px; font-weight:800; color:var(--tx); font-variant-numeric:tabular-nums; }
+.om-kpi-val.success { color:#16a34a; }
+.om-kpi-val.warning { color:#d97706; }
+.om-kpi-val.primary { color:var(--brand-teal); }
+.hse-charts-grid {
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:14px; margin-bottom:16px;
+}
+.hse-charts-grid > .hse-panel { min-width:0; }
+.hse-panel {
+  background:var(--wh); border:1px solid var(--bd); border-radius:10px; padding:15px 16px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04);
+}
+.hse-panel-hdr {
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px; flex-wrap:wrap;
+}
+.hse-panel-title { font-size:13.5px; font-weight:800; color:var(--tx); display:flex; align-items:center; gap:6px; }
+.hse-chart-box { position:relative; height:260px; min-height:260px; width:100%; }
+.hse-chart-box canvas { display:block; width:100% !important; height:260px !important; }
+.hse-pill-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+.hse-pill {
+  font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;
+  border:1px solid var(--bd); background:var(--bg); color:var(--tx);
+}
+.hse-pill.danger { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+.hse-pill.warn { background:#fef3c7; color:#92400e; border-color:#fde68a; }
+.hse-pill.ok { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+.hse-alert-item {
+  display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 11px;
+  border:1px solid var(--bd); border-left:4px solid #f59e0b; border-radius:8px;
+  background:var(--bg); margin-bottom:8px; font-size:12px; flex-wrap:wrap;
+}
+.hse-alert-item.danger { border-left-color:#ef4444; background:rgba(239,68,68,0.06); }
+.hse-reg-grid {
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(215px, 1fr)); gap:10px; margin-bottom:18px;
+}
+.hse-reg-card {
+  background:var(--wh); border:1px solid var(--bd); border-radius:8px; padding:10px 12px;
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+}
+.om-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; }
+.om-card {
+  background:var(--wh); border:1px solid var(--bd); border-radius:12px; padding:15px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.05); cursor:pointer; transition:all 0.2s ease; display:flex; flex-direction:column;
+}
+.om-card:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(0,0,0,0.1); border-color:var(--brand-teal); }
+.om-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.om-code-badge { background:rgba(16,185,129,0.12); color:#047857; font-weight:700; font-size:11px; padding:2px 8px; border-radius:4px; font-family:monospace; }
+.om-status-badge { background:rgba(34,197,94,0.12); color:#16a34a; font-weight:700; font-size:10px; padding:2px 7px; border-radius:999px; }
+.om-card-title { font-size:15px; font-weight:700; color:var(--tx); margin-bottom:6px; }
+.om-card-client { font-size:12px; color:var(--mu); margin-bottom:12px; }
+.om-card-footer { margin-top:auto; padding-top:10px; border-top:1px solid var(--bd); display:flex; justify-content:space-between; align-items:center; }
+.om-card-action { font-size:12px; font-weight:700; color:var(--brand-teal); }
+.om-empty-state { grid-column:1 / -1; text-align:center; padding:42px 20px; background:var(--wh); border:1px dashed var(--bd); border-radius:12px; }
+body.dark .hse-header-bar, body.dark .psel-bar, body.dark .hse-kpi-card, body.dark .om-kpi-card,
+body.dark .hse-panel, body.dark .hse-reg-card, body.dark .om-card, body.dark .om-empty-state {
+  background:#162132; border-color:#304257; color:#e2e8f0;
+}
+body.dark .tbtn { background:#1e293b; color:#e2e8f0; border-color:#334155; }
+body.dark .tbtn.active { background:var(--brand-teal) !important; border-color:var(--brand-teal) !important; color:#fff !important; }
+body.dark .psel-bar select, body.dark .psel-bar input { background:#0f172a; border-color:#334155; color:#e2e8f0; }
+body.dark .hse-kpi-lbl, body.dark .hse-kpi-sub, body.dark .hse-header-sub, body.dark .om-kpi-lbl, body.dark .om-card-client { color:#94a3b8; }
+body.dark .hse-kpi-val, body.dark .om-kpi-val, body.dark .om-card-title, body.dark .hse-header-title, body.dark .hse-panel-title { color:#f1f5f9; }
+body.dark .hse-kpi-val.good, body.dark .om-kpi-val.success { color:#4ade80; }
+body.dark .hse-kpi-val.warn, body.dark .om-kpi-val.warning { color:#fbbf24; }
+body.dark .hse-kpi-val.bad { color:#f87171; }
+body.dark .hse-kpi-val.info { color:#38bdf8; }
+body.dark .om-code-badge { background:rgba(16,185,129,0.2); color:#6ee7b7; }
+body.dark .hse-pill { background:#0f172a; border-color:#334155; color:#cbd5e1; }
+body.dark .hse-pill.danger { background:rgba(153,27,27,0.35); color:#fecaca; border-color:#7f1d1d; }
+body.dark .hse-pill.warn { background:rgba(146,64,14,0.35); color:#fde68a; border-color:#78350f; }
+body.dark .hse-pill.ok { background:rgba(22,101,52,0.35); color:#bbf7d0; border-color:#14532d; }
+body.dark .hse-alert-item { background:#0f172a; border-color:#334155; }
+body.dark .hse-alert-item.danger { background:rgba(127,29,29,0.28); }
+"""
+
+
+HSE_DASHBOARD_JS = r"""
+let _hseState = __HSE_INIT_JSON__;
+let _hseTrendChart = null;
+let _hseStatusChart = null;
+let _hseAlertType = '';
+let _hseAuditOffset = 0;
+let _hseAuditHasMore = false;
+let _hseAuditProjMap = {};
+
+function showHseTab(tabName, btn) {
+  document.querySelectorAll('.psel-bar .tbtn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  ['overview', 'alerts', 'daily-digest', 'audit'].forEach(p => {
+    const el = document.getElementById('tab-hse-' + p);
+    if (el) el.style.display = (p === tabName) ? 'block' : 'none';
+  });
+  if (tabName === 'overview') renderHseCharts();
+  else if (tabName === 'alerts') renderHseAlertsTab();
+  else if (tabName === 'daily-digest') loadHseDailyDigest();
+  else if (tabName === 'audit') loadHseAudit(true);
+}
+
+function fmtHseNum(v, decimals = 0) {
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+  return Number(v).toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  });
+}
+
+function streakTone(streak) {
+  if (!streak || streak.days === null || streak.days === undefined) return 'info';
+  if (streak.days === 0 && streak.basis === 'event') return 'bad';
+  return streak.days < 30 ? 'warn' : 'good';
+}
+
+function setCardTone(cardId, valId, tone) {
+  const card = document.getElementById(cardId);
+  const val = document.getElementById(valId);
+  if (card) {
+    card.classList.remove('tone-good', 'tone-warn', 'tone-bad', 'tone-info');
+    card.classList.add('tone-' + tone);
+  }
+  if (val) {
+    val.classList.remove('good', 'warn', 'bad', 'info');
+    val.classList.add(tone);
+  }
+}
+
+async function refreshHseDashboard() {
+  const pid = document.getElementById('hse-filter-pid')?.value || '';
+  const year = document.getElementById('hse-filter-year')?.value || '';
+  const warnDays = document.getElementById('hse-filter-warn')?.value || '30';
+  const qs = new URLSearchParams();
+  if (pid) qs.set('pid', pid);
+  if (year) qs.set('year', year);
+  if (warnDays) qs.set('warn_days', warnDays);
+  const qStr = qs.toString();
+  try {
+    const [kpisRes, alertsRes, trendsRes] = await Promise.all([
+      apiFetch('/api/hse/kpis?' + qStr),
+      apiFetch('/api/hse/alerts?' + qStr),
+      apiFetch('/api/hse/trends?' + qStr)
+    ]);
+    if (!kpisRes || !kpisRes.ok) return;
+    _hseState = {
+      ok: true,
+      kpis: kpisRes,
+      projects: kpisRes.projects || [],
+      alerts: (alertsRes && alertsRes.alerts) || [],
+      alerts_counts: (alertsRes && alertsRes.counts) || (kpisRes.alerts_counts || {}),
+      monthly_trends: (trendsRes && trendsRes.monthly_trends) || [],
+      ptw_status: (trendsRes && trendsRes.ptw_status) || {},
+      register_breakdown: (trendsRes && trendsRes.register_breakdown) || [],
+      available_years: (trendsRes && trendsRes.available_years) || (kpisRes.available_years || []),
+      warn_days: (alertsRes && alertsRes.warn_days) || kpisRes.warn_days || 30
+    };
+    renderHseState();
+  } catch (e) {
+    toast('Failed to load HSE metrics: ' + e.message, 'er');
+  }
+}
+
+function renderHseState() {
+  const k = (_hseState && _hseState.kpis) || {};
+  const streaks = k.streaks || {};
+  const ltiSt = streaks.lti_free || {};
+  const anySt = streaks.any_injury_free || {};
+  const rates = k.rates || {};
+  const inc = k.incidents || {};
+  const obs = k.observations || {};
+  const ptw = k.permits || {};
+  const fei = k.equipment || {};
+  const sum = k.summary || {};
+  const ac = (_hseState && _hseState.alerts_counts) || {};
+
+  // Year dropdown sync while keeping selection
+  const ySel = document.getElementById('hse-filter-year');
+  if (ySel && Array.isArray(_hseState.available_years)) {
+    const curY = ySel.value;
+    ySel.innerHTML = '<option value="">All Years</option>' +
+      _hseState.available_years.map(y => `<option value="${y}"${String(y) === String(curY) ? ' selected' : ''}>${y}</option>`).join('');
+  }
+
+  // Hero streaks
+  const ltiDaysEl = document.getElementById('hse-kpi-lti-days');
+  if (ltiDaysEl) ltiDaysEl.textContent = ltiSt.days !== null && ltiSt.days !== undefined ? fmtHseNum(ltiSt.days) : '—';
+  setCardTone('hse-card-lti', 'hse-kpi-lti-days', streakTone(ltiSt));
+  const ltiSub = document.getElementById('hse-sub-lti');
+  if (ltiSub) ltiSub.textContent = ltiSt.ref_date ? `Best: ${fmtHseNum(ltiSt.best_days)}d • Ref: ${ltiSt.ref_date}` : 'No dated HSE records yet';
+
+  const anyDaysEl = document.getElementById('hse-kpi-any-days');
+  if (anyDaysEl) anyDaysEl.textContent = anySt.days !== null && anySt.days !== undefined ? fmtHseNum(anySt.days) : '—';
+  setCardTone('hse-card-any', 'hse-kpi-any-days', streakTone(anySt));
+  const anySub = document.getElementById('hse-sub-any');
+  if (anySub) anySub.textContent = anySt.ref_date ? `FAC/MTC/LTI • Ref: ${anySt.ref_date}` : 'No injury baseline recorded';
+
+  // Rates
+  const hasHrs = !!rates.has_hours;
+  const ltifEl = document.getElementById('hse-kpi-ltif');
+  if (ltifEl) ltifEl.textContent = hasHrs ? fmtHseNum(rates.ltif, 2) : '—';
+  setCardTone('hse-card-ltif', 'hse-kpi-ltif', !hasHrs ? 'info' : ((rates.ltif || 0) > 0 ? 'bad' : 'good'));
+  const ltifSub = document.getElementById('hse-sub-ltif');
+  if (ltifSub) ltifSub.textContent = hasHrs ? `LTI: ${inc.lti || 0} | Fatalities: ${inc.fatalities || 0}` : 'Log MHR hours to compute';
+
+  const trirEl = document.getElementById('hse-kpi-trir');
+  if (trirEl) trirEl.textContent = hasHrs ? fmtHseNum(rates.trir, 2) : '—';
+  setCardTone('hse-card-trir', 'hse-kpi-trir', !hasHrs ? 'info' : ((rates.trir || 0) > 0 ? 'warn' : 'good'));
+  const trirSub = document.getElementById('hse-sub-trir');
+  if (trirSub) trirSub.textContent = hasHrs ? `Recordable: ${inc.recordable || 0} | FAC: ${inc.fac || 0}` : 'LTI + MTC per 1M hrs';
+
+  const sevEl = document.getElementById('hse-kpi-sev');
+  if (sevEl) sevEl.textContent = hasHrs ? fmtHseNum(rates.severity_rate, 2) : '—';
+  setCardTone('hse-card-sev', 'hse-kpi-sev', !hasHrs ? 'info' : ((rates.severity_rate || 0) > 0 ? 'bad' : 'good'));
+  const sevSub = document.getElementById('hse-sub-sev');
+  if (sevSub) sevSub.textContent = `Lost Days: ${fmtHseNum(inc.lost_days || 0)}`;
+
+  const hrsEl = document.getElementById('hse-kpi-hours');
+  if (hrsEl) hrsEl.textContent = fmtHseNum(k.man_hours || 0);
+  const hrsSub = document.getElementById('hse-sub-hours');
+  if (hrsSub) hrsSub.textContent = `${(_hseState.projects || []).length} active HSE project(s)`;
+
+  // Leading & summary KPIs
+  const obsOpenEl = document.getElementById('hse-sum-obs-open');
+  if (obsOpenEl) obsOpenEl.textContent = `${obs.open || 0} / ${obs.total || 0}`;
+  const obsSubEl = document.getElementById('hse-sum-obs-sub');
+  if (obsSubEl) obsSubEl.textContent = `Closed: ${obs.closed || 0} • Stale (>30d): ${obs.stale || 0}`;
+
+  const ptwOpenEl = document.getElementById('hse-sum-ptw-open');
+  if (ptwOpenEl) ptwOpenEl.textContent = fmtHseNum(ptw.open || 0);
+  const ptwSubEl = document.getElementById('hse-sum-ptw-sub');
+  if (ptwSubEl) ptwSubEl.textContent = `Expiring: ${ptw.expiring || 0} • Overdue: ${ptw.overdue || 0}`;
+
+  const feiExpEl = document.getElementById('hse-sum-fei-exp');
+  if (feiExpEl) feiExpEl.textContent = fmtHseNum(fei.actionable || 0);
+  const feiSubEl = document.getElementById('hse-sum-fei-sub');
+  if (feiSubEl) feiSubEl.textContent = `Expired: ${fei.expired || 0} • Due ≤${k.warn_days || 30}d: ${fei.expiring || 0}`;
+
+  const compEl = document.querySelector('#hse-card-sum-completed .om-kpi-val');
+  if (compEl) compEl.textContent = fmtHseNum(sum.completed_records || 0);
+  const totSubEl = document.getElementById('hse-sum-tot-sub');
+  if (totSubEl) totSubEl.textContent = `${fmtHseNum(sum.total_records || 0)} total across ${(_hseState.projects || []).length} site(s)`;
+
+  const alertBadge = document.getElementById('hse-tab-alert-badge');
+  if (alertBadge) {
+    const tot = ac.total || 0;
+    alertBadge.textContent = tot;
+    alertBadge.style.display = tot > 0 ? 'inline-block' : 'none';
+  }
+
+  renderHseAlertsPreview();
+  renderHseAlertsTab();
+  renderHseRegisterCards();
+  renderHseCharts();
+}
+
+function _hseAlertItemHtml(a) {
+  const isDanger = a.severity === 'danger';
+  const cls = isDanger ? 'danger' : '';
+  const tag = isDanger ? 'CRITICAL' : 'WARNING';
+  const tagStyle = isDanger ? 'background:#fee2e2;color:#991b1b;' : 'background:#fef3c7;color:#92400e;';
+  const linkUrl = `/app?p=${encodeURIComponent(a.project_id)}&tab=${encodeURIComponent(a.dt_id)}&highlight=${encodeURIComponent(a.id)}`;
+  return `
+    <div class="hse-alert-item ${cls}">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="badge" style="${tagStyle}font-weight:700;font-size:10px;">${tag}</span>
+        <span class="badge" style="background:rgba(16,185,129,0.14);color:#047857;font-family:monospace;font-weight:700;">${escHtml(a.dt_code)}</span>
+        <strong style="font-family:monospace;">${escHtml(a.doc_no)}</strong>
+        <span>${escHtml(a.title)}</span>
+        <span style="color:var(--mu);font-size:11px;">• ${escHtml(a.project_code || a.project_id)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:11px;font-weight:700;color:${isDanger ? '#dc2626' : '#d97706'};">${escHtml(a.detail)}</span>
+        <a href="${linkUrl}" class="tbtn" style="text-decoration:none;">Open ➔</a>
+      </div>
+    </div>
+  `;
+}
+
+function renderHseAlertsPreview() {
+  const wrap = document.getElementById('hse-alerts-preview');
+  if (!wrap) return;
+  const list = (_hseState && _hseState.alerts) || [];
+  if (!list.length) {
+    wrap.innerHTML = '<div style="padding:18px;text-align:center;color:#16a34a;font-weight:700;font-size:12.5px;">✅ No expired PTWs, expiring equipment, or stale observations (>30d).</div>';
+    return;
+  }
+  const top = list.slice(0, 6);
+  let html = top.map(_hseAlertItemHtml).join('');
+  if (list.length > top.length) {
+    html += `<div style="text-align:right;margin-top:6px;"><button class="tbtn" onclick="showHseTab('alerts', document.getElementById('hse-btn-alerts'))">View all ${list.length} alerts ➔</button></div>`;
+  }
+  wrap.innerHTML = html;
+}
+
+function setHseAlertFilter(typeKey, btn) {
+  _hseAlertType = typeKey || '';
+  document.querySelectorAll('.hse-alert-flt').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderHseAlertsTab();
+}
+
+function renderHseAlertsTab() {
+  const tbody = document.getElementById('hse-alerts-tbody');
+  if (!tbody) return;
+  const raw = (_hseState && _hseState.alerts) || [];
+  const list = raw.filter(a => {
+    if (!_hseAlertType) return true;
+    return String(a.dt_code || '').toLowerCase() === _hseAlertType;
+  });
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#16a34a;font-weight:700;">✅ No alerts matching this filter.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(a => {
+    const isDanger = a.severity === 'danger';
+    const linkUrl = `/app?p=${encodeURIComponent(a.project_id)}&tab=${encodeURIComponent(a.dt_id)}&highlight=${encodeURIComponent(a.id)}`;
+    return `
+      <tr>
+        <td style="padding:8px 12px;"><span class="badge" style="${isDanger ? 'background:#fee2e2;color:#991b1b;' : 'background:#fef3c7;color:#92400e;'}font-weight:700;">${isDanger ? 'CRITICAL' : 'WARNING'}</span></td>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;">${escHtml(a.dt_code)}</td>
+        <td style="padding:8px 12px;font-weight:600;">${escHtml(a.project_code || a.project_id)}</td>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${escHtml(a.doc_no)}</td>
+        <td style="padding:8px 12px;">${escHtml(a.title)}${a.location ? ` <span style="color:var(--mu);font-size:11px;">(${escHtml(a.location)})</span>` : ''}</td>
+        <td style="padding:8px 12px;color:${isDanger ? '#dc2626' : '#d97706'};font-weight:700;">${escHtml(a.detail)}</td>
+        <td style="padding:8px 12px;text-align:right;"><a href="${linkUrl}" class="tbtn" style="text-decoration:none;">Open ➔</a></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderHseRegisterCards() {
+  const wrap = document.getElementById('hse-reg-grid');
+  if (!wrap) return;
+  const regs = (_hseState && _hseState.register_breakdown) || [];
+  if (!regs.length) {
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.innerHTML = regs.map(r => `
+    <div class="hse-reg-card">
+      <div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="badge" style="background:rgba(16,185,129,0.14);color:#047857;font-weight:700;font-family:monospace;font-size:11px;">${escHtml(r.code)}</span>
+          <span style="font-weight:700;font-size:12px;">${escHtml(r.name)}</span>
+        </div>
+        <div style="font-size:10.5px;color:var(--mu);margin-top:3px;">${escHtml(r.subtitle || ('Open: ' + r.open + ' • Closed: ' + r.closed))}</div>
+      </div>
+      <div style="font-size:18px;font-weight:800;font-family:monospace;">${r.total}</div>
+    </div>
+  `).join('');
+}
+
+function _drawHseCanvasChart(canvas, labels, datasets, dark) {
+  if (!canvas || !canvas.getContext) return;
+  const box = canvas.parentElement;
+  const cssW = Math.max(320, (box && box.clientWidth) || canvas.clientWidth || 520);
+  const cssH = 260;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const textCol = dark ? '#cbd5e1' : '#475569';
+  const gridCol = dark ? 'rgba(159,176,198,0.18)' : 'rgba(15,23,42,0.08)';
+  const padL = 34, padR = 12, padT = 14, padB = 54;
+  const plotW = Math.max(80, cssW - padL - padR);
+  const plotH = Math.max(80, cssH - padT - padB);
+
+  const stacks = Array.from(new Set(datasets.map(ds => ds.stack || 'default')));
+  const perCatMax = labels.map((_, i) => {
+    let best = 0;
+    stacks.forEach(st => {
+      const s = datasets.filter(ds => (ds.stack || 'default') === st).reduce((acc, ds) => acc + (Number(ds.data[i]) || 0), 0);
+      if (s > best) best = s;
+    });
+    return best;
+  });
+  const maxVal = Math.max(4, ...perCatMax);
+  const stepCount = 4;
+
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= stepCount; i++) {
+    const val = Math.round((maxVal * i) / stepCount);
+    const y = padT + plotH - (plotH * i) / stepCount;
+    ctx.strokeStyle = gridCol;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(cssW - padR, y);
+    ctx.stroke();
+    ctx.fillStyle = textCol;
+    ctx.fillText(String(val), padL - 6, y);
+  }
+
+  const n = Math.max(1, labels.length);
+  const catW = plotW / n;
+  const stackGap = 3;
+  const groupW = Math.min(catW * 0.72, 46);
+  const barW = Math.max(4, (groupW - stackGap * (stacks.length - 1)) / stacks.length);
+
+  labels.forEach((lbl, idx) => {
+    const cx = padL + catW * (idx + 0.5);
+    const startX = cx - groupW / 2;
+    stacks.forEach((stName, sIdx) => {
+      let accH = 0;
+      const bx = startX + sIdx * (barW + stackGap);
+      datasets.filter(ds => (ds.stack || 'default') === stName).forEach(ds => {
+        const v = Number(ds.data[idx]) || 0;
+        if (v <= 0) return;
+        const h = (v / maxVal) * plotH;
+        const y = padT + plotH - accH - h;
+        ctx.fillStyle = ds.backgroundColor || '#10b981';
+        ctx.fillRect(bx, y, barW, Math.max(1, h));
+        accH += h;
+      });
+    });
+
+    if (n <= 12 || idx % 2 === 0) {
+      ctx.fillStyle = textCol;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(String(lbl).slice(0, 8), cx, padT + plotH + 6);
+    }
+  });
+
+  // Compact bottom legend
+  let lx = padL;
+  const ly = cssH - 18;
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  datasets.forEach(ds => {
+    const w = ctx.measureText(ds.label).width + 22;
+    if (lx + w > cssW - 8) return;
+    ctx.fillStyle = ds.backgroundColor || '#10b981';
+    ctx.fillRect(lx, ly - 4, 9, 9);
+    ctx.fillStyle = textCol;
+    ctx.fillText(ds.label, lx + 13, ly);
+    lx += w;
+  });
+}
+
+function renderHseCharts() {
+  const dark = document.body.classList.contains('dark');
+  const gridColor = dark ? 'rgba(159,176,198,.16)' : 'rgba(0,0,0,.06)';
+  const tickColor = dark ? '#cbd5e1' : '#54657d';
+  const legendColor = dark ? '#dbe7f3' : '#334155';
+  const hasChartJs = (typeof Chart !== 'undefined') && Boolean(Chart.registry || (Chart.defaults && Chart.register));
+
+  const trendEl = document.getElementById('hseTrendChart');
+  const trends = (_hseState && _hseState.monthly_trends) || [];
+  const trendLabels = trends.map(t => t.label);
+  const trendDatasets = [
+    { label: 'OBS Open', data: trends.map(t => t.observations_open), backgroundColor: '#f59e0b', borderRadius: 4, stack: 'obs' },
+    { label: 'OBS Closed', data: trends.map(t => t.observations_closed), backgroundColor: '#10b981', borderRadius: 4, stack: 'obs' },
+    { label: 'FAC', data: trends.map(t => t.incidents_fac), backgroundColor: '#38bdf8', borderRadius: 4, stack: 'inc' },
+    { label: 'MTC', data: trends.map(t => t.incidents_mtc), backgroundColor: '#fb923c', borderRadius: 4, stack: 'inc' },
+    { label: 'LTI', data: trends.map(t => t.incidents_lti), backgroundColor: '#ef4444', borderRadius: 4, stack: 'inc' }
+  ];
+  if (trendEl) {
+    if (_hseTrendChart && typeof _hseTrendChart.destroy === 'function') {
+      _hseTrendChart.destroy();
+      _hseTrendChart = null;
+    }
+    if (hasChartJs) {
+      _hseTrendChart = new Chart(trendEl, {
+        type: 'bar',
+        data: { labels: trendLabels, datasets: trendDatasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } } },
+          scales: {
+            y: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
+            x: { stacked: true, grid: { display: false }, ticks: { color: tickColor } }
+          }
+        }
+      });
+    } else {
+      _drawHseCanvasChart(trendEl, trendLabels, trendDatasets, dark);
+    }
+  }
+
+  const statusEl = document.getElementById('hseStatusChart');
+  const regs = ((_hseState && _hseState.register_breakdown) || []).filter(r => ['PTW', 'OBS', 'INC', 'SVP', 'FEI', 'JSA'].includes(r.code));
+  const statusLabels = regs.map(r => r.code);
+  const safeGreen = regs.map(r => {
+    if (r.code === 'FEI' && r.sub_counts) return r.sub_counts.valid || 0;
+    if (r.code === 'JSA' && r.sub_counts) return r.sub_counts.approved || 0;
+    return r.closed || 0;
+  });
+  const warnAmber = regs.map(r => {
+    if (r.code === 'FEI' && r.sub_counts) return r.sub_counts.expiring || 0;
+    if (r.code === 'JSA' && r.sub_counts) return r.sub_counts.pending || 0;
+    if (r.code === 'INC' && r.sub_counts) return (r.sub_counts.fac || 0) + (r.sub_counts.mtc || 0);
+    return r.open || 0;
+  });
+  const critOther = regs.map(r => {
+    if (r.code === 'FEI' && r.sub_counts) return (r.sub_counts.expired || 0) + (r.sub_counts.no_date || 0);
+    if (r.code === 'INC' && r.sub_counts) return (r.sub_counts.lti || 0) + (r.sub_counts.near_miss || 0);
+    return r.other || 0;
+  });
+  const statusDatasets = [
+    { label: 'Closed / Valid', data: safeGreen, backgroundColor: '#16a34a', borderRadius: 4, stack: 'st' },
+    { label: 'Open / Expiring', data: warnAmber, backgroundColor: '#f59e0b', borderRadius: 4, stack: 'st' },
+    { label: 'LTI / Expired / Other', data: critOther, backgroundColor: '#ef4444', borderRadius: 4, stack: 'st' }
+  ];
+  if (statusEl) {
+    if (_hseStatusChart && typeof _hseStatusChart.destroy === 'function') {
+      _hseStatusChart.destroy();
+      _hseStatusChart = null;
+    }
+    if (hasChartJs) {
+      _hseStatusChart = new Chart(statusEl, {
+        type: 'bar',
+        data: { labels: statusLabels, datasets: statusDatasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } } },
+          scales: {
+            y: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
+            x: { stacked: true, grid: { display: false }, ticks: { color: tickColor } }
+          }
+        }
+      });
+    } else {
+      _drawHseCanvasChart(statusEl, statusLabels, statusDatasets, dark);
+    }
+  }
+
+  const ptwS = (_hseState && _hseState.ptw_status) || {};
+  const pillRow = document.getElementById('hse-ptw-pills');
+  if (pillRow) {
+    pillRow.innerHTML = `
+      <span class="hse-pill ok">Valid Open PTWs: ${ptwS.valid_active || 0}</span>
+      <span class="hse-pill warn">Expiring PTWs: ${ptwS.expiring || 0}</span>
+      <span class="hse-pill danger">Overdue PTWs: ${ptwS.overdue || 0}</span>
+      <span class="hse-pill">Closed PTWs: ${ptwS.closed || 0}</span>
+    `;
+  }
+}
+
+function filterHseCards(q) {
+  const query = (q || '').trim().toLowerCase();
+  document.querySelectorAll('.om-card').forEach(card => {
+    card.style.display = card.textContent.toLowerCase().includes(query) ? '' : 'none';
+  });
+}
+
+async function submitNewHseSite() {
+  const id = document.getElementById('om-new-id').value.trim().toUpperCase();
+  const name = document.getElementById('om-new-name').value.trim();
+  const code = document.getElementById('om-new-code').value.trim().toUpperCase();
+  const client = document.getElementById('om-new-client').value.trim();
+  if (!id || !name || !code) {
+    alert('Please enter Project ID, Name, and Code.');
+    return;
+  }
+  try {
+    const res = await apiFetch('/api/projects/create', {
+      method: 'POST',
+      body: JSON.stringify({ id, name, code, workspace_id: 'HSE', client })
+    });
+    if (res && res.ok) window.location = '/?ws=HSE';
+    else alert((res && res.error) || 'Failed to create HSE site');
+  } catch (e) {
+    alert('Error creating HSE site: ' + e.message);
+  }
+}
+
+async function delProject(pid, pname) {
+  if (!confirm('Delete HSE site: ' + pname + '? All records inside will be permanently deleted.')) return;
+  try {
+    const r = await apiFetch('/api/projects/delete/' + encodeURIComponent(pid), { method: 'POST' });
+    if (r && r.ok) window.location.reload();
+    else alert((r && r.error) || 'Delete failed');
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function loadHseDailyDigest() {
+  const container = document.getElementById('hse-daily-digest-content');
+  if (!container) return;
+  const dVal = document.getElementById('hse-digest-date')?.value || '';
+  container.innerHTML = '<div style="color:var(--mu);font-size:13px;padding:16px;">Loading Daily Digest...</div>';
+  try {
+    const qs = '?workspace_id=HSE' + (dVal ? '&date=' + encodeURIComponent(dVal) : '');
+    const r = await apiFetch('/api/daily_digest/all' + qs);
+    if (!r) { container.innerHTML = '<div style="color:red;padding:16px;">Failed to load digest.</div>'; return; }
+    let html = '<div class="hse-panel" style="border-top:4px solid #3b82f6;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">📥 Logged / Updated (' + (r.received || []).length + ')</div>';
+    if (!(r.received || []).length) html += '<div style="color:var(--mu);font-size:12px;">No records logged.</div>';
+    (r.received || []).forEach(doc => {
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+    });
+    html += '</div><div class="hse-panel" style="border-top:4px solid #22c55e;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">✅ Closed (' + (r.replied || []).length + ')</div>';
+    if (!(r.replied || []).length) html += '<div style="color:var(--mu);font-size:12px;">No records closed.</div>';
+    (r.replied || []).forEach(doc => {
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:red;padding:16px;">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function loadHseAudit(reset = false) {
+  if (reset) _hseAuditOffset = 0;
+  const tbody = document.getElementById('hse-aud-tbody');
+  if (!tbody) return;
+  const pid = document.getElementById('hse-aud-pid')?.value || '';
+  const user = document.getElementById('hse-aud-user')?.value || '';
+  const action = document.getElementById('hse-aud-action')?.value || '';
+  const params = new URLSearchParams({ offset: _hseAuditOffset, workspace_id: 'HSE' });
+  if (pid) params.set('pid', pid);
+  if (user) params.set('username', user);
+  if (action) params.set('action', action);
+  try {
+    const data = await apiFetch('/api/audit?' + params.toString());
+    if (!data) return;
+    if (reset || _hseAuditOffset === 0) {
+      _hseAuditProjMap = {};
+      (data.projects || []).forEach(p => { _hseAuditProjMap[p.id] = p.name || p.code || p.id; });
+      const pSel = document.getElementById('hse-aud-pid');
+      if (pSel) pSel.innerHTML = '<option value="">All HSE Sites</option>' + (data.projects || []).map(p => `<option value="${escHtml(p.id)}"${p.id === pid ? ' selected' : ''}>${escHtml(p.name || p.id)}</option>`).join('');
+      const uSel = document.getElementById('hse-aud-user');
+      if (uSel) uSel.innerHTML = '<option value="">All Users</option>' + (data.users || []).map(u => `<option value="${escHtml(u)}"${u === user ? ' selected' : ''}>${escHtml(u)}</option>`).join('');
+      const aSel = document.getElementById('hse-aud-action');
+      if (aSel) aSel.innerHTML = '<option value="">All Actions</option>' + (data.actions || []).map(a => `<option value="${escHtml(a)}"${a === action ? ' selected' : ''}>${escHtml(a)}</option>`).join('');
+    }
+    const rows = data.rows || [];
+    _hseAuditHasMore = rows.length === 100;
+    tbody.innerHTML = rows.length ? rows.map(r => {
+      const rawTs = r.ts || r.created_at;
+      const ts = new Date(rawTs);
+      const tsStr = (!rawTs || isNaN(ts.getTime())) ? '—' : (ts.toLocaleDateString('en-GB') + ' ' + ts.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }));
+      return `<tr>
+        <td style="font-size:10px;color:var(--mu);white-space:nowrap">${tsStr}</td>
+        <td style="font-weight:600;font-size:11px">${escHtml(r.username || '')}</td>
+        <td><span class="badge" style="font-size:9px;">${escHtml(r.action || '')}</span></td>
+        <td style="font-size:10px;color:var(--mu)">${escHtml(_hseAuditProjMap[r.project_id] || r.project_id || '—')}</td>
+        <td style="font-size:11px">${escHtml(r.doc_no || r.document_id || '—')}</td>
+        <td style="font-size:10px;color:var(--mu)">${escHtml(r.detail || '—')}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu)">No HSE activity found</td></tr>';
+    const prevBtn = document.getElementById('hse-aud-prev');
+    if (prevBtn) prevBtn.disabled = _hseAuditOffset === 0;
+    const nextBtn = document.getElementById('hse-aud-next');
+    if (nextBtn) nextBtn.disabled = !_hseAuditHasMore;
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#ef4444;">Error loading audit log</td></tr>';
+  }
+}
+
+function hseAuditPage(dir) {
+  _hseAuditOffset = Math.max(0, _hseAuditOffset + dir * 100);
+  loadHseAudit();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  renderHseState();
+  requestAnimationFrame(renderHseCharts);
+  window.addEventListener('resize', function() { renderHseCharts(); });
+  const obs = new MutationObserver(function(mutations) {
+    for (const m of mutations) {
+      if (m.attributeName === 'class') { renderHseCharts(); break; }
+    }
+  });
+  obs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+});
+window.addEventListener('load', function() {
+  requestAnimationFrame(renderHseCharts);
+});
+"""
+
+
+def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="HSE"):
+    from html import escape as _h_esc
+    from hse_analytics import build_hse_overview, get_scoped_hse_analytics
+
+    role = (u or {}).get("role") or "guest"
+    can_manage = role in ("superadmin", "admin")
+    try:
+        ws_obj = db.get_workspace(active_ws) if hasattr(db, "get_workspace") else None
+    except Exception:
+        ws_obj = None
+    ws_obj = ws_obj or {"id": "HSE", "code": "HSE", "name": "Health, Safety & Environment", "icon": "🛡️", "description": "Permits, Safety Observations, Incidents, Man-Hours & Fire Equipment"}
+    ws_name = _h_esc(str(ws_obj.get("name") or "Health, Safety & Environment"))
+    ws_icon = _h_esc(str(ws_obj.get("icon") or "🛡️"))
+    ws_desc = _h_esc(str(ws_obj.get("description") or "").strip())
+
+    payload = None
+    if u:
+        try:
+            payload, _ = get_scoped_hse_analytics(u)
+        except Exception:
+            payload = None
+    if payload is None:
+        proj_summaries = [
+            {"id": p["id"], "code": p.get("code") or p["id"], "name": p.get("name") or p["id"]}
+            for p in (accessible_projs or [])
+        ]
+        payload = build_hse_overview([], projects=proj_summaries)
+
+    k = payload["kpis"]
+    summary = k["summary"]
+    completed_records = summary["completed_records"]
+    total_records = summary["total_records"]
+    total_sites = len(accessible_projs or [])
+
+    proj_opts_html = "".join(
+        f'<option value="{_h_esc(str(p["id"]))}">{_h_esc(str(p.get("code") or p["id"]))} — {_h_esc(str(p.get("name") or p["id"]))}</option>'
+        for p in (accessible_projs or [])
+    )
+    year_opts_html = "".join(
+        f'<option value="{yr}">{yr}</option>'
+        for yr in (payload.get("available_years") or [])
+    )
+
+    header_add_btn = (
+        '<button class="tb-btn glow" onclick="openM(\'new-om-modal\')" '
+        'style="background:var(--brand-teal);color:#fff;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;border:none;">'
+        '➕ New HSE Project / Site</button>'
+    ) if can_manage else ""
+    audit_btn = '<button class="tbtn" onclick="showHseTab(\'audit\', this)">📜 Audit Log</button>' if can_manage else ""
+
+    cards_html = ""
+    for p in (accessible_projs or []):
+        p_id = str(p["id"])
+        p_name = _h_esc(str(p.get("name") or p_id))
+        p_code = _h_esc(str(p.get("code") or p_id))
+        p_data = p.get("data") or {}
+        if isinstance(p_data, str):
+            try:
+                p_data = json.loads(p_data)
+            except Exception:
+                p_data = {}
+        client = _h_esc(str((p_data or {}).get("client") or "—"))
+        js_pid = p_id.replace("\\", "\\\\").replace("'", "\\'")
+        js_pname = str(p.get("name") or p_id).replace("\\", "\\\\").replace("'", "\\'")
+        del_btn = (
+            f'<button type="button" class="pcard-btn pcard-del" title="Delete Site" '
+            f'onclick="event.preventDefault();event.stopPropagation();delProject(\'{_h_esc(js_pid)}\',\'{_h_esc(js_pname)}\')">🗑️</button>'
+        ) if can_manage else ""
+        cards_html += f"""
+        <div class="om-card" onclick="window.location='/app?p={_h_esc(p_id)}'" title="Open {p_name}">
+          <div class="om-card-header">
+            <span class="om-code-badge">{p_code}</span>
+            <span class="om-status-badge">Active HSE</span>
+          </div>
+          <div class="om-card-title">{p_name}</div>
+          <div class="om-card-client">🏢 Client / Site: <strong>{client}</strong></div>
+          <div class="om-card-footer">
+            <span class="om-card-action">Open HSE Registers ➔</span>
+            {del_btn}
+          </div>
+        </div>
+        """
+
+    if not cards_html:
+        empty_add = (
+            '<button class="tb-btn glow" style="margin-top:14px;padding:8px 18px;font-size:13px;" '
+            'onclick="openM(\'new-om-modal\')">➕ Register First HSE Project / Site</button>'
+        ) if can_manage else ""
+        cards_html = f"""
+        <div class="om-empty-state">
+          <div style="font-size:38px;margin-bottom:8px;">🛡️</div>
+          <div style="font-size:16px;font-weight:700;margin-bottom:4px;">No HSE Sites or Projects Assigned Yet</div>
+          <div style="font-size:12px;color:var(--mu);max-width:480px;margin:0 auto;">Register or request assignment to an HSE project to start tracking permits, observations, incidents, and man-hours.</div>
+          {empty_add}
+        </div>
+        """
+
+    safe_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+    hse_js_block = HSE_DASHBOARD_JS.replace("__HSE_INIT_JSON__", safe_json)
+
+    return f"""<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DCR — {ws_name} Command Dashboard</title>
+{BASE_CSS}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>{HSE_DASHBOARD_CSS}</style>
+</head>
+<body data-workspace="{_h_esc(active_ws)}">
+<div id="topbar">
+  <span style="font-size:20px">📋</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  {ws_switcher_html}
+  {GLOBAL_SEARCH_TRIGGER_HTML}
+  <div class="sp"></div>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
+  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  {btns}
+  <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
+  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
+    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  </span>
+</div>
+
+<div class="wrap">
+  <div class="hse-header-bar">
+    <div>
+      <div class="hse-header-title">{ws_icon} {ws_name} — Executive Command Center</div>
+      {f'<div class="hse-header-sub">{ws_desc}</div>' if ws_desc else ''}
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      {header_add_btn}
+    </div>
+  </div>
+
+  <div class="psel-bar">
+    <select id="hse-filter-pid" onchange="refreshHseDashboard()" aria-label="Filter by HSE project">
+      <option value="">All HSE Sites & Projects</option>
+      {proj_opts_html}
+    </select>
+    <select id="hse-filter-year" onchange="refreshHseDashboard()" aria-label="Filter by year">
+      <option value="">All Years</option>
+      {year_opts_html}
+    </select>
+    <select id="hse-filter-warn" onchange="refreshHseDashboard()" aria-label="Alert warning window">
+      <option value="14">Warn: 14 Days</option>
+      <option value="30" selected>Warn: 30 Days</option>
+      <option value="60">Warn: 60 Days</option>
+      <option value="90">Warn: 90 Days</option>
+    </select>
+    <input type="text" id="hse-site-search" placeholder="🔍 Filter HSE sites..." oninput="filterHseCards(this.value)" style="min-width:170px;">
+    <button class="tbtn" onclick="refreshHseDashboard()" title="Refresh live KPIs">🔄 Refresh</button>
+    <div class="sp" style="flex:1"></div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+      <button class="tbtn active" onclick="showHseTab('overview', this)">🛡️ Command Center</button>
+      <button class="tbtn" id="hse-btn-alerts" onclick="showHseTab('alerts', this)">⚠️ Expiry & Alerts <span id="hse-tab-alert-badge" class="badge" style="background:#ef4444;color:#fff;font-size:9.5px;display:none;">0</span></button>
+      <button class="tbtn" onclick="showHseTab('daily-digest', this)">🌟 Daily Digest</button>
+      {audit_btn}
+    </div>
+  </div>
+
+  <div id="tab-hse-overview" class="tab-pane active">
+    <div class="hse-hero-grid">
+      <div class="hse-kpi-card tone-info" id="hse-card-lti">
+        <span class="hse-kpi-lbl">LTI-Free Days Streak</span>
+        <span class="hse-kpi-val info" id="hse-kpi-lti-days">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-lti">No dated HSE records yet</span>
+      </div>
+      <div class="hse-kpi-card tone-info" id="hse-card-any">
+        <span class="hse-kpi-lbl">Any-Injury-Free Days</span>
+        <span class="hse-kpi-val info" id="hse-kpi-any-days">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-any">FAC / MTC / LTI streak</span>
+      </div>
+      <div class="hse-kpi-card tone-info" id="hse-card-ltif">
+        <span class="hse-kpi-lbl">LTIF (per 1M Man-Hours)</span>
+        <span class="hse-kpi-val info" id="hse-kpi-ltif">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-ltif">Lost Time Injury Frequency</span>
+      </div>
+      <div class="hse-kpi-card tone-info" id="hse-card-trir">
+        <span class="hse-kpi-lbl">TRIR (per 1M Man-Hours)</span>
+        <span class="hse-kpi-val info" id="hse-kpi-trir">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-trir">Total Recordable Incident Rate</span>
+      </div>
+      <div class="hse-kpi-card tone-info" id="hse-card-sev">
+        <span class="hse-kpi-lbl">Severity Rate (per 1M hrs)</span>
+        <span class="hse-kpi-val info" id="hse-kpi-sev">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-sev">Lost Days: 0</span>
+      </div>
+      <div class="hse-kpi-card tone-good" id="hse-card-hours">
+        <span class="hse-kpi-lbl">Total Worked Man-Hours</span>
+        <span class="hse-kpi-val" id="hse-kpi-hours">0</span>
+        <span class="hse-kpi-sub" id="hse-sub-hours">{total_sites} active HSE project(s)</span>
+      </div>
+    </div>
+
+    <div class="om-kpi-grid" style="grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));">
+      <div class="om-kpi-card">
+        <span class="om-kpi-lbl">Open Safety Observations (OBS)</span>
+        <span class="om-kpi-val warning" id="hse-sum-obs-open">0 / 0</span>
+        <span class="hse-kpi-sub" id="hse-sum-obs-sub">Closed: 0 • Stale (&gt;30d): 0</span>
+      </div>
+      <div class="om-kpi-card">
+        <span class="om-kpi-lbl">Open / Expiring Permits (PTW)</span>
+        <span class="om-kpi-val warning" id="hse-sum-ptw-open">0</span>
+        <span class="hse-kpi-sub" id="hse-sum-ptw-sub">Expiring: 0 • Overdue: 0</span>
+      </div>
+      <div class="om-kpi-card">
+        <span class="om-kpi-lbl">Expiring / Expired FEI</span>
+        <span class="om-kpi-val" id="hse-sum-fei-exp" style="color:#ef4444;">0</span>
+        <span class="hse-kpi-sub" id="hse-sum-fei-sub">Expired: 0 • Due ≤30d: 0</span>
+      </div>
+      <div class="om-kpi-card" id="hse-card-sum-completed">
+        <span class="om-kpi-lbl">Completed / Closed</span>
+        <span class="om-kpi-val success">{completed_records}</span>
+        <span class="hse-kpi-sub" id="hse-sum-tot-sub">{total_records} total across {total_sites} site(s)</span>
+      </div>
+    </div>
+
+    <div class="hse-panel" style="margin-bottom:16px;" id="hse-alerts-panel">
+      <div class="hse-panel-hdr">
+        <div class="hse-panel-title">🚨 Actionable Expiry &amp; Overdue Alerts</div>
+        <span style="font-size:11px;color:var(--mu);">Overdue/Expiring PTWs, FEI inspections &amp; Stale Observations (&gt;30d)</span>
+      </div>
+      <div id="hse-alerts-preview"></div>
+    </div>
+
+    <div class="hse-charts-grid">
+      <div class="hse-panel">
+        <div class="hse-panel-hdr">
+          <div class="hse-panel-title">📈 Monthly Incidents &amp; Observations Trend</div>
+          <span style="font-size:11px;color:var(--mu);">FAC / MTC / LTI vs Open/Closed OBS</span>
+        </div>
+        <div class="hse-chart-box"><canvas id="hseTrendChart" height="260"></canvas></div>
+      </div>
+      <div class="hse-panel">
+        <div class="hse-panel-hdr">
+          <div class="hse-panel-title">🔥 PTW &amp; Register Status Breakdown</div>
+          <span style="font-size:11px;color:var(--mu);">PTW, OBS, INC, SVP, FEI &amp; JSA</span>
+        </div>
+        <div class="hse-chart-box"><canvas id="hseStatusChart" height="260"></canvas></div>
+        <div class="hse-pill-row" id="hse-ptw-pills"></div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:8px;">📄 11 Configured HSE Registers</div>
+      <div class="hse-reg-grid" id="hse-reg-grid"></div>
+    </div>
+
+    <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:10px;">🏗️ HSE Projects &amp; Sites</div>
+    <div class="om-grid" id="hse-sites-grid">
+      {cards_html}
+    </div>
+  </div>
+
+  <div id="tab-hse-alerts" class="tab-pane" style="display:none;">
+    <div class="hse-panel" style="margin-bottom:12px;">
+      <div class="hse-panel-hdr" style="margin-bottom:0;">
+        <div class="hse-panel-title">⚠️ Expiry, Overdue &amp; Stale Observation Queue</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="tbtn hse-alert-flt active" onclick="setHseAlertFilter('', this)">All Alerts</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('ptw', this)">Permits (PTW)</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('fei', this)">Fire &amp; Equipment (FEI)</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('obs', this)">Stale OBS (&gt;30d)</button>
+        </div>
+      </div>
+    </div>
+    <div class="hse-panel" style="padding:0;overflow-x:auto;">
+      <table class="user-tbl" style="width:100%;">
+        <thead>
+          <tr>
+            <th style="padding:10px 12px;">Severity</th>
+            <th style="padding:10px 12px;">Register</th>
+            <th style="padding:10px 12px;">Site</th>
+            <th style="padding:10px 12px;">Ref No.</th>
+            <th style="padding:10px 12px;">Title / Subject</th>
+            <th style="padding:10px 12px;">Status / Due</th>
+            <th style="padding:10px 12px;text-align:right;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="hse-alerts-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-hse-daily-digest" class="tab-pane" style="display:none;">
+    <div class="hse-panel" style="margin-bottom:14px;">
+      <div class="hse-panel-hdr" style="margin-bottom:0;">
+        <div class="hse-panel-title">🌟 HSE Daily Digest</div>
+        <input type="date" id="hse-digest-date" onchange="loadHseDailyDigest()" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;">
+      </div>
+    </div>
+    <div id="hse-daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;"></div>
+  </div>
+
+  <div id="tab-hse-audit" class="tab-pane" style="display:none;">
+    <div class="hse-panel">
+      <div class="hse-panel-hdr">
+        <div class="hse-panel-title">📜 HSE Audit &amp; Activity Log</div>
+        <button class="tbtn" onclick="loadHseAudit(true)">🔄 Refresh</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <select id="hse-aud-pid" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All HSE Sites</option></select>
+        <select id="hse-aud-user" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All Users</option></select>
+        <select id="hse-aud-action" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All Actions</option></select>
+      </div>
+      <div style="overflow:auto;max-height:calc(100vh - 280px);border:1px solid var(--bd);border-radius:var(--rd);">
+        <table class="dt-tbl" style="width:100%;">
+          <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Site</th><th>Document</th><th>Detail</th></tr></thead>
+          <tbody id="hse-aud-tbody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
+        <button id="hse-aud-prev" class="tbtn" onclick="hseAuditPage(-1)" disabled>← Prev</button>
+        <button id="hse-aud-next" class="tbtn" onclick="hseAuditPage(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="new-om-modal" class="overlay hidden" onclick="if(event.target===this)closeM('new-om-modal')">
+  <div class="modal" style="max-width:480px">
+    <div class="mhdr">
+      <span>➕ Register New HSE Project / Site</span>
+      <button class="xbtn" onclick="closeM('new-om-modal')">✕</button>
+    </div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">HSE Project ID:</label><input type="text" id="om-new-id" placeholder="e.g. HSE-SITE-02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Site / Project Name:</label><input type="text" id="om-new-name" placeholder="e.g. Main Plant Turnaround HSE" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Short Code:</label><input type="text" id="om-new-code" placeholder="e.g. HSE02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Client / Site Location:</label><input type="text" id="om-new-client" placeholder="e.g. GasChill" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+        <button class="tb-btn" onclick="closeM('new-om-modal')">Cancel</button>
+        <button class="tb-btn glow" onclick="submitNewHseSite()" style="background:var(--brand-teal);color:#fff;font-weight:700">Save HSE Site</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{SHARED_JS}
+{ABOUT_MODAL_HTML}
+{SPOTLIGHT_MODAL_COMPONENT}
+{AI_DRAWER_COMPONENT}
+<script>{hse_js_block}</script>
+</body></html>"""
+
+
 ADMIN_MODAL_CSS = """
 /* ── Overlay & Modal Base Styles ── */
 .overlay {
@@ -7752,15 +8956,63 @@ def render_launchpad(u):
     elif not allowed_ids and primary_ws:
         allowed_ids = {primary_ws}
 
-    # Fetch live record counts per project in one fast query
+    # Pre-resolve accessible projects per lit workspace and compute doc-type-scoped record counts
+    ws_projs_map = {}
+    all_lit_pids = []
+    seen_lit_pids = set()
+    for ws in all_ws:
+        ws_id = str(ws.get("id") or "").strip()
+        ws_id_up = ws_id.upper()
+        is_lit = (ws_id_up in allowed_ids) or is_super
+        if is_lit and u:
+            try:
+                ws_projs = db.get_projects_for_user(uname, role, workspace_id=ws_id)
+            except Exception:
+                ws_projs = []
+            ws_projs_map[ws_id] = ws_projs
+            for p in ws_projs:
+                pid_val = p.get("id")
+                if pid_val and pid_val not in seen_lit_pids:
+                    seen_lit_pids.add(pid_val)
+                    all_lit_pids.append(pid_val)
+
     rec_counts_by_proj = {}
-    try:
-        rows = db.q("SELECT project_id, COUNT(*) as c FROM records GROUP BY project_id") or []
-        for r in rows:
-            if isinstance(r, dict) and r.get("project_id"):
-                rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
-    except Exception:
-        pass
+    if all_lit_pids:
+        try:
+            dt_scope = get_user_doc_type_scope(u, all_lit_pids)
+            if dt_scope is None:
+                rows = db.q(
+                    "SELECT project_id, COUNT(*) as c FROM records WHERE project_id = ANY(%s) GROUP BY project_id",
+                    (all_lit_pids,),
+                ) or []
+                for r in rows:
+                    if isinstance(r, dict) and r.get("project_id"):
+                        rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
+            else:
+                dt_code_rows = db.q(
+                    "SELECT project_id, id, code FROM doc_types WHERE project_id = ANY(%s)",
+                    (all_lit_pids,),
+                ) or []
+                dt_code_map = {
+                    (d["project_id"], str(d.get("id") or "").strip().upper()): str(d.get("code") or "")
+                    for d in dt_code_rows if isinstance(d, dict)
+                }
+                rows = db.q(
+                    "SELECT project_id, dt_id, COUNT(*) as c FROM records WHERE project_id = ANY(%s) GROUP BY project_id, dt_id",
+                    (all_lit_pids,),
+                ) or []
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    p_id = r.get("project_id")
+                    dt_id = r.get("dt_id")
+                    if not p_id:
+                        continue
+                    dt_code = dt_code_map.get((p_id, str(dt_id or "").strip().upper()), "")
+                    if db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code):
+                        rec_counts_by_proj[p_id] = rec_counts_by_proj.get(p_id, 0) + int(r.get("c") or 0)
+        except Exception:
+            pass
 
     cards_html_list = []
     palette_cycle = list(default_meta.values())
@@ -7784,10 +9036,7 @@ def render_launchpad(u):
         is_primary = (ws_id_up == primary_ws)
 
         if is_lit:
-            try:
-                ws_projs = db.get_projects_for_user(uname, role, workspace_id=ws_id) if u else []
-            except Exception:
-                ws_projs = []
+            ws_projs = ws_projs_map.get(ws_id, [])
             proj_cnt = len(ws_projs)
             doc_cnt = sum(rec_counts_by_proj.get(p.get("id"), 0) for p in ws_projs)
             val1 = f"{proj_cnt:,}"
@@ -8912,6 +10161,8 @@ def render_dashboard(u, active_ws_id=None):
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
     ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
 
+    if active_ws == "HSE":
+        return _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws)
     if active_ws != "ENG":
         return _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws)
 
@@ -10048,7 +11299,7 @@ function renderCards(d,pid){{
           <span>${{p.pct}}%</span><span style="font-size:9.5px;color:var(--mu);font-weight:600">done</span>
         </div>
         <div style="display:flex;gap:4px;align-items:center">
-          ${{(ROLE==='superadmin'||ROLE==='admin')&&!pid?`
+          ${{p.can_admin&&!pid?`
             <button type="button" class="pcard-btn pcard-move" title="Move project up" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">▲</button>
             <button type="button" class="pcard-btn pcard-move" title="Move project down" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">▼</button>
           `:''}}
@@ -10069,17 +11320,56 @@ function renderCards(d,pid){{
 
 // ── Overview Charts ───────────────────────────────────────
 async function moveProject(id,delta){{
+  if(moveProject._busy)return;
+  const adminIndices=[];
+  for(let i=0;i<STATS.length;i++){{
+    if(STATS[i]&&STATS[i].can_admin)adminIndices.push(i);
+  }}
   const idx=STATS.findIndex(p=>p.id===id);
-  const next=idx+delta;
-  if(idx<0||next<0||next>=STATS.length)return;
-  [STATS[idx],STATS[next]]=[STATS[next],STATS[idx]];
-  const order=STATS.map(p=>p.id);
-  await apiFetch('/api/projects/reorder',{{method:'POST',body:JSON.stringify({{order}})}});
-  document.getElementById('proj-sel').innerHTML=
-    '<option value="">All Projects</option>'+
-    STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
-  renderAll(_currentPid,_currentDisc);
-  toast('Project order updated','ok');
+  const adminPos=adminIndices.indexOf(idx);
+  const targetPos=adminPos+delta;
+  if(idx<0||adminPos<0||targetPos<0||targetPos>=adminIndices.length)return;
+  const next=adminIndices[targetPos];
+  const prevStats=STATS.slice();
+  const nextStats=STATS.slice();
+  [nextStats[idx],nextStats[next]]=[nextStats[next],nextStats[idx]];
+  const order=nextStats.filter(p=>p&&p.can_admin).map(p=>p.id);
+  const wsSet=new Set(STATS.map(p=>p&&p.workspace_id).filter(Boolean));
+  const hasMixed=!STATS.every(p=>p&&p.can_admin)||wsSet.size>1;
+  const wsScope=hasMixed?'ALL':(wsSet.size===1?[...wsSet][0]:'{active_ws}');
+  moveProject._busy=true;
+  try{{
+    const res=await apiFetch('/api/projects/reorder',{{method:'POST',body:JSON.stringify({{order,workspace_id:wsScope}})}});
+    if(!res||res.ok===false||res.error)throw new Error((res&&res.error)||'Failed to save project order');
+    let finalStats=nextStats;
+    if(Array.isArray(res.order)&&res.order.length){{
+      const rank=new Map(res.order.map((pid,i)=>[pid,i]));
+      finalStats=nextStats.slice().sort((a,b)=>{{
+        const ra=rank.has(a.id)?rank.get(a.id):999999;
+        const rb=rank.has(b.id)?rank.get(b.id):999999;
+        return ra-rb;
+      }});
+    }}
+    STATS=finalStats;
+    const sel=document.getElementById('proj-sel');
+    if(sel){{
+      sel.innerHTML='<option value="">All Projects</option>'+
+        STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
+    }}
+    renderAll(_currentPid,_currentDisc);
+    toast('Project order updated','ok');
+  }}catch(err){{
+    STATS=prevStats;
+    const sel=document.getElementById('proj-sel');
+    if(sel){{
+      sel.innerHTML='<option value="">All Projects</option>'+
+        STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
+    }}
+    renderAll(_currentPid,_currentDisc);
+    toast(err&&err.message?err.message:'Failed to reorder projects','err');
+  }}finally{{
+    moveProject._busy=false;
+  }}
 }}
 
 function renderCharts(d){{
@@ -11030,9 +12320,8 @@ def render_register(u, proj, active_ws_id=None):
 
     dts       = db.get_doc_types(pid)
     try:
-        from auth import is_superadmin
-        if u and not is_superadmin(u) and not (hasattr(db, 'is_user_workspace_admin') and db.is_user_workspace_admin(u.get('username'))):
-            allowed_dts = db.get_user_project_doc_types(u['username'], pid) if hasattr(db, 'get_user_project_doc_types') else None
+        if u:
+            allowed_dts = get_allowed_doc_type_filter(pid, u)
             if allowed_dts is not None:
                 allowed_set = {str(x).upper() for x in allowed_dts}
                 dts = [d for d in dts if str(d['id']).upper() in allowed_set or str(d.get('code', '')).upper() in allowed_set]
@@ -11069,7 +12358,7 @@ def render_register(u, proj, active_ws_id=None):
         f'<span>{dt["code"]}</span><span class="tcnt" id="cnt-{dt["id"]}">0</span></button>'
         for dt in dts)
 
-    _can_manage_proj = role in ('superadmin', 'admin') or (hasattr(db, 'is_user_workspace_admin') and db.is_user_workspace_admin(u.get('username'), proj.get('workspace_id', 'ENG')))
+    _can_manage_proj = bool(u and is_project_admin(pid, u))
     _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _can_manage_proj else ''
     _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _can_manage_proj else ''
     _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _can_manage_proj else ''
@@ -11335,6 +12624,24 @@ body.dark #timeline-body [style*="linear-gradient(180deg,#d7e0e6"]{{background:l
 #rec-modal.rec-modal-readonly .del {{ display: none !important; }}
 body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:linear-gradient(180deg,#142033,#101a29);box-shadow:0 -12px 26px rgba(0,0,0,.28)}}
 .record-modal-actions .btn{{min-height:38px}}
+.inc-bodymap-wrap{{display:grid;grid-template-columns:minmax(270px,1.35fr) minmax(210px,1fr);gap:14px;align-items:start;width:100%}}
+.inc-bodymap-stage{{background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1);border-radius:10px;padding:10px;text-align:center}}
+body.dark .inc-bodymap-stage{{background:#0f172a;border-color:#334155}}
+.inc-bodymap-stage svg{{width:100%;max-width:460px;height:auto;display:block;margin:0 auto;user-select:none}}
+.inc-body-silhouette{{fill:#e2e8f0;stroke:#94a3b8;stroke-width:1.2}}
+body.dark .inc-body-silhouette{{fill:#1e293b;stroke:#475569}}
+.inc-body-zone{{fill:rgba(148,163,184,0.22);stroke:#64748b;stroke-width:1.2;cursor:pointer;transition:fill .15s,stroke .15s}}
+.inc-body-zone:hover,.inc-body-zone:focus{{fill:rgba(245,158,11,0.38);stroke:#d97706;stroke-width:2;outline:none}}
+.inc-body-zone.active{{fill:rgba(239,68,68,0.52);stroke:#dc2626;stroke-width:2.3}}
+.inc-body-panel{{display:flex;flex-direction:column;gap:8px}}
+.inc-body-readout{{font-size:12px;font-weight:700;padding:8px 10px;border-radius:8px;background:rgba(13,148,136,0.08);border:1px solid rgba(13,148,136,0.25);color:var(--tx)}}
+.inc-body-pills-wrap{{display:flex;flex-wrap:wrap;gap:5px}}
+.inc-body-pill{{padding:4px 8px;font-size:11px;font-weight:600;border-radius:999px;border:1px solid var(--bd,#cbd5e1);background:var(--wh,#fff);color:var(--tx);cursor:pointer;transition:all .15s}}
+.inc-body-pill:hover{{border-color:#f59e0b;color:#b45309}}
+.inc-body-pill.active{{background:#fee2e2;border-color:#ef4444;color:#991b1b;font-weight:700}}
+body.dark .inc-body-pill{{background:#1e293b;border-color:#334155;color:#e2e8f0}}
+body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f87171;color:#fecaca}}
+@media(max-width:720px){{.inc-bodymap-wrap{{grid-template-columns:1fr}}}}
 #pr-items-editor{{overflow-x:auto;padding-bottom:2px}}
 .pr-items-editor table{{min-width:560px}}
 @media(max-width:1200px){{
@@ -11585,6 +12892,7 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
     <div id="toolbar-actions">
       {edit_btns}
       <button id="btn-bulk-dl" class="tool-btn" style="display:none;background:#2563eb;border-color:#1d4ed8;color:#fff" onclick="bulkDownload()">⬇️ Download Selected</button>
+      <button id="btn-batch-inspect" class="tool-btn" style="display:none;background:#0f766e;border-color:#0d9488;color:#fff" disabled onclick="openFeiBatchInspectModal()">🧯 Batch Inspect (<span id="fei-batch-cnt">0</span>)</button>
       <button class="tool-btn teal" onclick="openExportCenter()">📥 Export ▾</button>
     <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
       {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
@@ -11937,6 +13245,61 @@ body.dark #rec-modal .record-modal-actions{{border-top-color:#304257;background:
   </div>
 </div>
 
+<!-- HSE QR BADGE MODAL -->
+<div class="overlay hidden" id="hse-qr-modal" onclick="if(event.target===this)closeM('hse-qr-modal')">
+  <div class="modal" style="max-width:440px;width:94vw">
+    <div class="mhdr"><span>📱 HSE Field QR Verification Label</span>
+      <button class="xbtn" onclick="closeM('hse-qr-modal')">✕</button></div>
+    <div class="mbody" style="padding:18px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div id="hse-qr-meta" style="font-size:12px;color:var(--tx);font-weight:700;">Loading QR Badge...</div>
+      <div id="hse-qr-svg-wrap" style="background:#fff;padding:12px;border:1px solid #cbd5e1;border-radius:10px;display:inline-flex;justify-content:center;align-items:center;min-height:180px;"></div>
+      <div id="hse-qr-sub" style="font-size:11px;color:var(--mu);"></div>
+      <a id="hse-qr-link" href="#" target="_blank" rel="noopener" style="font-size:11px;color:var(--pr);font-weight:600;word-break:break-all;">Open Public Verification Card ↗</a>
+    </div>
+    <div class="mfoot" style="justify-content:flex-end;gap:8px">
+      <button type="button" class="btn btn-sc" onclick="closeM('hse-qr-modal')">Close</button>
+      <button type="button" class="btn btn-pr" onclick="printHseQrLabel()">🖨 Print Label</button>
+    </div>
+  </div>
+</div>
+
+<!-- HSE FEI BATCH INSPECT MODAL -->
+<div class="overlay hidden" id="fei-batch-inspect-modal" onclick="if(event.target===this)closeM('fei-batch-inspect-modal')">
+  <div class="modal" style="max-width:460px;width:94vw">
+    <div class="mhdr"><span>🧯 Batch Extinguisher / Equipment Inspection</span>
+      <button class="xbtn" onclick="closeM('fei-batch-inspect-modal')">✕</button></div>
+    <div class="mbody" style="padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+      <div id="fei-batch-summary" style="font-size:12px;font-weight:700;color:var(--brand-teal);background:rgba(16,185,129,0.1);padding:7px 10px;border-radius:6px;">0 selected FEI record(s)</div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Last Inspection Date *</label>
+        <input type="date" id="fei-batch-last" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Next Expiry Date</label>
+        <input type="date" id="fei-batch-expiry" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Inspection Status</label>
+        <select id="fei-batch-status" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
+          <option value="Valid">Valid</option>
+          <option value="Needs Maintenance">Needs Maintenance</option>
+          <option value="Expired">Expired</option>
+          <option value="Under Refill">Under Refill</option>
+          <option value="Out of Service">Out of Service</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Condition / Inspection Notes</label>
+        <textarea id="fei-batch-notes" rows="2" placeholder="Optional inspection remarks..." style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;font-family:inherit;"></textarea>
+      </div>
+    </div>
+    <div class="mfoot" style="justify-content:flex-end;gap:8px">
+      <button type="button" class="btn btn-sc" onclick="closeM('fei-batch-inspect-modal')">Cancel</button>
+      <button type="button" class="btn btn-pr" id="fei-batch-save-btn" onclick="submitFeiBatchInspect()">✔ Save Inspection</button>
+    </div>
+  </div>
+</div>
+
 <!-- DOCUMENT / FOLDER VIEWER MODAL -->
 <style>
   #doc-viewer-modal {{ z-index:10600 !important; }}
@@ -12209,12 +13572,22 @@ window._ACCESSIBLE_PROJECTS = {projs_json};
 const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'}, CAN_DOWNLOAD={'true' if can_dl else 'false'};
 const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
+  'Completed':['bbf7d0','166534'],
+  'Closed':['bbf7d0','166534'],
+  'Open':['fed7aa','7c2d12'],
   'Accepted & to proceed with Part C':['bbf7d0','166534'],
   'Rejected':['fecaca','7f1d1d'],
   'Cancelled':['e5e7eb','475569'],
   'Under Review':['fef9c3','854d0e'],
   'Information Required':['e0e7ff','312e81'],
-  'Pending':['fde68a','92400e']
+  'Pending':['fde68a','92400e'],
+  'Valid':['bbf7d0','166534'],
+  'Needs Maintenance':['fef3c7','92400e'],
+  'Under Refill':['fef3c7','92400e'],
+  'Expired':['fecaca','991b1b'],
+  'Out of Service':['fecaca','991b1b'],
+  'Draft':['e2e8f0','334155'],
+  'Revised':['e0e7ff','3730a3']
 }};
 const SC={{...SC_DEFAULTS, ...{custom_sc_json}}};
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
@@ -13115,17 +14488,22 @@ function renderRows(){{
               box.appendChild(_chip('D','part_d',norm.part_d,_thD.color,_thD.bg,_nmD,_thD));
             }}
           }}else if(hasSubm && hasAppr){{
-            const _rTheme=_getReplyStatusTheme(row.status||norm.approval.consultant_status);
-            const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
-            box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff','Submission',null));
-            box.appendChild(_chip('Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+            const _isHseCo = isHseCloseoutTab();
+            const _rTheme=_getReplyStatusTheme(row.status||(_isHseCo?norm.approval.closeout_status:norm.approval.consultant_status));
+            const _rName=_isHseCo?('2. Close-Out Document'+(row.status?' ('+row.status+')':'')):('Consultant Reply'+(row.status?' ('+row.status+')':''));
+            box.appendChild(_chip(_isHseCo?'1. Submission':'Subm','submission',norm.submission,'#2563eb','#eff6ff',_isHseCo?'1. Submission Document':'Submission',null));
+            box.appendChild(_chip(_isHseCo?'2. Close-Out':'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasAppr){{
-            const _rTheme=_getReplyStatusTheme(row.status||norm.approval.consultant_status);
-            const _rName='Consultant Reply'+(row.status?' ('+row.status+')':'');
-            box.appendChild(_chip('Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+            const _isHseCo = isHseCloseoutTab();
+            const _rTheme=_getReplyStatusTheme(row.status||(_isHseCo?norm.approval.closeout_status:norm.approval.consultant_status));
+            const _rName=_isHseCo?('2. Close-Out Document'+(row.status?' ('+row.status+')':'')):('Consultant Reply'+(row.status?' ('+row.status+')':''));
+            box.appendChild(_chip(_isHseCo?'2. Close-Out':'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasSubm){{
+            const _isHseCo = isHseCloseoutTab();
             const isFlatDoc = Boolean(norm.is_flat_doc || (norm.submission && norm.submission.is_flat_doc));
-            if(_cyc && !isFlatDoc){{
+            if(_isHseCo){{
+              box.appendChild(_chip('1. Submission','submission',norm.submission,'#2563eb','#eff6ff','1. Submission Document',null));
+            }}else if(_cyc && !isFlatDoc){{
               box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff','Submission',null));
             }}else{{
               box.appendChild(_chip('Doc','submission',norm.submission,'#0f766e','#f0fdfa','Document'));
@@ -13163,14 +14541,16 @@ function renderRows(){{
         if(val){{
           td.innerHTML=String(val).split(',').map(s=>{{
             s=s.trim();
-            let [bg,fg]=SC[s]||['e5e7eb','374151'];
-            if(!SC[s]){{
+            const scKey=Object.keys(SC).find(k=>k.toLowerCase()===s.toLowerCase());
+            let [bg,fg]=(scKey?SC[scKey]:null)||['e5e7eb','374151'];
+            if(!scKey){{
               const up=s.toUpperCase();
               if(up.includes('CANCELLED')) [bg,fg]=['6c757d','ffffff'];
-              else if(/^A(-|\\s|$)/.test(up) || up.includes('APPROVED')) [bg,fg]=['bbf7d0','166534'];
+              else if(/^A(-|\\s|$)/.test(up) || up.includes('APPROVED') || up === 'CLOSED' || up.includes('CLOSED') || up.includes('COMPLETE')) [bg,fg]=['bbf7d0','166534'];
               else if(/^B(-|\\s|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
               else if(/^C(-|\\s|$)/.test(up) || up.includes('REVISE')) [bg,fg]=['fed7aa','9a3412'];
               else if(/^D(-|\\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
+              else if(up === 'OPEN' || up.includes('PENDING') || up.includes('UNDER REVIEW')) [bg,fg]=['fed7aa','7c2d12'];
             }}
             return `<span class="sbadge" style="background:#${{bg}};color:#${{fg}}">${{s}}</span>`;
           }}).join('');
@@ -13258,6 +14638,7 @@ function renderRows(){{
     let acts='';
     if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
     if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">Thread</button> <button class="pr-toggle" onclick="openLetterTimeline('${{row._id}}')">Timeline</button> `;
+    if(isHseQrTab())acts+=`<button class="act" onclick="openQrBadgeModal('${{row._id}}')" title="QR Badge">📱</button> `;
     if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')" title="Edit">✏</button> <button class="act del" onclick="delRec('${{row._id}}')" title="Delete">🗑</button>`;
     else acts+=`<button class="act" onclick="viewRec('${{row._id}}')" title="View details">👁</button>`;
     ta.innerHTML=acts;
@@ -13268,6 +14649,7 @@ function renderRows(){{
   document.getElementById('s-total').textContent='Total: '+state.recs.length;
   document.getElementById('s-show').textContent='Showing: '+rows.length;
   document.getElementById('s-ov').textContent='Overdue: '+ov;
+  syncFeiBatchInspectBtn();
   renderNocSummary(rows);
   if(isPrTab && rows.length > 0) {{
     const searchTxt = document.getElementById('srchbox')?.value.trim().toLowerCase();
@@ -14223,6 +15605,7 @@ async function buildForm(row,opts={{}}){{
     initPrItemsEditor([], legacyText);
     if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
   }}
+  mountIncBodyMapSection(formRoot,sectionBodies,row,opts);
   mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts,{{isNocTab}});
   if(!isNocTab)compactSingleFieldFormSections(formRoot);
   if(opts && opts.readonly){{
@@ -14403,19 +15786,25 @@ function getPrItemsFromEditor(){{
   }}
 
 function buildMS(key,options,init){{
-  const sel=init?init.split(',').map(s=>s.trim()).filter(Boolean):[];
+  let sel=init?init.split(',').map(s=>s.trim()).filter(Boolean):[];
   const con=document.createElement('div');con.className='ms-con';con.id='f-'+key;con.dataset.value=init||'';
   function render(){{
     con.innerHTML='';
     sel.forEach(v=>{{
       const t=document.createElement('span');t.className='ms-tag';
-      t.innerHTML=`${{v}} <span class="ms-rm" data-v="${{v}}">✕</span>`;
-      t.querySelector('.ms-rm').onclick=e=>{{e.stopPropagation();sel.splice(sel.indexOf(v),1);con.dataset.value=sel.join(', ');render();}};
+      t.innerHTML=`${{escHtml(v)}} <span class="ms-rm" data-v="${{escHtml(v)}}">✕</span>`;
+      t.querySelector('.ms-rm').onclick=e=>{{e.stopPropagation();sel.splice(sel.indexOf(v),1);con.dataset.value=sel.join(', ');render();con.dispatchEvent(new Event('change'));}};
       con.appendChild(t);
     }});
     if(!sel.length)con.innerHTML='<span class="ms-ph">Select or type below...</span>';
     con.dataset.value=sel.join(', ');
   }}
+  con.addEventListener('_update',()=>{{
+    const nextVal=String(con.dataset.value||'');
+    sel=nextVal?nextVal.split(',').map(s=>s.trim()).filter(Boolean):[];
+    render();
+    con.dispatchEvent(new Event('change'));
+  }});
   con.onclick=e=>{{
     if(e.target.classList.contains('ms-rm'))return;
     const ex=document.querySelector('.ms-dd');if(ex){{ex.remove();return;}}
@@ -14433,6 +15822,7 @@ function buildMS(key,options,init){{
         con.dataset.value=sel.join(', ');render();
         chk.checked=sel.includes(opt);
         it.classList.toggle('sel',sel.includes(opt));
+        con.dispatchEvent(new Event('change'));
       }};
       dd.appendChild(it);
     }});
@@ -14445,6 +15835,7 @@ function buildMS(key,options,init){{
 function getFormSectionHint(title){{
   const hints={{
     'Core Register Fields':'Primary register identity and classification fields',
+    'Interactive Injury Body Map':'Click Front or Back anatomical regions to populate the injured body part and coordinates',
     'References / Technical Fields':'Drawing, MS, parent, and technical reference details',
     'Dates / Timeline':'Submission, issue, received, reply, and timeline dates',
     'Status / Workflow':'Status, direction, review, approval, and response controls',
@@ -14474,6 +15865,7 @@ const FORM_SECTION_ORDER=[
   'Remarks / Files',
   'Other NOC Fields',
   'Core Register Fields',
+  'Interactive Injury Body Map',
   'References / Technical Fields',
   'Dates / Timeline',
   'Status / Workflow',
@@ -14784,6 +16176,383 @@ function tabHasReplyCycle(){{
   const curT = String(curTab).trim().toUpperCase();
   const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
   return dtHasReplyCycle(dtObj);
+}}
+function isHseCloseoutTab(dtTab){{
+  const ws = String(typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : 'ENG').trim().toUpperCase();
+  if(ws !== 'HSE') return false;
+  const curTab = dtTab !== undefined ? dtTab : ((typeof state !== 'undefined') ? state.tab : '');
+  const curT = String(curTab).trim().toUpperCase();
+  const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
+  if(typeof dtObj.has_closeout_slot === 'boolean') return dtObj.has_closeout_slot;
+  const code = String(dtObj.code || dtObj.id || curT).trim().toUpperCase();
+  return ['PTW','OBS','SVP','INC','JSA'].includes(code);
+}}
+function getHseTabCode(dtTab){{
+  const ws = String(typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : 'ENG').trim().toUpperCase();
+  if(ws !== 'HSE') return '';
+  const curTab = dtTab !== undefined ? dtTab : ((typeof state !== 'undefined') ? state.tab : '');
+  const curT = String(curTab).trim().toUpperCase();
+  const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
+  return String(dtObj.code || dtObj.id || curT).trim().toUpperCase();
+}}
+function isHseQrTab(dtTab){{
+  const code = getHseTabCode(dtTab);
+  return code === 'FEI' || code === 'PTW';
+}}
+function isHseFeiTab(dtTab){{
+  return getHseTabCode(dtTab) === 'FEI';
+}}
+function isHseIncTab(dtTab){{
+  return getHseTabCode(dtTab) === 'INC';
+}}
+const INC_BODY_REGIONS = [
+  {{id:'head_face', label:'Head / Face', view:'front', cx:110, cy:36}},
+  {{id:'neck', label:'Neck', view:'front', cx:110, cy:62}},
+  {{id:'chest', label:'Chest', view:'front', cx:110, cy:98}},
+  {{id:'abdomen', label:'Abdomen', view:'front', cx:110, cy:136}},
+  {{id:'pelvis_hip', label:'Pelvis / Hip', view:'front', cx:110, cy:170}},
+  {{id:'upper_back', label:'Upper Back', view:'back', cx:330, cy:98}},
+  {{id:'lower_back', label:'Lower Back', view:'back', cx:330, cy:140}},
+  {{id:'left_shoulder', label:'Left Shoulder', view:'front', cx:148, cy:80}},
+  {{id:'right_shoulder', label:'Right Shoulder', view:'front', cx:72, cy:80}},
+  {{id:'left_arm', label:'Left Arm', view:'front', cx:164, cy:122}},
+  {{id:'right_arm', label:'Right Arm', view:'front', cx:56, cy:122}},
+  {{id:'left_hand', label:'Left Hand', view:'front', cx:176, cy:166}},
+  {{id:'right_hand', label:'Right Hand', view:'front', cx:44, cy:166}},
+  {{id:'left_thigh', label:'Left Thigh', view:'front', cx:128, cy:210}},
+  {{id:'right_thigh', label:'Right Thigh', view:'front', cx:92, cy:210}},
+  {{id:'left_knee', label:'Left Knee', view:'front', cx:128, cy:246}},
+  {{id:'right_knee', label:'Right Knee', view:'front', cx:92, cy:246}},
+  {{id:'left_leg', label:'Left Leg', view:'front', cx:128, cy:282}},
+  {{id:'right_leg', label:'Right Leg', view:'front', cx:92, cy:282}},
+  {{id:'left_foot', label:'Left Foot', view:'front', cx:130, cy:314}},
+  {{id:'right_foot', label:'Right Foot', view:'front', cx:90, cy:314}}
+];
+function setDynamicFieldValue(key, val){{
+  const el = document.getElementById('f-' + key);
+  if(!el) return;
+  if(el.classList.contains('ms-con')){{
+    el.dataset.value = val || '';
+    el.dispatchEvent(new Event('_update'));
+  }} else {{
+    el.value = val || '';
+    el.dispatchEvent(new Event('change'));
+  }}
+}}
+function _highlightIncBodyUi(regionId, px, py){{
+  const svg = document.getElementById('inc-body-map-svg');
+  if(svg){{
+    svg.querySelectorAll('.inc-body-zone').forEach(z => {{
+      z.classList.toggle('active', Boolean(regionId && z.dataset.region === regionId));
+    }});
+    const pin = document.getElementById('inc-body-pin');
+    if(pin){{
+      if(regionId && Number.isFinite(px) && Number.isFinite(py)){{
+        pin.setAttribute('transform', `translate(${{px}},${{py}})`);
+        pin.style.display = 'block';
+      }} else {{
+        pin.style.display = 'none';
+      }}
+    }}
+  }}
+  document.querySelectorAll('#inc-body-pills .inc-body-pill').forEach(b => {{
+    b.classList.toggle('active', Boolean(regionId && b.dataset.region === regionId));
+  }});
+}}
+function selectIncBodyRegion(regionId, clickX, clickY, skipFieldSync){{
+  const meta = INC_BODY_REGIONS.find(r => r.id === regionId) || null;
+  const regEl = document.getElementById('f-bodyRegion');
+  const coordEl = document.getElementById('f-bodyCoords');
+  const readEl = document.getElementById('inc-body-readout');
+  if(!meta){{
+    if(regEl) regEl.value = '';
+    if(coordEl) coordEl.value = '';
+    if(readEl) readEl.textContent = 'Selected Region: None (click Front or Back diagram)';
+    _highlightIncBodyUi('', NaN, NaN);
+    if(!skipFieldSync) setDynamicFieldValue('bodyPart', '');
+    return;
+  }}
+  const px = Number.isFinite(clickX) ? Math.round(clickX * 10) / 10 : meta.cx;
+  const py = Number.isFinite(clickY) ? Math.round(clickY * 10) / 10 : meta.cy;
+  const viewSide = px >= 220 ? 'back' : meta.view;
+  if(regEl) regEl.value = meta.id;
+  if(coordEl) coordEl.value = `${{viewSide}}:${{px}},${{py}}`;
+  if(readEl) readEl.textContent = `Selected Region: ${{meta.label}} (${{viewSide.toUpperCase()}} @ ${{px}}, ${{py}})`;
+  _highlightIncBodyUi(meta.id, px, py);
+  if(!skipFieldSync){{
+    setDynamicFieldValue('bodyPart', meta.label);
+  }}
+}}
+function syncIncBodyMapFromField(){{
+  const bpEl = document.getElementById('f-bodyPart');
+  if(!bpEl) return;
+  const raw = String(bpEl.classList.contains('ms-con') ? (bpEl.dataset.value || '') : (bpEl.value || '')).trim();
+  const firstToken = raw.split(',')[0].trim().toLowerCase();
+  if(!firstToken){{
+    _highlightIncBodyUi('', NaN, NaN);
+    const readEl = document.getElementById('inc-body-readout');
+    if(readEl) readEl.textContent = 'Selected Region: None (click Front or Back diagram)';
+    return;
+  }}
+  const matched = INC_BODY_REGIONS.find(r => r.label.toLowerCase() === firstToken || r.id.toLowerCase() === firstToken);
+  if(matched){{
+    const coordEl = document.getElementById('f-bodyCoords');
+    let px = matched.cx, py = matched.cy;
+    if(coordEl && coordEl.value && coordEl.value.includes(':')){{
+      const parts = coordEl.value.split(':')[1].split(',');
+      if(parts.length === 2 && !isNaN(Number(parts[0])) && !isNaN(Number(parts[1]))){{
+        px = Number(parts[0]); py = Number(parts[1]);
+      }}
+    }}
+    const regEl = document.getElementById('f-bodyRegion');
+    if(regEl) regEl.value = matched.id;
+    const readEl = document.getElementById('inc-body-readout');
+    if(readEl) readEl.textContent = `Selected Region: ${{matched.label}}`;
+    _highlightIncBodyUi(matched.id, px, py);
+  }}
+}}
+function mountIncBodyMapSection(formRoot, sectionBodies, row, opts){{
+  if(!isHseIncTab()) return;
+  const readonly = Boolean(opts && opts.readonly);
+  const secBody = getOrCreateFormSection(formRoot, sectionBodies, 'Interactive Injury Body Map');
+  const fg = document.createElement('div');
+  fg.className = 'fg full';
+  fg.id = 'inc-body-map-section';
+  const initPart = String(row?.bodyPart || '').trim();
+  const initReg = String(row?.bodyRegion || '').trim();
+  const initCoords = String(row?.bodyCoords || '').trim();
+  fg.innerHTML = `
+    <input type="hidden" id="f-bodyRegion" value="${{escHtml(initReg)}}">
+    <input type="hidden" id="f-bodyCoords" value="${{escHtml(initCoords)}}">
+    <div id="inc-body-missing-fallback"></div>
+    <div class="inc-bodymap-wrap">
+      <div class="inc-bodymap-stage">
+        <svg id="inc-body-map-svg" viewBox="0 0 440 340" role="img" aria-label="Interactive Human Injury Body Map (Front and Back)">
+          <text x="110" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">FRONT VIEW</text>
+          <text x="330" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">BACK VIEW</text>
+          <text x="26" y="76" font-size="9" font-weight="700" fill="#94a3b8">R</text>
+          <text x="190" y="76" font-size="9" font-weight="700" fill="#94a3b8">L</text>
+          <text x="246" y="76" font-size="9" font-weight="700" fill="#94a3b8">L</text>
+          <text x="410" y="76" font-size="9" font-weight="700" fill="#94a3b8">R</text>
+          <!-- FRONT SILHOUETTE & ZONES -->
+          <ellipse class="inc-body-zone" data-region="head_face" data-label="Head / Face" cx="110" cy="36" rx="16" ry="20"><title>Head / Face</title></ellipse>
+          <rect class="inc-body-zone" data-region="neck" data-label="Neck" x="102" y="55" width="16" height="14" rx="4"><title>Neck</title></rect>
+          <path class="inc-body-zone" data-region="right_shoulder" data-label="Right Shoulder" d="M 86 70 Q 65 72 62 90 L 82 90 Z"><title>Right Shoulder</title></path>
+          <path class="inc-body-zone" data-region="left_shoulder" data-label="Left Shoulder" d="M 134 70 Q 155 72 158 90 L 138 90 Z"><title>Left Shoulder</title></path>
+          <rect class="inc-body-zone" data-region="chest" data-label="Chest" x="82" y="70" width="56" height="46" rx="6"><title>Chest</title></rect>
+          <rect class="inc-body-zone" data-region="abdomen" data-label="Abdomen" x="85" y="117" width="50" height="38" rx="5"><title>Abdomen</title></rect>
+          <path class="inc-body-zone" data-region="pelvis_hip" data-label="Pelvis / Hip" d="M 84 156 L 136 156 L 140 184 L 114 184 L 110 172 L 106 184 L 80 184 Z"><title>Pelvis / Hip</title></path>
+          <path class="inc-body-zone" data-region="right_arm" data-label="Right Arm" d="M 62 90 L 79 92 L 64 154 L 44 150 Z"><title>Right Arm</title></path>
+          <path class="inc-body-zone" data-region="left_arm" data-label="Left Arm" d="M 158 90 L 141 92 L 156 154 L 176 150 Z"><title>Left Arm</title></path>
+          <ellipse class="inc-body-zone" data-region="right_hand" data-label="Right Hand" cx="47" cy="167" rx="11" ry="15"><title>Right Hand</title></ellipse>
+          <ellipse class="inc-body-zone" data-region="left_hand" data-label="Left Hand" cx="173" cy="167" rx="11" ry="15"><title>Left Hand</title></ellipse>
+          <path class="inc-body-zone" data-region="right_thigh" data-label="Right Thigh" d="M 80 186 L 107 186 L 104 236 L 80 236 Z"><title>Right Thigh</title></path>
+          <path class="inc-body-zone" data-region="left_thigh" data-label="Left Thigh" d="M 113 186 L 140 186 L 140 236 L 116 236 Z"><title>Left Thigh</title></path>
+          <rect class="inc-body-zone" data-region="right_knee" data-label="Right Knee" x="81" y="237" width="23" height="20" rx="6"><title>Right Knee</title></rect>
+          <rect class="inc-body-zone" data-region="left_knee" data-label="Left Knee" x="116" y="237" width="23" height="20" rx="6"><title>Left Knee</title></rect>
+          <path class="inc-body-zone" data-region="right_leg" data-label="Right Leg" d="M 81 258 L 103 258 L 100 302 L 82 302 Z"><title>Right Leg</title></path>
+          <path class="inc-body-zone" data-region="left_leg" data-label="Left Leg" d="M 117 258 L 139 258 L 138 302 L 120 302 Z"><title>Left Leg</title></path>
+          <path class="inc-body-zone" data-region="right_foot" data-label="Right Foot" d="M 81 304 L 101 304 L 103 324 L 74 324 Z"><title>Right Foot</title></path>
+          <path class="inc-body-zone" data-region="left_foot" data-label="Left Foot" d="M 119 304 L 139 304 L 146 324 L 117 324 Z"><title>Left Foot</title></path>
+          <!-- BACK SILHOUETTE & ZONES -->
+          <ellipse class="inc-body-zone" data-region="head_face" data-label="Head / Face" cx="330" cy="36" rx="16" ry="20"><title>Head / Face (Back)</title></ellipse>
+          <rect class="inc-body-zone" data-region="neck" data-label="Neck" x="322" y="55" width="16" height="14" rx="4"><title>Neck (Back)</title></rect>
+          <path class="inc-body-zone" data-region="left_shoulder" data-label="Left Shoulder" d="M 306 70 Q 285 72 282 90 L 302 90 Z"><title>Left Shoulder (Back)</title></path>
+          <path class="inc-body-zone" data-region="right_shoulder" data-label="Right Shoulder" d="M 354 70 Q 375 72 378 90 L 358 90 Z"><title>Right Shoulder (Back)</title></path>
+          <rect class="inc-body-zone" data-region="upper_back" data-label="Upper Back" x="302" y="70" width="56" height="48" rx="6"><title>Upper Back</title></rect>
+          <rect class="inc-body-zone" data-region="lower_back" data-label="Lower Back" x="305" y="119" width="50" height="36" rx="5"><title>Lower Back</title></rect>
+          <path class="inc-body-zone" data-region="pelvis_hip" data-label="Pelvis / Hip" d="M 304 156 L 356 156 L 360 184 L 334 184 L 330 172 L 326 184 L 300 184 Z"><title>Pelvis / Hip (Back)</title></path>
+          <path class="inc-body-zone" data-region="left_arm" data-label="Left Arm" d="M 282 90 L 299 92 L 284 154 L 264 150 Z"><title>Left Arm (Back)</title></path>
+          <path class="inc-body-zone" data-region="right_arm" data-label="Right Arm" d="M 378 90 L 361 92 L 376 154 L 396 150 Z"><title>Right Arm (Back)</title></path>
+          <ellipse class="inc-body-zone" data-region="left_hand" data-label="Left Hand" cx="267" cy="167" rx="11" ry="15"><title>Left Hand (Back)</title></ellipse>
+          <ellipse class="inc-body-zone" data-region="right_hand" data-label="Right Hand" cx="393" cy="167" rx="11" ry="15"><title>Right Hand (Back)</title></ellipse>
+          <path class="inc-body-zone" data-region="left_thigh" data-label="Left Thigh" d="M 300 186 L 327 186 L 324 236 L 300 236 Z"><title>Left Thigh (Back)</title></path>
+          <path class="inc-body-zone" data-region="right_thigh" data-label="Right Thigh" d="M 333 186 L 360 186 L 360 236 L 336 236 Z"><title>Right Thigh (Back)</title></path>
+          <rect class="inc-body-zone" data-region="left_knee" data-label="Left Knee" x="301" y="237" width="23" height="20" rx="6"><title>Left Knee (Back)</title></rect>
+          <rect class="inc-body-zone" data-region="right_knee" data-label="Right Knee" x="336" y="237" width="23" height="20" rx="6"><title>Right Knee (Back)</title></rect>
+          <path class="inc-body-zone" data-region="left_leg" data-label="Left Leg" d="M 301 258 L 323 258 L 320 302 L 302 302 Z"><title>Left Leg (Back)</title></path>
+          <path class="inc-body-zone" data-region="right_leg" data-label="Right Leg" d="M 337 258 L 359 258 L 358 302 L 340 302 Z"><title>Right Leg (Back)</title></path>
+          <path class="inc-body-zone" data-region="left_foot" data-label="Left Foot" d="M 301 304 L 321 304 L 323 324 L 294 324 Z"><title>Left Foot (Back)</title></path>
+          <path class="inc-body-zone" data-region="right_foot" data-label="Right Foot" d="M 339 304 L 359 304 L 366 324 L 337 324 Z"><title>Right Foot (Back)</title></path>
+          <g id="inc-body-pin" style="display:none;pointer-events:none">
+            <circle cx="0" cy="0" r="9" fill="rgba(239,68,68,0.28)" stroke="#ef4444" stroke-width="1.6"/>
+            <circle cx="0" cy="0" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.2"/>
+          </g>
+        </svg>
+      </div>
+      <div class="inc-body-panel">
+        <div class="inc-body-readout" id="inc-body-readout">Selected Region: None (click Front or Back diagram)</div>
+        <div style="font-size:11px;font-weight:700;color:var(--mu);">Anatomical Regions:</div>
+        <div class="inc-body-pills-wrap" id="inc-body-pills">${{INC_BODY_REGIONS.map(r => `<button type="button" class="inc-body-pill" data-region="${{r.id}}"${{readonly ? ' disabled' : ''}}>${{escHtml(r.label)}}</button>`).join('')}}</div>
+        ${{readonly ? '' : '<div><button type="button" class="btn btn-sc btn-sm" id="inc-body-clear" style="font-size:11px;padding:3px 9px;">Clear Region</button></div>'}}
+      </div>
+    </div>`;
+  secBody.appendChild(fg);
+
+  if(!document.getElementById('f-bodyPart')){{
+    const fbWrap = fg.querySelector('#inc-body-missing-fallback');
+    if(fbWrap){{
+      fbWrap.style.marginBottom = '8px';
+      fbWrap.innerHTML = '<label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Injured Body Part</label><input id="f-bodyPart" type="text" placeholder="Click diagram or enter body part..." style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">';
+      const fbInp = fbWrap.querySelector('#f-bodyPart');
+      if(fbInp){{
+        fbInp.value = initPart;
+        if(readonly) fbInp.readOnly = true;
+      }}
+    }}
+  }}
+
+  const bpEl = document.getElementById('f-bodyPart');
+  if(bpEl && !readonly){{
+    bpEl.addEventListener('change', syncIncBodyMapFromField);
+    bpEl.addEventListener('input', syncIncBodyMapFromField);
+  }}
+  if(!readonly){{
+    const svg = fg.querySelector('#inc-body-map-svg');
+    if(svg){{
+      svg.querySelectorAll('.inc-body-zone').forEach(zone => {{
+        zone.setAttribute('tabindex', '0');
+        zone.setAttribute('role', 'button');
+        const pick = ev => {{
+          const pt = svg.createSVGPoint ? svg.createSVGPoint() : null;
+          let cx = NaN, cy = NaN;
+          if(pt && svg.getScreenCTM && ev.clientX){{
+            try {{
+              pt.x = ev.clientX; pt.y = ev.clientY;
+              const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+              cx = loc.x; cy = loc.y;
+            }} catch(_e) {{}}
+          }}
+          selectIncBodyRegion(zone.dataset.region, cx, cy, false);
+        }};
+        zone.addEventListener('click', pick);
+        zone.addEventListener('keydown', ev => {{
+          if(ev.key === 'Enter' || ev.key === ' '){{ ev.preventDefault(); selectIncBodyRegion(zone.dataset.region, NaN, NaN, false); }}
+        }});
+      }});
+    }}
+    fg.querySelectorAll('.inc-body-pill').forEach(btn => {{
+      btn.addEventListener('click', () => selectIncBodyRegion(btn.dataset.region, NaN, NaN, false));
+    }});
+    const clrBtn = fg.querySelector('#inc-body-clear');
+    if(clrBtn) clrBtn.addEventListener('click', () => selectIncBodyRegion('', NaN, NaN, false));
+  }}
+
+  if(initReg){{
+    let px = NaN, py = NaN;
+    if(initCoords && initCoords.includes(':')){{
+      const parts = initCoords.split(':')[1].split(',');
+      if(parts.length === 2){{ px = Number(parts[0]); py = Number(parts[1]); }}
+    }}
+    selectIncBodyRegion(initReg, px, py, true);
+  }} else if(initPart){{
+    syncIncBodyMapFromField();
+  }}
+}}
+function syncFeiBatchInspectBtn(){{
+  const btn = document.getElementById('btn-batch-inspect');
+  const cntEl = document.getElementById('fei-batch-cnt');
+  if(!btn) return;
+  const show = Boolean(CAN_EDIT && isHseFeiTab());
+  btn.style.display = show ? 'inline-block' : 'none';
+  if(!show) return;
+  const checked = document.querySelectorAll('.chkcell input[data-id]:checked');
+  btn.disabled = checked.length === 0;
+  btn.style.opacity = checked.length === 0 ? '0.55' : '1';
+  if(cntEl) cntEl.textContent = String(checked.length);
+}}
+let _activeQrMeta = null;
+async function openQrBadgeModal(rid){{
+  const metaEl = document.getElementById('hse-qr-meta');
+  const svgWrap = document.getElementById('hse-qr-svg-wrap');
+  const subEl = document.getElementById('hse-qr-sub');
+  const linkEl = document.getElementById('hse-qr-link');
+  if(metaEl) metaEl.textContent = 'Generating QR Badge...';
+  if(svgWrap) svgWrap.innerHTML = '<span style="color:var(--mu);font-size:12px;">Loading...</span>';
+  if(subEl) subEl.textContent = '';
+  openM('hse-qr-modal');
+  try {{
+    const res = await apiFetch('/api/hse/qr/' + encodeURIComponent(rid));
+    if(!res || !res.ok){{
+      if(metaEl) metaEl.textContent = (res && res.error) || 'Failed to generate QR badge';
+      return;
+    }}
+    _activeQrMeta = res;
+    if(metaEl) metaEl.textContent = `${{res.dt_code}} • ${{res.doc_no}}${{res.title ? ' — ' + res.title : ''}}`;
+    if(svgWrap) svgWrap.innerHTML = res.svg || '';
+    if(subEl) subEl.textContent = `${{res.project_code || res.project_id}}${{res.location ? ' • ' + res.location : ''}}`;
+    if(linkEl){{
+      linkEl.href = res.verify_path || ('/qr/' + encodeURIComponent(res.qr_token));
+      linkEl.textContent = res.verify_url || res.verify_path || '';
+    }}
+  }} catch(e) {{
+    if(metaEl) metaEl.textContent = 'Error: ' + e.message;
+  }}
+}}
+function printHseQrLabel(){{
+  if(!_activeQrMeta || !_activeQrMeta.svg) return;
+  const w = window.open('', '_blank', 'width=440,height=560');
+  if(!w) return toast('Allow popups to print QR badge', 'wa');
+  w.document.write(`<!DOCTYPE html><html><head><title>QR Label - ${{escHtml(_activeQrMeta.doc_no)}}</title>
+    <style>body{{font-family:system-ui,sans-serif;text-align:center;padding:24px;color:#0f172a}}
+    .lbl{{border:2px solid #0f172a;border-radius:12px;padding:18px;display:inline-block;max-width:340px}}
+    h3{{margin:6px 0;font-size:16px;font-family:monospace}} p{{margin:4px 0;font-size:12px;color:#475569}}
+    @media print{{button{{display:none}}}}</style></head><body>
+    <div class="lbl">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase">🛡️ ${{escHtml(_activeQrMeta.project_code || '')}} HSE Verification</div>
+      <h3>${{escHtml(_activeQrMeta.dt_code)}} • ${{escHtml(_activeQrMeta.doc_no)}}</h3>
+      <div style="margin:12px 0">${{_activeQrMeta.svg}}</div>
+      <p>${{escHtml(_activeQrMeta.title || '')}}</p>
+      <p>${{escHtml(_activeQrMeta.location || '')}}</p>
+      <div style="margin-top:12px"><button onclick="window.print()">🖨 Print</button></div>
+    </div></body></html>`);
+  w.document.close();
+}}
+function openFeiBatchInspectModal(){{
+  if(!CAN_EDIT || !isHseFeiTab()) return;
+  const ids = [...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb => cb.dataset.id);
+  if(!ids.length) return toast('Select at least one FEI record first', 'wa');
+  const today = new Date();
+  const nextYr = new Date(today); nextYr.setFullYear(today.getFullYear() + 1);
+  const sumEl = document.getElementById('fei-batch-summary');
+  const lastEl = document.getElementById('fei-batch-last');
+  const expEl = document.getElementById('fei-batch-expiry');
+  const stEl = document.getElementById('fei-batch-status');
+  const notesEl = document.getElementById('fei-batch-notes');
+  if(sumEl) sumEl.textContent = `${{ids.length}} selected extinguisher / equipment record(s)`;
+  if(lastEl && !lastEl.value) lastEl.value = today.toISOString().slice(0, 10);
+  if(expEl && !expEl.value) expEl.value = nextYr.toISOString().slice(0, 10);
+  if(stEl) stEl.value = 'Valid';
+  if(notesEl) notesEl.value = '';
+  openM('fei-batch-inspect-modal');
+}}
+async function submitFeiBatchInspect(){{
+  const ids = [...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb => cb.dataset.id);
+  if(!ids.length) return toast('No records selected', 'wa');
+  const last_inspection = document.getElementById('fei-batch-last')?.value || '';
+  const expiry_date = document.getElementById('fei-batch-expiry')?.value || '';
+  const status = document.getElementById('fei-batch-status')?.value || '';
+  const notes = document.getElementById('fei-batch-notes')?.value || '';
+  const btn = document.getElementById('fei-batch-save-btn');
+  if(btn) btn.disabled = true;
+  try {{
+    const res = await apiFetch('/api/hse/fei/batch-inspect', {{
+      method: 'POST',
+      body: JSON.stringify({{ record_ids: ids, last_inspection, expiry_date, status, notes }})
+    }});
+    if(res && res.ok){{
+      closeM('fei-batch-inspect-modal');
+      clearSel();
+      await loadRecords();
+      toast(`✔ Batch inspected ${{res.updated || ids.length}} record(s)`, 'ok');
+    }} else {{
+      toast((res && res.error) || 'Batch inspection failed', 'er');
+    }}
+  }} catch(e) {{
+    toast('Error: ' + e.message, 'er');
+  }} finally {{
+    if(btn) btn.disabled = false;
+  }}
 }}
 function docDownloadHref(rid,slot,entry){{
   if(!entry)return '';
@@ -15484,7 +17253,7 @@ function classifyLegacyLinkKind(row, dtTab, explicitUrl){{
     String(d.id).trim().toUpperCase() === curT || 
     String(d.code || '').trim().toUpperCase() === curT
   ) || {{}};
-  if(!dtHasReplyCycle(dtObj)) return 'doc';
+  if(!dtHasReplyCycle(dtObj) && !isHseCloseoutTab(dtTab)) return 'doc';
 
   // 1) Explicit Reply / Approval folder keywords:
   if(/\\b(repl|reply|replied|approval|approved)\\b/i.test(leg) || leg.includes('/replied') || leg.includes('\\\\replied') || leg.includes('/reply') || leg.includes('\\\\reply') || leg.includes('rec. from style')) {{
@@ -15668,6 +17437,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const curT=String(typeof state!=='undefined'?state.tab:'').trim().toUpperCase();
   const dtObj=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT || String(d.code||'').trim().toUpperCase()===curT)||{{}};
   const hasReply=isEng&&dtHasReplyCycle(dtObj);
+  const isHseCo=isHseCloseoutTab();
+  const hasDual=hasReply||isHseCo;
   const slots=isNoc
     ? [{{key:'part_a',title:'Part A: Notice of Change',pathSub:'Part A',emptyText:'No Part A attached',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
        {{key:'part_b',title:'Part B: Consultant Reply',pathSub:'Part B',emptyText:'No Part B attached',color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
@@ -15676,7 +17447,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     : (hasReply
       ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
          {{key:'approval',title:'2. Consultant Reply',pathSub:'Replied',emptyText:'No consultant reply attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
-      : [{{key:'submission',title:'Document Attachment',pathSub:'',emptyText:'No file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}]);
+      : (isHseCo
+        ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
+           {{key:'approval',title:'2. Close-Out Document',pathSub:'Replied',emptyText:'No close-out file attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
+        : [{{key:'submission',title:'Document Attachment',pathSub:'',emptyText:'No file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}]));
   const grid=document.createElement('div');
   grid.style.cssText=isNoc
     ? 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:6px'
@@ -15707,7 +17481,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     const folderHint=document.createElement('div');
     folderHint.style.cssText='font-size:9.5px;color:var(--mu);display:flex;align-items:center;gap:3px;margin-top:-2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     const _projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
-    const pathText = isNoc ? `${{_projLbl}} ❯ NOC ❯ ${{pathSubName}}` : `${{_projLbl}} ❯ ${{dtName}}${{hasReply?(' ❯ '+pathSubName):''}}`;
+    const pathText = isNoc ? `${{_projLbl}} ❯ NOC ❯ ${{pathSubName}}` : `${{_projLbl}} ❯ ${{dtName}}${{hasDual?(' ❯ '+pathSubName):''}}`;
     folderHint.innerHTML=`<span>📁</span> <strong style="color:${{isDark?'#cbd5e1':'#334155'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escHtml(pathText)}}">${{escHtml(pathText)}}</strong>`;
     card.appendChild(folderHint);
 
@@ -15873,6 +17647,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             if(row){{
               row.attachments=res.attachments||row.attachments||{{}};
               if(!row.fileLocation&&res.attachment.url)row.fileLocation=res.attachment.url;
+              if(res.status)row.status=res.status;
+            }}
+            if(res.status){{
+              const stEl=formRoot.querySelector('#f-status');
+              if(stEl)stEl.value=res.status;
             }}
             const flInp=document.getElementById('f-fileLocation');
             if(flInp&&!flInp.value.trim()&&res.attachment.url)flInp.value=res.attachment.url;
@@ -16268,7 +18047,7 @@ function getBatchTargetDrivePath(slot){{
   const slotMap={{submission:'Submit',approval:'Replied',part_a:'Part A',part_b:'Part B',part_c:'Part C',part_d:'Part D'}};
   const sub=slotMap[slot]||'Submit';
   const projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
-  return (tabHasReplyCycle()||isNOCTab()) ? `${{projLbl}} ❯ ${{dtName}} ❯ ${{sub}}` : `${{projLbl}} ❯ ${{dtName}}`;
+  return (tabHasReplyCycle()||isHseCloseoutTab()||isNOCTab()) ? `${{projLbl}} ❯ ${{dtName}} ❯ ${{sub}}` : `${{projLbl}} ❯ ${{dtName}}`;
 }}
 
 function populateBatchDatalist(){{
@@ -16347,7 +18126,12 @@ function openBatchDriveUpload(){{
   state.batchCurrentAbort=null;
   populateBatchDatalist();
   const isNoc=isNOCTab();
-  const isEng=tabHasReplyCycle()||isNoc;
+  const isHseCo=isHseCloseoutTab();
+  const isEng=tabHasReplyCycle()||isHseCo||isNoc;
+  const subSpan=document.querySelector('#batch-slot-card-submission span');
+  const appSpan=document.querySelector('#batch-slot-card-approval span');
+  if(subSpan)subSpan.textContent=isHseCo?'📤 1. Submission Documents':'📤 Submission Files (ملفات التقديم الأصلي)';
+  if(appSpan)appSpan.textContent=isHseCo?'📋 2. Close-Out Documents':'📋 Consultant Replies (ردود الاستشاري)';
   const slotWrap=document.getElementById('batch-drv-slot-wrap');
   if(slotWrap)slotWrap.style.display=isEng?'flex':'none';
   const dualCards=document.getElementById('batch-drv-slot-cards-dual');
@@ -16825,6 +18609,13 @@ async function saveRecord(){{
       else if(el.tagName==='TEXTAREA')data[col.col_key]=el.value.replace(/\\r\\n/g,String.fromCharCode(10)).replace(/\\r/g,String.fromCharCode(10));
       else data[col.col_key]=el.value.trim();
   }}
+  if(isHseIncTab()){{
+    for(const extraKey of ['bodyPart','bodyRegion','bodyCoords']){{
+      if(Object.prototype.hasOwnProperty.call(data, extraKey))continue;
+      const exEl=document.getElementById('f-'+extraKey);
+      if(exEl)data[extraKey]=exEl.classList.contains('ms-con')?(exEl.dataset.value||''):(exEl.value||'').trim();
+    }}
+  }}
   if(isLTRTab()){{
     const direction=String(getLTRValue(data,allCols,'direction')||'').trim().toLowerCase();
     const issued=String(getLTRValue(data,allCols,'issuedDate')||'').trim();
@@ -16887,6 +18678,7 @@ function updBulk(){{
   document.getElementById('bulkbar').classList.toggle('show',checked.length>0);
   const dlBtn = document.getElementById('btn-bulk-dl');
   if(dlBtn) dlBtn.style.display = checked.length>0 ? 'inline-block' : 'none';
+  syncFeiBatchInspectBtn();
   const all=document.querySelectorAll('.chkcell input[data-id]');
   const ca=document.getElementById('chkall');if(ca)ca.checked=all.length>0&&checked.length===all.length;
   syncCheckboxRowHighlights();

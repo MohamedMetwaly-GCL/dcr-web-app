@@ -1,6 +1,7 @@
 """db.py - DCR Flask - Clean PostgreSQL database layer"""
 import logging
-import os, json, uuid, datetime, hashlib, secrets, re
+import os, json, uuid, datetime, hashlib, secrets, re, threading
+from contextlib import contextmanager
 import bcrypt as _bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -8,6 +9,7 @@ from psycopg2.pool import ThreadedConnectionPool
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 _pool = None
+_tx_local = threading.local()
 logger = logging.getLogger(__name__)
 
 def get_pool():
@@ -19,15 +21,197 @@ def get_pool():
             keepalives_interval=10, keepalives_count=5)
     return _pool
 
+class TransactionAbortedError(RuntimeError):
+    """Raised when an operation runs in or tries to commit an aborted nested transaction."""
+
+
+def _sanitize_db_error(err):
+    msg = str(err or "")
+    msg = re.sub(r"://[^/\s@]+@", "://***:***@", msg)
+    msg = re.sub(r"(?i)(password\s*=\s*)(\S+)", r"\1***", msg)
+    return f"{type(err).__name__}: {msg}" if msg else type(err).__name__
+
+
+def _safe_close_conn(conn):
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except Exception as e:
+        logger.error("Failed closing broken DB connection: %s", _sanitize_db_error(e))
+
+
+def _return_conn_to_pool(conn, broken=False):
+    """Safely return a DB connection to the pool (closing broken connections) and log errors without credentials."""
+    if conn is None:
+        return
+    try:
+        pool = get_pool()
+    except Exception as e:
+        logger.error("Failed acquiring DB pool while returning connection: %s", _sanitize_db_error(e))
+        _safe_close_conn(conn)
+        return
+    is_broken = bool(broken or getattr(conn, "closed", 0))
+    try:
+        if is_broken:
+            try:
+                pool.putconn(conn, close=True)
+            except TypeError:
+                _safe_close_conn(conn)
+                pool.putconn(conn)
+        else:
+            pool.putconn(conn)
+    except Exception as e:
+        logger.error("Failed returning DB connection to pool (broken=%s): %s", is_broken, _sanitize_db_error(e))
+        _safe_close_conn(conn)
+
+
+@contextmanager
+def transaction():
+    """Run multiple db.q / db.exe calls in one shared, lazy-acquired database transaction.
+
+    The pool connection is acquired only when an unmocked DB() executes a query, so offline
+    unit tests that mock db.exe / db.q without a database pool continue to work seamlessly.
+
+    Nested-transaction contract:
+    - Nested blocks share the outer transaction lazily.
+    - Any exception escaping a nested block marks the transaction rollback-only
+      (``_tx_local.aborted = True``) even if caught by outer Python code.
+    - Subsequent DB() queries inside an aborted transaction raise TransactionAbortedError,
+      and exiting the outer block rolls back cleanly instead of committing partial writes.
+    """
+    depth = getattr(_tx_local, "depth", 0)
+    is_outer = (depth == 0)
+    if is_outer:
+        _tx_local.conn = None
+        _tx_local.aborted = False
+    _tx_local.depth = depth + 1
+    broken = False
+    try:
+        yield
+        if is_outer:
+            conn = getattr(_tx_local, "conn", None)
+            if getattr(_tx_local, "aborted", False):
+                if conn is not None:
+                    try:
+                        conn.rollback()
+                    except Exception as rb_err:
+                        broken = True
+                        logger.error("Outer transaction rollback after abort failed: %s", _sanitize_db_error(rb_err))
+                raise TransactionAbortedError("Outer transaction rolled back after nested transaction failure")
+            if conn is not None:
+                try:
+                    conn.commit()
+                except Exception as cm_err:
+                    broken = True
+                    logger.error("Transaction commit failed: %s", _sanitize_db_error(cm_err))
+                    raise
+    except BaseException:
+        if not is_outer:
+            _tx_local.aborted = True
+        else:
+            conn = getattr(_tx_local, "conn", None)
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception as rb_err:
+                    broken = True
+                    logger.error("Transaction rollback failed: %s", _sanitize_db_error(rb_err))
+        raise
+    finally:
+        _tx_local.depth = depth
+        if is_outer:
+            conn = getattr(_tx_local, "conn", None)
+            _tx_local.conn = None
+            _tx_local.aborted = False
+            if conn is not None:
+                _return_conn_to_pool(conn, broken=broken)
+
 class DB:
     def __enter__(self):
-        self.conn = get_pool().getconn()
-        self.conn.autocommit = False
-        return self.conn.cursor(cursor_factory=RealDictCursor)
+        self.cur = None
+        self.conn = None
+        if getattr(_tx_local, "depth", 0) > 0:
+            self.in_tx = True
+            if getattr(_tx_local, "aborted", False):
+                raise TransactionAbortedError("Cannot execute DB operation in an aborted transaction")
+            if getattr(_tx_local, "conn", None) is None:
+                conn = get_pool().getconn()
+                try:
+                    conn.autocommit = False
+                    cur = conn.cursor(cursor_factory=RealDictCursor)
+                except BaseException as err:
+                    _tx_local.aborted = True
+                    logger.error("Failed preparing tx DB connection/cursor: %s", _sanitize_db_error(err))
+                    try:
+                        conn.rollback()
+                    except Exception as rb_err:
+                        logger.error("Rollback after tx setup failure failed: %s", _sanitize_db_error(rb_err))
+                    _return_conn_to_pool(conn, broken=True)
+                    raise
+                _tx_local.conn = conn
+                self.conn = conn
+                self.cur = cur
+                return self.cur
+            self.conn = _tx_local.conn
+            try:
+                self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+            except BaseException as err:
+                _tx_local.aborted = True
+                logger.error("Failed creating cursor on tx connection: %s", _sanitize_db_error(err))
+                raise
+            return self.cur
+        else:
+            self.in_tx = False
+            conn = get_pool().getconn()
+            try:
+                conn.autocommit = False
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+            except BaseException as err:
+                logger.error("Failed preparing DB connection/cursor: %s", _sanitize_db_error(err))
+                try:
+                    conn.rollback()
+                except Exception as rb_err:
+                    logger.error("Rollback after setup failure failed: %s", _sanitize_db_error(rb_err))
+                _return_conn_to_pool(conn, broken=True)
+                raise
+            self.conn = conn
+            self.cur = cur
+            return self.cur
+
     def __exit__(self, exc, *_):
-        if exc: self.conn.rollback()
-        else:   self.conn.commit()
-        get_pool().putconn(self.conn)
+        cursor_err = False
+        try:
+            if getattr(self, "cur", None) is not None:
+                self.cur.close()
+        except Exception as err:
+            cursor_err = True
+            logger.error("Failed closing DB cursor: %s", _sanitize_db_error(err))
+        if self.in_tx:
+            if exc is not None or cursor_err:
+                _tx_local.aborted = True
+            return False
+        broken = cursor_err
+        try:
+            if exc:
+                try:
+                    self.conn.rollback()
+                except Exception as rb_err:
+                    broken = True
+                    logger.error("DB rollback failed: %s", _sanitize_db_error(rb_err))
+            else:
+                try:
+                    self.conn.commit()
+                except Exception as cm_err:
+                    broken = True
+                    logger.error("DB commit failed: %s", _sanitize_db_error(cm_err))
+                    try:
+                        self.conn.rollback()
+                    except Exception as rb_err:
+                        logger.error("DB rollback after commit failure failed: %s", _sanitize_db_error(rb_err))
+                    raise
+        finally:
+            _return_conn_to_pool(self.conn, broken=broken)
 
 def q(sql, params=(), one=False):
     with DB() as cur:
@@ -39,6 +223,7 @@ def q(sql, params=(), one=False):
 def exe(sql, params=()):
     with DB() as cur:
         cur.execute(sql, params)
+        return cur.rowcount
 
 def exem(sql, param_list):
     with DB() as cur:
@@ -735,14 +920,24 @@ def set_user_can_download(username, can_download=False):
     return True
 
 def can_user_download(username, project_id=None):
-    """Check if a user is permitted to download files (superadmin/admin/editor always can; viewer if can_download flag is set)."""
+    """Check if a user is permitted to download files (workspace-aware when project_id is provided)."""
     if not username:
         return False
     try:
         u = get_user(username)
         if not u or not isinstance(u, dict):
             return False
-        role = str(u.get("role", "")).strip().lower()
+        global_role = str(u.get("role", "")).strip().lower()
+        if global_role == "superadmin":
+            return True
+        if project_id:
+            proj = get_project(project_id) or resolve_project_alias(project_id)
+            if not proj:
+                return False
+            ws_id = proj.get("workspace_id") or "ENG"
+            role = get_user_workspace_role(username, ws_id)
+        else:
+            role = global_role
         if role in ("superadmin", "admin", "editor"):
             return True
         return bool(u.get("can_download", False))
@@ -833,16 +1028,14 @@ def is_user_workspace_admin(username, workspace_id=None):
     if workspace_id:
         ws_upper = str(workspace_id).strip().upper()
         row = q("SELECT role FROM user_workspaces WHERE username=%s AND UPPER(workspace_id)=%s", (username, ws_upper), one=True)
-        if row is not None and row.get("role"):
-            return str(row.get("role", "")).strip().lower() in ("admin", "superadmin")
-        if str(u.get("role", "")).strip().lower() in ("admin", "superadmin") and ((u.get("primary_workspace") or "ENG").upper() == ws_upper or (ws_upper == "ENG" and not u.get("primary_workspace"))):
+        if row is not None:
+            return str(row.get("role") or "").strip().lower() in ("admin", "superadmin")
+        primary = str(u.get("primary_workspace") or "ENG").strip().upper()
+        if str(u.get("role", "")).strip().lower() in ("admin", "superadmin") and primary == ws_upper:
             return True
         return False
     else:
-        if str(u.get("role", "")).strip().lower() in ("admin", "superadmin"):
-            return True
-        row = q("SELECT 1 FROM user_workspaces WHERE username=%s AND LOWER(role) IN ('admin', 'superadmin') LIMIT 1", (username,), one=True)
-        return bool(row)
+        return bool(get_admin_workspaces_for_user(username))
 
 def get_admin_workspaces_for_user(username):
     """Return workspace IDs where this user has admin role."""
@@ -879,16 +1072,22 @@ def assign_user_workspace(username, workspace_id, role="viewer"):
         (username, workspace_id, role))
 
 def get_user_workspace_role(username, workspace_id):
-    """Return user's specific role in workspace_id, falling back to users.role or 'viewer'."""
+    """Return user's specific role in workspace_id without leaking users.role across workspaces."""
     u = get_user(username)
     if not u:
         return "viewer"
     if str(u.get("role", "")).strip().lower() == "superadmin":
         return "admin"
-    row = q("SELECT role FROM user_workspaces WHERE username=%s AND workspace_id=%s", (username, workspace_id), one=True)
-    if row and row.get("role"):
-        return str(row["role"]).strip().lower()
-    return str(u.get("role") or "viewer").strip().lower()
+    ws_upper = str(workspace_id or "").strip().upper()
+    if not ws_upper:
+        return "viewer"
+    row = q("SELECT role FROM user_workspaces WHERE username=%s AND UPPER(workspace_id)=%s", (username, ws_upper), one=True)
+    if row is not None:
+        return str(row.get("role") or "viewer").strip().lower()
+    primary = str(u.get("primary_workspace") or "ENG").strip().upper()
+    if ws_upper == primary:
+        return str(u.get("role") or "viewer").strip().lower()
+    return "viewer"
 
 def set_user_workspace_role(username, workspace_id, role):
     role = str(role or "viewer").strip().lower()
@@ -1017,8 +1216,13 @@ def cleanup_sessions():
 # ── User ↔ Project ────────────────────────────────────────────
 def get_user_projects(username):
     # Returns a list of dicts: {"project_id": "...", "is_dc": True/False, "allowed_doc_types": [...]}
-    return [{"project_id": r["project_id"], "is_dc": r.get("is_dc", False), "allowed_doc_types": r.get("allowed_doc_types")} for r in
-            q("SELECT project_id, is_dc, allowed_doc_types FROM user_projects WHERE username=%s", (username,))]
+    out = []
+    for r in (q("SELECT project_id, is_dc, allowed_doc_types FROM user_projects WHERE username=%s", (username,)) or []):
+        entry = {"project_id": r["project_id"], "is_dc": r.get("is_dc", False)}
+        if "allowed_doc_types" in r:
+            entry["allowed_doc_types"] = r["allowed_doc_types"]
+        out.append(entry)
+    return out
 
 def get_all_user_projects():
     rows = q("SELECT username, project_id, is_dc, allowed_doc_types FROM user_projects")
@@ -1053,20 +1257,221 @@ def set_user_project_doc_types(username, project_id, allowed_doc_types):
         """, (username, project_id))
     return True
 
-def get_user_project_doc_types(username, project_id):
-    row = q("SELECT allowed_doc_types FROM user_projects WHERE username=%s AND project_id=%s",
-            (username, project_id), one=True)
-    if not row or row.get("allowed_doc_types") is None:
+def _build_project_resolution_index(all_projs=None):
+    """Build exact-id, case-insensitive-id, and code/name alias lookup tables across all projects."""
+    projs = q("SELECT * FROM projects ORDER BY id") or [] if all_projs is None else list(all_projs)
+    by_exact_id = {}
+    by_ci_id = {}
+    by_alias = {}
+    for p in projs:
+        canon_id = str(p.get("id") or "").strip()
+        if not canon_id:
+            continue
+        by_exact_id[canon_id] = p
+        by_ci_id.setdefault(canon_id.upper(), []).append(p)
+        for field in ("code", "name"):
+            val = str(p.get(field) or "").strip().upper()
+            if val:
+                by_alias.setdefault(val, set()).add(canon_id)
+    return by_exact_id, by_ci_id, by_alias
+
+
+def _resolve_single_project_from_index(raw_identifier, by_exact_id, by_ci_id, by_alias):
+    """Resolve one project ID or unambiguous legacy alias using canonical DB rules."""
+    raw = str(raw_identifier or "").strip()
+    if not raw:
         return None
-    val = row["allowed_doc_types"]
-    if isinstance(val, str):
-        try:
-            val = json.loads(val)
-        except Exception:
-            return None
-    if isinstance(val, list):
-        return [str(x) for x in val]
+    if raw in by_exact_id:
+        return by_exact_id[raw]
+    raw_up = raw.upper()
+    ci_matches = by_ci_id.get(raw_up) or []
+    if len(ci_matches) == 1:
+        return ci_matches[0]
+    if len(ci_matches) > 1:
+        return None
+    alias_ids = by_alias.get(raw_up) or set()
+    if len(alias_ids) == 1:
+        return by_exact_id.get(next(iter(alias_ids)))
     return None
+
+
+def _intersect_doc_type_lists(restricted_lists, doc_types):
+    """Conservatively intersect multiple restricted allowed_doc_types lists for one project."""
+    if not restricted_lists:
+        return []
+    for lst in restricted_lists:
+        if not lst:
+            return []
+
+    dt_list = list(doc_types or [])
+    dt_by_token_up = {}
+    ordered_dt_ids = []
+    for dt in dt_list:
+        dt_id = str(dt.get("id") or "").strip()
+        dt_code = str(dt.get("code") or "").strip()
+        canon_dt = dt_id or dt_code
+        if not canon_dt:
+            continue
+        if canon_dt not in ordered_dt_ids:
+            ordered_dt_ids.append(canon_dt)
+        if dt_id:
+            dt_by_token_up[dt_id.upper()] = canon_dt
+        if dt_code:
+            dt_by_token_up[dt_code.upper()] = canon_dt
+
+    per_row_sets = []
+    token_display = {}
+    for lst in restricted_lists:
+        matched_set = set()
+        for tok in lst:
+            t_str = str(tok or "").strip()
+            if not t_str:
+                continue
+            t_up = t_str.upper()
+            canon_tok = dt_by_token_up.get(t_up)
+            if canon_tok:
+                norm_key = canon_tok.upper()
+                matched_set.add(norm_key)
+                token_display.setdefault(norm_key, canon_tok)
+            else:
+                matched_set.add(t_up)
+                token_display.setdefault(t_up, t_str)
+        if not matched_set:
+            return []
+        per_row_sets.append(matched_set)
+
+    common = set.intersection(*per_row_sets)
+    if not common:
+        return []
+    result = []
+    seen = set()
+    for canon_dt in ordered_dt_ids:
+        key = canon_dt.upper()
+        if key in common and key not in seen:
+            seen.add(key)
+            result.append(canon_dt)
+    for tok in restricted_lists[0]:
+        t_str = str(tok or "").strip()
+        if not t_str:
+            continue
+        canon_tok = dt_by_token_up.get(t_str.upper()) or t_str
+        key = canon_tok.upper()
+        if key in common and key not in seen:
+            seen.add(key)
+            result.append(token_display.get(key, canon_tok))
+    return result
+
+
+def resolve_user_project_grant(username, project_id, doc_types=None, all_projs=None, user_rows=None):
+    """Resolve canonical project membership and conservative effective doc-type/DC grants.
+
+    - Canonical `projects.id` and unambiguous legacy `code`/`name` assignment rows in
+      `user_projects` are resolved together against the project catalog.
+    - Ambiguous project identifiers or missing assignment rows fail closed (`assigned=False`,
+      `allowed_doc_types=[]`, never unrestricted `None`).
+    - When canonical and legacy rows coexist on the same `(username, project)`, a specific
+      restricted list overrides unrestricted `None`, and multiple restricted lists intersect
+      conservatively (returning `[]` when disjoint).
+    """
+    denied = {
+        "assigned": False,
+        "canonical_project_id": None,
+        "matched_rows": [],
+        "is_dc": False,
+        "allowed_doc_types": [],
+        "unrestricted": False,
+    }
+    if not username or not project_id:
+        return denied
+
+    by_exact_id, by_ci_id, by_alias = _build_project_resolution_index(all_projs=all_projs)
+    if not by_exact_id:
+        return denied
+    canon_proj = _resolve_single_project_from_index(project_id, by_exact_id, by_ci_id, by_alias)
+    if not canon_proj:
+        return denied
+    canon_pid = canon_proj["id"]
+
+    rows = get_user_projects(username) if user_rows is None else list(user_rows)
+    matched_rows = []
+    for r in (rows or []):
+        raw_pid = r.get("project_id")
+        if not raw_pid:
+            continue
+        r_proj = _resolve_single_project_from_index(raw_pid, by_exact_id, by_ci_id, by_alias)
+        if r_proj and r_proj["id"] == canon_pid:
+            matched_rows.append(r)
+
+    if not matched_rows:
+        return {
+            "assigned": False,
+            "canonical_project_id": canon_pid,
+            "matched_rows": [],
+            "is_dc": False,
+            "allowed_doc_types": [],
+            "unrestricted": False,
+        }
+
+    is_dc = any(bool(r.get("is_dc")) for r in matched_rows)
+    parsed_grants = []
+    has_restriction = False
+    for r in matched_rows:
+        if "allowed_doc_types" in r:
+            val = r.get("allowed_doc_types")
+        else:
+            # Compatibility fallback for minimal unit-test mocks that return project_id only in get_user_projects()
+            sub = q("SELECT allowed_doc_types FROM user_projects WHERE username=%s AND project_id=%s",
+                    (username, r["project_id"]), one=True)
+            if not sub:
+                has_restriction = True
+                parsed_grants.append([])
+                continue
+            val = sub.get("allowed_doc_types")
+
+        if val is None:
+            parsed_grants.append(None)
+        elif isinstance(val, str):
+            try:
+                decoded = json.loads(val)
+            except Exception:
+                decoded = []
+            has_restriction = True
+            if isinstance(decoded, list):
+                parsed_grants.append([str(x).strip() for x in decoded if str(x).strip()])
+            else:
+                parsed_grants.append([])
+        elif isinstance(val, list):
+            has_restriction = True
+            parsed_grants.append([str(x).strip() for x in val if str(x).strip()])
+        else:
+            has_restriction = True
+            parsed_grants.append([])
+
+    if not has_restriction:
+        return {
+            "assigned": True,
+            "canonical_project_id": canon_pid,
+            "matched_rows": matched_rows,
+            "is_dc": is_dc,
+            "allowed_doc_types": None,
+            "unrestricted": True,
+        }
+
+    restricted_lists = [g for g in parsed_grants if g is not None]
+    proj_dts = doc_types if doc_types is not None else (get_doc_types(canon_pid) or [])
+    effective_dts = _intersect_doc_type_lists(restricted_lists, proj_dts)
+    return {
+        "assigned": True,
+        "canonical_project_id": canon_pid,
+        "matched_rows": matched_rows,
+        "is_dc": is_dc,
+        "allowed_doc_types": effective_dts,
+        "unrestricted": False,
+    }
+
+
+def get_user_project_doc_types(username, project_id):
+    return resolve_user_project_grant(username, project_id)["allowed_doc_types"]
 
 def assign_project(username, project_id, is_dc=False):
     exe("INSERT INTO user_projects(username,project_id,is_dc) VALUES(%s,%s,%s) ON CONFLICT (username,project_id) DO UPDATE SET is_dc=EXCLUDED.is_dc",
@@ -1092,10 +1497,8 @@ def get_project_dc(project_id):
     return rows
 
 def user_is_dc(username, project_id):
-    """Return True if the given user is the DC for the project."""
-    r = q("SELECT is_dc FROM user_projects WHERE username=%s AND project_id=%s",
-          (username, project_id), one=True)
-    return bool(r and r.get("is_dc"))
+    """Return True if the given user is the DC for the project (canonical ID or unambiguous legacy alias)."""
+    return bool(resolve_user_project_grant(username, project_id)["is_dc"])
 
 def get_project_users_full(project_id):
     """Return all users assigned to the project PLUS all admins/superadmins."""
@@ -1231,9 +1634,11 @@ def _clean_project_ids(project_ids):
     return cleaned
 
 def _project_scope_clause(column, pid=None, project_ids=None):
-    if pid:
-        return f"WHERE {column}=%s", [pid]
     ids = _clean_project_ids(project_ids)
+    if pid:
+        if ids is not None and pid not in ids:
+            return "WHERE 1=0", []
+        return f"WHERE {column}=%s", [pid]
     if ids is None:
         return "WHERE 1=1", []
     if not ids:
@@ -1241,7 +1646,75 @@ def _project_scope_clause(column, pid=None, project_ids=None):
     ph = ",".join(["%s"] * len(ids))
     return f"WHERE {column} IN ({ph})", ids
 
+
+def _dt_allowed_in_scope(pid, dt_id, doc_type_scope, dt_code=""):
+    """Check whether (pid, dt_id) is permitted under doc_type_scope (None means unrestricted)."""
+    if doc_type_scope is None:
+        return True
+    if pid not in doc_type_scope:
+        return False
+    allowed = doc_type_scope[pid]
+    if allowed is None:
+        return True
+    allowed_set = {str(x).strip().upper() for x in allowed if str(x).strip()}
+    if not allowed_set:
+        return False
+    if str(dt_id or "").strip().upper() in allowed_set:
+        return True
+    if dt_code and str(dt_code).strip().upper() in allowed_set:
+        return True
+    return False
+
+
 # ── Projects ──────────────────────────────────────────────────
+def resolve_project_identifiers(raw_identifiers, workspace_id=None):
+    """Resolve stored project IDs or legacy aliases into canonical project IDs.
+
+    Rules (Finding 1):
+    1. Exact ``projects.id`` matches strictly on canonical ID and never expands to aliases.
+    2. Unique case-insensitive ``projects.id`` matches strictly on that canonical ID.
+    3. Multiple case-insensitive ID matches are rejected before alias lookup.
+    4. Legacy ``code`` / ``name`` aliases resolve ONLY when unambiguous across ALL projects
+       (exactly one distinct canonical ``projects.id`` matches). Ambiguous aliases (>= 2 matches)
+       are rejected and resolve to nothing.
+    """
+    raw_list = _clean_project_ids(raw_identifiers)
+    if not raw_list:
+        return []
+    project_index = _build_project_resolution_index()
+
+    ws_up = str(workspace_id).strip().upper() if workspace_id else None
+    resolved = []
+    seen = set()
+    for raw in raw_list:
+        canon_proj = _resolve_single_project_from_index(raw, *project_index)
+        if not canon_proj:
+            continue
+        if ws_up:
+            p_ws = str(canon_proj.get("workspace_id") or "ENG").strip().upper()
+            if p_ws != ws_up:
+                continue
+        cid = canon_proj["id"]
+        if cid not in seen:
+            seen.add(cid)
+            resolved.append(cid)
+    return resolved
+
+
+def resolve_project_alias(project_id):
+    """Resolve one project identifier (canonical id or unambiguous code/name) to its normalized dict."""
+    pid = str(project_id or "").strip()
+    if not pid:
+        return None
+    exact = get_project(pid)
+    if exact:
+        return exact
+    resolved = resolve_project_identifiers([pid])
+    if len(resolved) == 1:
+        return get_project(resolved[0])
+    return None
+
+
 def get_projects(project_ids=None, workspace_id=None):
     order_sql = """ORDER BY
         CASE WHEN (data->>'dashboard_order') ~ '^-?[0-9]+$' THEN (data->>'dashboard_order')::int ELSE 999999 END,
@@ -1258,62 +1731,202 @@ def get_projects(project_ids=None, workspace_id=None):
         if not ids:
             return []
         ph = ",".join(["%s"] * len(ids))
-        where_clauses.append(f"(id IN ({ph}) OR code IN ({ph}) OR name IN ({ph}))")
-        params.extend(ids + ids + ids)
+        where_clauses.append(f"id IN ({ph})")
+        params.extend(ids)
 
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
     return q(f"SELECT * FROM projects {where_sql} {order_sql}", tuple(params))
 
 
-def reorder_projects(order):
-    for i, pid in enumerate([str(v).strip() for v in (order or []) if str(v).strip()]):
-        r = q("SELECT data FROM projects WHERE id=%s", (pid,), one=True)
-        if not r:
+def _extract_dashboard_order(data):
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except Exception:
+            return None
+    if not isinstance(data, dict):
+        return None
+    val = data.get("dashboard_order")
+    if isinstance(val, bool) or val is None:
+        return None
+    s = str(val).strip()
+    if re.match(r"^-?[0-9]+$", s):
+        return int(s)
+    return None
+
+
+def _compute_admin_slot_orders(merged_rows, admin_ids):
+    """Compute integer `dashboard_order` values for admin projects while pinning fixed projects.
+
+    Fixed (read-only) rows keep their existing `dashboard_order` (effective SQL sort key `999999`
+    when unset). Each contiguous run of admin rows between two fixed rows receives strictly
+    increasing integers strictly between the adjacent fixed sort keys (reusing existing admin slot
+    integers when they already fit that exact interval).
+    """
+    admin_set = set(admin_ids)
+    n = len(merged_rows)
+    if not any(r["id"] not in admin_set for r in merged_rows):
+        return {r["id"]: idx for idx, r in enumerate(merged_rows)}
+
+    def _fixed_key(row):
+        v = _extract_dashboard_order(row.get("data"))
+        return v if v is not None else 999999
+
+    assigned = {}
+    i = 0
+    while i < n:
+        if merged_rows[i]["id"] not in admin_set:
+            i += 1
             continue
-        data = r.get("data") or {}
-        if isinstance(data, str):
-            try: data = json.loads(data)
-            except Exception: data = {}
-        if not isinstance(data, dict):
-            data = {}
-        data["dashboard_order"] = i
-        exe("UPDATE projects SET data=%s::jsonb WHERE id=%s", (json.dumps(data), pid))
+        run_start = i
+        while i < n and merged_rows[i]["id"] in admin_set:
+            i += 1
+        run = merged_rows[run_start:i]
+        left_key = _fixed_key(merged_rows[run_start - 1]) if run_start > 0 else None
+        right_key = _fixed_key(merged_rows[i]) if i < n else None
+
+        existing_vals = sorted(
+            v for v in (_extract_dashboard_order(r.get("data")) for r in run) if v is not None
+        )
+        can_reuse = (
+            len(existing_vals) == len(run)
+            and len(set(existing_vals)) == len(run)
+            and all(
+                (left_key is None or v > left_key) and (right_key is None or v < right_key)
+                for v in existing_vals
+            )
+        )
+        if can_reuse:
+            vals = existing_vals
+        else:
+            m = len(run)
+            if left_key is None and right_key is None:
+                vals = list(range(m))
+            elif left_key is None:
+                vals = list(range(m)) if right_key >= m else [right_key - m + k for k in range(m)]
+            elif right_key is None:
+                vals = [left_key + 1 + k for k in range(m)]
+            else:
+                gap = right_key - left_key - 1
+                if gap >= m:
+                    vals = [left_key + 1 + k for k in range(m)]
+                else:
+                    vals = [left_key if gap <= 0 else left_key + min(k + 1, gap) for k in range(m)]
+        for r, val in zip(run, vals):
+            assigned[r["id"]] = int(val)
+    return assigned
+
+
+def reorder_projects(order, visible_projects=None):
+    """Persist relative order of admin projects atomically via `jsonb_set`, preserving fixed positions."""
+    clean_order = []
+    seen = set()
+    for v in (order or []):
+        pid = str(v or "").strip()
+        if pid and pid not in seen:
+            seen.add(pid)
+            clean_order.append(pid)
+    if not clean_order:
+        return []
+
+    scope_ids = list(clean_order)
+    if visible_projects:
+        for vp in visible_projects:
+            vid = str(vp.get("id") if isinstance(vp, dict) else vp or "").strip()
+            if vid and vid not in seen:
+                seen.add(vid)
+                scope_ids.append(vid)
+
+    with transaction():
+        ph = ",".join(["%s"] * len(scope_ids))
+        locked_rows = q(
+            f"SELECT id, data FROM projects WHERE id IN ({ph}) ORDER BY id FOR UPDATE",
+            tuple(sorted(scope_ids)),
+        ) or []
+        if not locked_rows:
+            return []
+
+        by_id = {r["id"]: r for r in locked_rows}
+        admin_in_db = [pid for pid in clean_order if pid in by_id]
+        if not admin_in_db:
+            return []
+        admin_set = set(admin_in_db)
+
+        current_sorted = sorted(
+            locked_rows,
+            key=lambda r: (
+                v if (v := _extract_dashboard_order(r.get("data"))) is not None else 999999,
+                r["id"],
+            ),
+        )
+        merged_rows = []
+        admin_iter = iter(by_id[pid] for pid in admin_in_db)
+        for row in current_sorted:
+            if row["id"] in admin_set:
+                merged_rows.append(next(admin_iter))
+            else:
+                merged_rows.append(row)
+
+        slot_orders = _compute_admin_slot_orders(merged_rows, admin_set)
+        for pid in admin_in_db:
+            order_val = slot_orders[pid]
+            exe(
+                """UPDATE projects
+                   SET data = jsonb_set(
+                       CASE WHEN data IS NOT NULL AND jsonb_typeof(data) = 'object' THEN data ELSE '{}'::jsonb END,
+                       '{dashboard_order}',
+                       to_jsonb(%s::int),
+                       true
+                   )
+                   WHERE id = %s""",
+                (int(order_val), pid),
+            )
+        return [r["id"] for r in merged_rows]
 
 def get_projects_for_user(username, role=None, workspace_id=None):
     user_role = str(role or "").strip().lower()
+    if not user_role and username:
+        u = get_user(username)
+        user_role = str((u or {}).get("role") or "").strip().lower()
     if user_role == "superadmin":
         return get_projects(workspace_id=workspace_id)
-    if user_role == "admin":
-        admin_ws = [str(w).strip().upper() for w in (get_admin_workspaces_for_user(username) or [])]
-        if workspace_id:
-            ws_up = str(workspace_id).strip().upper()
-            if ws_up in admin_ws or (not admin_ws and ws_up == "ENG"):
+    admin_ws = [str(w).strip().upper() for w in (get_admin_workspaces_for_user(username) or []) if str(w).strip()]
+    ws_up = str(workspace_id).strip().upper() if workspace_id else None
+    if admin_ws:
+        if ws_up:
+            if ws_up in admin_ws:
                 return get_projects(workspace_id=workspace_id)
-            # Not an admin of this workspace: fall back to assigned projects in this workspace
             user_projs = get_user_projects(username)
-            pids = [p["project_id"] for p in user_projs if p.get("project_id")]
+            raw_pids = [p["project_id"] for p in user_projs if p.get("project_id")]
+            pids = resolve_project_identifiers(raw_pids, workspace_id=workspace_id)
             if not pids:
                 return []
             return get_projects(pids, workspace_id=workspace_id)
-        else:
-            all_projs = []
-            seen_ids = set()
-            ws_list = admin_ws if admin_ws else ["ENG"]
-            for aws in ws_list:
-                for p in get_projects(workspace_id=aws):
-                    if p["id"] not in seen_ids:
-                        seen_ids.add(p["id"])
-                        all_projs.append(p)
-            user_projs = get_user_projects(username)
-            pids = [p["project_id"] for p in user_projs if p.get("project_id") and p["project_id"] not in seen_ids]
-            if pids:
-                for p in get_projects(pids):
-                    if p["id"] not in seen_ids:
-                        seen_ids.add(p["id"])
-                        all_projs.append(p)
-            return all_projs
+        all_projs = []
+        seen_ids = set()
+        for aws in admin_ws:
+            for p in get_projects(workspace_id=aws):
+                if p["id"] not in seen_ids:
+                    seen_ids.add(p["id"])
+                    all_projs.append(p)
+        user_projs = get_user_projects(username)
+        raw_pids = [p["project_id"] for p in user_projs if p.get("project_id")]
+        pids = [cid for cid in resolve_project_identifiers(raw_pids) if cid not in seen_ids]
+        if pids:
+            for p in get_projects(pids):
+                if p["id"] not in seen_ids:
+                    seen_ids.add(p["id"])
+                    all_projs.append(p)
+        all_projs.sort(
+            key=lambda p: (
+                v if (v := _extract_dashboard_order(p.get("data"))) is not None else 999999,
+                str(p.get("id") or ""),
+            )
+        )
+        return all_projs
     user_projs = get_user_projects(username)
-    pids = [p["project_id"] for p in user_projs if p.get("project_id")]
+    raw_pids = [p["project_id"] for p in user_projs if p.get("project_id")]
+    pids = resolve_project_identifiers(raw_pids, workspace_id=workspace_id)
     if not pids:
         return []
     return get_projects(pids, workspace_id=workspace_id)
@@ -1357,10 +1970,16 @@ def get_expected_reply_rule(pid, dt_id=None):
         from utils import DEFAULT_EXPECTED_REPLY_RULE
         return dict(DEFAULT_EXPECTED_REPLY_RULE)
 
+class ProjectOwnershipError(Exception):
+    """A project create or update collided with an existing ID or mismatched workspace."""
+
+
 def save_project(pid, name, code, extra: dict, workspace_id=None):
     if isinstance(extra, dict):
-        extra.pop("id", None); extra.pop("name", None); extra.pop("code", None)
-    extra = extra or {}
+        extra = dict(extra)
+        extra.pop("id", None); extra.pop("name", None); extra.pop("code", None); extra.pop("workspace_id", None)
+    else:
+        extra = {}
     current = q("SELECT data, workspace_id FROM projects WHERE id=%s", (pid,), one=True)
     current_data = current.get("data") if current else {}
     if isinstance(current_data, str):
@@ -1369,28 +1988,85 @@ def save_project(pid, name, code, extra: dict, workspace_id=None):
     if isinstance(current_data, dict) and "dashboard_order" in current_data and "dashboard_order" not in extra:
         extra["dashboard_order"] = current_data.get("dashboard_order")
     jdata = json.dumps(extra)
-    ws_id = workspace_id or (current.get("workspace_id") if current else "ENG") or "ENG"
-    exe("""INSERT INTO projects(id,name,code,data,workspace_id) VALUES(%s,%s,%s,%s::jsonb,%s)
-           ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data, workspace_id=EXCLUDED.workspace_id""",
+    stored_ws = str(current.get("workspace_id") or "ENG").strip().upper() if current else None
+    req_ws = str(workspace_id).strip().upper() if (workspace_id is not None and str(workspace_id).strip()) else None
+    if stored_ws and req_ws and req_ws != stored_ws:
+        raise ProjectOwnershipError(
+            "Project %r belongs to workspace %r and cannot be moved to %r" % (pid, stored_ws, req_ws)
+        )
+    ws_id = stored_ws or req_ws or "ENG"
+    # Finding A2: metadata updates must never silently transfer a project to another workspace.
+    affected = exe("""INSERT INTO projects(id,name,code,data,workspace_id) VALUES(%s,%s,%s,%s::jsonb,%s)
+           ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, code=EXCLUDED.code, data=EXCLUDED.data
+           WHERE COALESCE(projects.workspace_id, 'ENG') = EXCLUDED.workspace_id""",
         (pid, name, code, jdata, ws_id))
+    if affected == 0:
+        raise ProjectOwnershipError(
+            "Project %r does not belong to workspace %r" % (pid, ws_id)
+        )
+
 
 def create_project(pid, name, code, creator=None, workspace_id="ENG", client=None):
-    ws_id = workspace_id or "ENG"
+    ws_id = str(workspace_id or "ENG").strip().upper() or "ENG"
     jdata = json.dumps({"client": client}) if client else "{}"
-    exe("""INSERT INTO projects(id,name,code,data,workspace_id)
-           VALUES(%s,%s,%s,%s,%s)
-           ON CONFLICT (id) DO UPDATE SET
-               workspace_id = EXCLUDED.workspace_id,
-               data = COALESCE(projects.data, '{}'::jsonb) || EXCLUDED.data""",
-        (pid, name, code, jdata, ws_id))
-    _seed_project(pid, ws_id)
-    if creator: assign_project(creator, pid)
+    # Finding A2 + Finding 3: insert, seed doc types/columns/lists, and assign creator in a
+    # single shared transaction so any failure rolls back cleanly without orphan projects, while
+    # preserving ON CONFLICT DO NOTHING duplicate protection and offline test compatibility.
+    with transaction():
+        affected = exe("""INSERT INTO projects(id,name,code,data,workspace_id)
+               VALUES(%s,%s,%s,%s,%s)
+               ON CONFLICT (id) DO NOTHING""",
+            (pid, name, code, jdata, ws_id))
+        if affected == 0:
+            raise ProjectOwnershipError("Project ID %r already exists" % (pid,))
+        _seed_project(pid, ws_id)
+        if creator:
+            assign_project(creator, pid)
 
 def delete_project(pid):
     for tbl in ("records","columns_config","doc_types","dropdown_lists","logos","user_projects","projects"):
         exe(f"DELETE FROM {tbl} WHERE {'id' if tbl=='projects' else 'project_id'}=%s", (pid,))
 
+def _seed_hse_project(pid):
+    from hse_defaults import HSE_LISTS, HSE_REGISTERS, HSE_SUBTYPES, hse_columns
+
+    for order, (code, name, source) in enumerate(HSE_REGISTERS):
+        data = {"legacy_source": source, "legacy_subtypes": HSE_SUBTYPES.get(code, {})}
+        exe(
+            """INSERT INTO doc_types(id,project_id,name,code,sort_order,data)
+               VALUES(%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING""",
+            (code, pid, name, code, order, json.dumps(data, ensure_ascii=False)),
+        )
+        for sort_order, (key, label, col_type, list_name) in enumerate(hse_columns(code)):
+            exe(
+                """INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
+                   VALUES(%s,%s,%s,%s,%s,%s,true,%s) ON CONFLICT DO NOTHING""",
+                (pid, code, key, label, col_type, list_name, sort_order),
+            )
+    for list_name, values in HSE_LISTS.items():
+        for order, value in enumerate(values):
+            meta = None
+            if list_name == "hse_doc_status":
+                meta = "pending" if value == "Open" else ("approved" if value == "Closed" else None)
+            elif list_name == "hse_extinguisher_status":
+                meta = (
+                    "approved" if value == "Valid"
+                    else ("rejected" if value in ("Expired", "Out of Service") else "pending")
+                )
+            elif list_name == "hse_jsa_status":
+                meta = "approved" if value == "Approved" else "pending"
+            exe(
+                """INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)
+                   VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,list_name,item_value)
+                   DO UPDATE SET meta=COALESCE(dropdown_lists.meta, EXCLUDED.meta)""",
+                (pid, list_name, value, order, meta),
+            )
+
+
 def _seed_project(pid, workspace_id="ENG"):
+    if str(workspace_id or "").upper() == "HSE":
+        _seed_hse_project(pid)
+        return
     if str(workspace_id or "").upper() == "OM":
         for code, name, order in DEFAULT_OM_DOC_TYPES:
             exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
@@ -1423,8 +2099,11 @@ def _seed_project(pid, workspace_id="ENG"):
                     (pid, ln, item, i, meta))
         _ensure_noc_lists(pid)
         _ensure_ltr_lists(pid)
-        _sync_all_noc_doc_types()
-        _sync_all_ltr_doc_types()
+        for dt in q("SELECT id, name, code FROM doc_types WHERE project_id=%s", (pid,)):
+            if _is_noc_dt(dt["code"], dt["name"]):
+                _sync_noc_doc_type(pid, dt["id"], dt.get("name", "Notice of Change"))
+            if _is_ltr_dt(dt["code"], dt["name"]):
+                _sync_ltr_doc_type(pid, dt["id"], dt.get("name", "Letters"))
 
 # ── Logos ─────────────────────────────────────────────────────
 def get_logo(pid, key):
@@ -1661,18 +2340,88 @@ def invalidate_dashboard_cache(pid=None):
     else:
         exe("DELETE FROM dashboard_cache")
 
-def save_record(pid, dt_id, rec_id, data: dict):
-    # 'attachments' is server-managed (see attachments.py): never accepted from the client
-    clean = {k: v for k, v in data.items() if not k.startswith("_") and k != "attachments"}
-    jdata = json.dumps(clean)
-    # On update, carry over existing 'attachments' so a normal record edit can never wipe them.
-    exe("""INSERT INTO records(id,project_id,dt_id,data,updated_at) VALUES(%s,%s,%s,%s::jsonb,NOW())
+class RecordOwnershipError(Exception):
+    """An existing record id was addressed through a different project / document type."""
+
+
+class InvalidMhrPeriodError(ValueError):
+    """MHR record is missing a valid reporting year or month (1-12)."""
+
+
+class DuplicateMhrPeriodError(ValueError):
+    """An MHR record already exists for this project and reporting year/month."""
+
+
+def normalize_mhr_period(data):
+    """Extract and validate integer `(year, month)` from an MHR record payload."""
+    payload = data if isinstance(data, dict) else {}
+    raw_year = "" if payload.get("year") is None else str(payload.get("year")).strip()
+    raw_month = "" if payload.get("month") is None else str(payload.get("month")).strip()
+    if not raw_year or not raw_month:
+        raise InvalidMhrPeriodError("MHR records require both reporting year and month (1-12).")
+    try:
+        year_val = int(raw_year)
+        month_val = int(raw_month)
+    except ValueError:
+        raise InvalidMhrPeriodError("Reporting year and month must be integers (month 1-12).") from None
+    if year_val < 1900 or year_val > 2200:
+        raise InvalidMhrPeriodError("Reporting year must be between 1900 and 2200.")
+    if month_val < 1 or month_val > 12:
+        raise InvalidMhrPeriodError("Reporting month must be between 1 and 12.")
+    return year_val, month_val
+
+
+def ensure_unique_mhr_period(pid, dt_id, rec_id, data):
+    """Validate and enforce unique `(project_id, year, month)` for MHR records; return `(year, month)`."""
+    year_val, month_val = normalize_mhr_period(data)
+    q("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"mhr:{pid}:{year_val}:{month_val}",))
+    rows = q(
+        "SELECT id, data FROM records WHERE project_id=%s AND dt_id=%s AND id <> %s",
+        (pid, dt_id, rec_id or ""),
+    )
+    for row in rows:
+        rdata = row.get("data") if isinstance(row.get("data"), dict) else {}
+        try:
+            ex_year, ex_month = normalize_mhr_period(rdata)
+        except InvalidMhrPeriodError:
+            continue
+        if ex_year == year_val and ex_month == month_val:
+            raise DuplicateMhrPeriodError(
+                f"Man-hours for project '{pid}' and reporting month {year_val:04d}-{month_val:02d} are already logged."
+            )
+    return year_val, month_val
+
+
+def _upsert_record_row(pid, dt_id, rec_id, jdata):
+    affected = exe("""INSERT INTO records(id,project_id,dt_id,data,updated_at) VALUES(%s,%s,%s,%s::jsonb,NOW())
            ON CONFLICT(id) DO UPDATE SET data = EXCLUDED.data ||
                CASE WHEN records.data ? 'attachments'
                     THEN jsonb_build_object('attachments', records.data->'attachments')
                     ELSE '{}'::jsonb END,
-               updated_at=NOW()""",
+               updated_at=NOW()
+           WHERE records.project_id = EXCLUDED.project_id
+             AND records.dt_id = EXCLUDED.dt_id""",
         (rec_id, pid, dt_id, jdata))
+    if affected == 0:
+        raise RecordOwnershipError(
+            "Record %r does not belong to project %r / document type %r" % (rec_id, pid, dt_id))
+
+
+def save_record(pid, dt_id, rec_id, data: dict):
+    # 'attachments' is server-managed (see attachments.py): never accepted from the client
+    clean = {k: v for k, v in data.items() if not k.startswith("_") and k != "attachments"}
+    # On update, carry over existing 'attachments' so a normal record edit can never wipe them.
+    # Finding B: an existing row is only updated when it already belongs to (pid, dt_id). The WHERE
+    # guard is evaluated atomically by PostgreSQL on conflict, so a record id owned by another
+    # project / document type is never overwritten (and never moved): zero rows are affected.
+    if str(dt_id or "").strip().upper() == "MHR":
+        with transaction():
+            year_val, month_val = ensure_unique_mhr_period(pid, dt_id, rec_id, clean)
+            clean["year"] = year_val
+            clean["month"] = month_val
+            _upsert_record_row(pid, dt_id, rec_id, json.dumps(clean))
+    else:
+        _upsert_record_row(pid, dt_id, rec_id, json.dumps(clean))
     invalidate_dashboard_cache(pid)
 
 def get_record_by_doc_no(pid, dt_id, doc_no):
@@ -1913,7 +2662,7 @@ def get_letter_timeline(pid, record_id):
         "items": items,
     }
 
-def _get_ltr_dashboard_stats_map(project_ids=None, workspace_id=None):
+def _get_ltr_dashboard_stats_map(project_ids=None, workspace_id=None, doc_type_scope=None):
     projects = get_projects(project_ids, workspace_id=workspace_id)
     if not projects:
         return {}
@@ -1934,6 +2683,8 @@ def _get_ltr_dashboard_stats_map(project_ids=None, workspace_id=None):
         if not _is_ltr_dt(dt.get("code", ""), dt.get("name", "")):
             continue
         pid = dt["project_id"]
+        if not _dt_allowed_in_scope(pid, dt["id"], doc_type_scope, dt.get("code", "")):
+            continue
         ltr_dt_map[pid] = dt["id"]
         cols = get_columns(pid, dt["id"])
         key_map[pid] = {
@@ -2222,7 +2973,7 @@ def remove_list_item(pid, list_name, item):
     invalidate_dashboard_cache(pid)
 
 # ── Fast Dashboard Stats (single query) ──────────────────────
-def get_dashboard_stats(project_ids=None, workspace_id=None):
+def get_dashboard_stats(project_ids=None, workspace_id=None, doc_type_scope=None):
     """One big SQL call — replaces N×M individual queries."""
     import re, json as _json
     projects = get_projects(project_ids, workspace_id=workspace_id)
@@ -2230,9 +2981,14 @@ def get_dashboard_stats(project_ids=None, workspace_id=None):
         return []
 
     pids = [p["id"] for p in projects]
-    
-    # 1) Try fetching from DB cache
-    cached_rows = q("SELECT project_id, cache_data FROM dashboard_cache WHERE project_id = ANY(%s)", (pids,))
+    restricted_pids = {
+        pid for pid in pids
+        if doc_type_scope is not None and (pid not in doc_type_scope or doc_type_scope[pid] is not None)
+    }
+
+    # 1) Try fetching from DB cache (only for unrestricted projects)
+    uncached_eligible = [pid for pid in pids if pid not in restricted_pids]
+    cached_rows = q("SELECT project_id, cache_data FROM dashboard_cache WHERE project_id = ANY(%s)", (uncached_eligible,)) if uncached_eligible else []
     cache_map = {}
     for r in cached_rows:
         cdata = r.get("cache_data")
@@ -2242,20 +2998,20 @@ def get_dashboard_stats(project_ids=None, workspace_id=None):
             sub_sum = cdata.get("approved", 0) + cdata.get("pending", 0) + cdata.get("rejected", 0)
             if tot == sub_sum:
                 cache_map[r["project_id"]] = cdata
-    
+
     missing_pids = [pid for pid in pids if pid not in cache_map]
-    
+
     result = []
     for pid in pids:
         if pid in cache_map:
             result.append(cache_map[pid])
-            
+
     if not missing_pids:
         return result
 
     # 2) We have some missing projects, calculate ONLY for those
     missing_projects = [p for p in projects if p["id"] in missing_pids]
-    ltr_stats_map = _get_ltr_dashboard_stats_map(missing_pids)
+    ltr_stats_map = _get_ltr_dashboard_stats_map(missing_pids, doc_type_scope=doc_type_scope)
     ph   = ",".join(["%s"] * len(missing_pids))
 
     meta_rows = q(f"""
@@ -2325,6 +3081,8 @@ def get_dashboard_stats(project_ids=None, workspace_id=None):
                 dt_has_discipline[r["dt_id"]] = True
 
         for dt in dts:
+            if not _dt_allowed_in_scope(pid, dt["id"], doc_type_scope, dt.get("code", "")):
+                continue
             rows  = rec_map.get((pid, dt["id"]), [])
             t=ap=pe=ov=rj=ic = 0
             disc_map = {}
@@ -2407,14 +3165,18 @@ def get_dashboard_stats(project_ids=None, workspace_id=None):
             "overdue": overdue_cnt, "rejected": total_rj, "pct": pct, "dt_stats": dt_stats,
             "ltr": ltr_stats_map.get(pid, {"total": 0, "sent": 0, "received": 0, "party_stats": [], "top_parties": []})
         }
-        exe("INSERT INTO dashboard_cache (project_id, cache_data) VALUES (%s, %s::jsonb) ON CONFLICT(project_id) DO UPDATE SET cache_data=EXCLUDED.cache_data, updated_at=NOW()", (pid, _json.dumps(res_p)))
-        result.append(res_p)
-    return result
+        if pid not in restricted_pids:
+            exe("INSERT INTO dashboard_cache (project_id, cache_data) VALUES (%s, %s::jsonb) ON CONFLICT(project_id) DO UPDATE SET cache_data=EXCLUDED.cache_data, updated_at=NOW()", (pid, _json.dumps(res_p)))
+        cache_map[pid] = res_p
+    return [cache_map[pid] for pid in pids if pid in cache_map]
 
 
-def get_data_quality_summary(pid=None, project_ids=None):
+def get_data_quality_summary(pid=None, project_ids=None, doc_type_scope=None):
     where, params = _project_scope_clause("project_id", pid, project_ids)
-    dt_rows = q(f"SELECT project_id, id, code, name FROM doc_types {where}", params)
+    dt_rows = [
+        d for d in q(f"SELECT project_id, id, code, name FROM doc_types {where}", params)
+        if _dt_allowed_in_scope(d["project_id"], d["id"], doc_type_scope, d.get("code", ""))
+    ]
     if not dt_rows:
         return {
             "total_records": 0,
@@ -2441,6 +3203,8 @@ def get_data_quality_summary(pid=None, project_ids=None):
     dt_has_status = set()
     for r in col_rows:
         key = (r["project_id"], r["dt_id"])
+        if key not in dt_meta:
+            continue
         if r["col_key"] == "expectedReplyDate":
             dt_has_exp.add(key)
         elif r["col_key"] == "status":
@@ -2457,7 +3221,10 @@ def get_data_quality_summary(pid=None, project_ids=None):
             pr_dt_keys.add(key)
 
     rec_where, rec_params = _project_scope_clause("project_id", pid, project_ids)
-    recs = q(f"SELECT id, project_id, dt_id, data FROM records {rec_where}", rec_params)
+    recs = [
+        r for r in q(f"SELECT id, project_id, dt_id, data FROM records {rec_where}", rec_params)
+        if _dt_allowed_in_scope(r["project_id"], r["dt_id"], doc_type_scope, (dt_meta.get((r["project_id"], r["dt_id"])) or {}).get("code", ""))
+    ]
     total_records = len(recs)
     issued_date_count = 0
     workflow_records = 0
@@ -2502,20 +3269,23 @@ def get_data_quality_summary(pid=None, project_ids=None):
     }
 
 
-def get_action_required_summary(pid=None, limit=10, pending_threshold=14, project_ids=None):
+def get_action_required_summary(pid=None, limit=10, pending_threshold=14, project_ids=None, doc_type_scope=None):
     from utils import compute_duration
 
     projects = get_projects(project_ids)
     project_codes = {p["id"]: p["code"] for p in projects}
 
-    overdue_rows = get_overdue_records(pid, project_ids=project_ids)[:limit]
+    overdue_rows = get_overdue_records(pid, project_ids=project_ids, doc_type_scope=doc_type_scope)[:limit]
     top_overdue = [
         {**r, "project_code": project_codes.get(r["project_id"], r["project_id"])}
         for r in overdue_rows
     ]
 
     dt_where, dt_params = _project_scope_clause("project_id", pid, project_ids)
-    dt_rows = q(f"SELECT project_id, id, code, name FROM doc_types {dt_where}", dt_params)
+    dt_rows = [
+        d for d in q(f"SELECT project_id, id, code, name FROM doc_types {dt_where}", dt_params)
+        if _dt_allowed_in_scope(d["project_id"], d["id"], doc_type_scope, d.get("code", ""))
+    ]
     dt_meta = {(d["project_id"], d["id"]): d for d in dt_rows}
 
     list_where, list_params = _project_scope_clause("project_id", pid, project_ids)
@@ -2597,48 +3367,53 @@ def get_action_required_summary(pid=None, limit=10, pending_threshold=14, projec
     }
 
 
-def get_pr_analytics_summary(pid=None, limit=6, project_ids=None):
+def get_pr_analytics_summary(pid=None, limit=6, project_ids=None, doc_type_scope=None):
     import json
+    use_cache = (doc_type_scope is None)
     if pid:
         cache_key = f"_PR_ANALYTICS_{pid}"
     elif project_ids is not None:
         cache_key = "_PR_ANALYTICS_" + "_".join(sorted(project_ids))
     else:
         cache_key = "_PR_ANALYTICS_"
-    cached = q("SELECT cache_data FROM dashboard_cache WHERE project_id=%s", (cache_key,), one=True)
-    if cached:
-        cdata = cached.get("cache_data")
-        # Invalidate cache if legacy version, or contains 'Unspecified', or unmerged 'Other'
-        if isinstance(cdata, dict) and cdata.get("cache_ver") == 3:
-            top_trades = cdata.get("top_trades", [])
-            trade_names_lower = [str(t.get("trade") or "").lower() for t in top_trades]
-            has_other_separate = "other" in trade_names_lower and "others" in trade_names_lower
-            has_unspecified = any(str(t.get("trade") or "").strip().lower() == "unspecified" for t in top_trades)
-            if not has_unspecified and not has_other_separate and cdata.get("top_trade_name") != "Unspecified":
-                return cdata
+    if use_cache:
+        cached = q("SELECT cache_data FROM dashboard_cache WHERE project_id=%s", (cache_key,), one=True)
+        if cached:
+            cdata = cached.get("cache_data")
+            # Invalidate cache if legacy version, or contains 'Unspecified', or unmerged 'Other'
+            if isinstance(cdata, dict) and cdata.get("cache_ver") == 3:
+                top_trades = cdata.get("top_trades", [])
+                trade_names_lower = [str(t.get("trade") or "").lower() for t in top_trades]
+                has_other_separate = "other" in trade_names_lower and "others" in trade_names_lower
+                has_unspecified = any(str(t.get("trade") or "").strip().lower() == "unspecified" for t in top_trades)
+                if not has_unspecified and not has_other_separate and cdata.get("top_trade_name") != "Unspecified":
+                    return cdata
 
     projects = get_projects(project_ids)
     project_map = {p["id"]: p for p in projects}
     allowed_ids = _clean_project_ids(project_ids)
     if pid:
-        pr_rows = q("""
-            SELECT r.id, r.project_id, r.data, d.code, d.name
-            FROM records r
-            JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
-            WHERE r.project_id=%s
-              AND (
-                   UPPER(COALESCE(d.code, ''))='PR'
-                OR LOWER(COALESCE(d.name, '')) LIKE %s
-                OR LOWER(COALESCE(d.name, '')) LIKE %s
-              )
-        """, (pid, "%requisition%", "%purchase request%"))
+        if allowed_ids is not None and pid not in allowed_ids:
+            pr_rows = []
+        else:
+            pr_rows = q("""
+                SELECT r.id, r.project_id, r.dt_id, r.data, d.code, d.name
+                FROM records r
+                JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
+                WHERE r.project_id=%s
+                  AND (
+                       UPPER(COALESCE(d.code, ''))='PR'
+                    OR LOWER(COALESCE(d.name, '')) LIKE %s
+                    OR LOWER(COALESCE(d.name, '')) LIKE %s
+                  )
+            """, (pid, "%requisition%", "%purchase request%"))
     elif allowed_ids is not None:
         if not allowed_ids:
             pr_rows = []
         else:
             ph = ",".join(["%s"] * len(allowed_ids))
             pr_rows = q(f"""
-                SELECT r.id, r.project_id, r.data, d.code, d.name
+                SELECT r.id, r.project_id, r.dt_id, r.data, d.code, d.name
                 FROM records r
                 JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
                 WHERE r.project_id IN ({ph})
@@ -2650,13 +3425,19 @@ def get_pr_analytics_summary(pid=None, limit=6, project_ids=None):
             """, allowed_ids + ["%requisition%", "%purchase request%"])
     else:
         pr_rows = q("""
-            SELECT r.id, r.project_id, r.data, d.code, d.name
+            SELECT r.id, r.project_id, r.dt_id, r.data, d.code, d.name
             FROM records r
             JOIN doc_types d ON d.id=r.dt_id AND d.project_id=r.project_id
             WHERE UPPER(COALESCE(d.code, ''))='PR'
                OR LOWER(COALESCE(d.name, '')) LIKE %s
                OR LOWER(COALESCE(d.name, '')) LIKE %s
         """, ("%requisition%", "%purchase request%"))
+
+    if doc_type_scope is not None:
+        pr_rows = [
+            row for row in pr_rows
+            if _dt_allowed_in_scope(row["project_id"], row["dt_id"], doc_type_scope, row.get("code", ""))
+        ]
 
     total_pr_records = len(pr_rows)
     if not total_pr_records:
@@ -2723,15 +3504,16 @@ def get_pr_analytics_summary(pid=None, limit=6, project_ids=None):
         "top_trade_count": top_trade.get("pr_count", 0),
         "trade_count_total": len(trade_counts),
     }
-    exe("INSERT INTO dashboard_cache (project_id, cache_data) VALUES (%s, %s::jsonb) ON CONFLICT(project_id) DO UPDATE SET cache_data=EXCLUDED.cache_data, updated_at=NOW()", (cache_key, json.dumps(res)))
+    if use_cache:
+        exe("INSERT INTO dashboard_cache (project_id, cache_data) VALUES (%s, %s::jsonb) ON CONFLICT(project_id) DO UPDATE SET cache_data=EXCLUDED.cache_data, updated_at=NOW()", (cache_key, json.dumps(res)))
     return res
 
 
-def get_monthly_trend(pid=None, project_ids=None):
+def get_monthly_trend(pid=None, project_ids=None, doc_type_scope=None):
     """Returns last 6 months of submission counts per month."""
     import re as _re
     where, params = _project_scope_clause("project_id", pid, project_ids)
-    rows = q(f"SELECT data FROM records {where}", params)
+    rows = q(f"SELECT project_id, dt_id, data FROM records {where}", params)
     months = {}
     import datetime
     today = datetime.date.today()
@@ -2742,6 +3524,8 @@ def get_monthly_trend(pid=None, project_ids=None):
         key = f"{y:04d}-{m:02d}"
         months[key] = {"submitted": 0, "approved": 0}
     for row in rows:
+        if not _dt_allowed_in_scope(row.get("project_id"), row.get("dt_id"), doc_type_scope):
+            continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         issued = d.get("issuedDate", "") or ""
         if not issued: continue
@@ -2757,7 +3541,7 @@ def get_monthly_trend(pid=None, project_ids=None):
             for k, v in sorted(months.items())]
 
 
-def get_aging_report(pid=None, project_ids=None):
+def get_aging_report(pid=None, project_ids=None, doc_type_scope=None):
     """Returns pending docs grouped by days lapsed — only for types with visible expectedReplyDate."""
     from utils import compute_duration
     where, params = _project_scope_clause("r.project_id", pid, project_ids)
@@ -2780,9 +3564,11 @@ def get_aging_report(pid=None, project_ids=None):
                        next((d["code"] for d in dt_rows if d["id"] == dt_id), ""),
                        next((d["name"] for d in dt_rows if d["id"] == dt_id), "")
                    )}
-    rows = q(f"SELECT r.dt_id, r.data FROM records r {where}", params)
+    rows = q(f"SELECT r.project_id, r.dt_id, r.data FROM records r {where}", params)
     buckets = {"1-7": 0, "8-14": 0, "15-21": 0, ">21": 0}
     for row in rows:
+        if not _dt_allowed_in_scope(row.get("project_id"), row.get("dt_id"), doc_type_scope):
+            continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         if d.get("actualReplyDate"): continue
         issued = d.get("issuedDate", "")
@@ -2798,13 +3584,15 @@ def get_aging_report(pid=None, project_ids=None):
         else:            buckets[">21"]   += 1
     return [{"range": k, "count": v} for k, v in buckets.items()]
 
-def get_quality_report(pid=None, project_ids=None):
+def get_quality_report(pid=None, project_ids=None, doc_type_scope=None):
     """Returns doc quality: how many docs needed 0,1,2,3+ revisions."""
     import re as _re
     where, params = _project_scope_clause("project_id", pid, project_ids)
-    rows = q(f"SELECT data FROM records {where}", params)
+    rows = q(f"SELECT project_id, dt_id, data FROM records {where}", params)
     doc_revs = {}
     for row in rows:
+        if not _dt_allowed_in_scope(row.get("project_id"), row.get("dt_id"), doc_type_scope):
+            continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         doc_no = d.get("docNo", "") or ""
         m = _re.search(r"REV(\d+)", doc_no, _re.IGNORECASE)
@@ -2821,7 +3609,7 @@ def get_quality_report(pid=None, project_ids=None):
     return [{"revisions": k, "count": v} for k, v in buckets.items()]
 
 
-def get_overdue_records(pid=None, project_ids=None):
+def get_overdue_records(pid=None, project_ids=None, doc_type_scope=None):
     """Returns overdue records — only for doc types with BOTH visible status AND visible expectedReplyDate."""
     from utils import is_overdue
     import datetime as _dt
@@ -2861,6 +3649,8 @@ def get_overdue_records(pid=None, project_ids=None):
 
     result = []
     for row in rows:
+        if not _dt_allowed_in_scope(row.get("project_id"), row.get("dt_id"), doc_type_scope, row.get("dt_code", "")):
+            continue
         d = row["data"] if isinstance(row["data"], dict) else {}
         if d.get("actualReplyDate"): continue
         doc_no = d.get("docNo", "") or ""

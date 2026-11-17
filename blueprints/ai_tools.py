@@ -119,9 +119,37 @@ PROJECT_ALIASES = {
 
 _DOC_TYPES_CACHE = {"ts": 0.0, "types": []}
 
-def get_registered_doc_types() -> list:
-    """Dynamically fetches all registered document types from DB across all projects with cache."""
+def get_registered_doc_types(doc_type_scope: dict = None) -> list:
+    """Dynamically fetches registered document types from DB, optionally filtered by doc_type_scope."""
     import time
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
+    if scope_norm is not None:
+        if not scope_norm:
+            return []
+        try:
+            pids = list(scope_norm.keys())
+            p_clause, p_params = _build_project_in_clause("project_id", pids)
+            rows = db.q(
+                f"SELECT project_id, id, UPPER(TRIM(code)) AS code, TRIM(name) AS name "
+                f"FROM doc_types WHERE {p_clause} AND code IS NOT NULL AND code != ''",
+                p_params,
+            ) or []
+            seen = set()
+            scoped = []
+            for r in rows:
+                pid = str(r.get("project_id") or "").strip()
+                dt_id = r.get("id")
+                dt_code = str(r.get("code") or "").strip().upper()
+                dt_name = str(r.get("name") or dt_code).strip()
+                if not _is_record_dt_allowed(pid, dt_id, scope_norm, dt_code=dt_code):
+                    continue
+                if dt_code and dt_code not in seen:
+                    seen.add(dt_code)
+                    scoped.append({"code": dt_code, "name": dt_name})
+            return scoped
+        except Exception:
+            return []
+
     now = time.time()
     if _DOC_TYPES_CACHE["types"] and (now - _DOC_TYPES_CACHE["ts"] < 300):
         return _DOC_TYPES_CACHE["types"]
@@ -394,176 +422,111 @@ def _resolve_project_aliases(cursor_or_project, requested_project=None, allowed_
     if not clean_allowed:
         return []
 
-    clean_allowed_set = set(clean_allowed)
-    clean_allowed_upper = {p.upper() for p in clean_allowed}
-
-    # Fetch project rows from database
+    # Fetch all project rows so exact IDs and alias ambiguity are checked across the full table.
     try:
         if cur is not None and hasattr(cur, "execute"):
-            if req_proj and str(req_proj).strip().upper() not in ("ALL", "*"):
-                cur.execute("""
-                    SELECT id, code, name FROM projects 
-                    WHERE code ILIKE %s OR name ILIKE %s OR id::text ILIKE %s
-                """, (f"%{req_proj}%", f"%{req_proj}%", f"%{req_proj}%"))
-            else:
-                cur.execute("SELECT id, code, name FROM projects")
+            cur.execute("SELECT id, code, name FROM projects ORDER BY id")
             rows = cur.fetchall()
         else:
-            if req_proj and str(req_proj).strip().upper() not in ("ALL", "*"):
-                rows = db.q("""
-                    SELECT id, code, name FROM projects 
-                    WHERE code ILIKE %s OR name ILIKE %s OR id::text ILIKE %s
-                """, (f"%{req_proj}%", f"%{req_proj}%", f"%{req_proj}%"))
-            else:
-                rows = db.q("SELECT id, code, name FROM projects")
+            rows = db.q("SELECT id, code, name FROM projects ORDER BY id")
     except Exception as e:
         logger.error("Error executing project alias resolution: %s", e)
         rows = []
 
-    req_clean = str(req_proj or "").strip().lower()
-    matched_alias_info = None
-    if req_clean and req_clean not in ("all", "*"):
-        for alias_k, alias_v in sorted(PROJECT_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
-            if alias_k == req_clean or alias_k in req_clean or req_clean in alias_k:
-                matched_alias_info = alias_v
-                break
+    if not rows:
+        req_clean = str(req_proj or "").strip().lower()
+        if not req_clean or req_clean in ("all", "*"):
+            return list(dict.fromkeys(clean_allowed))
+        return [pid for pid in clean_allowed if pid.lower() == req_clean]
 
-    valid_aliases = set()
-
+    # Resolve raw allowed_project_ids into canonical projects.id values
+    # (exact id first, unique CI id second, unambiguous code/name third).
+    by_exact_id = {}
+    by_ci_id = {}
+    by_ci_alias = {}
+    row_by_id = {}
     for row in rows:
-        row_id = str(row.get("id") or "").strip()
-        row_code = str(row.get("code") or "").strip()
-        row_name = str(row.get("name") or "").strip()
+        r_id = str(row.get("id") or "").strip()
+        if not r_id:
+            continue
+        row_by_id[r_id] = row
+        by_exact_id[r_id] = r_id
+        by_ci_id.setdefault(r_id.lower(), []).append(r_id)
+        for alias_val in (row.get("code"), row.get("name")):
+            a_low = str(alias_val or "").strip().lower()
+            if a_low:
+                by_ci_alias.setdefault(a_low, set()).add(r_id)
 
-        # Check if this project is allowed for the user under RBAC
-        is_allowed = (
-            row_id in clean_allowed_set
-            or row_code in clean_allowed_set
-            or row_name in clean_allowed_set
-            or row_id.upper() in clean_allowed_upper
-            or row_code.upper() in clean_allowed_upper
-            or row_name.upper() in clean_allowed_upper
-        )
+    canonical_allowed_ids = []
+    seen_canon = set()
+    for ident in clean_allowed:
+        resolved = None
+        if ident in by_exact_id:
+            resolved = by_exact_id[ident]
+        elif len(by_ci_id.get(ident.lower(), [])) == 1:
+            resolved = by_ci_id[ident.lower()][0]
+        elif len(by_ci_alias.get(ident.lower(), set())) == 1:
+            resolved = next(iter(by_ci_alias[ident.lower()]))
+        if resolved and resolved not in seen_canon:
+            seen_canon.add(resolved)
+            canonical_allowed_ids.append(resolved)
 
-        # Check via alias mapping if user's permissions allow this project
-        target_codes = matched_alias_info.get("codes", [matched_alias_info["code"]]) if matched_alias_info else []
-        target_codes_upper = {c.upper() for c in target_codes}
-        if not is_allowed and matched_alias_info:
-            if any(c in clean_allowed_set or c.upper() in clean_allowed_upper for c in target_codes):
-                if (
-                    row_code in target_codes
-                    or row_code.upper() in target_codes_upper
-                    or matched_alias_info["name_pattern"].lower() in row_name.lower()
-                    or any(c in row_id for c in target_codes)
-                ):
-                    is_allowed = True
+    if not canonical_allowed_ids:
+        return []
 
-        if is_allowed:
-            # If user requested a specific project, ensure this row matches requested
-            if req_clean and req_clean not in ("all", "*"):
-                matches_request = (
-                    req_clean == row_code.lower()
-                    or req_clean in row_code.lower()
-                    or req_clean == row_name.lower()
-                    or req_clean in row_name.lower()
-                    or req_clean == row_id.lower()
-                    or req_clean in row_id.lower()
-                )
-                if not matches_request and matched_alias_info:
-                    matches_request = (
-                        row_code in target_codes
-                        or row_code.upper() in target_codes_upper
-                        or matched_alias_info["name_pattern"].lower() in row_name.lower()
-                        or any(c.lower() in row_code.lower() for c in target_codes)
-                    )
-                if not matches_request:
-                    continue
+    req_str = str(req_proj or "").strip()
+    req_clean = req_str.lower()
+    if not req_clean or req_clean in ("all", "*"):
+        return canonical_allowed_ids
 
-            if row_id:
-                valid_aliases.add(row_id)
-            if row_code:
-                valid_aliases.add(row_code)
-            if row_name:
-                valid_aliases.add(row_name)
+    # Check if requested project matches an exact canonical ID across ALL projects first
+    # so an unauthorized project ID never falls through to another project's code/name.
+    exact_id_match = by_exact_id.get(req_str)
+    if not exact_id_match and len(by_ci_id.get(req_clean, [])) == 1:
+        exact_id_match = by_ci_id[req_clean][0]
+    if exact_id_match:
+        return [exact_id_match] if exact_id_match in seen_canon else []
 
-    # Known alias expansion for all 7 system projects if permitted
-    KNOWN_PROJECT_EXPANSIONS = [
-        {
-            "codes": ["PEM-058"],
-            "aliases": ["PEM-058", "CFC DCP PH-2A", "CFC", "كايرو فيستيفال", "سي اف سي"],
-            "match_keys": ["cfc", "pem-058", "058", "cooling", "كايرو فيستيفال", "سي اف سي"],
-        },
-        {
-            "codes": ["24CP01"],
-            "aliases": ["24CP01", "EKH", "EKH New Building Office", "اي كيه اتش", "إي كيه إتش", "كويت القابضة"],
-            "match_keys": ["ekh", "24cp01", "اي كيه اتش", "إي كيه إتش", "كويت القابضة", "الكويت القابضة"],
-        },
-        {
-            "codes": ["PEM-064", "PEM-044"],
-            "aliases": ["PEM-064", "PEM-044", "Suez", "Suez Steel Admin Building", "السويس", "سويس", "حديد السويس"],
-            "match_keys": ["suez", "pem-064", "pem-044", "064", "044", "السويس", "سويس", "حديد السويس", "suez steel"],
-        },
-        {
-            "codes": ["PEM-065"],
-            "aliases": ["PEM-065", "Eastmain MEP Buildings B06 & B10", "Eastmain B06", "Eastmain B10", "ايست مين b06"],
-            "match_keys": ["pem-065", "065", "eastmain b06", "eastmain b10", "b06", "b10", "eastmain b06 & b10", "eastmain b06 and b10", "ايست مين b06", "ايست مين b10"],
-        },
-        {
-            "codes": ["PEM-066"],
-            "aliases": ["PEM-066", "Eastmain - MEP Building B08", "Eastmain B08", "ايست مين b08"],
-            "match_keys": ["pem-066", "066", "eastmain b08", "b08", "east main b08", "ايست مين b08"],
-        },
-        {
-            "codes": ["PEM-067", "PEM-045"],
-            "aliases": ["PEM-067", "PEM-045", "Assiut", "ANOPC", "Assiut Hydrocracking Complex - ANOPC", "أسيوط", "اسيوط", "أنوبك"],
-            "match_keys": ["assiut", "anopc", "pem-067", "pem-045", "067", "045", "أسيوط", "اسيوط", "أنوبك", "انوبك"],
-        },
-        {
-            "codes": ["PEM-068"],
-            "aliases": ["PEM-068", "Four Season", "Four Season Lift Station", "Four Seasons", "فور سيزون", "محطة الرفع"],
-            "match_keys": ["four season", "four seasons", "fourseason", "fourseasons", "pem-068", "068", "فور سيزون", "فورسيزون", "فور سيزونز", "محطة الرفع", "شرم الشيخ"],
-        },
-    ]
+    # Check exact code/name match across ALL projects; fail closed if ambiguous.
+    exact_alias_matches = by_ci_alias.get(req_clean, set())
+    if exact_alias_matches:
+        if len(exact_alias_matches) == 1:
+            only_id = next(iter(exact_alias_matches))
+            return [only_id] if only_id in seen_canon else []
+        return []
+
+    matched_alias_info = None
+    for alias_k, alias_v in sorted(PROJECT_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
+        if alias_k == req_clean or alias_k in req_clean or req_clean in alias_k:
+            matched_alias_info = alias_v
+            break
 
     target_codes = matched_alias_info.get("codes", [matched_alias_info["code"]]) if matched_alias_info else []
-    is_generic_eastmain = req_clean in ("eastmain", "east main", "ايست مين", "إيست مين", "ايستمين")
+    target_codes_upper = {c.upper() for c in target_codes}
 
-    for exp in KNOWN_PROJECT_EXPANSIONS:
-        has_perm = any(
-            c in clean_allowed_upper or any(c in p.upper() for p in clean_allowed)
-            for c in exp["codes"]
+    matched_ids = []
+    for r_id in canonical_allowed_ids:
+        row = row_by_id[r_id]
+        row_code = str(row.get("code") or "").strip()
+        row_name = str(row.get("name") or "").strip()
+        matches_request = (
+            req_clean == row_code.lower()
+            or req_clean in row_code.lower()
+            or req_clean == row_name.lower()
+            or req_clean in row_name.lower()
+            or req_clean == r_id.lower()
+            or req_clean in r_id.lower()
         )
-        if has_perm:
-            matches_this = (
-                not req_clean
-                or req_clean in ("all", "*")
-                or any(k in req_clean for k in exp["match_keys"])
-                or (matched_alias_info and any(c in target_codes for c in exp["codes"]))
-                or (is_generic_eastmain and any(c in ("PEM-065", "PEM-066") for c in exp["codes"]))
+        if not matches_request and matched_alias_info:
+            matches_request = (
+                row_code in target_codes
+                or row_code.upper() in target_codes_upper
+                or matched_alias_info["name_pattern"].lower() in row_name.lower()
             )
-            if matches_this:
-                valid_aliases.update(exp["aliases"])
+        if matches_request:
+            matched_ids.append(r_id)
 
-    # Fallback: if no DB rows returned (e.g. offline/mock tests)
-    if not valid_aliases:
-        if not req_clean or req_clean in ("all", "*"):
-            valid_aliases.update(clean_allowed)
-        else:
-            for exp in KNOWN_PROJECT_EXPANSIONS:
-                has_perm = any(
-                    c in clean_allowed_upper or any(c in p.upper() for p in clean_allowed)
-                    for c in exp["codes"]
-                )
-                if has_perm and (
-                    any(k in req_clean for k in exp["match_keys"])
-                    or (matched_alias_info and any(c in target_codes for c in exp["codes"]))
-                    or (is_generic_eastmain and any(c in ("PEM-065", "PEM-066") for c in exp["codes"]))
-                ):
-                    valid_aliases.update(exp["aliases"])
-            if any(req_clean == a.lower() for a in clean_allowed):
-                valid_aliases.add(req_clean)
-
-    return list(valid_aliases)
+    return matched_ids
 
 
 def _build_project_in_clause(column_name: str, valid_aliases: list):
@@ -589,23 +552,80 @@ def _build_project_in_clause(column_name: str, valid_aliases: list):
     return clause, params
 
 
+def _normalize_doc_type_scope(doc_type_scope):
+    """Normalize optional doc_type_scope dict into {pid: None | set_of_uppercase_tokens}."""
+    if doc_type_scope is None:
+        return None
+    norm = {}
+    for pid, allowed in doc_type_scope.items():
+        key = str(pid or "").strip()
+        if not key:
+            continue
+        if allowed is None:
+            norm[key] = None
+        else:
+            norm[key] = {str(x).strip().upper() for x in allowed if str(x).strip()}
+    return norm
+
+
+def _is_record_dt_allowed(project_id, dt_id, scope_norm, dt_code=""):
+    """Return True if record (project_id, dt_id, dt_code) is permitted by normalized doc_type_scope."""
+    if scope_norm is None:
+        return True
+    pid = str(project_id or "").strip()
+    if pid not in scope_norm:
+        return False
+    allowed = scope_norm[pid]
+    if allowed is None:
+        return True
+    if not allowed:
+        return False
+    if dt_id and str(dt_id).strip().upper() in allowed:
+        return True
+    if dt_code and str(dt_code).strip().upper() in allowed:
+        return True
+    return False
+
+
+def _get_proj_dt_code_map(project_ids):
+    """Return {(project_id, dt_id_upper): dt_code_upper} for project_ids."""
+    if not project_ids:
+        return {}
+    try:
+        p_clause, p_params = _build_project_in_clause("project_id", list(project_ids))
+        rows = db.q(f"SELECT project_id, id, code FROM doc_types WHERE {p_clause}", p_params) or []
+    except Exception:
+        return {}
+    out = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        pid = str(r.get("project_id") or "").strip()
+        dt_id = str(r.get("id") or "").strip().upper()
+        dt_code = str(r.get("code") or "").strip().upper()
+        if pid and dt_id:
+            out[(pid, dt_id)] = dt_code
+    return out
+
+
 def _resolve_target_projects(allowed_project_ids, project_code=None):
     """Resolves accessible projects based on user permission and optional project filter."""
     if not allowed_project_ids:
         return []
 
-    clean_allowed = [str(pid).strip() for pid in allowed_project_ids if str(pid).strip()]
+    clean_allowed = db.resolve_project_identifiers(allowed_project_ids)
+    if not clean_allowed:
+        clean_allowed = [str(pid).strip() for pid in allowed_project_ids if str(pid).strip()]
     if not clean_allowed:
         return []
 
-    p_clause, p_params = _build_project_in_clause("id", clean_allowed)
-    c_clause, c_params = _build_project_in_clause("code", clean_allowed)
+    placeholders = ", ".join(["%s"] * len(clean_allowed))
     try:
         projs = db.q(f"""
             SELECT id, name, code, data FROM projects 
-            WHERE {p_clause} OR {c_clause}
+            WHERE id IN ({placeholders})
             ORDER BY code
-        """, p_params + c_params)
+        """, tuple(clean_allowed))
     except Exception as e:
         logger.error("Error fetching projects for target resolution: %s", e)
         projs = []
@@ -617,7 +637,27 @@ def _resolve_target_projects(allowed_project_ids, project_code=None):
     if not project_code or str(project_code).strip().upper() in ("ALL", "*"):
         return projs
 
+    canon_req = db.resolve_project_alias(project_code)
+    if isinstance(canon_req, dict) and canon_req.get("id"):
+        canon_id = str(canon_req["id"]).strip()
+        return [p for p in projs if str(p.get("id") or "").strip() == canon_id]
+    if isinstance(canon_req, str) and canon_req.strip():
+        canon_id = canon_req.strip()
+        return [p for p in projs if str(p.get("id") or "").strip() == canon_id]
+
+    # If project_code matches another project's exact ID or ambiguous alias across DB, fail closed.
+    all_rows = []
+    try:
+        all_rows = db.q("SELECT id, code, name FROM projects ORDER BY id") or []
+    except Exception:
+        all_rows = []
     p_clean = str(project_code).strip().lower()
+    if all_rows:
+        exact_ids = {str(r.get("id") or "").strip().lower() for r in all_rows}
+        exact_codes = [str(r.get("id") or "").strip() for r in all_rows if str(r.get("code") or "").strip().lower() == p_clean or str(r.get("name") or "").strip().lower() == p_clean]
+        if p_clean in exact_ids or len(exact_codes) > 1:
+            return []
+
     p_norm = _normalize_arabic(p_clean)
 
     # Check PROJECT_ALIASES (sorted by length descending)
@@ -637,7 +677,7 @@ def _resolve_target_projects(allowed_project_ids, project_code=None):
         if matched_alias:
             alias_codes = [c.lower() for c in matched_alias.get("codes", [matched_alias["code"]])]
             alias_name = matched_alias["name_pattern"].lower()
-            if p_code in alias_codes or alias_name in p_name or any(c in p_id for c in alias_codes):
+            if p_code in alias_codes or alias_name in p_name:
                 matched.append(p)
                 continue
 
@@ -688,6 +728,7 @@ def search_submittals(
     status: str = None,
     latest_revision_only: bool = True,
     limit: int = 25,
+    doc_type_scope: dict = None,
 ) -> dict:
     """Searches engineering submittals with strict RBAC isolation and parameterized SQL.
 
@@ -701,7 +742,9 @@ def search_submittals(
         status: Optional status category ('approved', 'pending', 'rejected').
         latest_revision_only: Whether to return only the latest revision of each document (default True).
         limit: Maximum records to return (1-100, default 25).
+        doc_type_scope: Optional per-project allowed document-type map.
     """
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
     valid_aliases = _resolve_project_aliases(None, project_code, allowed_project_ids)
     if isinstance(valid_aliases, (set, tuple)):
         valid_aliases = list(valid_aliases)
@@ -889,6 +932,7 @@ def search_submittals(
         SELECT 
             r.id,
             r.project_id,
+            r.dt_id AS dt_id,
             COALESCE(
                 NULLIF(CASE 
                     WHEN r.data->>'docNo' ILIKE 'PR-%%' OR r.data->>'docNo' ILIKE 'PR/%%' OR r.data->>'docNo' ILIKE '%%-PR-%%' OR r.data->>'prNo' ILIKE 'PR-%%' OR r.data->>'prNumber' ILIKE 'PR-%%' THEN 'PR'
@@ -935,6 +979,7 @@ def search_submittals(
                 SELECT 
                     r.id,
                     r.project_id,
+                    r.dt_id AS dt_id,
                     COALESCE(
                         NULLIF(CASE 
                             WHEN r.data->>'docNo' ILIKE 'PR-%%' OR r.data->>'prNo' ILIKE 'PR-%%' THEN 'PR'
@@ -983,6 +1028,21 @@ def search_submittals(
                 "records": [],
                 "error": str(e),
             }
+
+    if scope_norm is not None and rows:
+        dt_code_map = _get_proj_dt_code_map(valid_aliases)
+        rows = [
+            r for r in rows
+            if _is_record_dt_allowed(
+                r.get("project_id"),
+                r.get("dt_id"),
+                scope_norm,
+                dt_code=dt_code_map.get(
+                    (str(r.get("project_id") or "").strip(), str(r.get("dt_id") or "").strip().upper()),
+                    str(r.get("doc_type") or "").strip().upper(),
+                ),
+            )
+        ]
 
     # Identify matched equipment key for conflict checks
     matched_eq_key = None
@@ -1228,13 +1288,16 @@ def search_submittals(
 def get_project_summary(
     allowed_project_ids: list,
     project_code: str = None,
+    doc_type_scope: dict = None,
 ) -> dict:
     """Returns high-level KPI register summary, approval rates, and document type totals.
 
     Args:
         allowed_project_ids: List of project IDs the user has permission to view.
         project_code: Optional project code or alias to scope the summary.
+        doc_type_scope: Optional per-project allowed document-type map.
     """
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
     valid_aliases = _resolve_project_aliases(None, project_code, allowed_project_ids)
     if isinstance(valid_aliases, (set, tuple)):
         valid_aliases = list(valid_aliases)
@@ -1268,7 +1331,10 @@ def get_project_summary(
         hasattr(db.get_dashboard_stats, "mock_calls") or hasattr(db.get_dashboard_stats, "return_value")
     ):
         try:
-            stats = db.get_dashboard_stats(project_ids=valid_aliases)
+            try:
+                stats = db.get_dashboard_stats(project_ids=valid_aliases, doc_type_scope=scope_norm)
+            except TypeError:
+                stats = db.get_dashboard_stats(project_ids=valid_aliases)
         except Exception as e:
             logger.error("get_project_summary mock error: %s", e)
             stats = []
@@ -1280,6 +1346,8 @@ def get_project_summary(
                     r.project_id,
                     COALESCE(p.code, r.project_id) as proj_code,
                     COALESCE(p.name, r.project_id) as proj_name,
+                    r.dt_id,
+                    COALESCE(dt.code, r.dt_id, '') as dt_code,
                     COUNT(*) as total,
                     COUNT(CASE WHEN (
                         COALESCE(r.data->>'status', r.data->>'partBStatus', '') ILIKE '%%Approv%%' 
@@ -1307,12 +1375,20 @@ def get_project_summary(
                     ) THEN 1 END) as pending
                 FROM records r
                 LEFT JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id OR p.name = r.project_id)
+                LEFT JOIN doc_types dt ON (dt.id = r.dt_id AND dt.project_id = r.project_id)
                 WHERE {p_clause}
-                GROUP BY r.project_id, p.code, p.name
+                GROUP BY r.project_id, p.code, p.name, r.dt_id, dt.code
             """, p_params)
 
             proj_dict = {}
             for row in rows:
+                if not _is_record_dt_allowed(
+                    row.get("project_id"),
+                    row.get("dt_id"),
+                    scope_norm,
+                    dt_code=str(row.get("dt_code") or "").strip().upper(),
+                ):
+                    continue
                 p_code = row.get("proj_code") or row.get("project_id", "")
                 if "CFC" in str(p_code) or "058" in str(p_code):
                     p_code = "PEM-058"
@@ -1344,7 +1420,7 @@ def get_project_summary(
         except Exception as e:
             logger.error("get_project_summary query error: %s", e)
             try:
-                stats = db.get_dashboard_stats(project_ids=valid_aliases)
+                stats = db.get_dashboard_stats(project_ids=valid_aliases, doc_type_scope=scope_norm)
             except Exception:
                 stats = []
 
@@ -1377,6 +1453,7 @@ def get_noc_financials(
     project_code: str = None,
     status: str = None,
     has_vo: bool = None,
+    doc_type_scope: dict = None,
 ) -> dict:
     """Extracts Notice of Change (NOC) financial metrics, submitted vs approved cost totals, and approvals.
 
@@ -1385,7 +1462,9 @@ def get_noc_financials(
         project_code: Optional project code to filter (e.g. 'PEM-058').
         status: Optional status category ('approved', 'pending', 'rejected').
         has_vo: Optional boolean to filter NOCs that have an issued Variation Order (VO).
+        doc_type_scope: Optional per-project allowed document-type map.
     """
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
     valid_aliases = _resolve_project_aliases(None, project_code, allowed_project_ids)
     if isinstance(valid_aliases, (set, tuple)):
         valid_aliases = list(valid_aliases)
@@ -1415,9 +1494,10 @@ def get_noc_financials(
     try:
         p_clause, p_params = _build_project_in_clause("r.project_id", valid_aliases)
         rows = db.q(f"""
-            SELECT r.project_id, COALESCE(p.code, r.project_id) as proj_code, COALESCE(p.name, r.project_id) as proj_name, r.data
+            SELECT r.project_id, r.dt_id, COALESCE(dt.code, r.dt_id, '') as dt_code, COALESCE(p.code, r.project_id) as proj_code, COALESCE(p.name, r.project_id) as proj_name, r.data
             FROM records r
             LEFT JOIN projects p ON (p.id = r.project_id OR p.code = r.project_id OR p.name = r.project_id)
+            LEFT JOIN doc_types dt ON (dt.id = r.dt_id AND dt.project_id = r.project_id)
             WHERE (
                 UPPER(r.dt_id) = 'NOC' 
                 OR r.dt_id IN (SELECT id FROM doc_types WHERE UPPER(code) = 'NOC' OR UPPER(name) ILIKE '%%CHANGE%%')
@@ -1431,6 +1511,17 @@ def get_noc_financials(
     except Exception as e:
         logger.error("get_noc_financials error: %s", e)
         rows = []
+
+    if scope_norm is not None and rows:
+        rows = [
+            row for row in rows
+            if _is_record_dt_allowed(
+                row.get("project_id"),
+                row.get("dt_id"),
+                scope_norm,
+                dt_code=str(row.get("dt_code") or "").strip().upper(),
+            )
+        ]
 
     target_projs = _resolve_target_projects(allowed_project_ids, project_code)
     by_project_map = {}
@@ -1561,6 +1652,7 @@ def get_overdue_submittals(
     discipline: str = None,
     min_days_overdue: int = 1,
     limit: int = 25,
+    doc_type_scope: dict = None,
 ) -> dict:
     """Finds documents exceeding their contractual SLA expected reply date, sorted by longest delay.
 
@@ -1571,7 +1663,9 @@ def get_overdue_submittals(
         discipline: Optional discipline filter.
         min_days_overdue: Minimum overdue delay threshold in days (default 1).
         limit: Max items to return (default 25).
+        doc_type_scope: Optional per-project allowed document-type map.
     """
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
     valid_aliases = _resolve_project_aliases(None, project_code, allowed_project_ids)
     if isinstance(valid_aliases, (set, tuple)):
         valid_aliases = list(valid_aliases)
@@ -1598,7 +1692,10 @@ def get_overdue_submittals(
         hasattr(db.get_overdue_records, "mock_calls") or hasattr(db.get_overdue_records, "return_value")
     ):
         try:
-            overdue_recs = db.get_overdue_records(project_ids=valid_aliases)
+            try:
+                overdue_recs = db.get_overdue_records(project_ids=valid_aliases, doc_type_scope=scope_norm)
+            except TypeError:
+                overdue_recs = db.get_overdue_records(project_ids=valid_aliases)
         except Exception as e:
             logger.error("get_overdue_submittals error: %s", e)
             overdue_recs = []
@@ -1634,6 +1731,13 @@ def get_overdue_submittals(
             from datetime import date, datetime
             today = date.today()
             for r in rows:
+                if not _is_record_dt_allowed(
+                    r.get("project_id"),
+                    r.get("dt_id"),
+                    scope_norm,
+                    dt_code=str(r.get("dt_code") or "").strip().upper(),
+                ):
+                    continue
                 exp_str = r.get("expected_reply")
                 if not exp_str:
                     continue
@@ -1652,9 +1756,20 @@ def get_overdue_submittals(
         except Exception as e:
             logger.error("get_overdue_submittals direct query error: %s", e)
             try:
-                overdue_recs = db.get_overdue_records(project_ids=valid_aliases)
+                overdue_recs = db.get_overdue_records(project_ids=valid_aliases, doc_type_scope=scope_norm)
             except Exception:
                 overdue_recs = []
+
+    if scope_norm is not None and overdue_recs:
+        overdue_recs = [
+            r for r in overdue_recs
+            if _is_record_dt_allowed(
+                r.get("project_id"),
+                r.get("dt_id") or r.get("dt_code"),
+                scope_norm,
+                dt_code=str(r.get("dt_code") or "").strip().upper(),
+            )
+        ]
 
     dt_filter = str(doc_type).strip().upper() if doc_type else None
     disc_filter = str(discipline).strip().lower() if discipline else None
@@ -1685,6 +1800,7 @@ def get_document_history(
     allowed_project_ids: list,
     doc_no_pattern: str,
     project_code: str = None,
+    doc_type_scope: dict = None,
 ) -> dict:
     """Retrieves full chronological revision history (REV 00 -> REV 01 -> ...) and approval lifecycle of a document.
 
@@ -1692,7 +1808,9 @@ def get_document_history(
         allowed_project_ids: List of allowed project IDs for authenticated user.
         doc_no_pattern: Document number string or partial base (e.g. 'MS-CY002P608-00019').
         project_code: Optional project code to narrow search.
+        doc_type_scope: Optional per-project allowed document-type map.
     """
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
     valid_aliases = _resolve_project_aliases(None, project_code, allowed_project_ids)
     if isinstance(valid_aliases, (set, tuple)):
         valid_aliases = list(valid_aliases)
@@ -1738,6 +1856,21 @@ def get_document_history(
         logger.error("get_document_history query error: %s", e)
         rows = []
 
+    if scope_norm is not None and rows:
+        dt_code_map = _get_proj_dt_code_map(valid_aliases)
+        rows = [
+            r for r in rows
+            if _is_record_dt_allowed(
+                r.get("project_id"),
+                r.get("dt_id"),
+                scope_norm,
+                dt_code=dt_code_map.get(
+                    (str(r.get("project_id") or "").strip(), str(r.get("dt_id") or "").strip().upper()),
+                    "",
+                ),
+            )
+        ]
+
     parsed_revisions = []
     for r in rows:
         d = r.get("data") or {}
@@ -1774,6 +1907,229 @@ def get_document_history(
         "latest_revision": f"REV {latest.get('rev_num', 0):02d}" if latest else None,
         "latest_status": latest.get("status") if latest else None,
         "revisions": parsed_revisions,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# HSE TOOLS (Phase 3 - Workspace-Scoped Safety Intelligence)
+# ─────────────────────────────────────────────────────────────
+HSE_AI_SEARCH_CODES = ("PTW", "OBS", "INC", "SVP", "FEI", "JSA", "CEV", "EVAC")
+
+
+def _resolve_hse_target_projects(allowed_project_ids: list, project_code: str = None) -> list:
+    """Resolve accessible HSE workspace projects strictly within allowed_project_ids."""
+    candidates = _resolve_target_projects(allowed_project_ids, project_code=project_code)
+    if not candidates:
+        return []
+    cand_ids = [str(p.get("id") or "").strip() for p in candidates if p.get("id")]
+    if not cand_ids:
+        return []
+    try:
+        ph, params = _build_project_in_clause("id", cand_ids)
+        rows = db.q(
+            f"SELECT id, code, name, COALESCE(workspace_id, 'ENG') AS workspace_id "
+            f"FROM projects WHERE {ph} AND UPPER(COALESCE(workspace_id, 'ENG')) = 'HSE' ORDER BY code, id",
+            params,
+        ) or []
+        return rows
+    except Exception as e:
+        logger.error("Error filtering HSE target projects: %s", e)
+        return []
+
+
+def _fetch_scoped_hse_records(hse_projects: list, scope_norm, dt_filter_codes=None) -> tuple:
+    """Fetch normalized raw records strictly filtered to hse_projects and allowed_doc_types."""
+    if not hse_projects:
+        return [], {}, {}
+    proj_meta = {p["id"]: p for p in hse_projects}
+    pids = list(proj_meta.keys())
+    dt_code_map = _get_proj_dt_code_map(pids)
+    try:
+        p_clause, p_params = _build_project_in_clause("project_id", pids)
+        rows = db.q(
+            f"SELECT id, project_id, dt_id, data, created_at, updated_at "
+            f"FROM records WHERE {p_clause} ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST",
+            p_params,
+        ) or []
+    except Exception as e:
+        logger.error("Error fetching HSE records: %s", e)
+        return [], dt_code_map, proj_meta
+
+    allowed_codes = {str(c).strip().upper() for c in dt_filter_codes} if dt_filter_codes else None
+    scoped = []
+    for row in rows:
+        pid = str(row.get("project_id") or "").strip()
+        dt_id = row.get("dt_id")
+        dt_code = dt_code_map.get((pid, str(dt_id or "").strip().upper())) or str(dt_id or "").strip().upper()
+        if allowed_codes is not None and dt_code not in allowed_codes:
+            continue
+        if not _is_record_dt_allowed(pid, dt_id, scope_norm, dt_code=dt_code):
+            continue
+        scoped.append(row)
+    return scoped, dt_code_map, proj_meta
+
+
+def get_hse_kpis(
+    allowed_project_ids: list,
+    project_code: str = None,
+    year: int = None,
+    warn_days: int = 30,
+    doc_type_scope: dict = None,
+) -> dict:
+    """Retrieve RBAC-scoped HSE KPIs: LTI-free streak, any-injury streak, LTIF, TRIR, severity rate, and man-hours."""
+    import hse_analytics
+
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
+    hse_projs = _resolve_hse_target_projects(allowed_project_ids, project_code=project_code)
+    if not hse_projs:
+        empty = hse_analytics.compute_hse_kpis([], year=year, warn_days=warn_days)
+        return {
+            "projects": [],
+            "lti_free_days": None,
+            "any_injury_free_days": None,
+            "ltif": None,
+            "trir": None,
+            "severity_rate": None,
+            "man_hours": 0.0,
+            **empty,
+            "message": "No accessible HSE project found.",
+        }
+
+    raw_rows, dt_code_map, proj_meta = _fetch_scoped_hse_records(hse_projs, scope_norm)
+    norm_docs = hse_analytics.normalize_hse_records(raw_rows, dt_code_lookup=dt_code_map, project_meta=proj_meta)
+    kpis = hse_analytics.compute_hse_kpis(norm_docs, year=year, warn_days=warn_days)
+    return {
+        "projects": [{"id": p["id"], "code": p.get("code") or p["id"], "name": p.get("name") or p["id"]} for p in hse_projs],
+        "lti_free_days": kpis["streaks"]["lti_free"]["days"],
+        "any_injury_free_days": kpis["streaks"]["any_injury_free"]["days"],
+        "ltif": kpis["rates"]["ltif"],
+        "trir": kpis["rates"]["trir"],
+        "severity_rate": kpis["rates"]["severity_rate"],
+        "man_hours": kpis["man_hours"],
+        **kpis,
+    }
+
+
+def search_hse_records(
+    allowed_project_ids: list,
+    project_code: str = None,
+    doc_type: str = None,
+    keyword: str = None,
+    status: str = None,
+    limit: int = 25,
+    doc_type_scope: dict = None,
+) -> dict:
+    """Search PTW, OBS, INC, SVP, FEI, JSA, CEV, and EVAC records within allowed HSE projects and doc types."""
+    import hse_analytics
+
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
+    hse_projs = _resolve_hse_target_projects(allowed_project_ids, project_code=project_code)
+    if not hse_projs:
+        return {"count": 0, "total_matches": 0, "projects": [], "records": [], "message": "No accessible HSE project found."}
+
+    req_dt = str(doc_type or "").strip().upper()
+    if req_dt:
+        if req_dt not in HSE_AI_SEARCH_CODES:
+            return {"count": 0, "total_matches": 0, "projects": hse_projs, "records": []}
+        dt_codes = {req_dt}
+    else:
+        dt_codes = set(HSE_AI_SEARCH_CODES)
+
+    raw_rows, dt_code_map, proj_meta = _fetch_scoped_hse_records(hse_projs, scope_norm, dt_filter_codes=dt_codes)
+    kw_raw = str(keyword or "").strip().lower()
+    kw_norm = _normalize_arabic(kw_raw)
+    st_req = str(status or "").strip().lower()
+    max_items = max(1, min(100, int(limit or 25)))
+
+    matched = []
+    for row in raw_rows:
+        norm = hse_analytics.normalize_hse_record(row, dt_code_lookup=dt_code_map, project_meta=proj_meta)
+        if not norm:
+            continue
+        raw_data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        if st_req:
+            rec_st = str(norm.get("status") or "").strip().lower()
+            raw_cond = str(raw_data.get("extinguisherStatus") or "").strip().lower()
+            if st_req != rec_st and st_req not in rec_st and st_req not in raw_cond:
+                continue
+        if kw_raw:
+            blob = " ".join(
+                str(v or "") for v in (
+                    norm.get("doc_no"),
+                    norm.get("title"),
+                    norm.get("subtype"),
+                    norm.get("location"),
+                    norm.get("injury_class"),
+                    raw_data.get("description"),
+                    raw_data.get("rootCause"),
+                    raw_data.get("correctiveAction"),
+                    raw_data.get("equipmentRef"),
+                    raw_data.get("extinguisherType"),
+                    raw_data.get("conditionNotes"),
+                    raw_data.get("remarks"),
+                    raw_data.get("scenario"),
+                )
+            )
+            blob_low = blob.lower()
+            blob_norm = _normalize_arabic(blob)
+            if kw_raw not in blob_low and (not kw_norm or kw_norm not in blob_norm):
+                continue
+
+        valid_or_exp = (
+            norm["valid_until"].isoformat() if norm["dt_code"] == "PTW" and norm.get("valid_until")
+            else (norm["expiry_date"].isoformat() if norm.get("expiry_date") else None)
+        )
+        matched.append({
+            "record_id": norm["id"],
+            "project_id": norm["project_id"],
+            "project_code": norm["project_code"],
+            "dt_code": norm["dt_code"],
+            "doc_no": norm["doc_no"] or norm["id"],
+            "title": norm["title"],
+            "subtype": norm["subtype"],
+            "location": norm["location"],
+            "status": norm["status"] or str(raw_data.get("extinguisherStatus") or ""),
+            "issued_date": norm["date"].isoformat() if norm.get("date") else None,
+            "valid_or_expiry_date": valid_or_exp,
+            "injury_class": norm["injury_class"] or None,
+            "lost_days": norm["lost_days"] if norm["dt_code"] == "INC" else 0,
+        })
+
+    return {
+        "count": len(matched[:max_items]),
+        "total_matches": len(matched),
+        "projects": [{"id": p["id"], "code": p.get("code") or p["id"], "name": p.get("name") or p["id"]} for p in hse_projs],
+        "records": matched[:max_items],
+    }
+
+
+def get_expiring_permits_and_equipment(
+    allowed_project_ids: list,
+    project_code: str = None,
+    warn_days: int = 30,
+    alert_type: str = None,
+    limit: int = 30,
+    doc_type_scope: dict = None,
+) -> dict:
+    """List expiring/overdue PTW permits, expiring/expired FEI equipment, and stale OBS alerts."""
+    import hse_analytics
+
+    scope_norm = _normalize_doc_type_scope(doc_type_scope)
+    hse_projs = _resolve_hse_target_projects(allowed_project_ids, project_code=project_code)
+    if not hse_projs:
+        return {"total_alerts": 0, "counts": {"total": 0}, "warn_days": warn_days, "alerts": []}
+
+    raw_rows, dt_code_map, proj_meta = _fetch_scoped_hse_records(
+        hse_projs, scope_norm, dt_filter_codes={"PTW", "FEI", "OBS"}
+    )
+    norm_docs = hse_analytics.normalize_hse_records(raw_rows, dt_code_lookup=dt_code_map, project_meta=proj_meta)
+    alerts_data = hse_analytics.compute_hse_alerts(norm_docs, warn_days=warn_days, alert_filter=alert_type)
+    max_items = max(1, min(100, int(limit or 30)))
+    return {
+        "total_alerts": len(alerts_data["alerts"]),
+        "counts": alerts_data["counts"],
+        "warn_days": alerts_data["warn_days"],
+        "alerts": alerts_data["alerts"][:max_items],
     }
 
 

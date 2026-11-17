@@ -22,7 +22,7 @@ import uuid
 from flask import Blueprint, jsonify, request, send_file
 
 import db
-from auth import current_user, can_edit
+from auth import current_user, can_edit, can_view_project, can_access_doc_type, filter_allowed_doc_types
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 from security import scan_and_validate_file
 
@@ -1861,16 +1861,21 @@ def _build_pr_register_excel(proj, dt, records, pr_items_map, pr_details_key):
 def api_export_all(pid):
     try:
         u = current_user()
+        if not can_view_project(pid, u):
+            return jsonify(error="Forbidden"), 403
+        import openpyxl
+
+        proj    = db.get_project(pid) or {}
+        all_dts = db.get_doc_types(pid)
+        dts     = filter_allowed_doc_types(pid, all_dts, u)
+        if all_dts and not dts:
+            return jsonify(error="Document type access denied"), 403
         if u:
             try:
                 db.log_action(u["username"], "EXPORT_EXCEL", pid,
                               detail=f"Exported all tabs of project '{(proj.get('code') or pid)}' to Excel")
             except Exception:
                 pass
-        import openpyxl
-
-        proj    = db.get_project(pid) or {}
-        dts     = db.get_doc_types(pid)
         wb      = openpyxl.Workbook()
         wb.remove(wb.active)  # remove default sheet
 
@@ -1943,6 +1948,10 @@ def api_export(pid, dt_id):
         import openpyxl
         from flask import request
         u = current_user()
+        if not can_view_project(pid, u):
+            return jsonify(error="Forbidden"), 403
+        if not can_access_doc_type(pid, dt_id, u):
+            return jsonify(error="Document type access denied"), 403
         if u:
             try:
                 db.log_action(u.get("username", ""), "EXPORT_EXCEL", project_id=pid, dt_id=dt_id,
@@ -1991,7 +2000,7 @@ def api_export(pid, dt_id):
 
 
 
-def _build_executive_summary_pdf(pid, dt_id=None):
+def _build_executive_summary_pdf(pid, dt_id=None, user=None):
     from flask import render_template
 
     import datetime
@@ -2001,6 +2010,8 @@ def _build_executive_summary_pdf(pid, dt_id=None):
     
     if dt_id and dt_id != "all":
         dts = [d for d in dts if d["id"] == dt_id]
+    if user is not None:
+        dts = filter_allowed_doc_types(pid, dts, user)
         
     registers_data = []
     total_docs = 0
@@ -2434,6 +2445,10 @@ def _build_executive_summary_pdf(pid, dt_id=None):
 def api_export_pdf(pid, dt_id):
     try:
         u = current_user()
+        if not can_view_project(pid, u):
+            return jsonify(error="Forbidden"), 403
+        if not can_access_doc_type(pid, dt_id, u):
+            return jsonify(error="Document type access denied"), 403
         if u:
             try:
                 db.log_action(u.get("username", ""), "EXPORT_PDF", project_id=pid, dt_id=dt_id,
@@ -2441,7 +2456,7 @@ def api_export_pdf(pid, dt_id):
             except Exception:
                 pass
 
-        buf = _build_executive_summary_pdf(pid, dt_id)
+        buf = _build_executive_summary_pdf(pid, dt_id, user=u)
         fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_{dt_id}_Executive_Summary.pdf"
         return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
     except Exception as e:
@@ -2453,6 +2468,11 @@ def api_export_pdf(pid, dt_id):
 def api_export_pdf_all(pid):
     try:
         u = current_user()
+        if not can_view_project(pid, u):
+            return jsonify(error="Forbidden"), 403
+        all_dts = db.get_doc_types(pid)
+        if all_dts and not filter_allowed_doc_types(pid, all_dts, u):
+            return jsonify(error="Document type access denied"), 403
         if u:
             try:
                 db.log_action(u.get("username", ""), "EXPORT_PDF", project_id=pid,
@@ -2460,7 +2480,7 @@ def api_export_pdf_all(pid):
             except Exception:
                 pass
 
-        buf = _build_executive_summary_pdf(pid, "all")
+        buf = _build_executive_summary_pdf(pid, "all", user=u)
         fname = f"{(db.get_project(pid) or {}).get('code','DCR')}_Executive_Summary.pdf"
         return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
     except Exception as e:
@@ -2471,6 +2491,9 @@ def api_export_pdf_all(pid):
 @exporting_bp.route("/api/import/<pid>/<dt_id>", methods=["POST"])
 def api_import(pid, dt_id):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
+    u = current_user()
+    if not can_access_doc_type(pid, dt_id, u):
+        return jsonify(ok=False, error="Document type access denied"), 403
     data = request.get_json(silent=True) or {}
     b64  = data.get("file_b64","")
     ext  = data.get("ext","csv")
@@ -2527,6 +2550,9 @@ def api_import(pid, dt_id):
                     if _is_pr_dt(d):
                         dt_id = d["id"]
                         break
+                if not can_access_doc_type(pid, dt_id, u):
+                    return jsonify(ok=False, error="Document type access denied"), 403
+                cols = db.get_columns(pid, dt_id)
                 
                 # Pre-process any other sheet (like PR Summary) to import parent metadata
                 for sheet in wb.worksheets:
@@ -2626,6 +2652,7 @@ def api_import_project(pid):
     try:
         import openpyxl
 
+        u = current_user()
         wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
         dts = db.get_doc_types(pid)
         imported_total = 0
@@ -2638,25 +2665,34 @@ def api_import_project(pid):
         errors = []
         warnings = []
 
+        def _norm_detect(s): return re.sub(r'[^a-z0-9]', '', str(s).lower()) if s else ""
+        resolved_sheets = []
         for ws in wb.worksheets:
+            is_pr_items_raw = False
+            for row in ws.iter_rows(min_row=1, max_row=5, values_only=True):
+                norm_row = [_norm_detect(v) for v in row if v]
+                if "rowtype" in norm_row and "description" in norm_row:
+                    is_pr_items_raw = True
+                    break
+            dt = next((d for d in dts if _is_pr_dt(d)), None) if is_pr_items_raw else _match_sheet_to_dt(ws.title, dts)
+            if dt and not can_access_doc_type(pid, dt["id"], u):
+                return jsonify(
+                    ok=False,
+                    error="Document type access denied",
+                    sheet=ws.title,
+                    dt_id=dt["id"],
+                ), 403
+            resolved_sheets.append((ws, is_pr_items_raw, dt))
+
+        for ws, is_pr_items_raw, dt in resolved_sheets:
             try:
-                def _norm_detect(s): return re.sub(r'[^a-z0-9]', '', str(s).lower()) if s else ""
-                is_pr_items_raw = False
-                for row in ws.iter_rows(min_row=1, max_row=5, values_only=True):
-                    norm_row = [_norm_detect(v) for v in row if v]
-                    if "rowtype" in norm_row and "description" in norm_row:
-                        is_pr_items_raw = True
-                        break
-                        
                 if is_pr_items_raw:
-                    dt = next((d for d in dts if _is_pr_dt(d)), None)
                     if not dt:
                         skipped_sheets.append({"sheet": ws.title, "reason": "No PR document type configured"})
                         continue
                     imported, created, updated, _, skipped_blank, skipped_invalid, sheet_warnings = _import_pr_items_worksheet(pid, dt["id"], ws)
                     has_header = True
                 else:
-                    dt = _match_sheet_to_dt(ws.title, dts)
                     if not dt:
                         logger.warning("import_project_sheet_skipped pid=%s sheet=%s reason=no_matching_document_type",
                                        pid, ws.title)
@@ -2724,17 +2760,25 @@ def api_import_project(pid):
 def api_export_count(pid):
     try:
         from flask import request
+        u = current_user()
+        if not can_view_project(pid, u):
+            return jsonify(ok=False, count=0, error="Forbidden"), 403
         scope = request.args.get("scope", "all")
         days = request.args.get("days", "all")
         status_filter = request.args.get("status", "all")
 
         dts = db.get_doc_types(pid)
         if scope and scope not in ("all", "current"):
+            if not can_access_doc_type(pid, scope, u):
+                return jsonify(ok=False, count=0, error="Document type access denied"), 403
             dts = [d for d in dts if d["id"] == scope]
         elif scope == "current":
             cur_tab = request.args.get("tab")
             if cur_tab:
+                if not can_access_doc_type(pid, cur_tab, u):
+                    return jsonify(ok=False, count=0, error="Document type access denied"), 403
                 dts = [d for d in dts if d["id"] == cur_tab]
+        dts = filter_allowed_doc_types(pid, dts, u)
 
         total = 0
         for dt in dts:

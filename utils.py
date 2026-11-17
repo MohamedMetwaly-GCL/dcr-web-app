@@ -396,7 +396,7 @@ STATUS_COLORS = {
     'Under Review':              ('fef9c3','713f12'),
     'Cancelled':                 ('ef4444','ffffff'),
     'Open':                      ('fed7aa','7c2d12'),
-    'Closed':                    ('bfdbfe','1e3a5f'),
+    'Closed':                    ('bbf7d0','166534'),
     'Replied':                   ('d1fae5','064e3b'),
     'Pending':                   ('e0e7ff','312e81'),
 }

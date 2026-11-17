@@ -14,7 +14,7 @@ import datetime
 from flask import Blueprint, jsonify, request
 
 import db
-from auth import current_user, get_allowed_project_ids
+from auth import current_user, get_allowed_project_ids, get_user_doc_type_scope, can_view_project, can_access_doc_type
 
 summary_bp = Blueprint("summary", __name__)
 
@@ -24,7 +24,9 @@ def api_overdue_digest():
     """Returns overdue summary for email/display."""
     u = current_user()
     if not u: return jsonify(error="LOGIN_REQUIRED"), 403
-    records = db.get_overdue_records(project_ids=get_allowed_project_ids(u))
+    allowed_ids = get_allowed_project_ids(u)
+    dt_scope = get_user_doc_type_scope(u, allowed_ids)
+    records = db.get_overdue_records(project_ids=allowed_ids, doc_type_scope=dt_scope)
     return jsonify({
         "total": len(records),
         "records": records[:50],
@@ -35,6 +37,10 @@ def api_overdue_digest():
 @summary_bp.route("/api/records_range/<pid>/<dt_id>")
 def api_records_range(pid, dt_id):
     """Filter records by issued date range."""
+    if not can_view_project(pid):
+        return jsonify(error="Forbidden"), 403
+    if not can_access_doc_type(pid, dt_id):
+        return jsonify(error="Document type access denied"), 403
     from_date = request.args.get("from")
     to_date   = request.args.get("to")
     records = db.get_records(pid, dt_id)
@@ -49,12 +55,14 @@ def api_records_range(pid, dt_id):
 def api_executive_summary():
     """One-page executive summary data."""
     u = current_user()
+    if not u: return jsonify(error="LOGIN_REQUIRED"), 403
     ws = request.args.get("workspace_id") or request.args.get("ws")
     allowed_ids = get_allowed_project_ids(u, workspace_id=ws)
-    stats  = db.get_dashboard_stats(project_ids=allowed_ids)
-    aging  = db.get_aging_report(project_ids=allowed_ids)
-    quality= db.get_quality_report(project_ids=allowed_ids)
-    overdue= db.get_overdue_records(project_ids=allowed_ids)
+    dt_scope = get_user_doc_type_scope(u, allowed_ids)
+    stats  = db.get_dashboard_stats(project_ids=allowed_ids, doc_type_scope=dt_scope)
+    aging  = db.get_aging_report(project_ids=allowed_ids, doc_type_scope=dt_scope)
+    quality= db.get_quality_report(project_ids=allowed_ids, doc_type_scope=dt_scope)
+    overdue= db.get_overdue_records(project_ids=allowed_ids, doc_type_scope=dt_scope)
     total_docs = sum(p["total"]    for p in stats)
     total_ap   = sum(p["approved"] for p in stats)
     total_pe   = sum(p["pending"]  for p in stats)
@@ -82,18 +90,27 @@ def api_executive_summary():
 def api_data_quality_summary():
     pid = request.args.get("project_id") or None
     u = current_user()
-    return jsonify(db.get_data_quality_summary(pid, project_ids=get_allowed_project_ids(u)))
+    if not u: return jsonify(error="LOGIN_REQUIRED"), 403
+    allowed_ids = get_allowed_project_ids(u)
+    dt_scope = get_user_doc_type_scope(u, allowed_ids)
+    return jsonify(db.get_data_quality_summary(pid, project_ids=allowed_ids, doc_type_scope=dt_scope))
 
 
 @summary_bp.route("/api/action_required_summary")
 def api_action_required_summary():
     pid = request.args.get("project_id") or None
     u = current_user()
-    return jsonify(db.get_action_required_summary(pid, project_ids=get_allowed_project_ids(u)))
+    if not u: return jsonify(error="LOGIN_REQUIRED"), 403
+    allowed_ids = get_allowed_project_ids(u)
+    dt_scope = get_user_doc_type_scope(u, allowed_ids)
+    return jsonify(db.get_action_required_summary(pid, project_ids=allowed_ids, doc_type_scope=dt_scope))
 
 
 @summary_bp.route("/api/pr_analytics_summary")
 def api_pr_analytics_summary():
     pid = request.args.get("project_id") or None
     u = current_user()
-    return jsonify(db.get_pr_analytics_summary(pid, project_ids=get_allowed_project_ids(u)))
+    if not u: return jsonify(error="LOGIN_REQUIRED"), 403
+    allowed_ids = get_allowed_project_ids(u)
+    dt_scope = get_user_doc_type_scope(u, allowed_ids)
+    return jsonify(db.get_pr_analytics_summary(pid, project_ids=allowed_ids, doc_type_scope=dt_scope))
