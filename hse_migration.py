@@ -1925,31 +1925,32 @@ def _upload_project_attachments_to_drive(
                 uploaded_files += 1
                 uploaded_bytes += item["size_bytes"]
 
-            meta = att_mod.build_attachment_meta(
-                file_id=last_file_id or folder_id,
-                name=subfolder_name,
-                size=sum(int(f.get("size") or 0) for f in files_list),
-                mime_type="application/vnd.google-apps.folder",
-                uploaded_by="hse_migration",
-                is_folder=True,
-                folder_id=folder_id,
-                folder_name=subfolder_name,
-                folder_url=folder_url,
-                url=folder_url,
-                files=files_list,
-                file_count=len(files_list),
-            )
-            new_att = dict(existing_att)
-            new_att[att_mod.SLOT_SUBMISSION] = meta
-            cur_data["attachments"] = new_att
-            cur_data["fileLocation"] = folder_url
-            with conn.cursor() as cur:
-                cur.execute(
-                    """UPDATE records SET data = %s::jsonb, updated_at = NOW()
-                       WHERE id = %s AND project_id = %s""",
-                    (json.dumps(cur_data, ensure_ascii=False), rid, pid),
+                meta = att_mod.build_attachment_meta(
+                    file_id=last_file_id or folder_id,
+                    name=subfolder_name,
+                    size=sum(int(f.get("size") or 0) for f in files_list),
+                    mime_type="application/vnd.google-apps.folder",
+                    uploaded_by="hse_migration",
+                    is_folder=True,
+                    folder_id=folder_id,
+                    folder_name=subfolder_name,
+                    folder_url=folder_url,
+                    url=folder_url,
+                    files=files_list,
+                    file_count=len(files_list),
                 )
-            conn.commit()
+                new_att = dict(existing_att)
+                new_att[att_mod.SLOT_SUBMISSION] = meta
+                cur_data["attachments"] = new_att
+                cur_data["fileLocation"] = folder_url
+                existing_att = new_att
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE records SET data = %s::jsonb, updated_at = NOW()
+                           WHERE id = %s AND project_id = %s""",
+                        (json.dumps(cur_data, ensure_ascii=False), rid, pid),
+                    )
+                conn.commit()
 
     return {
         "uploaded_files": uploaded_files,
@@ -1957,6 +1958,63 @@ def _upload_project_attachments_to_drive(
         "missing_files": missing_files,
         "uploaded_bytes": uploaded_bytes,
     }
+
+
+class _ResilientDriveHttp:
+    """Keep-alive ``requests.Session`` wrapper retrying transient TLS resets and 429/5xx errors."""
+
+    def __init__(self, max_retries: int = 5):
+        import requests as _req
+        import time as _time
+
+        self._requests = _req
+        self._sleep = _time.sleep
+        self._max_retries = max_retries
+        self._session = _req.Session()
+
+    def _reset_session(self) -> None:
+        try:
+            self._session.close()
+        except Exception:
+            pass
+        self._session = self._requests.Session()
+
+    def _request(self, method: str, url: str, **kwargs):
+        last_exc = None
+        for attempt in range(self._max_retries):
+            try:
+                resp = getattr(self._session, method)(url, **kwargs)
+                if resp.status_code in (429, 500, 502, 503, 504) and attempt + 1 < self._max_retries:
+                    if method == "post" and "/upload/" not in url:
+                        return resp
+                    self._sleep(min(2.0 ** attempt, 16.0))
+                    continue
+                return resp
+            except self._requests.exceptions.RequestException as exc:
+                last_exc = exc
+                self._reset_session()
+                if attempt + 1 >= self._max_retries:
+                    raise
+                self._sleep(min(2.0 ** attempt, 16.0))
+        raise last_exc  # pragma: no cover
+
+    def get(self, url: str, **kwargs):
+        return self._request("get", url, **kwargs)
+
+    def post(self, url: str, **kwargs):
+        return self._request("post", url, **kwargs)
+
+    def put(self, url: str, **kwargs):
+        return self._request("put", url, **kwargs)
+
+    def patch(self, url: str, **kwargs):
+        return self._request("patch", url, **kwargs)
+
+    def close(self) -> None:
+        try:
+            self._session.close()
+        except Exception:
+            pass
 
 
 def _init_drive_client(drive_creds=None, http_module=None):
@@ -1967,8 +2025,9 @@ def _init_drive_client(drive_creds=None, http_module=None):
     else:
         creds = drive_creds or drive_upload.get_upload_credentials()
         token = drive_upload.access_token(creds)
-    service = drive_upload.RestDriveAdapter(token, http=http_module)
-    return service, token
+    active_http = http_module if http_module is not None else _ResilientDriveHttp()
+    service = drive_upload.RestDriveAdapter(token, http=active_http)
+    return service, token, active_http
 
 
 def execute_local_migration(
@@ -2024,20 +2083,24 @@ def execute_local_migration(
                 inserted, updated, skipped = _upsert_records_for_project(cur, pid, selected_recs)
 
         if upload_drive:
-            service, token = _init_drive_client(drive_creds=drive_creds, http_module=http_module)
-            store = _CursorRoutingStore(conn)
-            drive_stats = _upload_project_attachments_to_drive(
-                conn,
-                pid,
-                selected_recs,
-                plan["record_attachments"],
-                service,
-                token,
-                store,
-                drive_root_id=drive_root_id,
-                http_module=http_module,
-                sleep_fn=sleep_fn,
-            )
+            service, token, active_http = _init_drive_client(drive_creds=drive_creds, http_module=http_module)
+            try:
+                store = _CursorRoutingStore(conn)
+                drive_stats = _upload_project_attachments_to_drive(
+                    conn,
+                    pid,
+                    selected_recs,
+                    plan["record_attachments"],
+                    service,
+                    token,
+                    store,
+                    drive_root_id=drive_root_id,
+                    http_module=active_http,
+                    sleep_fn=sleep_fn,
+                )
+            finally:
+                if http_module is None and hasattr(active_http, "close"):
+                    active_http.close()
     finally:
         conn.close()
 
@@ -2129,29 +2192,33 @@ def execute_multi_project_migration(
         if upload_drive:
             import drive_routing as _dr
 
-            service, token = _init_drive_client(drive_creds=drive_creds, http_module=http_module)
-            store = _CursorRoutingStore(conn)
-            for item in project_results:
-                tpid = item["target_project_id"]
-                if drive_root_id:
-                    item["drive_folder_id"] = _ensure_project_drive_folder(
-                        conn, store, tpid, service, _dr, drive_root_id=drive_root_id
+            service, token, active_http = _init_drive_client(drive_creds=drive_creds, http_module=http_module)
+            try:
+                store = _CursorRoutingStore(conn)
+                for item in project_results:
+                    tpid = item["target_project_id"]
+                    if drive_root_id:
+                        item["drive_folder_id"] = _ensure_project_drive_folder(
+                            conn, store, tpid, service, _dr, drive_root_id=drive_root_id
+                        )
+                    st = _upload_project_attachments_to_drive(
+                        conn,
+                        tpid,
+                        target_records_map.get(tpid, []),
+                        plan["record_attachments"],
+                        service,
+                        token,
+                        store,
+                        drive_root_id=drive_root_id,
+                        http_module=active_http,
+                        sleep_fn=sleep_fn,
                     )
-                st = _upload_project_attachments_to_drive(
-                    conn,
-                    tpid,
-                    target_records_map.get(tpid, []),
-                    plan["record_attachments"],
-                    service,
-                    token,
-                    store,
-                    drive_root_id=drive_root_id,
-                    http_module=http_module,
-                    sleep_fn=sleep_fn,
-                )
-                item["drive_upload"] = st
-                for k in drive_totals:
-                    drive_totals[k] += st[k]
+                    item["drive_upload"] = st
+                    for k in drive_totals:
+                        drive_totals[k] += st[k]
+            finally:
+                if http_module is None and hasattr(active_http, "close"):
+                    active_http.close()
     finally:
         conn.close()
 

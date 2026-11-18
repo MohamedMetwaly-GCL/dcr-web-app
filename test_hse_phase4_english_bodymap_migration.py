@@ -860,6 +860,29 @@ class HsePhase4EnglishBodyMapMigrationTests(unittest.TestCase):
                 hm._safe_drive_subfolder_name("PEM-058-005", "leg-obs-doc-96"),
             )
 
+            # Resilient HTTP wrapper recovers from transient ConnectionError / TLS reset without failing upload
+            import requests as _req
+
+            attempts = {"n": 0}
+
+            class _FlakySession:
+                def post(self, url, **kw):
+                    attempts["n"] += 1
+                    if attempts["n"] == 1:
+                        raise _req.exceptions.ConnectionError("WinError 10054 reset")
+                    return _MockResp(200, {"id": "ok-after-retry"})
+
+                def close(self):
+                    return None
+
+            with patch.object(_req, "Session", return_value=_FlakySession()):
+                resilient = hm._ResilientDriveHttp(max_retries=3)
+                resilient._sleep = lambda _s: None
+                resp_ok = resilient.post("https://www.googleapis.com/upload/drive/v3/files")
+                self.assertEqual(resp_ok.status_code, 200)
+                self.assertEqual(attempts["n"], 2)
+                resilient.close()
+
 
 if __name__ == "__main__":
     unittest.main()
