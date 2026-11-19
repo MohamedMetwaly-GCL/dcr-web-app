@@ -14434,7 +14434,7 @@ function renderRows(){{
       if(k.startsWith('_'))continue;
       if(v){{
         const fCol=(state.cols||[]).find(c=>c.col_key===k);
-        if(!getRowSearchableText(r,k,fCol).toLowerCase().includes(v.toLowerCase()))return false;
+        {{const _t=getRowSearchableText(r,k,fCol).toLowerCase(),_q=String(v).toLowerCase();let _ok=_t.includes(_q);if(!_ok){{const _qn=_q.trim().replace(/\\/+/g,'-'),_iso=_t.trim().match(/^(\\d{{4}})-(\\d{{2}})-(\\d{{2}})(?![\\d])/);if(_iso){{const _dmy=_iso[3]+'-'+_iso[2]+'-'+_iso[1];_ok=_t.includes(_qn)||_dmy.includes(_qn)||_iso[0].includes(_qn);}}}}if(!_ok)return false;}}
       }}
     }}
     if(isLtrTab){{
