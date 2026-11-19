@@ -2170,6 +2170,20 @@ def delete_doc_type(pid, dt_id):
     exe("DELETE FROM columns_config WHERE dt_id=%s AND project_id=%s", (dt_id, pid))
 
 # ── Columns ───────────────────────────────────────────────────
+def project_has_doc_type(pid, code):
+    """Return True when project `pid` has a doc_type configured matching `code`."""
+    if not pid or not code:
+        return False
+    try:
+        r = q(
+            "SELECT 1 FROM doc_types WHERE project_id=%s AND UPPER(code)=%s LIMIT 1",
+            (pid, str(code).strip().upper()),
+            one=True,
+        )
+        return bool(r)
+    except Exception:
+        return False
+
 def get_columns(pid, dt_id, visible_only=False):
     sql = "SELECT * FROM columns_config WHERE project_id=%s AND dt_id=%s"
     if visible_only: sql += " AND visible=true"
@@ -2178,13 +2192,13 @@ def get_columns(pid, dt_id, visible_only=False):
 
     is_noc = False
     try:
-        dt = q("SELECT code FROM doc_types WHERE id=%s", (dt_id,), one=True)
+        dt = q("SELECT code FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid), one=True)
         if dt and dt.get("code", "").upper() == "NOC":
             is_noc = True
-    except:
+    except Exception:
         pass
 
-    if is_noc:
+    if is_noc and project_has_doc_type(pid, "PCQ"):
         cols.append({
             "id": -1,
             "project_id": pid,
@@ -2238,11 +2252,12 @@ def get_record_by_id(rec_id):
 def get_records(pid, dt_id, search="", search_pr_items=False):
     is_noc = False
     try:
-        dt = q("SELECT code FROM doc_types WHERE id=%s", (dt_id,), one=True)
+        dt = q("SELECT code FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid), one=True)
         if dt and dt.get("code", "").upper() == "NOC":
             is_noc = True
-    except:
+    except Exception:
         pass
+    has_pcq = bool(is_noc and project_has_doc_type(pid, "PCQ"))
 
     select_clause = r"""
         SELECT records.id, 
@@ -2260,7 +2275,7 @@ def get_records(pid, dt_id, search="", search_pr_items=False):
                ) AS data, 
                records.created_at
     """
-    if is_noc:
+    if has_pcq:
         select_clause = r"""
             SELECT records.id, 
                    records.data || jsonb_build_object('related_pcq', 

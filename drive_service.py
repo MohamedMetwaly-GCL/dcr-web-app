@@ -89,7 +89,8 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
     # BFS Queue to hold folders we need to scan: (folder_id, folder_full_path)
     queue = [(folder_id, root_folder_name)]
     doc_map = {}
-    slot_map = {}  # doc_no -> {'submission': {...}, 'approval': {...}}
+    slot_map = {}      # doc_no -> {'submission': {...}, 'approval': {...}}
+    part_rev_map = {}  # doc_no -> {slot: {rev_int: {'url': ..., 'priority': ..., 'rev': rev_int, 'rev_label': ...}}}
     
     while queue:
         # Batch up to 15 folders per API query to dramatically reduce API calls
@@ -138,12 +139,26 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
                             'priority': priority
                         }
 
-                    # Additive: also track the best Submit and best Replied link separately
+                    # Additive: also track the best Submit/Replied and per-part revisions separately
                     kind = classify_path_kind(item_full_path)
                     if kind:
-                        slot = slot_map.setdefault(doc_no, {})
-                        if kind not in slot or priority < slot[kind]['priority']:
-                            slot[kind] = {'link': item['webViewLink'], 'priority': priority}
+                        if kind in ("part_a", "part_b", "part_c", "part_d"):
+                            from attachments import format_rev_label
+                            rev_matches = re.findall(r"\b(?:rev|r)\s*[-_.]?\s*(\d+)\b", item_full_path, re.IGNORECASE)
+                            rev_num = max((int(m) for m in rev_matches), default=0)
+                            by_slot = part_rev_map.setdefault(doc_no, {}).setdefault(kind, {})
+                            prev = by_slot.get(rev_num)
+                            if prev is None or priority < prev['priority']:
+                                by_slot[rev_num] = {
+                                    'url': item['webViewLink'],
+                                    'priority': priority,
+                                    'rev': rev_num,
+                                    'rev_label': format_rev_label(rev_num),
+                                }
+                        else:
+                            slot = slot_map.setdefault(doc_no, {})
+                            if kind not in slot or priority < slot[kind]['priority']:
+                                slot[kind] = {'link': item['webViewLink'], 'priority': priority}
             
             page_token = results.get('nextPageToken')
             if not page_token:
@@ -154,6 +169,17 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
         import db
         for doc_no, data in doc_map.items():
             sync_links = {k: v['link'] for k, v in slot_map.get(doc_no, {}).items()}
+            for part_slot, rev_dict in part_rev_map.get(doc_no, {}).items():
+                ordered_revs = sorted(rev_dict.values(), key=lambda x: (-x['rev'], x['priority']))
+                if ordered_revs:
+                    top_entry = dict(ordered_revs[0])
+                    top_entry.pop('priority', None)
+                    if len(ordered_revs) > 1:
+                        top_entry['history'] = [
+                            {k: v for k, v in older.items() if k != 'priority'}
+                            for older in ordered_revs[1:]
+                        ]
+                    sync_links[part_slot] = top_entry
             db.update_record_link(doc_no, data['link'], sync_links)
 
 # ==========================================

@@ -7,6 +7,7 @@ Step 7A of the incremental refactor.
 Logic is identical to the original app.py route — only the decorator
 changed from @app.route to @records_bp.route.
 """
+import json
 import logging
 import uuid
 
@@ -389,6 +390,53 @@ def _reject_record_ownership(u, pid, dt_id, rec_id, existing):
     return jsonify(error="Record not found in this project / document type"), 404
 
 
+def _normalize_item_ref_payload(clean):
+    """Sanitize structured itemRef values and block accidental '[object Object]' corruption."""
+    for key in list(clean.keys()):
+        low = str(key or "").strip().lower()
+        val = clean.get(key)
+        if isinstance(val, str) and "[object object]" in val.lower():
+            raise ValueError(f"Corrupted [object Object] text is not allowed in field '{key}'")
+        is_item_ref = low in ("itemref", "item_ref") or ("itemref" in low.replace("_", ""))
+        if not is_item_ref:
+            continue
+        if isinstance(val, str):
+            trimmed = val.strip()
+            if trimmed.startswith("[") or trimmed.startswith("{"):
+                try:
+                    parsed = json.loads(trimmed)
+                    val = parsed
+                except Exception:
+                    continue
+        if isinstance(val, dict):
+            val = [val]
+        if isinstance(val, list):
+            norm_items = []
+            for item in val:
+                if isinstance(item, dict):
+                    ref = str(
+                        item.get("item_ref")
+                        or item.get("ref")
+                        or item.get("dwg_no")
+                        or item.get("dwgNo")
+                        or item.get("value")
+                        or item.get("name")
+                        or ""
+                    ).strip()
+                    st = str(item.get("item_status") or item.get("status") or "").strip()
+                    if "[object object]" in ref.lower() or "[object object]" in st.lower():
+                        raise ValueError("Corrupted [object Object] entry is not allowed in itemRef")
+                    if ref:
+                        norm_items.append({"item_ref": ref, "item_status": st})
+                elif isinstance(item, str):
+                    s = item.strip()
+                    if "[object object]" in s.lower():
+                        raise ValueError("Corrupted [object Object] entry is not allowed in itemRef")
+                    if s:
+                        norm_items.append({"item_ref": s, "item_status": ""})
+            clean[key] = norm_items if norm_items else ""
+
+
 @records_bp.route("/api/records/<pid>/<dt_id>", methods=["POST"])
 def api_save_record(pid, dt_id):
     if not can_edit(pid):
@@ -415,6 +463,10 @@ def api_save_record(pid, dt_id):
     if existing and (existing.get("_project_id") != pid or existing.get("_dt_id") != dt_id):
         return _reject_record_ownership(u, pid, dt_id, rec_id, existing)
     clean  = {k:v for k,v in data.items() if not k.startswith("_") and k != "attachments"}
+    try:
+        _normalize_item_ref_payload(clean)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
     if _is_mhr_doc_type(pid, dt_id):
         try:
             year_val, month_val = db.normalize_mhr_period(clean)

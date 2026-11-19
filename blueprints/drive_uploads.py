@@ -56,22 +56,77 @@ def verify_upload_ticket(token_str, max_age=TICKET_MAX_AGE):
     return _serializer().loads(token_str, max_age=max_age)
 
 
+IGNORED_JUNK_NAMES = {
+    "desktop.ini",
+    "thumbs.db",
+    ".ds_store",
+    "ehthumbs.db",
+    "ehthumbs_vista.db",
+    "icon\r",
+}
+IGNORED_JUNK_PREFIXES = ("~$", ".smbdelete")
+IGNORED_JUNK_EXTS = {".tmp", ".bak", ".lnk"}
+
+
+def is_ignored_junk_filename(raw_name):
+    """Return True when filename is OS metadata or temporary Office/lock junk."""
+    base = str(raw_name or "").replace("\\", "/").split("/")[-1].strip()
+    low = base.lower()
+    if not low:
+        return False
+    if low in IGNORED_JUNK_NAMES:
+        return True
+    if any(low.startswith(p) for p in IGNORED_JUNK_PREFIXES):
+        return True
+    _, ext = os.path.splitext(low)
+    return ext in IGNORED_JUNK_EXTS
+
+
 def sanitize_upload_filename(raw_name):
-    """Return (clean_name, error_reason). Rejects empty names and dangerous executable extensions."""
-    name = str(raw_name or "").replace("\\", "/").split("/")[-1].strip()
-    name = re.sub(r"[\x00-\x1f\x7f]+", "", name).strip(". ")
+    """Return (clean_name, error_reason). Rejects empty names, OS/Office junk, and dangerous extensions."""
+    raw_base = str(raw_name or "").replace("\\", "/").split("/")[-1].strip()
+    if is_ignored_junk_filename(raw_base):
+        return "", "ignored_system_file"
+    name = re.sub(r"[\x00-\x1f\x7f]+", "", raw_base).strip(". ")
     if not name or len(name) > 240:
         return "", "invalid_file_name"
+    if is_ignored_junk_filename(name):
+        return "", "ignored_system_file"
     _, ext = os.path.splitext(name.lower())
     if ext in DANGEROUS_EXTS_INSIDE_ARCHIVE:
         return "", "forbidden_file_extension"
     return name, ""
 
 
-def _trash_old_attachment(entry, exclude_id="", files_only=False):
+def _collect_protected_ids(entry):
+    """Collect Drive file/folder IDs belonging to an attachment entry or its archived history."""
+    ids = set()
+    if not isinstance(entry, dict):
+        return ids
+    for key in ("file_id", "folder_id"):
+        val = str(entry.get(key) or "").strip()
+        if val:
+            ids.add(val)
+    for f in (entry.get("files") or []):
+        if isinstance(f, dict):
+            fid = str(f.get("id") or f.get("file_id") or "").strip()
+            if fid:
+                ids.add(fid)
+    for h in (entry.get("history") or []):
+        ids.update(_collect_protected_ids(h))
+    return ids
+
+
+def _trash_old_attachment(entry, exclude_id="", files_only=False, exclude_ids=None, trash_child_folders_under=None, exclude_folder_ids=None):
     """Best-effort move of an old attachment's Drive file(s) or folder to Google Drive Trash."""
     if not isinstance(entry, dict) or entry.get("legacy"):
         return
+    protected = set(exclude_ids or ())
+    if exclude_id:
+        protected.add(str(exclude_id).strip())
+    # Never trash Drive objects still referenced by archived revision history unless caller explicitly strips history
+    for h in (entry.get("history") or []):
+        protected.update(_collect_protected_ids(h))
     try:
         http = _get_http()
         # Only call real Drive PATCH when http supports .patch (avoids consuming scripted FakeHTTP queues in unit tests)
@@ -79,16 +134,34 @@ def _trash_old_attachment(entry, exclude_id="", files_only=False):
             return
         token = _get_token()
         if files_only and isinstance(entry.get("files"), list):
+            has_nested = any(isinstance(f, dict) and f.get("subfolder") for f in entry["files"])
             for f in entry["files"]:
-                fid = str(f.get("id") or "").strip()
-                if fid and fid != exclude_id:
+                if not isinstance(f, dict):
+                    continue
+                fid = str(f.get("id") or f.get("file_id") or "").strip()
+                if fid and fid not in protected:
                     try:
                         drive_upload.trash_file(token, fid, http=http)
                     except Exception:
                         pass
+            if trash_child_folders_under and has_nested:
+                keep_folders = set(str(x).strip() for x in (exclude_folder_ids or ()) if x)
+                keep_folders.update(protected)
+                try:
+                    service = drive_upload.RestDriveAdapter(token, http=http)
+                    for child in drive_routing.list_child_folders(service, trash_child_folders_under):
+                        cid = str(child.get("id") or "").strip()
+                        if cid and cid not in keep_folders:
+                            try:
+                                drive_upload.trash_file(token, cid, http=http)
+                            except Exception:
+                                pass
+                    drive_routing.invalidate_subfolder_caches(trash_child_folders_under)
+                except Exception:
+                    pass
             return
         target_id = str(entry.get("folder_id") or entry.get("file_id") or "").strip()
-        if target_id and target_id != exclude_id:
+        if target_id and target_id not in protected:
             drive_upload.trash_file(token, target_id, http=http)
     except Exception as e:
         logger.warning("Could not move old Drive attachment to trash: %s", e)
@@ -123,9 +196,14 @@ def api_create_upload_session():
     record_id = str(body.get("record_id") or "").strip()
     slot = str(body.get("slot") or attachments.SLOT_SUBMISSION).strip().lower()
     subfolder_name = str(body.get("subfolder_name") or "").strip()
+    rel_subfolder = str(body.get("rel_subfolder") or "").strip()
     link_as_folder = bool(body.get("link_as_folder", False))
     mime_type = str(body.get("mime_type") or "application/octet-stream").strip()
     create_folders = bool(body.get("create_folders", True))
+    rev_mode = str(body.get("rev_mode") or "overwrite").strip().lower()
+    if rev_mode not in ("overwrite", "new_revision"):
+        rev_mode = "overwrite"
+    target_rev = body.get("part_rev")
 
     u, err = _check_write_access(pid, dt_id)
     if err:
@@ -190,8 +268,16 @@ def api_create_upload_session():
             subfolder_name=subfolder_name or None, flat=not has_cycle,
             direction=direction, destination_folder_id=dest_folder_id,
             party=party, from_party=from_party, to_party=to_party, doc_no=doc_no)
+        root_package_folder_id = dest.get("subfolder_id") or dest["folder_id"]
+        rel_parts = drive_routing.normalize_rel_subfolder(rel_subfolder)
+        leaf_folder_id = dest["folder_id"]
+        ancestor_folder_ids = []
+        if rel_parts:
+            leaf_folder_id, ancestor_folder_ids = drive_routing.resolve_nested_subfolder_with_ancestors(
+                service, root_package_folder_id, rel_subfolder, create_if_missing=create_folders
+            )
         session_url = drive_upload.create_resumable_session(
-            token, dest["folder_id"], clean_name, mime_type, file_size,
+            token, leaf_folder_id, clean_name, mime_type, file_size,
             origin=request.headers.get("Origin"), http=http)
     except drive_routing.RoutingError as e:
         msg = e.reason
@@ -205,29 +291,38 @@ def api_create_upload_session():
         traceback.print_exc()
         return jsonify(error=f"Upload initialization error: {str(e)}", hint=str(e)), 500
 
-    ticket = sign_upload_ticket({
+    clean_rel_sub = "/".join(rel_parts)
+    ticket_payload = {
         "pid": pid,
         "dt_id": dt_id,
         "ws_id": ws_id,
         "record_id": record_id,
         "slot": slot,
-        "folder_id": dest["folder_id"],
+        "folder_id": leaf_folder_id,
         "subfolder_id": dest.get("subfolder_id", ""),
         "subfolder_name": dest.get("subfolder_name", ""),
+        "rel_subfolder": clean_rel_sub,
+        "ancestor_folder_ids": ancestor_folder_ids,
         "link_as_folder": link_as_folder,
+        "rev_mode": rev_mode,
         "file_name": clean_name,
         "file_size": file_size,
         "mime_type": mime_type,
         "user": u["username"],
         "session_url": session_url,
-    })
+    }
+    if target_rev is not None:
+        ticket_payload["target_rev"] = attachments.parse_rev_number(target_rev, 0)
+    ticket = sign_upload_ticket(ticket_payload)
     return jsonify(
         ok=True,
         session_url=session_url,
         upload_ticket=ticket,
-        folder_id=dest["folder_id"],
+        folder_id=leaf_folder_id,
+        package_folder_id=root_package_folder_id,
         doc_type_folder_id=dest["doc_type_folder_id"],
         folder_source=dest["source"],
+        rel_subfolder=clean_rel_sub,
         chunk_size=drive_upload.DEFAULT_CHUNK,
     )
 
@@ -281,6 +376,13 @@ def api_upload_complete():
         return jsonify(error="upload_ticket expired"), 400
     except BadSignature:
         return jsonify(error="invalid upload_ticket"), 400
+
+    if not rel_subfolder:
+        rel_subfolder = str(t.get("rel_subfolder") or "").strip()
+    rev_mode = str(body.get("rev_mode") or t.get("rev_mode") or "overwrite").strip().lower()
+    if rev_mode not in ("overwrite", "new_revision"):
+        rev_mode = "overwrite"
+    req_part_rev = body.get("part_rev") if body.get("part_rev") is not None else t.get("target_rev")
 
     pid, dt_id, slot = t["pid"], t["dt_id"], t["slot"]
     record_id = str(body.get("record_id") or t.get("record_id") or "").strip()
@@ -336,7 +438,8 @@ def api_upload_complete():
             extra["consultant_status"] = str(pd_st)
 
     # Folder / Multi-file attachment handling
-    if t.get("link_as_folder") and (t.get("subfolder_id") or t.get("folder_id")):
+    link_as_folder = bool(body.get("link_as_folder")) if body.get("link_as_folder") is not None else bool(t.get("link_as_folder"))
+    if link_as_folder and (t.get("subfolder_id") or t.get("folder_id")):
         fid = t.get("subfolder_id") or t["folder_id"]
         folder_url = f"https://drive.google.com/drive/folders/{fid}"
         extra["is_folder"] = True
@@ -357,33 +460,89 @@ def api_upload_complete():
 
     existing_att = rec.get("attachments") if isinstance(rec.get("attachments"), dict) else {}
     existing_slot = existing_att.get(slot) if isinstance(existing_att.get(slot), dict) else None
-    if extra.get("is_folder"):
-        if replace_existing and existing_slot:
-            # First file of a replacement folder upload: move previous files inside that folder to Drive Trash
-            _trash_old_attachment(existing_slot, exclude_id=file_id, files_only=True)
-            files_list = []
-        elif existing_slot and existing_slot.get("is_folder") and (existing_slot.get("folder_id") == extra.get("folder_id")):
-            files_list = list(existing_slot.get("files") or [])
-        else:
-            files_list = []
-        files_list = [f for f in files_list if f.get("id") != file_id]
-        f_item = {
-            "id": file_id,
-            "name": meta["file_name"],
-            "size": meta["file_size"],
-            "mimeType": meta["mime_type"],
-        }
-        if rel_subfolder:
-            f_item["subfolder"] = rel_subfolder
-        files_list.append(f_item)
-        meta["files"] = files_list
-        meta["file_count"] = len(files_list)
-        meta["file_size"] = sum(int(f.get("size") or 0) for f in files_list)
-        meta["file_name"] = (existing_slot or {}).get("folder_name") or extra.get("folder_name") or meta["file_name"]
+    same_active_folder = bool(
+        extra.get("is_folder")
+        and not replace_existing
+        and existing_slot
+        and existing_slot.get("is_folder")
+        and existing_slot.get("folder_id") == extra.get("folder_id")
+    )
+    starting_new_rev = bool(
+        rev_mode == "new_revision"
+        and existing_slot
+        and not existing_slot.get("legacy")
+        and not same_active_folder
+    )
+
+    if starting_new_rev:
+        # Archive current revision without trashing previous Drive objects
+        meta = attachments.archive_and_promote_revision(
+            existing_slot,
+            meta,
+            rev=req_part_rev,
+            archived_by=u["username"],
+        )
+        if extra.get("is_folder"):
+            f_item = {
+                "id": file_id,
+                "name": remote.get("name") or t["file_name"],
+                "size": int(remote.get("size") or t["file_size"] or 0),
+                "mimeType": meta["mime_type"],
+            }
+            if rel_subfolder:
+                f_item["subfolder"] = rel_subfolder
+            meta["files"] = [f_item]
+            meta["file_count"] = 1
+            meta["file_size"] = int(f_item["size"] or 0)
+            meta["file_name"] = extra.get("folder_name") or meta["file_name"]
     else:
-        # Single-file upload replacing an existing attachment in the same slot: move the old file/folder to Trash
-        if existing_slot:
-            _trash_old_attachment(existing_slot, exclude_id=file_id)
+        if extra.get("is_folder"):
+            if replace_existing and existing_slot:
+                # First file of a replacement folder upload: trash previous active files & obsolete subfolders
+                _trash_old_attachment(
+                    existing_slot,
+                    exclude_id=file_id,
+                    files_only=True,
+                    trash_child_folders_under=extra.get("folder_id"),
+                    exclude_folder_ids=t.get("ancestor_folder_ids") or (),
+                )
+                files_list = []
+            elif same_active_folder:
+                files_list = list(existing_slot.get("files") or [])
+            else:
+                files_list = []
+            files_list = [f for f in files_list if f.get("id") != file_id]
+            f_item = {
+                "id": file_id,
+                "name": meta["file_name"],
+                "size": meta["file_size"],
+                "mimeType": meta["mime_type"],
+            }
+            if rel_subfolder:
+                f_item["subfolder"] = rel_subfolder
+            files_list.append(f_item)
+            meta["files"] = files_list
+            meta["file_count"] = len(files_list)
+            meta["file_size"] = sum(int(f.get("size") or 0) for f in files_list)
+            if same_active_folder:
+                meta["file_name"] = (existing_slot or {}).get("folder_name") or extra.get("folder_name") or meta["file_name"]
+            else:
+                meta["file_name"] = extra.get("folder_name") or (existing_slot or {}).get("folder_name") or meta["file_name"]
+        else:
+            # Single-file upload replacing an existing attachment in the same slot (active rev only)
+            if existing_slot:
+                _trash_old_attachment(existing_slot, exclude_id=file_id)
+
+        # Preserve active revision number and archived history across folder appends / active overwrites
+        cur_rev = (
+            attachments.parse_rev_number(req_part_rev, 0)
+            if (req_part_rev is not None and not same_active_folder)
+            else attachments.get_attachment_rev(existing_slot)
+        )
+        meta["rev"] = cur_rev
+        meta["rev_label"] = attachments.format_rev_label(cur_rev)
+        if isinstance(existing_slot, dict) and isinstance(existing_slot.get("history"), list) and existing_slot.get("history"):
+            meta["history"] = existing_slot["history"]
 
     # Preserve legacy single fileLocation as submission (or part_a for NOC) if attaching a later slot to an old record
     old_loc = attachments._clean_link(rec.get("fileLocation"))
@@ -420,13 +579,14 @@ def api_upload_complete():
             pass
 
     try:
+        rev_tag = f" [{meta.get('rev_label')}]" if slot in attachments.NOC_SLOTS or meta.get("rev", 0) > 0 else ""
         db.log_action(
             u["username"], "FILE_UPLOAD",
             project_id=pid, dt_id=dt_id, record_id=record_id,
             doc_no=rec.get("docNo", ""),
             field_name=f"attachments.{slot}",
             new_value=meta["file_name"],
-            detail=f"Uploaded {slot} file '{meta['file_name']}' ({meta['file_size']} bytes) to Drive [{file_id}]",
+            detail=f"Uploaded {slot}{rev_tag} file '{meta['file_name']}' ({meta['file_size']} bytes) to Drive [{file_id}]",
         )
     except Exception:
         pass
@@ -445,7 +605,7 @@ def api_upload_complete():
 
 @drive_uploads_bp.route("/api/drive/attachment/<record_id>/<slot>", methods=["DELETE"])
 def api_unlink_attachment(record_id, slot):
-    """Unlink an attachment slot ('submission' or 'approval') from a record and move the old Drive file/folder to Trash."""
+    """Unlink an attachment slot (or specific ?rev=<n>) from a record and move its Drive object to Trash."""
     record_id = str(record_id or "").strip()
     slot = str(slot or "").strip().lower()
     if slot not in attachments.SLOTS:
@@ -462,32 +622,88 @@ def api_unlink_attachment(record_id, slot):
         return err
 
     existing = (rec.get("attachments") or {}).get(slot) if isinstance(rec.get("attachments"), dict) else None
+    req_rev_raw = request.args.get("rev")
+    delete_all = request.args.get("all") == "1"
+    active_rev = attachments.get_attachment_rev(existing) if existing else 0
     old_name = (existing or {}).get("file_name") or (existing or {}).get("url") or slot
     old_url = attachments._clean_link((existing or {}).get("url"))
 
-    if existing:
-        _trash_old_attachment(existing)
+    if req_rev_raw is not None and str(req_rev_raw).strip() != "" and isinstance(existing, dict):
+        req_rev = attachments.parse_rev_number(req_rev_raw, -1)
+        if req_rev != active_rev:
+            raw_hist = list(existing.get("history") or []) if isinstance(existing.get("history"), list) else []
+            target_snap = next(
+                (h for h in raw_hist if isinstance(h, dict) and attachments.get_attachment_rev(h) == req_rev),
+                None,
+            )
+            if not target_snap:
+                return jsonify(error=f"Revision {attachments.format_rev_label(req_rev)} not found"), 404
+            active_protected = _collect_protected_ids(attachments.strip_entry_history(existing))
+            _trash_old_attachment(target_snap, exclude_ids=active_protected)
+            new_hist = [h for h in raw_hist if not (isinstance(h, dict) and attachments.get_attachment_rev(h) == req_rev)]
+            updated_slot = dict(existing)
+            if new_hist:
+                updated_slot["history"] = new_hist
+            else:
+                updated_slot.pop("history", None)
+            db.set_record_attachment(record_id, slot, updated_slot)
+            updated_att = db.get_record_attachments(record_id)
+            try:
+                db.log_action(
+                    u["username"], "EDIT",
+                    project_id=pid, dt_id=dt_id, record_id=record_id,
+                    doc_no=rec.get("docNo", ""),
+                    field_name=f"attachments.{slot}",
+                    old_value=f"{target_snap.get('rev_label') or ''} {target_snap.get('file_name') or ''}".strip(),
+                    new_value="",
+                    detail=f"Removed archived {slot} revision REV{req_rev:02d} and moved to Google Drive Trash",
+                )
+            except Exception:
+                pass
+            return jsonify(ok=True, record_id=record_id, slot=slot, attachments=updated_att, fileLocation=rec.get("fileLocation", ""))
 
-    db.clear_record_attachment(record_id, slot)
-    updated_att = db.get_record_attachments(record_id)
-
-    # Keep legacy fileLocation in sync if it was pointing to the removed attachment
     cur_loc = attachments._clean_link(rec.get("fileLocation"))
     next_loc = cur_loc
-    if old_url and cur_loc == old_url:
-        next_loc = ""
-        if isinstance(updated_att, dict):
-            for cand_slot in ("part_d", "part_c", "part_b", "part_a", "approval", "submission"):
-                if cand_slot == slot:
-                    continue
-                cand_entry = updated_att.get(cand_slot)
-                if isinstance(cand_entry, dict):
-                    cand_url = attachments._clean_link(cand_entry.get("url"))
-                    if cand_url:
-                        next_loc = cand_url
-                        break
-        db.q("""UPDATE records SET data = data || jsonb_build_object('fileLocation', %s::text), updated_at = NOW()
-                WHERE id = %s RETURNING id""", (next_loc, record_id))
+    if existing and not delete_all and isinstance(existing.get("history"), list) and existing.get("history"):
+        promoted, removed = attachments.pop_active_revision(existing)
+        if removed:
+            _trash_old_attachment(removed, exclude_ids=_collect_protected_ids(promoted))
+            old_name = removed.get("file_name") or removed.get("url") or old_name
+        db.set_record_attachment(record_id, slot, promoted)
+        updated_att = db.get_record_attachments(record_id)
+        if old_url and cur_loc == old_url:
+            next_loc = attachments._clean_link((promoted or {}).get("url"))
+            db.q("""UPDATE records SET data = data || jsonb_build_object('fileLocation', %s::text), updated_at = NOW()
+                    WHERE id = %s RETURNING id""", (next_loc, record_id))
+    else:
+        if existing:
+            # If deleting everything (?all=1) and history exists, strip history so _trash_old_attachment removes active and optionally archived items
+            if delete_all and isinstance(existing.get("history"), list):
+                for h in existing.get("history"):
+                    if isinstance(h, dict):
+                        _trash_old_attachment(h)
+                stripped = attachments.strip_entry_history(existing)
+                _trash_old_attachment(stripped)
+            else:
+                _trash_old_attachment(existing)
+
+        db.clear_record_attachment(record_id, slot)
+        updated_att = db.get_record_attachments(record_id)
+
+        if old_url and cur_loc == old_url:
+            next_loc = ""
+            if isinstance(updated_att, dict):
+                for cand_slot in ("part_d", "part_c", "part_b", "part_a", "approval", "submission"):
+                    if cand_slot == slot:
+                        continue
+                    cand_entry = updated_att.get(cand_slot)
+                    if isinstance(cand_entry, dict):
+                        cand_url = attachments._clean_link(cand_entry.get("url"))
+                        if cand_url:
+                            next_loc = cand_url
+                            break
+            db.q("""UPDATE records SET data = data || jsonb_build_object('fileLocation', %s::text), updated_at = NOW()
+                    WHERE id = %s RETURNING id""", (next_loc, record_id))
 
     try:
         db.log_action(

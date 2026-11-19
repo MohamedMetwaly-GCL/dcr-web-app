@@ -286,12 +286,15 @@ def public_qr_verify(qr_token):
     dt_code = str((row or {}).get("dt_code") or "").strip().upper()
     ws_id = str((row or {}).get("workspace_id") or "").strip().upper()
     if not row or ws_id != "HSE" or dt_code not in ("FEI", "PTW"):
-        not_found_html = """<!DOCTYPE html><html lang="en"><head>
+        from html_render import _head_icon_tags
+        icon_tags = _head_icon_tags()
+        not_found_html = f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HSE QR Verification — Not Found</title>
+{icon_tags}
 <style>
-  body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:24px;display:flex;justify-content:center;align-items:center;min-height:90vh}
-  .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;max-width:420px;width:100%;text-align:center;box-shadow:0 10px 25px rgba(15,23,42,.06)}
+  body{{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:24px;display:flex;justify-content:center;align-items:center;min-height:90vh}}
+  .card{{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;max-width:420px;width:100%;text-align:center;box-shadow:0 10px 25px rgba(15,23,42,.06)}}
 </style></head><body><div class="card">
   <div style="font-size:36px;margin-bottom:8px;">⚠️</div>
   <h2 style="margin:0 0 8px;font-size:18px;">QR Record Not Found</h2>
@@ -334,9 +337,12 @@ def public_qr_verify(qr_token):
         "last_inspection": str(data.get("lastInspection") or data.get("last_inspection") or data.get("issuedDate") or "—"),
     }
 
+    from html_render import _head_icon_tags
+    icon_tags = _head_icon_tags()
     html = f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HSE Verification — {escape(safe_card['doc_no'])}</title>
+{icon_tags}
 <style>
   body{{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#0f172a;margin:0;padding:18px;display:flex;justify-content:center;align-items:center;min-height:92vh}}
   .card{{background:#fff;border:1px solid #cbd5e1;border-top:5px solid #0d9488;border-radius:14px;padding:22px;max-width:440px;width:100%;box-shadow:0 12px 30px rgba(15,23,42,.08)}}

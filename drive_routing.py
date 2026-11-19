@@ -11,6 +11,7 @@ Design rules
 """
 import re
 import datetime
+import threading
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
@@ -275,6 +276,20 @@ def match_slot_folder(folders, slot):
 import time
 _FOLDER_USABLE_CACHE = {}   # folder_id -> (timestamp, bool)
 _CHILD_FOLDERS_CACHE = {}   # parent_id -> (timestamp, list)
+_SUBFOLDER_LOCKS_GUARD = threading.Lock()
+_SUBFOLDER_LOCKS = {}       # (parent_id, seg_lower) -> threading.Lock
+_NESTED_SUBFOLDER_CACHE = {}  # (root_folder_id, rel_lower) -> (timestamp, leaf_id, ancestor_ids)
+MAX_SUBFOLDER_DEPTH = 10
+
+
+def _get_subfolder_lock(parent_id, seg_name):
+    key = (str(parent_id), str(seg_name).strip().lower())
+    with _SUBFOLDER_LOCKS_GUARD:
+        lk = _SUBFOLDER_LOCKS.get(key)
+        if lk is None:
+            lk = threading.Lock()
+            _SUBFOLDER_LOCKS[key] = lk
+        return lk
 
 
 def is_real_service(service):
@@ -319,12 +334,107 @@ def folder_is_usable(service, folder_id):
 
 
 def create_folder(service, parent_id, name):
-    _CHILD_FOLDERS_CACHE.pop(parent_id, None)
     body = {"name": name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
     res = service.files().create(body=body, fields="id, name", supportsAllDrives=True).execute()
     if res and res.get("id"):
         _FOLDER_USABLE_CACHE[res["id"]] = (time.time(), True)
+        if is_real_service(service) and parent_id in _CHILD_FOLDERS_CACHE:
+            ts, children = _CHILD_FOLDERS_CACHE[parent_id]
+            updated = list(children)
+            if not any(str(c.get("id")) == str(res["id"]) for c in updated):
+                updated.append({"id": res["id"], "name": res.get("name") or name})
+            _CHILD_FOLDERS_CACHE[parent_id] = (time.time(), updated)
+        else:
+            _CHILD_FOLDERS_CACHE.pop(parent_id, None)
+    else:
+        _CHILD_FOLDERS_CACHE.pop(parent_id, None)
     return res
+
+
+def invalidate_subfolder_caches(parent_id=None):
+    """Clear child/nested subfolder caches (used when folders are trashed or tests reset state)."""
+    if parent_id is None:
+        _CHILD_FOLDERS_CACHE.clear()
+        _NESTED_SUBFOLDER_CACHE.clear()
+        _FOLDER_USABLE_CACHE.clear()
+        return
+    _CHILD_FOLDERS_CACHE.pop(parent_id, None)
+    _FOLDER_USABLE_CACHE.pop(parent_id, None)
+    for k in list(_NESTED_SUBFOLDER_CACHE.keys()):
+        if k[0] == parent_id:
+            _NESTED_SUBFOLDER_CACHE.pop(k, None)
+
+
+def normalize_rel_subfolder(rel_subfolder):
+    """Parse and validate a relative subfolder path into clean directory segments."""
+    raw = str(rel_subfolder or "").replace("\\", "/").strip()
+    if not raw:
+        return ()
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+        raise RoutingError("invalid_subfolder")
+    parts = []
+    for seg in raw.split("/"):
+        s = seg.strip()
+        if not s:
+            continue
+        if s in (".", ".."):
+            raise RoutingError("invalid_subfolder")
+        if len(s) > 200:
+            raise RoutingError("invalid_subfolder")
+        parts.append(s)
+    if len(parts) > MAX_SUBFOLDER_DEPTH:
+        raise RoutingError("invalid_subfolder")
+    return tuple(parts)
+
+
+def resolve_nested_subfolder_with_ancestors(service, root_folder_id, rel_subfolder, create_if_missing=True):
+    """Walk or create nested subfolders inside `root_folder_id`, returning `(leaf_id, ancestor_ids)`.
+
+    `ancestor_ids` lists every intermediate/leaf subfolder id created or traversed under
+    `root_folder_id` (excluding `root_folder_id` itself), ordered root-to-leaf.
+    Thread-safe per `(parent_id, segment)` so parallel uploads never create duplicate folders.
+    """
+    if not root_folder_id:
+        raise RoutingError("missing_root_folder")
+    parts = normalize_rel_subfolder(rel_subfolder)
+    if not parts:
+        return root_folder_id, []
+
+    cache_key = (str(root_folder_id), "/".join(p.lower() for p in parts))
+    now = time.time()
+    if is_real_service(service):
+        cached = _NESTED_SUBFOLDER_CACHE.get(cache_key)
+        if cached and (now - cached[0]) < 60:
+            return cached[1], list(cached[2])
+
+    cur_parent = root_folder_id
+    ancestors = []
+    for seg in parts:
+        lk = _get_subfolder_lock(cur_parent, seg)
+        with lk:
+            children = list_child_folders(service, cur_parent)
+            match = next(
+                (f for f in children if str(f.get("name", "")).strip().lower() == seg.lower()),
+                None,
+            )
+            if match is None:
+                if not create_if_missing:
+                    raise RoutingError("subfolder_not_found")
+                match = create_folder(service, cur_parent, seg)
+            cur_parent = match["id"]
+            ancestors.append(cur_parent)
+
+    if is_real_service(service):
+        _NESTED_SUBFOLDER_CACHE[cache_key] = (time.time(), cur_parent, tuple(ancestors))
+    return cur_parent, ancestors
+
+
+def resolve_nested_subfolder(service, root_folder_id, rel_subfolder, create_if_missing=True):
+    """Resolve/create nested subfolder path under `root_folder_id` and return its Drive folder id."""
+    leaf_id, _ = resolve_nested_subfolder_with_ancestors(
+        service, root_folder_id, rel_subfolder, create_if_missing=create_if_missing
+    )
+    return leaf_id
 
 
 # ---------------- Orchestration ----------------

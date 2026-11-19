@@ -34,6 +34,8 @@ drive_viewer_bp = Blueprint("drive_viewer", __name__)
 MAX_ZIP_BYTES = 1024 * 1024 * 1024
 MAX_OFFICE_PREVIEW_BYTES = 35 * 1024 * 1024
 MAX_FOLDER_FILES = 500
+MAX_FOLDER_DEPTH = 10
+MAX_FOLDERS_SCAN = 100
 FOLDER_MIME = "application/vnd.google-apps.folder"
 FILE_FIELDS = "id,name,size,mimeType,parents,trashed"
 
@@ -107,19 +109,35 @@ def _context(record_id, slot):
 
     att = rec.get("attachments") if isinstance(rec.get("attachments"), dict) else {}
     if slot == "legacy":
-        entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
+        base_entry = {"url": attachments._clean_link(rec.get("fileLocation")), "legacy": True}
     else:
-        entry = att.get(slot) if isinstance(att.get(slot), dict) else None
+        base_entry = att.get(slot) if isinstance(att.get(slot), dict) else None
         # Fallback 1: If approval or NOC part slot requested, and record has legacy submission slot, allow viewing
-        if not entry and (slot == "approval" or slot in attachments.NOC_SLOTS) and att.get("submission") and not att.get("approval") and (att.get("submission") or {}).get("legacy"):
-            entry = att.get("submission")
+        if not base_entry and (slot == "approval" or slot in attachments.NOC_SLOTS) and att.get("submission") and not att.get("approval") and (att.get("submission") or {}).get("legacy"):
+            base_entry = att.get("submission")
         # Fallback 2: Check any legacy/drive column on record
-        if not entry and slot in attachments.SLOTS:
+        if not base_entry and slot in attachments.SLOTS:
             fallback_url = rec.get("fileLocation") or rec.get("driveLink") or rec.get("drive_link") or rec.get("link")
             if fallback_url:
-                entry = {"url": attachments._clean_link(fallback_url), "legacy": True}
-    if not entry or not (entry.get("file_id") or entry.get("folder_id") or entry.get("url")):
+                base_entry = {"url": attachments._clean_link(fallback_url), "legacy": True}
+    if not base_entry or not (base_entry.get("file_id") or base_entry.get("folder_id") or base_entry.get("url")):
         return None, (jsonify(error="Nothing is attached in this slot"), 404)
+
+    active_rev = attachments.get_attachment_rev(base_entry)
+    revisions = attachments.get_attachment_revisions(base_entry)
+    req_rev_raw = request.args.get("rev")
+    entry = base_entry
+    selected_rev = active_rev
+    is_current_rev = True
+    if req_rev_raw is not None and str(req_rev_raw).strip() != "":
+        want_rev = attachments.parse_rev_number(req_rev_raw, -1)
+        if want_rev != active_rev:
+            chosen = next((r for r in revisions if int(r.get("rev") or 0) == want_rev), None)
+            if not chosen or not (chosen.get("file_id") or chosen.get("folder_id") or chosen.get("url")):
+                return None, (jsonify(error="Revision %s not found" % attachments.format_rev_label(max(0, want_rev))), 404)
+            entry = chosen
+            selected_rev = want_rev
+            is_current_rev = False
 
     url = str(entry.get("url") or "")
     if entry.get("is_folder") or "/folders/" in url:
@@ -134,41 +152,68 @@ def _context(record_id, slot):
                               fallback_url=url if (is_superadmin(u) or entry.get("legacy")) else ""), 404)
 
     can_dl = bool(can_edit(pid) or _is_workspace_admin(u, pid) or (hasattr(db, "can_user_download") and db.can_user_download(u.get("username"), pid)))
-    ctx = dict(user=u, rec=rec, pid=pid, dt_id=dt_id, slot=slot, entry=entry, kind=kind, target_id=target_id,
-               can_download=can_dl, can_open_drive=_is_workspace_admin(u, pid), url=url)
+    rev_query = None if is_current_rev else str(selected_rev)
+    revisions_summary = [
+        {
+            "rev": int(r.get("rev") or 0),
+            "rev_label": r.get("rev_label") or attachments.format_rev_label(r.get("rev")),
+            "current": bool(r.get("current")),
+            "folder_name": r.get("folder_name") or "",
+            "file_name": r.get("file_name") or "",
+            "file_count": int(r.get("file_count") or (len(r.get("files") or []) if isinstance(r.get("files"), list) else (1 if r.get("file_id") else 0))),
+            "is_folder": bool(r.get("is_folder")),
+            "consultant_status": r.get("consultant_status") or "",
+            "uploaded_at": r.get("uploaded_at") or "",
+            "archived_at": r.get("archived_at") or "",
+        }
+        for r in revisions
+    ]
+    ctx = dict(
+        user=u, rec=rec, pid=pid, dt_id=dt_id, slot=slot, entry=entry, kind=kind, target_id=target_id,
+        can_download=can_dl, can_open_drive=_is_workspace_admin(u, pid), url=url,
+        rev=selected_rev, rev_label=attachments.format_rev_label(selected_rev),
+        is_current_rev=is_current_rev, rev_query=rev_query, revisions=revisions_summary,
+    )
     return ctx, None
 
 
 def _list_folder(token, http, folder_id, doc_no="", stored_files=None):
     svc = drive_upload.RestDriveAdapter(token, http=http)
-    out, subfolders, page = [], [], None
-    while len(out) < MAX_FOLDER_FILES:
-        res = svc.files().list(q="'%s' in parents and trashed=false" % folder_id,
-                               fields="nextPageToken, files(id,name,size,mimeType)", pageToken=page).execute()
-        for f in res.get("files", []):
-            if f.get("mimeType") == FOLDER_MIME:
-                subfolders.append(f)
-            else:
-                out.append(f)
-        page = res.get("nextPageToken")
-        if not page:
-            break
+    out = []
+    queue = [(folder_id, "", 0)]
+    visited_folders = {folder_id}
+    scanned_folders = 0
 
-    # Also list files inside 1-level subfolders on Google Drive if any exist
-    for sf in subfolders[:10]:
-        sf_id = sf.get("id")
-        sf_name = sf.get("name") or ""
-        if not sf_id or len(out) >= MAX_FOLDER_FILES:
-            continue
-        try:
-            sub_res = svc.files().list(q="'%s' in parents and trashed=false" % sf_id,
-                                       fields="files(id,name,size,mimeType)").execute()
-            for cf in sub_res.get("files", []):
-                if cf.get("mimeType") != FOLDER_MIME and len(out) < MAX_FOLDER_FILES:
-                    cf["subfolder"] = sf_name
-                    out.append(cf)
-        except Exception:
-            pass
+    while queue and len(out) < MAX_FOLDER_FILES and scanned_folders < MAX_FOLDERS_SCAN:
+        cur_fid, prefix, depth = queue.pop(0)
+        scanned_folders += 1
+        page = None
+        while len(out) < MAX_FOLDER_FILES:
+            try:
+                res = svc.files().list(
+                    q="'%s' in parents and trashed=false" % cur_fid,
+                    fields="nextPageToken, files(id,name,size,mimeType)",
+                    pageToken=page,
+                ).execute()
+            except Exception:
+                if cur_fid == folder_id:
+                    raise
+                break
+            for f in res.get("files", []):
+                if f.get("mimeType") == FOLDER_MIME:
+                    sf_id = f.get("id")
+                    sf_name = str(f.get("name") or "").strip()
+                    if sf_id and sf_id not in visited_folders and depth + 1 <= MAX_FOLDER_DEPTH:
+                        visited_folders.add(sf_id)
+                        next_prefix = f"{prefix}/{sf_name}" if prefix else sf_name
+                        queue.append((sf_id, next_prefix, depth + 1))
+                elif len(out) < MAX_FOLDER_FILES:
+                    if prefix and not f.get("subfolder"):
+                        f["subfolder"] = prefix
+                    out.append(f)
+            page = res.get("nextPageToken")
+            if not page:
+                break
 
     # Merge any stored relative subfolder metadata from DCR attachment entry
     if isinstance(stored_files, list) and stored_files:
@@ -196,14 +241,19 @@ def _list_folder(token, http, folder_id, doc_no="", stored_files=None):
     return out[:MAX_FOLDER_FILES]
 
 
-def _file_dict(f, rid, slot, can_dl):
+def _file_dict(f, rid, slot, can_dl, rev_query=None):
     kind = preview_kind(f.get("name"), f.get("mimeType"))
     fid_q = quote(str(f["id"]), safe="")
     rid_q = quote(rid, safe="")
     fname = f.get("name") or "file"
     fname_q = quote(fname, safe="")
+    rev_q = ("rev=%s" % quote(str(rev_query), safe="")) if rev_query is not None else ""
     base = "/api/drive/stream/%s/%s/%s/%s" % (rid_q, slot, fid_q, fname_q)
-    office_url = ("/api/drive/office-preview/%s/%s/%s" % (rid_q, slot, fid_q)) if kind in ("excel", "word") else ""
+    stream_base = (base + "?" + rev_q) if rev_q else base
+    office_url = ("/api/drive/office-preview/%s/%s/%s" % (rid_q, slot, fid_q) + ("?" + rev_q if rev_q else "")) if kind in ("excel", "word") else ""
+    dl_url = ""
+    if can_dl:
+        dl_url = base + "?dl=1" + ("&" + rev_q if rev_q else "")
     drive_embed_url = "https://drive.google.com/file/d/%s/preview" % fid_q
     return {
         "id": f["id"],
@@ -212,10 +262,10 @@ def _file_dict(f, rid, slot, can_dl):
         "mime": f.get("mimeType") or "",
         "subfolder": f.get("subfolder") or "",
         "preview": kind,
-        "stream_url": base if kind in ("pdf", "image", "text") else "",
+        "stream_url": stream_base if kind in ("pdf", "image", "text") else "",
         "office_url": office_url,
         "drive_embed_url": drive_embed_url,
-        "download_url": (base + "?dl=1") if can_dl else "",
+        "download_url": dl_url,
     }
 
 
@@ -251,8 +301,8 @@ def api_view_info(record_id, slot):
                     }
                     for idx, f in enumerate(stored_files)
                 ]
-            # Auto-sync discovered subfolders to database attachment entry if DB lacked subfolders
-            if files and any(f.get("subfolder") for f in files) and stored_files is not None:
+            # Auto-sync discovered subfolders to database attachment entry only when viewing active revision
+            if ctx.get("is_current_rev", True) and files and any(f.get("subfolder") for f in files) and stored_files is not None:
                 if not any(sf.get("subfolder") for sf in stored_files if isinstance(sf, dict)):
                     try:
                         synced_entry = dict(ctx["entry"])
@@ -277,15 +327,22 @@ def api_view_info(record_id, slot):
                        fallback_url=ctx["url"] if (ctx["can_open_drive"] or ctx["entry"].get("legacy")) else ""), 502
     entry = ctx["entry"]
     name = entry.get("folder_name") or entry.get("file_name") or (files[0].get("name") if files else "Document")
-    _log(ctx, "DRIVE_LINK_CLICK", "Opened in-app viewer (%s / %s)" % (ctx["slot"], name))
+    rev_q = ctx.get("rev_query")
+    zip_url = ""
+    if ctx["kind"] == "folder" and ctx["can_download"]:
+        zip_url = "/api/drive/folder-zip/%s/%s" % (quote(rid, safe=""), ctx["slot"])
+        if rev_q is not None:
+            zip_url += "?rev=%s" % quote(str(rev_q), safe="")
+    _log(ctx, "DRIVE_LINK_CLICK", "Opened in-app viewer (%s %s / %s)" % (ctx["slot"], ctx.get("rev_label") or "", name))
     return jsonify(
         ok=True, kind=ctx["kind"], slot=ctx["slot"], name=name,
-        files=[_file_dict(f, rid, ctx["slot"], ctx["can_download"]) for f in files],
+        rev=ctx.get("rev", 0), rev_label=ctx.get("rev_label", "REV00"),
+        is_current_rev=ctx.get("is_current_rev", True), revisions=ctx.get("revisions", []),
+        files=[_file_dict(f, rid, ctx["slot"], ctx["can_download"], rev_query=rev_q) for f in files],
         total_size=sum(int(f.get("size") or 0) for f in files),
         can_download=ctx["can_download"], can_open_drive=ctx["can_open_drive"],
         drive_url=ctx["url"] if ctx["can_open_drive"] else "",
-        zip_url=("/api/drive/folder-zip/%s/%s" % (quote(rid, safe=""), ctx["slot"]))
-        if (ctx["kind"] == "folder" and ctx["can_download"]) else "")
+        zip_url=zip_url)
 
 
 @drive_viewer_bp.route("/api/drive/rescan-folder/<record_id>/<slot>", methods=["POST"])
@@ -322,7 +379,7 @@ def api_rescan_folder(record_id, slot):
 
 
 def _authorize_file(ctx, token, http, file_id):
-    """Return Drive metadata if file_id is the attachment itself or sits inside the attached folder (or its 1-level subfolder)."""
+    """Return Drive metadata if file_id is the attachment itself or sits inside the attached folder tree."""
     meta = drive_upload.get_file(token, file_id, fields=FILE_FIELDS, http=http)
     if meta.get("trashed"):
         return None
@@ -335,12 +392,26 @@ def _authorize_file(ctx, token, http, file_id):
     stored = ctx["entry"].get("files") if isinstance(ctx["entry"].get("files"), list) else []
     if any(str(f.get("id") or "") == str(file_id) for f in stored if isinstance(f, dict)):
         return meta
-    # Check 1-level subfolder parent on Drive
-    for pid in parents[:2]:
+    # Recursively walk ancestor folders on Drive up to MAX_FOLDER_DEPTH
+    visited = {str(file_id)}
+    frontier = [(str(pid), 1) for pid in parents[:4] if pid]
+    lookups = 0
+    while frontier and lookups < 32:
+        pid, depth = frontier.pop(0)
+        if not pid or pid in visited or depth > MAX_FOLDER_DEPTH:
+            continue
+        visited.add(pid)
+        lookups += 1
         try:
             pmeta = drive_upload.get_file(token, pid, fields="id,parents,trashed", http=http)
-            if not pmeta.get("trashed") and ctx["target_id"] in (pmeta.get("parents") or []):
+            if pmeta.get("trashed"):
+                continue
+            grandparents = pmeta.get("parents") or []
+            if ctx["target_id"] in grandparents:
                 return meta
+            for gp in grandparents[:4]:
+                if gp and str(gp) not in visited:
+                    frontier.append((str(gp), depth + 1))
         except Exception:
             pass
     return None
@@ -685,7 +756,10 @@ def api_stream(record_id, slot, file_id=None, filename=None):
         return jsonify(error="Download permission required"), 403
     if not file_id:
         if ctx["kind"] == "folder":
-            return redirect("/api/drive/folder-zip/%s/%s" % (quote(record_id, safe=""), slot))
+            z_url = "/api/drive/folder-zip/%s/%s" % (quote(record_id, safe=""), slot)
+            if ctx.get("rev_query") is not None:
+                z_url += "?rev=%s" % quote(str(ctx["rev_query"]), safe="")
+            return redirect(z_url)
         file_id = ctx.get("target_id")
     if not file_id:
         return jsonify(error="Attachment has no file id"), 404
@@ -758,5 +832,7 @@ def api_folder_zip(record_id, slot):
     except drive_upload.DriveUploadError as e:
         return jsonify(error=str(e), hint=e.hint), 502
     zname = re.sub(r'[\\/:*?"<>|]+', "_", ctx["entry"].get("folder_name") or ctx["entry"].get("file_name") or "documents")
+    if ctx.get("rev_label") and ctx["rev_label"].lower() not in zname.lower() and (not ctx.get("is_current_rev", True) or ctx["slot"] in attachments.NOC_SLOTS):
+        zname = f"{zname}_{ctx['rev_label']}"
     _log(ctx, "FILE_DOWNLOAD", "Downloaded folder '%s' as ZIP (%d files)" % (zname, len(files)))
     return send_file(tmp, mimetype="application/zip", as_attachment=True, download_name=zname + ".zip")

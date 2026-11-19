@@ -28,6 +28,28 @@ from flask import url_for
 from auth import can_edit, is_project_admin, get_allowed_doc_type_filter, get_user_doc_type_scope
 from utils import STATUS_COLORS
 
+
+def _asset_ver(rel_path: str) -> str:
+    p = os.path.join(os.path.dirname(__file__), "static", rel_path)
+    try:
+        return str(int(os.path.getmtime(p)))
+    except OSError:
+        return "1"
+
+
+def _head_icon_tags() -> str:
+    v_ico = _asset_ver("favicon.ico")
+    v_192 = _asset_ver("icon-192.png")
+    v_app = _asset_ver("apple-touch-icon.png")
+    v_man = _asset_ver("manifest.json")
+    return (
+        f'<link rel="icon" href="/favicon.ico?v={v_ico}" sizes="any">\n'
+        f'<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png?v={v_192}">\n'
+        f'<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v={v_app}">\n'
+        f'<link rel="manifest" href="/manifest.webmanifest?v={v_man}">\n'
+        f'<meta name="theme-color" content="#0f1d2e">'
+    )
+
 ABOUT_MODAL_HTML = """
 <!-- ABOUT SYSTEM MODAL -->
 <div class="overlay hidden" id="about-modal" style="z-index: 10000;">
@@ -6259,6 +6281,7 @@ def render_login():
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Gas Chill DCR — Sign In</title>
+{_head_icon_tags()}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -6773,6 +6796,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     return f'''<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — {ws_name}</title>
+{_head_icon_tags()}
 {BASE_CSS}
 <style>
 body {{ display:flex; flex-direction:column; min-height:100vh; overflow-x:hidden; background: var(--bg); }}
@@ -8438,6 +8462,7 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — {ws_name} Command Dashboard</title>
+{_head_icon_tags()}
 {BASE_CSS}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>{HSE_DASHBOARD_CSS}</style>
@@ -9111,6 +9136,7 @@ def render_launchpad(u):
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gas Chill &mdash; Company Workspaces Launchpad</title>
+{_head_icon_tags()}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -10169,6 +10195,7 @@ def render_dashboard(u, active_ws_id=None):
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — Dashboard</title>
+{_head_icon_tags()}
 {BASE_CSS}
 <style>
 /* ── Layout ── */
@@ -12376,6 +12403,7 @@ def render_register(u, proj, active_ws_id=None):
     return f"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — {proj.get("name","Register")}</title>
+{_head_icon_tags()}
 {BASE_CSS}
 <style>
 .hidden{{display:none!important}}
@@ -13200,6 +13228,10 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
           <span style="font-size:12px">📁</span>
           <span>Target Drive Folder: <strong id="batch-drv-target-path-txt">...</strong></span>
         </div>
+        <label id="batch-noc-rev-wrap" style="display:none;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;padding:6px 10px;border-radius:6px;cursor:pointer">
+          <input type="checkbox" id="batch-noc-new-rev" checked style="accent-color:#2563eb">
+          <span>↻ Archive existing Part attachment as previous revision (New Rev) instead of overwriting</span>
+        </label>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input type="file" id="batch-drv-input" multiple style="display:none" onchange="onBatchFilesSelected(this.files)">
@@ -13522,6 +13554,7 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
         <button class="xbtn" onclick="dvCloseModal()">✕</button>
       </div>
     </div>
+    <div id="dv-rev-bar" style="display:none;padding:6px 14px;background:#f8fafc;border-bottom:1px solid var(--bd);align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0"></div>
     <div id="dv-mob-bar" class="dv-mob-bar" style="display:none">
       <button type="button" id="dv-mob-tab-list" class="dv-mob-tab active" onclick="dvMobTab(0)">
         📁 Files (<span id="dv-mob-cnt">0</span>)
@@ -13636,6 +13669,75 @@ function isLTRTab(){{
   const code=(dt.code||dt.id||'').toString().toUpperCase();
   const name=(dt.name||'').toString().toLowerCase();
   return code==='LTR' || name.includes('letter');
+}}
+
+function isIgnoredUploadJunkFile(file){{
+  const name=String(file?.name||file||'').replace(/\\\\/g,'/').split('/').pop().trim();
+  if(!name)return true;
+  const low=name.toLowerCase();
+  if(['desktop.ini','thumbs.db','.ds_store','ehthumbs.db','ehthumbs_vista.db','icon\\r'].includes(low))return true;
+  if(low.startsWith('~$')||low.startsWith('.smbdelete'))return true;
+  return /\\.(tmp|bak|lnk)$/i.test(low);
+}}
+
+function parseItemRefItems(val){{
+  if(val===null||val===undefined)return null;
+  let arr=null;
+  if(Array.isArray(val))arr=val;
+  else if(typeof val==='object')arr=[val];
+  else if(typeof val==='string'){{
+    const t=val.trim();
+    if(t.startsWith('[')||t.startsWith('{{')){{
+      try{{
+        const parsed=JSON.parse(t);
+        if(Array.isArray(parsed))arr=parsed;
+        else if(parsed&&typeof parsed==='object')arr=[parsed];
+      }}catch(_e){{}}
+    }}
+  }}
+  if(!arr)return null;
+  return arr.map(it=>{{
+    if(it&&typeof it==='object'){{
+      return {{
+        item_ref:String(it.item_ref??it.ref??it.dwg_no??it.dwgNo??it.value??it.name??it.title??it.text??'').trim(),
+        item_status:String(it.item_status??it.status??'').trim()
+      }};
+    }}
+    return {{item_ref:String(it??'').trim(),item_status:''}};
+  }}).filter(it=>it.item_ref||it.item_status);
+}}
+
+function formatItemRefPlainText(val,includeStatus=false){{
+  const NL=String.fromCharCode(10);
+  const items=parseItemRefItems(val);
+  if(Array.isArray(items)){{
+    return items.map(it=>(includeStatus&&it.item_status)?`${{it.item_ref}} (${{it.item_status}})`:it.item_ref).filter(Boolean).join(NL);
+  }}
+  if(val&&typeof val==='object')return '';
+  return String(val??'').replace(/\\r\\n/g,NL).replace(/\\r/g,NL);
+}}
+
+function getRowSearchableText(row,key,col){{
+  const raw=row?.[key];
+  if(raw===null||raw===undefined)return '';
+  if(col&&isItemRefField(col))return formatItemRefPlainText(raw,true);
+  if(Array.isArray(raw)||typeof raw==='object')return formatItemRefPlainText(raw,true);
+  return String(raw);
+}}
+
+function getNocPartRev(entry){{
+  if(!entry||typeof entry!=='object')return 0;
+  if(entry.rev!==undefined&&entry.rev!==null&&!Number.isNaN(Number(entry.rev))){{
+    return Math.max(0,parseInt(entry.rev,10)||0);
+  }}
+  const lbl=String(entry.rev_label||'').trim();
+  const m=lbl.match(/(\\d+)/);
+  return m?Math.max(0,parseInt(m[1],10)||0):0;
+}}
+
+function formatNocRevLabel(rev){{
+  const n=Math.max(0,parseInt(rev,10)||0);
+  return 'REV'+String(n).padStart(2,'0');
 }}
 
 function isHiddenSystemListName(name){{
@@ -14330,7 +14432,10 @@ function renderRows(){{
     if(state.latestRevisionsOnly && r._has_newer_revision) return false;
     for(const[k,v]of Object.entries(state.filters)){{
       if(k.startsWith('_'))continue;
-      if(v&&!String(r[k]||'').toLowerCase().includes(v.toLowerCase()))return false;
+      if(v){{
+        const fCol=(state.cols||[]).find(c=>c.col_key===k);
+        if(!getRowSearchableText(r,k,fCol).toLowerCase().includes(v.toLowerCase()))return false;
+      }}
     }}
     if(isLtrTab){{
       const quick=String(state.filters._ltrQuick||'').toLowerCase();
@@ -14346,8 +14451,8 @@ function renderRows(){{
     const isNumCol = sortColMeta && (sortColMeta.col_type === 'number' || sortColMeta.col_type === 'currency' || String(sortColMeta.col_key||'').toLowerCase().includes('dur') || String(sortColMeta.col_key||'').toLowerCase().includes('qty'));
 
     rows.sort((a,b)=>{{
-      const rawA = a[state.sortCol];
-      const rawB = b[state.sortCol];
+      const rawA = sortColMeta && isItemRefField(sortColMeta) ? getRowSearchableText(a, state.sortCol, sortColMeta) : a[state.sortCol];
+      const rawB = sortColMeta && isItemRefField(sortColMeta) ? getRowSearchableText(b, state.sortCol, sortColMeta) : b[state.sortCol];
       if (rawA === rawB) return 0;
       if (rawA === undefined || rawA === null || String(rawA).trim() === '') return 1;
       if (rawB === undefined || rawB === null || String(rawB).trim() === '') return -1;
@@ -14437,15 +14542,24 @@ function renderRows(){{
         if(hasPartA || hasPartB || hasPartC || hasPartD || hasSubm || hasAppr){{
           const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
           const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-          const _chip=(label,slot,entry,color,bg,name,themeObj)=>{{
+          const _chip=(label,slot,entry,color,bg,name,themeObj,revNum=null)=>{{
             const sp=document.createElement('span');
             const isMix=Boolean(themeObj&&themeObj.mixed);
             const bdStyle=isMix
               ? 'border-top:1.5px solid '+themeObj.bd+';border-left:1.5px solid '+themeObj.bd+';border-right:1.5px solid '+themeObj.bd2+';border-bottom:1.5px solid '+themeObj.bd2
               : 'border:1px solid '+color;
             sp.style.cssText='display:inline-flex;align-items:center;justify-content:space-between;gap:3px;padding:1px 5px;border-radius:5px;'+bdStyle+';background:'+bg+';font-size:9.5px;font-weight:700;color:'+color+';white-space:nowrap;line-height:1.2';
-            const lbl=document.createElement('span');lbl.textContent=label;
-            lbl.style.cursor='pointer';
+            const lbl=document.createElement('span');
+            lbl.style.cssText='cursor:pointer;display:inline-flex;align-items:center;gap:3px';
+            lbl.textContent=label;
+            if(revNum!==null && revNum!==undefined){{
+              const rBadge=document.createElement('span');
+              rBadge.textContent='R'+revNum;
+              rBadge.style.cssText=revNum>0
+                ? 'font-size:8.5px;font-weight:800;padding:0 3px;border-radius:3px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd'
+                : 'font-size:8.5px;font-weight:700;padding:0 3px;border-radius:3px;background:rgba(148,163,184,0.16);color:inherit;opacity:0.85';
+              lbl.appendChild(rBadge);
+            }}
             lbl.title='View '+name;
             lbl.onclick=(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}};
             if(isMix)lbl.style.color=themeObj.color;
@@ -14470,22 +14584,26 @@ function renderRows(){{
 
           if(isNoc && (hasPartA || hasPartB || hasPartC || hasPartD)){{
             if(hasPartA){{
-              box.appendChild(_chip('A','part_a',norm.part_a,'#2563eb','#eff6ff','Part A - Notice of Change',null));
+              const _revA=getNocPartRev(norm.part_a);
+              box.appendChild(_chip('A','part_a',norm.part_a,'#2563eb','#eff6ff','Part A - Notice of Change ('+formatNocRevLabel(_revA)+')',null,_revA));
             }}
             if(hasPartB){{
               const _stB=_getNocPartStatus(row,'B')||norm.part_b.consultant_status||'';
               const _thB=_getReplyStatusTheme(_stB);
-              const _nmB='Part B - Consultant Reply'+(_stB?' ('+_stB+')':'');
-              box.appendChild(_chip('B','part_b',norm.part_b,_thB.color,_thB.bg,_nmB,_thB));
+              const _revB=getNocPartRev(norm.part_b);
+              const _nmB='Part B - Consultant Reply ('+formatNocRevLabel(_revB)+')'+(_stB?' ('+_stB+')':'');
+              box.appendChild(_chip('B','part_b',norm.part_b,_thB.color,_thB.bg,_nmB,_thB,_revB));
             }}
             if(hasPartC){{
-              box.appendChild(_chip('C','part_c',norm.part_c,'#0284c7','#f0f9ff','Part C - Cost & Time Claim',null));
+              const _revC=getNocPartRev(norm.part_c);
+              box.appendChild(_chip('C','part_c',norm.part_c,'#0284c7','#f0f9ff','Part C - Cost & Time Claim ('+formatNocRevLabel(_revC)+')',null,_revC));
             }}
             if(hasPartD){{
               const _stD=_getNocPartStatus(row,'D')||norm.part_d.consultant_status||'';
               const _thD=_getReplyStatusTheme(_stD);
-              const _nmD='Part D - Final Approval'+(_stD?' ('+_stD+')':'');
-              box.appendChild(_chip('D','part_d',norm.part_d,_thD.color,_thD.bg,_nmD,_thD));
+              const _revD=getNocPartRev(norm.part_d);
+              const _nmD='Part D - Final Approval ('+formatNocRevLabel(_revD)+')'+(_stD?' ('+_stD+')':'');
+              box.appendChild(_chip('D','part_d',norm.part_d,_thD.color,_thD.bg,_nmD,_thD,_revD));
             }}
           }}else if(hasSubm && hasAppr){{
             const _isHseCo = isHseCloseoutTab();
@@ -14565,7 +14683,8 @@ function renderRows(){{
       else val=row[key]!==undefined ? row[key] : '';
       if(isLtrTab&&ltrRole&&!String(val||'').trim())val=String(getLTRValue(row,state.allTabCols,ltrRole)||'');
       
-      if(isSDOrABDTab() && isItemRefField(col) && Array.isArray(val)) {{
+      const parsedItemRefs = isItemRefField(col) ? parseItemRefItems(val) : null;
+      if(isItemRefField(col) && Array.isArray(parsedItemRefs)) {{
          const statusAbbreviations = {{
             "A - APPROVED": "A",
             "B - APPROVED AS NOTED": "B",
@@ -14581,7 +14700,7 @@ function renderRows(){{
             "3- NA - NOT APPROVED": "3-NA",
             "4- NR - NOT REVIEWED": "4-NR"
          }};
-         const lines = val.map(it => {{
+         const lines = parsedItemRefs.map(it => {{
             const ref = escHtml(it.item_ref || '');
             let stHtml = '';
             if (it.item_status) {{
@@ -14903,11 +15022,13 @@ function getNocAutoBaseValue(data){{
 }}
 
 function formatDisplayValue(col,val){{
-  let text=String(val??'');
-  if(!text)return '';
+  if(val===null||val===undefined)return '';
   const NL=String.fromCharCode(10);
+  if(isItemRefField(col))return formatItemRefPlainText(val,false);
+  if(Array.isArray(val)||typeof val==='object')return formatItemRefPlainText(val,false);
+  let text=String(val);
+  if(!text)return '';
   if(isFloorField(col))return text.split(',').map(s=>s.trim()).filter(Boolean).join(NL);
-  if(isItemRefField(col))return text.replace(/\\r\\n/g,NL).replace(/\\r/g,NL);
   if(isCurrencyField(col))return formatCurrencyValue(text);
   return text;
 }}
@@ -15300,6 +15421,7 @@ function getNocFieldProfile(col){{
     voissuedate:profile('VO Details',320,'span-1'),
     vobasevalue:profile('VO Details',330,'span-1'),
     vovaluewithsiandvat:profile('VO Details',340,'span-1'),
+    relatedpcq:profile('Calculated / System Fields',900,'span-1'),
     originalfile:profile('Remarks / Files',510,'span-2'),
     filelocation:profile('Remarks / Files',520,'span-2'),
     remarks:profile('Remarks / Files',540,'full')
@@ -15530,12 +15652,13 @@ async function buildForm(row,opts={{}}){{
       if(key==='voBaseValue')nocBaseInp=inp;
       if(key==='voValueWithSIAndVAT')nocTotalInp=inp;
     }}
-    else if(isSDOrABDTab() && isItemRefField(col)){{
+    else if(isItemRefField(col) && (isSDOrABDTab() || Array.isArray(parseItemRefItems(val)))){{
       const hid = document.createElement('input');
       hid.type = 'hidden';
       hid.id = 'f-'+key;
       hid.className = 'json-data-field';
-      hid.value = typeof val === 'string' ? val : JSON.stringify(val||[]);
+      const parsedVal = parseItemRefItems(val);
+      hid.value = Array.isArray(parsedVal) ? JSON.stringify(parsedVal) : (typeof val === 'string' ? val : JSON.stringify(val||[]));
       grp.appendChild(hid);
       
       const wrap = document.createElement('div');
@@ -15558,14 +15681,14 @@ async function buildForm(row,opts={{}}){{
       setTimeout(() => initSdItemsEditor(key, val), 0);
     }}
     else if(longTextMeta){{
-      const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
+      const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=isItemRefField(col)?formatItemRefPlainText(val,false):(typeof val==='object'&&val!==null?formatItemRefPlainText(val,false):val);
       ta.rows=longTextMeta.rows;
       ta.style.cssText=longTextMeta.style;
       ta.placeholder=longTextMeta.placeholder;
       bindSmartTextarea(ta);
       grp.appendChild(ta);
     }}
-    else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=val;if(col.col_type==='link')inp.placeholder='https://...';bindDirectionalInput(inp);grp.appendChild(inp);}}
+    else{{const inp=document.createElement('input');inp.id='f-'+key;inp.value=isItemRefField(col)?formatItemRefPlainText(val,false):((val&&typeof val==='object')?formatItemRefPlainText(val,false):val);if(col.col_type==='link')inp.placeholder='https://...';bindDirectionalInput(inp);grp.appendChild(inp);}}
     if(isNocTab&&isCurrencyField(col))grp.style.gridColumn='span 1';
     getOrCreateFormSection(formRoot,sectionBodies,targetSection).appendChild(grp);
   }}
@@ -15695,11 +15818,12 @@ function addPrHeaderRow(item={{}}){{
 }}
 
 function initSdItemsEditor(key, val) {{
-  let items = [];
-  if (Array.isArray(val)) {{
-    items = val;
-  }} else if (typeof val === 'string' && val.trim()) {{
-    items = val.split('\\n').map(s => s.trim()).filter(Boolean).map(s => ({{item_ref: s, item_status: ''}}));
+  let items = parseItemRefItems(val);
+  if (!Array.isArray(items)) {{
+    items = [];
+    if (typeof val === 'string' && val.trim()) {{
+      items = val.split('\\n').map(s => s.trim()).filter(Boolean).map(s => ({{item_ref: s, item_status: ''}}));
+    }}
   }}
   const body = document.getElementById('sd-items-body-' + key);
   if (!body) return;
@@ -15716,7 +15840,9 @@ function addSdItemRow(key, item={{}}) {{
   const body = document.getElementById('sd-items-body-' + key);
   if (!body) return;
   const tr = document.createElement('tr');
-  const statusOptions = (state.lists['status'] || []).map(o => `<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
+  const baseStatuses = [...(state.lists['status'] || [])];
+  if (item.item_status && !baseStatuses.includes(item.item_status)) baseStatuses.push(item.item_status);
+  const statusOptions = baseStatuses.map(o => `<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
   tr.innerHTML = `
     <td style="padding:2px"><input class="sd-ref" placeholder="DWG-0001" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"></td>
     <td style="padding:2px"><select class="sd-status" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"><option value=""></option>${{statusOptions}}</select></td>
@@ -16494,6 +16620,7 @@ function printHseQrLabel(){{
   const w = window.open('', '_blank', 'width=440,height=560');
   if(!w) return toast('Allow popups to print QR badge', 'wa');
   w.document.write(`<!DOCTYPE html><html><head><title>QR Label - ${{escHtml(_activeQrMeta.doc_no)}}</title>
+    <link rel="icon" href="${{window.location.origin}}/favicon.ico" sizes="any">
     <style>body{{font-family:system-ui,sans-serif;text-align:center;padding:24px;color:#0f172a}}
     .lbl{{border:2px solid #0f172a;border-radius:12px;padding:18px;display:inline-block;max-width:340px}}
     h3{{margin:6px 0;font-size:16px;font-family:monospace}} p{{margin:4px 0;font-size:12px;color:#475569}}
@@ -16554,20 +16681,24 @@ async function submitFeiBatchInspect(){{
     if(btn) btn.disabled = false;
   }}
 }}
-function docDownloadHref(rid,slot,entry){{
+function docDownloadHref(rid,slot,entry,revParam=null){{
   if(!entry)return '';
+  const hasRev=(revParam!==undefined && revParam!==null && String(revParam).trim()!=='');
   const url=String(entry.url||'');
-  if(entry.folder_id||entry.is_folder||url.indexOf('/folders/')>-1)return '/api/drive/folder-zip/'+encodeURIComponent(rid)+'/'+slot;
+  if(entry.folder_id||entry.is_folder||url.indexOf('/folders/')>-1){{
+    return '/api/drive/folder-zip/'+encodeURIComponent(rid)+'/'+slot+(hasRev?('?rev='+encodeURIComponent(revParam)):'');
+  }}
   let fid=entry.file_id||entry.id||'';
   if(!fid && Array.isArray(entry.files) && entry.files.length > 0){{
     fid = entry.files[0].file_id || entry.files[0].id || '';
   }}
   if(!fid){{const m=url.match(/\\/d\\/([a-zA-Z0-9_-]+)/)||url.match(/[?&]id=([a-zA-Z0-9_-]+)/);fid=m?m[1]:'';}}
-  if(fid) return '/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'/'+encodeURIComponent(fid)+'?dl=1';
-  return '/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'?dl=1';
+  const revSuffix=hasRev?('&rev='+encodeURIComponent(revParam)):'';
+  if(fid) return '/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'/'+encodeURIComponent(fid)+'?dl=1'+revSuffix;
+  return '/api/drive/stream/'+encodeURIComponent(rid)+'/'+slot+'?dl=1'+revSuffix;
 }}
 
-const DV={{info:null,rid:'',slot:'',cur:-1,filter:'',label:'',imgZoom:1,imgRot:0,imgPanX:0,imgPanY:0,imgDrag:false,imgSX:0,imgSY:0,excelSheet:0,excelFilter:'',excelZoom:100,wordZoom:100}};
+const DV={{info:null,rid:'',slot:'',rev:null,cur:-1,filter:'',label:'',imgZoom:1,imgRot:0,imgPanX:0,imgPanY:0,imgDrag:false,imgSX:0,imgSY:0,excelSheet:0,excelFilter:'',excelZoom:100,wordZoom:100}};
 function _dvEl(id){{return document.getElementById(id);}}
 function _dvFmt(n){{return (typeof _fmtBytes==='function')?_fmtBytes(n):(n+' B');}}
 function dvCloseModal(){{
@@ -16577,6 +16708,8 @@ function dvCloseModal(){{
   }}
   const b=_dvEl('dv-fs-btn');
   if(b)b.textContent='⛶ Fullscreen';
+  const rb=_dvEl('dv-rev-bar');
+  if(rb){{rb.style.display='none';rb.innerHTML='';}}
   if(document.fullscreenElement){{try{{document.exitFullscreen();}}catch(_e){{}}}}
   closeM('doc-viewer-modal');
   const p=_dvEl('dv-pane');
@@ -16660,16 +16793,20 @@ function _dvError(j,status){{
 }}
 async function openDocViewer(rid,slot,opts){{
   opts=opts||{{}};
-  DV.rid=rid;DV.slot=slot;DV.info=null;DV.cur=-1;DV.filter='';DV.label=opts.label||'';
+  const reqRev=(opts.rev!==undefined && opts.rev!==null && String(opts.rev).trim()!=='')?opts.rev:null;
+  DV.rid=rid;DV.slot=slot;DV.rev=reqRev;DV.info=null;DV.cur=-1;DV.filter='';DV.label=opts.label||'';
   _dvEl('dv-title').textContent='Loading document...';
   _dvEl('dv-side').style.display='none';
+  const rb=_dvEl('dv-rev-bar');
+  if(rb){{rb.style.display='none';rb.innerHTML='';}}
   _dvEl('dv-foot-left').innerHTML='';
   _dvSetBusy('Loading...');
   const fab=_dvEl('ai-fab-btn');
   if(fab){{fab.style.opacity='0';fab.style.pointerEvents='none';fab.style.visibility='hidden';}}
   openM('doc-viewer-modal');
   try{{
-    const r=await fetch('/api/drive/view-info/'+encodeURIComponent(rid)+'/'+slot);
+    const qs=reqRev!==null?('?rev='+encodeURIComponent(reqRev)):'';
+    const r=await fetch('/api/drive/view-info/'+encodeURIComponent(rid)+'/'+slot+qs);
     const j=await r.json().catch(()=>({{}}));
     if(!r.ok||!j.ok){{_dvError(j,r.status);_dvEl('dv-title').textContent='Document';return;}}
     DV.info=j;
@@ -16682,9 +16819,41 @@ function _dvRender(){{
   const docNo=rec.docNo||rec.nocNo||'';
   const isFolder=j.kind==='folder';
   const total=_dvFmt(j.total_size||0);
-  const head=(isFolder?'📁 ':'📄 ')+(docNo?docNo+' — ':'')+(DV.label||j.name||'Document');
+  const isNocPart=String(DV.slot||'').startsWith('part_');
+  const docHead=isNocPart?(parseDocNo(docNo).base||docNo):docNo;
+  const rawLabel=String(DV.label||j.name||'Document').replace(/\\s*\\(REV\\d+\\)/ig,'').trim();
+  const revLabel=(j.rev_label&&(isNocPart||(Array.isArray(j.revisions)&&j.revisions.length>1)))?(' — '+j.rev_label):'';
+  const head=(isFolder?'📁 ':'📄 ')+(docHead?docHead+' — ':'')+rawLabel+revLabel;
   _dvEl('dv-title').innerHTML=escHtml(head)+' <span style="font-weight:500;color:var(--mu);font-size:11px;margin-left:6px">'
     +(isFolder?(j.files.length+' file'+(j.files.length===1?'':'s')+' · '):'')+total+'</span>';
+  const revBar=_dvEl('dv-rev-bar');
+  if(revBar){{
+    const revs=Array.isArray(j.revisions)?j.revisions:[];
+    if(revs.length>1 || isNocPart){{
+      revBar.innerHTML='';
+      const tag=document.createElement('span');
+      tag.style.cssText='font-size:10.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.3px';
+      tag.textContent=revs.length>1?'Revisions:':'Revision:';
+      revBar.appendChild(tag);
+      (revs.length?revs:[{{rev:j.rev||0,rev_label:j.rev_label||'REV00',current:true}}]).forEach(rv=>{{
+        const active=Number(rv.rev)===Number(j.rev||0);
+        const btn=document.createElement('button');
+        btn.type='button';
+        btn.textContent=String(rv.rev_label||formatNocRevLabel(rv.rev))+(rv.current?' (Current)':' (Archived)');
+        btn.style.cssText=active
+          ? 'padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:default'
+          : 'padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer';
+        if(!active){{
+          btn.onclick=()=>openDocViewer(DV.rid,DV.slot,{{rev:rv.rev,label:DV.label}});
+        }}
+        revBar.appendChild(btn);
+      }});
+      revBar.style.display='flex';
+    }}else{{
+      revBar.style.display='none';
+      revBar.innerHTML='';
+    }}
+  }}
   const showSide=isFolder&&j.files.length>0;
   const m=_dvEl('doc-viewer-modal');
   const mobBar=_dvEl('dv-mob-bar');
@@ -17456,24 +17625,42 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     ? 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:6px'
     : 'display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:6px';
 
+  const getDocBaseName=()=>{{
+    const rawDoc=(row?.docNo||row?.nocNo||'').trim();
+    if(!rawDoc)return '';
+    try{{
+      const p=parseDocNo(rawDoc);
+      if(p&&p.base)return p.base;
+    }}catch(_e){{}}
+    return rawDoc.replace(/\\s+REV\\s*\\d+.*$/i,'').trim();
+  }};
+
   slots.forEach(s=>{{
     const card=document.createElement('div');
     card.className='drv-slot-card';
     const hdr=document.createElement('div');
+    const hdrTitle=document.createElement('span');
+    hdrTitle.style.cssText='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
+    hdrTitle.textContent=s.title;
+    const revBadge=document.createElement('span');
+    revBadge.style.cssText='display:none;flex-shrink:0;font-size:9px;font-weight:800;padding:1px 5px;border-radius:999px;background:#1e3a8a;color:#fff;margin-left:4px';
+    hdr.appendChild(hdrTitle);
+    hdr.appendChild(revBadge);
+    hdr.title=s.title;
+
     let upBtn=null, fldBtn=null, progBarInner=null;
+    let slotRevMode='new_revision';
     const applyCardTheme=(th)=>{{
       s.color=th.color;s.bg=th.bg;s.bd=th.bd;s.mixed=Boolean(th.mixed);s.bd2=th.bd2||th.bd;s.color2=th.color2||th.color;
       const bdCss=s.mixed
         ? `border-top:1.5px solid ${{s.bd}};border-left:1.5px solid ${{s.bd}};border-right:1.5px solid ${{s.bd2}};border-bottom:1.5px solid ${{s.bd2}}`
         : `border:1px solid ${{s.bd}}`;
       card.style.cssText=`${{bdCss}};background:${{s.bg}};border-radius:7px;padding:${{isNoc?'7px 8px':'10px 12px'}};display:flex;flex-direction:column;gap:${{isNoc?'4px':'6px'}};transition:all .15s;min-width:0;overflow:hidden`;
-      hdr.style.cssText=`font-size:${{isNoc?'10.5px':'11px'}};font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+      hdr.style.cssText=`font-size:${{isNoc?'10.5px':'11px'}};font-weight:700;color:${{s.color}};display:flex;justify-content:space-between;align-items:center;gap:4px`;
       if(upBtn)upBtn.style.cssText=`font-size:10px;padding:${{isNoc?'3px 5px':'4px 10px'}};border-color:${{s.color}};color:${{s.color}};background:${{isDark?'#1e293b':'#fff'}};white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
       if(progBarInner)progBarInner.style.background=s.color;
     }};
     applyCardTheme(s);
-    hdr.textContent=s.title;
-    hdr.title=s.title;
     card.appendChild(hdr);
 
     const pathSubName=s.pathSub!==undefined?s.pathSub:((s.key==='approval')?'Replied':'Submit');
@@ -17490,6 +17677,180 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     statusLine.style.cssText=`font-size:10.5px;color:${{isDark?'#cbd5e1':'#334155'}};display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-height:20px`;
     card.appendChild(statusLine);
 
+    const revModeWrap=document.createElement('div');
+    revModeWrap.className='drv-rev-seg';
+    revModeWrap.dataset.revMode=slotRevMode;
+    revModeWrap.style.cssText='display:none;grid-template-columns:1fr 1fr;gap:3px;padding:2px;border-radius:6px;background:'+(isDark?'rgba(15,23,42,0.65)':'rgba(226,232,240,0.75)')+';border:1px solid '+(isDark?'#334155':'#cbd5e1');
+
+    const histWrap=document.createElement('div');
+    histWrap.style.cssText='display:none;flex-direction:column;gap:2px;margin-top:2px;padding-top:4px;border-top:1px dashed '+(isDark?'#334155':'#cbd5e1')+';font-size:9.5px';
+
+    const getUploadRevOpts=(slotEntry)=>{{
+      if(!isNoc)return {{rev_mode:'overwrite',part_rev:undefined}};
+      if(!slotEntry || slotEntry.legacy)return {{rev_mode:'overwrite',part_rev:0}};
+      const rm=revModeWrap.dataset.revMode||slotRevMode||'new_revision';
+      const curRev=getNocPartRev(slotEntry);
+      const targetRev=(rm==='new_revision')?(curRev+1):curRev;
+      return {{rev_mode:rm,part_rev:targetRev}};
+    }};
+
+    const syncUploadButtonLabel=(entry,pending)=>{{
+      if(isNoc && entry && !entry.legacy && !pending){{
+        const nextLbl=formatNocRevLabel(getNocPartRev(entry)+1);
+        const activeMode=revModeWrap.dataset.revMode||slotRevMode||'new_revision';
+        if(upBtn)upBtn.textContent=(activeMode==='new_revision')?('📄 File ('+nextLbl+')'):'🔄 Replace File';
+        if(fldBtn)fldBtn.textContent=(activeMode==='new_revision')?('📁 Folder ('+nextLbl+')'):'🔄 Replace Folder';
+        return;
+      }}
+      if(upBtn){{
+        if(pending || (entry && !entry.legacy)){{
+          upBtn.textContent=isNoc?'📤 File':'🔄 Replace File';
+        }}else if(entry && entry.legacy){{
+          upBtn.textContent=isNoc?'📤 File':'🔄 Replace File';
+        }}else{{
+          upBtn.textContent=isNoc?'📤 File':'📤 Upload File';
+        }}
+      }}
+      if(fldBtn){{
+        fldBtn.textContent=isNoc?'📁 Folder':'📁 Upload Folder';
+      }}
+    }};
+
+    const renderRevControls=(entry,pending)=>{{
+      if(!isNoc){{
+        revBadge.style.display='none';
+        revModeWrap.style.display='none';
+        histWrap.style.display='none';
+        return;
+      }}
+      if(pending){{
+        const pRev=pending.part_rev!==undefined?pending.part_rev:0;
+        revBadge.textContent=formatNocRevLabel(pRev);
+        revBadge.style.display='inline-block';
+      }}else if(entry && !entry.legacy){{
+        revBadge.textContent=formatNocRevLabel(getNocPartRev(entry));
+        revBadge.style.display='inline-block';
+      }}else{{
+        revBadge.style.display='none';
+      }}
+
+      if(CAN_EDIT && !(opts&&opts.readonly) && entry && !entry.legacy && !pending){{
+        const curRev=getNocPartRev(entry);
+        const curLbl=formatNocRevLabel(curRev);
+        const nextLbl=formatNocRevLabel(curRev+1);
+        revModeWrap.dataset.revMode=slotRevMode;
+        revModeWrap.innerHTML='';
+        const mkSegBtn=(val,txt,activeBg)=>{{
+          const active=(slotRevMode===val);
+          const b=document.createElement('button');
+          b.type='button';
+          b.dataset.revMode=val;
+          b.setAttribute('aria-pressed',active?'true':'false');
+          b.textContent=txt;
+          b.title=txt;
+          b.style.cssText='appearance:none;border:none;border-radius:4px;padding:3px 4px;font-size:9px;font-weight:700;line-height:1.2;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all .12s;min-width:0;'
+            +(active
+              ? ('background:'+activeBg+';color:#fff;box-shadow:0 1px 2px rgba(15,23,42,.18)')
+              : ('background:transparent;color:'+(isDark?'#94a3b8':'#475569')));
+          b.onclick=()=>{{
+            if(slotRevMode===val)return;
+            slotRevMode=val;
+            revModeWrap.dataset.revMode=val;
+            renderRevControls(cur[s.key],null);
+            syncUploadButtonLabel(cur[s.key],null);
+          }};
+          return b;
+        }};
+        revModeWrap.appendChild(mkSegBtn('new_revision',`↻ New ${{nextLbl}}`,'#2563eb'));
+        revModeWrap.appendChild(mkSegBtn('overwrite',`🔄 Overwrite ${{curLbl}}`,'#d97706'));
+        revModeWrap.style.display='grid';
+      }}else{{
+        revModeWrap.style.display='none';
+      }}
+
+      histWrap.innerHTML='';
+      const rawHist=(entry && Array.isArray(entry.history))?entry.history:[];
+      if(rawHist.length>0){{
+        const hTitle=document.createElement('div');
+        hTitle.style.cssText='font-weight:700;color:var(--mu);font-size:9px;text-transform:uppercase;letter-spacing:.3px';
+        hTitle.textContent=`🕒 History (${{rawHist.length}})`;
+        histWrap.appendChild(hTitle);
+        const sorted=[...rawHist].sort((a,b)=>getNocPartRev(b)-getNocPartRev(a));
+        const _recId=row&&row._id?row._id:(state.editId||'');
+        const _canDl=canDownloadUI();
+        sorted.forEach(h=>{{
+          const hRev=getNocPartRev(h);
+          const hLbl=formatNocRevLabel(hRev);
+          const [hvUrl,hdlUrl]=_resolveSlotLinks(h);
+          const hRow=document.createElement('div');
+          hRow.style.cssText='display:flex;align-items:center;gap:4px;min-width:0';
+          const hPill=document.createElement('span');
+          hPill.style.cssText='font-weight:800;font-size:8.5px;padding:1px 4px;border-radius:4px;background:'+(isDark?'#334155':'#e2e8f0')+';color:'+(isDark?'#e2e8f0':'#334155')+';flex-shrink:0';
+          hPill.textContent=hLbl;
+          hRow.appendChild(hPill);
+          const hName=document.createElement('span');
+          hName.style.cssText='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;color:'+(isDark?'#cbd5e1':'#475569');
+          const dLabel=h.is_folder?('📁 '+(h.folder_name||h.file_name||'Folder')):(h.file_name||hLbl);
+          hName.textContent=dLabel;
+          hName.title=dLabel;
+          hRow.appendChild(hName);
+          if(hvUrl || _recId){{
+            const hv=document.createElement('a');
+            hv.href=_recId?'#':hvUrl;
+            if(!_recId){{hv.target='_blank';hv.rel='noopener';}}
+            hv.style.cssText='padding:1px 4px;border-radius:3px;border:1px solid '+s.color+';color:'+s.color+';background:'+(isDark?'#1e293b':'#fff')+';text-decoration:none;font-weight:700;font-size:8.5px;flex-shrink:0';
+            hv.textContent='👁';
+            hv.title='View '+s.title+' '+hLbl;
+            hv.onclick=(ev)=>{{
+              if(_recId){{ev.preventDefault();openDocViewer(_recId,s.key,{{rev:hRev,label:s.title}});}}
+            }};
+            hRow.appendChild(hv);
+          }}
+          if(_canDl){{
+            const hdHref=_recId?docDownloadHref(_recId,s.key,h,hRev):hdlUrl;
+            if(hdHref){{
+              const hd=document.createElement('a');
+              hd.href=hdHref;
+              if(!_recId){{hd.target='_blank';hd.rel='noopener';}}
+              hd.style.cssText='padding:1px 4px;border-radius:3px;border:1px solid #64748b;color:'+(isDark?'#cbd5e1':'#334155')+';background:'+(isDark?'#1e293b':'#fff')+';text-decoration:none;font-weight:700;font-size:8.5px;flex-shrink:0';
+              hd.textContent='⬇';
+              hd.title='Download '+hLbl;
+              hRow.appendChild(hd);
+            }}
+          }}
+          if(CAN_EDIT && !(opts&&opts.readonly) && state.editId){{
+            const hx=document.createElement('button');
+            hx.type='button';
+            hx.style.cssText='padding:0 4px;border-radius:3px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:8.5px;cursor:pointer;flex-shrink:0';
+            hx.textContent='✕';
+            hx.title='Remove archived '+hLbl+' and move to Google Drive Trash';
+            hx.onclick=async()=>{{
+              if(!confirm('Remove archived '+s.key+' '+hLbl+' and move its file/folder to Google Drive Trash?'))return;
+              hx.disabled=true;
+              try{{
+                const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?rev='+encodeURIComponent(String(hRev)),{{method:'DELETE'}});
+                const j=await r.json().catch(()=>({{}}));
+                if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
+                cur[s.key]=(j.attachments&&j.attachments[s.key])?j.attachments[s.key]:null;
+                if(row){{row.attachments=j.attachments||{{}};}}
+                renderSlotInfo(cur[s.key],null);
+                renderRows();
+                toast('Archived revision '+hLbl+' removed','ok');
+              }}catch(e){{
+                hx.disabled=false;
+                toast('Could not remove archived revision: '+(e.message||e),'er');
+              }}
+            }};
+            hRow.appendChild(hx);
+          }}
+          histWrap.appendChild(hRow);
+        }});
+        histWrap.style.display='flex';
+      }}else{{
+        histWrap.style.display='none';
+      }}
+    }};
+
     const renderSlotInfo=(entry,pending)=>{{
       statusLine.innerHTML='';
       if(s.key==='approval')applyCardTheme(replyThemeFor(Boolean(entry||pending)));
@@ -17498,7 +17859,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(pending){{
         const b=document.createElement('span');
         b.style.cssText='font-weight:600;color:#0f766e';
-        b.textContent='✓ Uploaded ('+pending.file_name+') — will link on Save';
+        const pDesc=pending.is_folder
+          ? (`${{pending.file_count||1}} file(s) in ${{pending.folder_name||'folder'}}`)
+          : (pending.file_name||'file');
+        const pRevTxt=(isNoc && pending.part_rev!==undefined)?(` [${{formatNocRevLabel(pending.part_rev)}}]`):'';
+        b.textContent='✓ Uploaded ('+pDesc+')'+pRevTxt+' — will link on Save';
         statusLine.appendChild(b);
         if(CAN_EDIT && !(opts&&opts.readonly)){{
           const clrBtn=document.createElement('button');
@@ -17512,6 +17877,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           }};
           statusLine.appendChild(clrBtn);
         }}
+        renderRevControls(entry,pending);
+        syncUploadButtonLabel(entry,pending);
         return;
       }}
       const [vUrl,dlUrl]=_resolveSlotLinks(entry);
@@ -17520,7 +17887,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         empty.style.cssText='color:#64748b;font-style:italic';
         empty.textContent=s.emptyText||(s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet');
         statusLine.appendChild(empty);
-        if(upBtn)upBtn.textContent=isNoc?'📤 File':'📤 Upload File';
+        renderRevControls(null,null);
+        syncUploadButtonLabel(null,null);
         return;
       }}
       const nameSpan=document.createElement('span');
@@ -17537,18 +17905,19 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
 
       const _recId=row&&row._id?row._id:(state.editId||'');
       const _slotKey=entry.legacy?'legacy':s.key;
+      const _curRev=isNoc?getNocPartRev(entry):undefined;
       const vA=document.createElement('a');
       vA.href=_recId?'#':vUrl;
       if(!_recId){{vA.target='_blank';vA.rel='noopener';}}
       vA.style.cssText=`padding:2px 5px;border-radius:4px;background:${{isDark?'#1e293b':'#fff'}};border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:9.5px;cursor:pointer;white-space:nowrap`;
       vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'👁 Folder':'👁 View';
       vA.onclick=(ev)=>{{
-        if(_recId){{ev.preventDefault();openDocViewer(_recId,_slotKey,{{label:s.title}});}}
+        if(_recId){{ev.preventDefault();openDocViewer(_recId,_slotKey,{{label:s.title,rev:_curRev}});}}
         else logFileAction('DRIVE_LINK_CLICK',row?.docNo||row?.nocNo||'',vUrl);
       }};
       statusLine.appendChild(vA);
 
-      const _dlHref=(_recId&&canDownloadUI())?docDownloadHref(_recId,_slotKey,entry):(canDownloadUI()?dlUrl:'');
+      const _dlHref=(_recId&&canDownloadUI())?docDownloadHref(_recId,_slotKey,entry,_curRev):(canDownloadUI()?dlUrl:'');
       if(_dlHref){{
         const dA=document.createElement('a');
         dA.href=_dlHref;
@@ -17564,24 +17933,28 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         unBtn.type='button';
         unBtn.style.cssText='padding:1px 5px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
         unBtn.textContent='✕';
-        unBtn.title='Remove this attachment and move it to Google Drive Trash';
+        const hasHist=Array.isArray(entry.history)&&entry.history.length>0;
+        unBtn.title=hasHist?'Remove active revision (restores previous archived revision)':'Remove this attachment and move it to Google Drive Trash';
         unBtn.onclick=async()=>{{
-          if(!confirm('Remove this '+s.key+' attachment from the record and move the old file/folder to Google Drive Trash?'))return;
+          const msg=hasHist
+            ? 'Remove active '+s.key+' ('+formatNocRevLabel(_curRev)+') and move it to Drive Trash? The previous revision will be restored as active.'
+            : 'Remove this '+s.key+' attachment from the record and move the old file/folder to Google Drive Trash?';
+          if(!confirm(msg))return;
           unBtn.disabled=true;
           try{{
             const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key),{{method:'DELETE'}});
             const j=await r.json().catch(()=>({{}}));
             if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
-            cur[s.key]=null;
+            cur[s.key]=(j.attachments&&j.attachments[s.key])?j.attachments[s.key]:null;
             if(row){{
               row.attachments=j.attachments||{{}};
               if(typeof j.fileLocation==='string')row.fileLocation=j.fileLocation;
             }}
             const flInp=document.getElementById('f-fileLocation');
             if(flInp&&typeof j.fileLocation==='string')flInp.value=j.fileLocation;
-            renderSlotInfo(null,null);
+            renderSlotInfo(cur[s.key],null);
             renderRows();
-            toast('Attachment removed and moved to Drive Trash ('+s.key+')','ok');
+            toast(cur[s.key]?'Active revision removed; previous revision restored ('+s.key+')':'Attachment removed and moved to Drive Trash ('+s.key+')','ok');
           }}catch(e){{
             unBtn.disabled=false;
             toast('Could not unlink attachment: '+(e.message||e),'er');
@@ -17589,6 +17962,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         }};
         statusLine.appendChild(unBtn);
       }}
+      renderRevControls(entry,null);
+      syncUploadButtonLabel(entry,null);
     }};
 
     if(CAN_EDIT && !(opts&&opts.readonly)){{
@@ -17600,7 +17975,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       upBtn.type='button';
       upBtn.className='btn btn-sc btn-sm';
       upBtn.style.cssText=`font-size:10px;padding:${{isNoc?'3px 5px':'4px 10px'}};border-color:${{s.color}};color:${{s.color}};background:${{isDark?'#1e293b':'#fff'}};white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
-      upBtn.textContent=cur[s.key]?(isNoc?'🔄 Replace':'🔄 Replace File'):(isNoc?'📤 File':'📤 Upload File');
+      syncUploadButtonLabel(cur[s.key],null);
       upBtn.onclick=()=>fileInp.click();
 
       const progWrap=document.createElement('div');
@@ -17618,6 +17993,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       fileInp.onchange=async()=>{{
         const f=fileInp.files&&fileInp.files[0];
         if(!f)return;
+        if(isIgnoredUploadJunkFile(f)){{
+          toast('Skipped OS/Office junk file: '+f.name,'wa');
+          fileInp.value='';
+          return;
+        }}
         upBtn.disabled=true;
         progWrap.style.display='flex';
         progBarInner.style.width='0%';
@@ -17632,15 +18012,16 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const formTo=(toEl&&toEl.value)?toEl.value:(row?.toParty||row?.to||'');
         const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]')||formRoot.querySelector('#f-nocNo')||formRoot.querySelector('[name="nocNo"]');
         const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||row?.nocNo||'');
+        const revOpts=getUploadRevOpts(cur[s.key]);
         try{{
           const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
             const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
             progBarInner.style.width=pct+'%';
             progTxt.textContent=label||(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
-          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo}});
+          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, rev_mode: revOpts.rev_mode, part_rev: revOpts.part_rev}});
           if(res&&res.pending){{
             state.pendingDriveAttachments[s.key]=res;
-            renderSlotInfo(null,res);
+            renderSlotInfo(cur[s.key],res);
             progTxt.textContent='✓ Uploaded 100% — click Save to finish';
           }}else if(res&&res.attachment){{
             cur[s.key]=res.attachment;
@@ -17656,7 +18037,6 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const flInp=document.getElementById('f-fileLocation');
             if(flInp&&!flInp.value.trim()&&res.attachment.url)flInp.value=res.attachment.url;
             renderSlotInfo(res.attachment,null);
-            upBtn.textContent='🔄 Replace File';
             progTxt.textContent='✓ Attached & saved';
             renderRows();
             toast('File uploaded and linked ('+s.key+')','ok');
@@ -17722,9 +18102,23 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       }};
 
       folderInp.onchange = async () => {{
-        const fls = Array.from(folderInp.files || []);
-        if(!fls.length) return;
-        const subName = row?.docNo || row?.nocNo || (fls[0].webkitRelativePath ? fls[0].webkitRelativePath.split('/')[0] : 'Document_Files');
+        const rawFls = Array.from(folderInp.files || []);
+        if(!rawFls.length) return;
+        const skippedJunk = rawFls.filter(f => isIgnoredUploadJunkFile(f)).length;
+        const fls = rawFls.filter(f => !isIgnoredUploadJunkFile(f));
+        if(!fls.length) {{
+          toast(skippedJunk > 0 ? `Skipped ${{skippedJunk}} OS/Office junk file(s); no valid files remaining` : 'No files found in selected folder', 'wa');
+          folderInp.value = '';
+          return;
+        }}
+        const revOpts = getUploadRevOpts(cur[s.key]);
+        let subName = row?.docNo || row?.nocNo || (fls[0].webkitRelativePath ? fls[0].webkitRelativePath.split('/')[0] : 'Document_Files');
+        if(isNoc) {{
+          const docBase = getDocBaseName();
+          const revLbl = formatNocRevLabel(revOpts.part_rev);
+          const pLet = s.key.replace('part_', '').toUpperCase();
+          subName = docBase ? (docBase + ' - Part ' + pLet + ' ' + revLbl) : ((fls[0].webkitRelativePath ? fls[0].webkitRelativePath.split('/')[0] : ('Part_' + pLet)) + ' ' + revLbl);
+        }}
         cancelSlotUpload = false;
         slotAbortCtrl = new AbortController();
         slotStopBtn.disabled = false; slotStopBtn.textContent = '⏹ Stop';
@@ -17732,11 +18126,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         progWrap.style.display = 'flex';
         progBarInner.style.width = '0%';
         progTxt.style.color = '#475569';
-        progTxt.textContent = `Starting folder upload (${{fls.length}} files)...`;
+        progTxt.textContent = skippedJunk > 0 ? `Filtered out ${{skippedJunk}} junk file(s). Uploading ${{fls.length}} files...` : `Starting folder upload (${{fls.length}} files)...`;
         state.activeDriveUploads = (state.activeDriveUploads || 0) + 1;
         try {{
           let lastRes = null;
           let uploadedCount = 0;
+          const pendingItems = [];
           for(let fi = 0; fi < fls.length; fi++) {{
             if(cancelSlotUpload) {{
               toast('Folder upload stopped', 'wa');
@@ -17754,18 +18149,27 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]')||formRoot.querySelector('#f-nocNo')||formRoot.querySelector('[name="nocNo"]');
             const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||row?.nocNo||'');
             lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
-              const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
               const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
               progBarInner.style.width = overall + '%';
               progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
-            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, signal: slotAbortCtrl.signal}});
+            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, rev_mode: (fi === 0 ? revOpts.rev_mode : 'overwrite'), part_rev: revOpts.part_rev, direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, signal: slotAbortCtrl.signal}});
+            if(lastRes && lastRes.pending) pendingItems.push(lastRes);
             uploadedCount++;
           }}
           if(!cancelSlotUpload && uploadedCount > 0) {{
-            if(lastRes && lastRes.pending) {{
-              lastRes.is_folder = true; lastRes.folder_name = subName; lastRes.file_count = uploadedCount;
-              state.pendingDriveAttachments[s.key] = lastRes;
-              renderSlotInfo(null, lastRes);
+            if(pendingItems.length > 0) {{
+              state.pendingDriveAttachments[s.key] = {{
+                pending: true,
+                slot: s.key,
+                is_folder: true,
+                folder_name: subName,
+                file_name: subName,
+                file_count: pendingItems.length,
+                part_rev: revOpts.part_rev,
+                rev_mode: revOpts.rev_mode,
+                items: pendingItems,
+              }};
+              renderSlotInfo(cur[s.key], state.pendingDriveAttachments[s.key]);
             }} else if(lastRes && lastRes.attachment) {{
               cur[s.key] = lastRes.attachment;
               if(row) {{
@@ -17774,7 +18178,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
               }}
               renderSlotInfo(lastRes.attachment, null);
               renderRows();
-              toast(`Folder attached (${{uploadedCount}} files)`, 'ok');
+              toast(skippedJunk > 0 ? `Folder attached (${{uploadedCount}} files, ${{skippedJunk}} junk ignored)` : `Folder attached (${{uploadedCount}} files)`, 'ok');
             }}
           }}
         }} catch(e) {{
@@ -17800,9 +18204,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       ctrl.appendChild(fldBtn);
       ctrl.appendChild(fileInp);
       ctrl.appendChild(folderInp);
+      card.appendChild(revModeWrap);
       card.appendChild(ctrl);
       card.appendChild(progWrap);
     }}
+    card.appendChild(histWrap);
     renderSlotInfo(cur[s.key],null);
 
     if(s.key==='approval'){{
@@ -17927,11 +18333,14 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
     mime_type: file.type||'application/octet-stream',
     create_folders: true,
     subfolder_name: extraOpts.subfolder_name||'',
+    rel_subfolder: extraOpts.rel_subfolder||'',
     link_as_folder: Boolean(extraOpts.link_as_folder),
+    rev_mode: extraOpts.rev_mode||'overwrite',
+    part_rev: extraOpts.part_rev,
     direction: extraOpts.direction||row?.direction||'',
     from_party: extraOpts.from_party||row?.fromParty||row?.from||'',
     to_party: extraOpts.to_party||row?.toParty||row?.to||'',
-    doc_no: extraOpts.doc_no||row?.docNo||'',
+    doc_no: extraOpts.doc_no||row?.docNo||row?.nocNo||'',
     destination_folder_id: extraOpts.destination_folder_id||''
   }};
   const sessRes=await fetch('/api/drive/upload-session',{{
@@ -17970,7 +18379,11 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
       file_size:file.size,
       slot:slot,
       is_folder:Boolean(extraOpts.link_as_folder),
-      folder_name:extraOpts.subfolder_name||''
+      folder_name:extraOpts.subfolder_name||'',
+      rel_subfolder:extraOpts.rel_subfolder||'',
+      rev_mode:extraOpts.rev_mode||'overwrite',
+      part_rev:extraOpts.part_rev,
+      replace_existing:extraOpts.replace_existing!==undefined?Boolean(extraOpts.replace_existing):(!extraOpts.link_as_folder)
     }};
   }}
   if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
@@ -17985,7 +18398,9 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
       record_id:state.editId,
       link_as_folder:Boolean(extraOpts.link_as_folder),
       replace_existing:extraOpts.replace_existing!==undefined?Boolean(extraOpts.replace_existing):(!extraOpts.link_as_folder),
-      rel_subfolder:extraOpts.rel_subfolder||''
+      rel_subfolder:extraOpts.rel_subfolder||'',
+      rev_mode:extraOpts.rev_mode||'overwrite',
+      part_rev:extraOpts.part_rev
     }})
   }});
   const cmp=await cmpRes.json().catch(()=>({{}}));
@@ -17999,15 +18414,29 @@ async function finalizePendingDriveAttachments(recordId){{
   if(!recordId||!keys.length)return;
   for(const slot of keys){{
     const item=pending[slot];
-    if(!item||!item.upload_ticket||!item.file_id)continue;
+    if(!item)continue;
+    const itemList=Array.isArray(item.items)?item.items:[item];
     try{{
-      const r=await fetch('/api/drive/upload-complete',{{
-        method:'POST',
-        headers:{{'Content-Type':'application/json'}},
-        body:JSON.stringify({{upload_ticket:item.upload_ticket,file_id:item.file_id,record_id:recordId}})
-      }});
-      const j=await r.json().catch(()=>({{}}));
-      if(!r.ok||!j.ok)toast('Warning: file uploaded to Drive but linking failed ('+(j.error||r.status)+')','wa');
+      for(let idx=0;idx<itemList.length;idx++){{
+        const subItem=itemList[idx];
+        if(!subItem||!subItem.upload_ticket||!subItem.file_id)continue;
+        const r=await fetch('/api/drive/upload-complete',{{
+          method:'POST',
+          headers:{{'Content-Type':'application/json'}},
+          body:JSON.stringify({{
+            upload_ticket:subItem.upload_ticket,
+            file_id:subItem.file_id,
+            record_id:recordId,
+            link_as_folder:Boolean(item.is_folder||subItem.is_folder),
+            replace_existing:(idx===0)&&Boolean(subItem.replace_existing!==undefined?subItem.replace_existing:!item.is_folder),
+            rel_subfolder:subItem.rel_subfolder||'',
+            rev_mode:subItem.rev_mode||item.rev_mode||'overwrite',
+            part_rev:(subItem.part_rev!==undefined?subItem.part_rev:item.part_rev)
+          }})
+        }});
+        const j=await r.json().catch(()=>({{}}));
+        if(!r.ok||!j.ok)toast('Warning: file uploaded to Drive but linking failed ('+(j.error||r.status)+')','wa');
+      }}
     }}catch(e){{
       toast('Warning: could not finalize attachment ('+slot+')','wa');
     }}
@@ -18138,6 +18567,10 @@ function openBatchDriveUpload(){{
   const nocCards=document.getElementById('batch-drv-slot-cards-noc');
   if(dualCards)dualCards.style.display=isNoc?'none':'grid';
   if(nocCards)nocCards.style.display=isNoc?'grid':'none';
+  const nocRevWrap=document.getElementById('batch-noc-rev-wrap');
+  if(nocRevWrap)nocRevWrap.style.display=isNoc?'flex':'none';
+  const nocRevChk=document.getElementById('batch-noc-new-rev');
+  if(nocRevChk)nocRevChk.checked=true;
   const defSlot=isNoc?'part_a':'submission';
   state.batchSlot=defSlot;
   const radios=document.querySelectorAll('input[name="batch-drv-slot"]');
@@ -18192,7 +18625,13 @@ function onBatchSlotChange(val){{
 function onBatchFilesSelected(fileList){{
   if(!fileList||!fileList.length)return;
   const recs=state.recs||[];
-  const arr=Array.from(fileList);
+  const rawArr=Array.from(fileList);
+  const skippedJunk=rawArr.filter(f=>isIgnoredUploadJunkFile(f)).length;
+  const arr=rawArr.filter(f=>!isIgnoredUploadJunkFile(f));
+  if(!arr.length){{
+    if(skippedJunk>0)toast(`Skipped ${{skippedJunk}} OS/Office junk file(s); no valid files selected`,'wa');
+    return;
+  }}
   const curQ = state.batchQueue || [];
   const newItems=arr.map(file=>({{
     id:'bq_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
@@ -18206,11 +18645,18 @@ function onBatchFilesSelected(fileList){{
   state.batchQueue = [...curQ, ...newItems];
   renderBatchDriveTable();
   updateBatchControlsState();
+  if(skippedJunk>0)toast(`Added ${{arr.length}} file(s) (ignored ${{skippedJunk}} OS/Office junk file(s))`,'ok');
 }}
 
 function onBatchFolderSelected(fileList){{
   if(!fileList||!fileList.length)return;
-  const arr=Array.from(fileList);
+  const rawArr=Array.from(fileList);
+  const skippedJunk=rawArr.filter(f=>isIgnoredUploadJunkFile(f)).length;
+  const arr=rawArr.filter(f=>!isIgnoredUploadJunkFile(f));
+  if(!arr.length){{
+    if(skippedJunk>0)toast(`Skipped ${{skippedJunk}} OS/Office junk file(s); no valid files in folder`,'wa');
+    return;
+  }}
   const recs=state.recs||[];
   const groups={{}};
   arr.forEach(f=>{{
@@ -18241,7 +18687,7 @@ function onBatchFolderSelected(fileList){{
   state.batchQueue = [...curQ, ...newItems];
   renderBatchDriveTable();
   updateBatchControlsState();
-  toast(`Added folder (${{arr.length}} files) to upload queue`,'ok');
+  toast(skippedJunk>0?`Added folder (${{arr.length}} files, ${{skippedJunk}} junk ignored)`:`Added folder (${{arr.length}} files) to upload queue`,'ok');
 }}
 
 function renderBatchDriveTable(){{
@@ -18503,11 +18949,36 @@ async function startBatchDriveUpload(){{
 
       const row=(state.recs||[]).find(r=>r._id===item.recordId);
       state.editId=item.recordId;
+      const isBatchNoc=isNOCTab();
+      const curSlotEntry=row?.attachments?.[slot]||null;
+      const batchRevChk=document.getElementById('batch-noc-new-rev');
+      let batchRevMode='overwrite';
+      let batchPartRev=undefined;
+      if(isBatchNoc){{
+        if(!curSlotEntry || curSlotEntry.legacy){{
+          batchRevMode='overwrite';
+          batchPartRev=0;
+        }}else if(!batchRevChk || batchRevChk.checked){{
+          batchRevMode='new_revision';
+          batchPartRev=getNocPartRev(curSlotEntry)+1;
+        }}else{{
+          batchRevMode='overwrite';
+          batchPartRev=getNocPartRev(curSlotEntry);
+        }}
+      }}
 
       try{{
         if(item.isFolder){{
-          const files=item.files||[];
-          const subName=item.folderName||(row?.docNo||'Document_Folder');
+          const files=(item.files||[]).filter(f=>!isIgnoredUploadJunkFile(f));
+          let subName=item.folderName||(row?.docNo||'Document_Folder');
+          if(isBatchNoc){{
+            const rawDoc=String(row?.docNo||row?.nocNo||'').trim();
+            let baseDoc=rawDoc.replace(/\\s+REV\\s*\\d+.*$/i,'').trim();
+            try{{const p=parseDocNo(rawDoc);if(p&&p.base)baseDoc=p.base;}}catch(_e){{}}
+            const pLet=String(slot||'').replace('part_','').toUpperCase();
+            const revLbl=formatNocRevLabel(batchPartRev||0);
+            subName=baseDoc?`${{baseDoc}} - Part ${{pLet}} ${{revLbl}}`:`${{item.folderName||('Part_'+pLet)}} ${{revLbl}}`;
+          }}
           let fDone=0;
           let lastRes=null;
           for(let fi=0;fi<files.length;fi++){{
@@ -18520,7 +18991,7 @@ async function startBatchDriveUpload(){{
               item.pct=Math.round(((fi+(total>0?done/total:0))/files.length)*100);
               item.msg=`Uploading file ${{fi+1}}/${{files.length}}: ${{subFile.name}} (${{item.pct}}%)`;
               if(cell)updateBatchRowStatusCell(cell,item);
-            }},{{subfolder_name:subName,link_as_folder:true,replace_existing:(fi===0),rel_subfolder:relSub,signal:state.batchCurrentAbort.signal}});
+            }},{{subfolder_name:subName,link_as_folder:true,replace_existing:(fi===0),rel_subfolder:relSub,rev_mode:(fi===0?batchRevMode:'overwrite'),part_rev:batchPartRev,signal:state.batchCurrentAbort.signal}});
             fDone++;
           }}
           if(state.batchCancel||item.status==='cancelled'){{
@@ -18540,7 +19011,7 @@ async function startBatchDriveUpload(){{
             item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
             if(cell)updateBatchRowStatusCell(cell,item);
             updateBatchOverallProgress();
-          }},{{signal:state.batchCurrentAbort.signal}});
+          }},{{rev_mode:batchRevMode,part_rev:batchPartRev,signal:state.batchCurrentAbort.signal}});
           if(state.batchCancel||item.status==='cancelled'){{
             item.status='cancelled';
             item.msg='⏹ Cancelled';
@@ -18630,6 +19101,18 @@ async function saveRecord(){{
     if(autoBase)data.voBaseValue=autoBase;
   }}
   if(!data.docNo){{toast('Document No. required','er');releaseRecordSave();return;}}
+  for(const [k,v] of Object.entries(data)){{
+    if(typeof v==='string' && /\\[object Object\\]/i.test(v)){{
+      toast('Invalid "[object Object]" value detected in field "'+k+'". Please refresh or re-enter items before saving.','er');
+      releaseRecordSave();
+      return;
+    }}
+    if(Array.isArray(v) && v.some(it=>it&&typeof it==='object'&&Object.values(it).some(x=>typeof x==='string'&&/\\[object Object\\]/i.test(x)))){{
+      toast('Invalid "[object Object]" value detected in structured list "'+k+'". Please correct it before saving.','er');
+      releaseRecordSave();
+      return;
+    }}
+  }}
     // Duration is computed server-side automatically
   let valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
   if(valErr&&valErr.startsWith('GAP')){{

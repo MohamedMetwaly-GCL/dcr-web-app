@@ -1,11 +1,11 @@
 """app.py - DCR Flask v1"""
 import os, datetime
-from flask import Flask, request, redirect, jsonify, make_response
+from flask import Flask, request, redirect, jsonify, make_response, send_from_directory
 import db
 from utils import get_next_doc_no, get_next_plain_doc_no, doc_type_uses_revision
 
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
-from html_render import render_login, render_launchpad, render_dashboard, render_register
+from html_render import render_login, render_launchpad, render_dashboard, render_register, _head_icon_tags
 from security import validate_username, login_limiter, get_client_ip
 from blueprints.projects import projects_bp
 from blueprints.doc_types import doc_types_bp
@@ -56,7 +56,7 @@ from auth import (
     _resolve_project,
 )
 
-PUBLIC_ENDPOINTS = {"login", "logout", "static", "magic_master_view", "api_magic_data", "hse.public_qr_verify"}
+PUBLIC_ENDPOINTS = {"login", "logout", "static", "favicon", "manifest_webmanifest", "magic_master_view", "api_magic_data", "hse.public_qr_verify"}
 
 
 @app.before_request
@@ -112,6 +112,22 @@ def health():
         return jsonify(status="ok", db="connected")
     except Exception as e:
         return jsonify(status="error", db=str(e)), 503
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(
+        os.path.join(app.root_path, "static"),
+        "favicon.ico",
+        mimetype="image/x-icon",
+    )
+
+@app.route("/manifest.webmanifest")
+def manifest_webmanifest():
+    return send_from_directory(
+        os.path.join(app.root_path, "static"),
+        "manifest.json",
+        mimetype="application/manifest+json",
+    )
 
 @app.route("/api/keepalive")
 def keepalive():
@@ -672,6 +688,7 @@ def magic_master_view(pid):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Smart Project Digest</title>
+        {{ icon_tags|safe }}
         <style>
             body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #0f172a; padding: 20px; margin: 0; }
             .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
@@ -892,7 +909,7 @@ def magic_master_view(pid):
     </html>
     """
     from flask import render_template_string
-    return render_template_string(template, pid=pid, token=token, p_code=p_code, p_name=p_name)
+    return render_template_string(template, pid=pid, token=token, p_code=p_code, p_name=p_name, icon_tags=_head_icon_tags())
 
 @app.route("/api/magic/data/<pid>", methods=["GET"])
 def api_magic_data(pid):

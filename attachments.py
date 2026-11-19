@@ -26,6 +26,135 @@ def _clean_link(value):
     return "" if v.lower() in _INVALID_LINKS else v
 
 
+def parse_rev_number(value, default=0):
+    """Parse a revision integer or string (e.g., 1, 'REV01', 'R2') into an int >= 0."""
+    if value is None or isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return max(0, value)
+    s = str(value).strip()
+    if not s:
+        return default
+    if s.isdigit():
+        return max(0, int(s))
+    m = re.search(r"(?:rev|r)\s*[-_.]?\s*(\d+)", s, re.IGNORECASE)
+    if m:
+        return max(0, int(m.group(1)))
+    return default
+
+
+def format_rev_label(rev):
+    """Format revision number into zero-padded label like 'REV00', 'REV01'."""
+    return "REV%02d" % max(0, parse_rev_number(rev, 0))
+
+
+def get_attachment_rev(entry):
+    """Return numeric revision (default 0) for an attachment dict."""
+    if not isinstance(entry, dict):
+        return 0
+    if "rev" in entry and entry.get("rev") is not None:
+        return parse_rev_number(entry.get("rev"), 0)
+    if entry.get("rev_label"):
+        return parse_rev_number(entry.get("rev_label"), 0)
+    return 0
+
+
+def strip_entry_history(entry):
+    """Return a clean copy of an attachment dict without nested 'history'."""
+    if not isinstance(entry, dict):
+        return {}
+    snap = copy.deepcopy(entry)
+    snap.pop("history", None)
+    rev = get_attachment_rev(snap)
+    snap.setdefault("rev", rev)
+    snap.setdefault("rev_label", format_rev_label(rev))
+    return snap
+
+
+def get_attachment_revisions(entry):
+    """Return ordered list of revision snapshots for a slot (active first, then archived history desc)."""
+    if not isinstance(entry, dict):
+        return []
+    active = strip_entry_history(entry)
+    active["current"] = True
+    out = [active]
+    seen_revs = {active["rev"]}
+    raw_hist = entry.get("history") if isinstance(entry.get("history"), list) else []
+    hist_snaps = []
+    for item in raw_hist:
+        if not isinstance(item, dict):
+            continue
+        snap = strip_entry_history(item)
+        snap["current"] = False
+        if snap["rev"] not in seen_revs:
+            seen_revs.add(snap["rev"])
+            hist_snaps.append(snap)
+    hist_snaps.sort(key=lambda h: (-int(h.get("rev") or 0), str(h.get("archived_at") or h.get("uploaded_at") or "")), reverse=False)
+    out.extend(hist_snaps)
+    return out
+
+
+def archive_and_promote_revision(existing_entry, new_meta, rev=None, archived_by=""):
+    """Archive existing_entry into new_meta['history'] and stamp the promoted revision number."""
+    promoted = copy.deepcopy(new_meta) if isinstance(new_meta, dict) else {}
+    promoted.pop("history", None)
+    history = []
+    if isinstance(existing_entry, dict) and (
+        existing_entry.get("file_id") or existing_entry.get("folder_id") or existing_entry.get("url")
+    ):
+        prev_rev = get_attachment_rev(existing_entry)
+        prev_snap = strip_entry_history(existing_entry)
+        prev_snap["rev"] = prev_rev
+        prev_snap["rev_label"] = format_rev_label(prev_rev)
+        prev_snap.setdefault(
+            "archived_at",
+            datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        )
+        if archived_by:
+            prev_snap.setdefault("archived_by", archived_by)
+        history.append(prev_snap)
+        old_hist = existing_entry.get("history") if isinstance(existing_entry.get("history"), list) else []
+        seen_revs = {prev_rev}
+        for h in old_hist:
+            if not isinstance(h, dict):
+                continue
+            hs = strip_entry_history(h)
+            if hs["rev"] not in seen_revs:
+                seen_revs.add(hs["rev"])
+                history.append(hs)
+        next_rev = parse_rev_number(rev, prev_rev + 1) if rev is not None else (prev_rev + 1)
+    else:
+        next_rev = parse_rev_number(rev, 0) if rev is not None else 0
+    promoted["rev"] = next_rev
+    promoted["rev_label"] = format_rev_label(next_rev)
+    if history:
+        history.sort(key=lambda h: int(h.get("rev") or 0), reverse=True)
+        promoted["history"] = history
+    return promoted
+
+
+def pop_active_revision(existing_entry):
+    """Remove the active revision; if history exists, promote the latest historical entry to active.
+
+    Returns `(replacement_entry_or_None, removed_snapshot)`.
+    """
+    if not isinstance(existing_entry, dict):
+        return None, None
+    removed = strip_entry_history(existing_entry)
+    raw_hist = existing_entry.get("history") if isinstance(existing_entry.get("history"), list) else []
+    hist_snaps = [strip_entry_history(h) for h in raw_hist if isinstance(h, dict)]
+    if not hist_snaps:
+        return None, removed
+    hist_snaps.sort(key=lambda h: int(h.get("rev") or 0), reverse=True)
+    promoted = copy.deepcopy(hist_snaps[0])
+    promoted.pop("archived_at", None)
+    promoted.pop("archived_by", None)
+    remaining = hist_snaps[1:]
+    if remaining:
+        promoted["history"] = remaining
+    return promoted, removed
+
+
 def drive_view_url(file_id):
     return "https://drive.google.com/file/d/%s/view" % file_id
 
@@ -150,21 +279,31 @@ def classify_path_kind(full_path):
 def merge_sync_links(data, sync_links):
     """Return a NEW data dict with Drive-sync links merged into attachments.
 
-    sync_links: {'submission': url|None, 'approval': url|None}.
+    sync_links: {'submission': url|dict|None, ...}.
     Only slots that are empty OR previously created by sync (source == drive_sync)
     are written. Slots uploaded through DCR (no 'drive_sync' source) are never
     overwritten. fileLocation is not touched here.
     """
     new = copy.deepcopy(data) if isinstance(data, dict) else {}
     for slot in SLOTS:
-        url = _clean_link((sync_links or {}).get(slot))
-        if not url:
-            continue
+        raw_val = (sync_links or {}).get(slot)
+        if isinstance(raw_val, dict):
+            url = _clean_link(raw_val.get("url"))
+            if not url:
+                continue
+            sync_entry = copy.deepcopy(raw_val)
+            sync_entry["url"] = url
+            sync_entry["source"] = SYNC_SOURCE
+        else:
+            url = _clean_link(raw_val)
+            if not url:
+                continue
+            sync_entry = {"url": url, "source": SYNC_SOURCE}
         att = new.get("attachments")
         existing = att.get(slot) if isinstance(att, dict) else None
         if isinstance(existing, dict) and existing.get("source") != SYNC_SOURCE:
             continue
-        new = apply_attachment(new, slot, {"url": url, "source": SYNC_SOURCE})
+        new = apply_attachment(new, slot, sync_entry)
     return new
 
 
