@@ -8,6 +8,7 @@ Invariants:
 - Western Arabic numerals (0-9) are preserved in both English and Arabic modes.
 """
 import json
+import re
 from flask import request as _flask_request, has_request_context
 
 SUPPORTED_LANGS = ("en", "ar")
@@ -587,6 +588,18 @@ TRANSLATIONS = {
         "dt_name.TRN": "HSE Training (TRN)",
         "dt_name.AUD": "HSE Audits (AUD)",
         "dt_name.EMG": "Emergency Drills (EMG)",
+        "dt_name.DS": "Document Submittal (DS)",
+        "dt_name.WN": "Work Notification (WN)",
+        "dt_name.QS": "Quantity Surveyor (QS)",
+        "dt_name.CVI": "Confirmation of Verbal Instruction (CVI)",
+        "dt_name.PCQ": "Potential Change Questionnaire (PCQ)",
+        "dt_name.EI": "Engineer's Instruction (EI)",
+        "dt_name.NCR": "Non-Conformance Report (NCR)",
+        "dt_name.IOM": "Internal Office Memo (IOM)",
+        "dt_name.CEV": "Contractor Safety Evaluation (CEV)",
+        "dt_name.EVAC": "Emergency & Evacuation Drills (EVAC)",
+        "dt_name.WKR": "Workers & Induction Register (WKR)",
+        "dt_name.OM": "Operation & Maintenance (OM)",
 
         # ── ENG Dashboard ──
         "dash.page_title": "DCR — Dashboard",
@@ -922,6 +935,14 @@ TRANSLATIONS = {
         "hse.pill_closed_ptw": "Closed PTWs: {count}",
         "hse.sec_registers": "📄 11 Configured HSE Registers",
         "hse.reg_open_closed": "Open: {open} • Closed: {closed}",
+        "hse.reg_inc": "LTI: {lti} • MTC: {mtc} • FAC: {fac}",
+        "hse.reg_fei": "Valid: {valid} • Expiring: {expiring} • Expired: {expired}",
+        "hse.reg_mhr": "Logged Months: {months} • {hours} hrs",
+        "hse.reg_wkr": "Registered Workers: {count}",
+        "hse.reg_jsa": "Approved: {approved} • Pending/Draft: {pending}",
+        "hse.reg_tbt": "Logged Talks: {count}",
+        "hse.reg_cev": "Evaluations: {count}",
+        "hse.reg_evac": "Logged Drills: {count}",
         "hse.sec_sites": "🏗️ HSE Projects & Sites",
         "hse.alerts_queue_title": "⚠️ Expiry, Overdue & Stale Observation Queue",
         "hse.flt_all": "All Alerts",
@@ -2171,6 +2192,18 @@ TRANSLATIONS = {
         "dt_name.TRN": "تدريبات السلامة (TRN)",
         "dt_name.AUD": "تدقيقات السلامة (AUD)",
         "dt_name.EMG": "تجارب الطوارئ (EMG)",
+        "dt_name.DS": "تقديمات الوثائق (DS)",
+        "dt_name.WN": "إشعارات العمل (WN)",
+        "dt_name.QS": "حصر الكميات (QS)",
+        "dt_name.CVI": "تأكيد التعليمات الشفهية (CVI)",
+        "dt_name.PCQ": "استبيان التغيير المحتمل (PCQ)",
+        "dt_name.EI": "تعليمات المهندس (EI)",
+        "dt_name.NCR": "تقرير عدم المطابقة (NCR)",
+        "dt_name.IOM": "مذكرة داخلية (IOM)",
+        "dt_name.CEV": "تقييم سلامة المقاولين (CEV)",
+        "dt_name.EVAC": "تدريبات الطوارئ والإخلاء (EVAC)",
+        "dt_name.WKR": "سجل العمالة والتوجيه (WKR)",
+        "dt_name.OM": "التشغيل والصيانة (OM)",
 
         # ── ENG Dashboard ──
         "dash.page_title": "نظام DCR — لوحة التحكم",
@@ -2506,6 +2539,14 @@ TRANSLATIONS = {
         "hse.pill_closed_ptw": "تصاريح PTW مغلقة: {count}",
         "hse.sec_registers": "📄 11 سجل HSE مهيأ",
         "hse.reg_open_closed": "مفتوح: {open} • مغلق: {closed}",
+        "hse.reg_inc": "LTI: {lti} • MTC: {mtc} • FAC: {fac}",
+        "hse.reg_fei": "ساري: {valid} • قارب على الانتهاء: {expiring} • منتهي: {expired}",
+        "hse.reg_mhr": "الأشهر المسجلة: {months} • {hours} ساعة",
+        "hse.reg_wkr": "العمالة المسجلة: {count}",
+        "hse.reg_jsa": "معتمد: {approved} • قيد المراجعة / مسودة: {pending}",
+        "hse.reg_tbt": "المحاضرات المسجلة: {count}",
+        "hse.reg_cev": "التقييمات: {count}",
+        "hse.reg_evac": "التدريبات المسجلة: {count}",
         "hse.sec_sites": "🏗️ مشروعات ومواقع HSE",
         "hse.alerts_queue_title": "⚠️ قائمة تنبيهات الانتهاء والتأخير والملاحظات المتقادمة",
         "hse.flt_all": "جميع التنبيهات",
@@ -3355,6 +3396,9 @@ _STATUS_KEY_MAP = {
     "a - approved": "status.a_approved",
     "b - approved as noted": "status.b_approved_noted",
     "b,c - approved & resubmit": "status.bc_approved_resubmit",
+    "b, c - approved & resubmit": "status.bc_approved_resubmit",
+    "b,c - approved and resubmit": "status.bc_approved_resubmit",
+    "b, c - approved and resubmit": "status.bc_approved_resubmit",
     "c - revise & resubmit": "status.c_revise_resubmit",
     "d - review not required": "status.d_review_not_required",
     "replied": "status.replied",
@@ -3376,7 +3420,9 @@ def t_status(val: str, lang: str = DEFAULT_LANG) -> str:
     if norm == "en":
         return str(val)
     raw = str(val).strip()
-    key = _STATUS_KEY_MAP.get(raw.lower())
+    collapsed = " ".join(raw.lower().split())
+    normalized_comma = re.sub(r"\s*,\s*", ",", collapsed)
+    key = _STATUS_KEY_MAP.get(collapsed) or _STATUS_KEY_MAP.get(normalized_comma)
     if key:
         return t(key, norm)
     return raw
@@ -3391,7 +3437,7 @@ def t_dt(code: str, default_name: str = "", lang: str = DEFAULT_LANG) -> str:
         return fallback
     key = f"dt_name.{c}"
     translated = t(key, norm)
-    if translated != key:
+    if translated and translated != key and not translated.startswith("dt_name."):
         return translated
     return fallback
 

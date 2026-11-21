@@ -2393,7 +2393,7 @@ function _renderSimpleMarkdown(md) {
       } else if (line.startsWith('## ')) {
         out.push('<h3 dir="auto">' + line.slice(3) + '</h3>');
       } else if (line.startsWith('- ') || line.startsWith('* ') || line.startsWith('• ')) {
-        out.push('<li dir="auto">' + line.replace(/^[-*•]\\s*/, '') + '</li>');
+        out.push('<li dir="auto">' + line.replace(/^[-*•]\s*/, '') + '</li>');
       } else if (line.length > 0) {
         out.push('<p dir="auto">' + line + '</p>');
       }
@@ -2527,10 +2527,22 @@ function updateAiScopeBadge() {
   const pid = resolveActiveProjectScope();
   if (pid) {
     let projName = pid;
-    const topbarInfo = document.getElementById('topbar-proj-info');
-    if (topbarInfo) {
-      const titleSpan = topbarInfo.querySelector('span') || topbarInfo;
-      projName = titleSpan.textContent.trim() || pid;
+    if (typeof PROJ_NAME !== 'undefined' && PROJ_NAME) {
+      projName = (typeof PROJ_CODE !== 'undefined' && PROJ_CODE && PROJ_CODE !== PROJ_NAME)
+        ? (PROJ_CODE + ' — ' + PROJ_NAME)
+        : PROJ_NAME;
+    } else if (typeof PROJ_CODE !== 'undefined' && PROJ_CODE) {
+      projName = PROJ_CODE;
+    } else {
+      const topbarInfo = document.getElementById('topbar-proj-info');
+      if (topbarInfo) {
+        const codeEl = topbarInfo.querySelector('.pf-val[data-key="code"]');
+        const nameEl = topbarInfo.querySelector('.pf-val[data-key="name"]');
+        const codeTxt = codeEl ? codeEl.textContent.trim() : '';
+        const nameTxt = nameEl ? nameEl.textContent.trim() : '';
+        if (codeTxt && nameTxt && codeTxt !== nameTxt) projName = codeTxt + ' — ' + nameTxt;
+        else projName = nameTxt || codeTxt || pid;
+      }
     }
     scopeEl.textContent = _aiT('ai.scope_active_project', { name: projName }, 'Active Project: ' + projName);
   } else {
@@ -3455,6 +3467,8 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   display:inline-flex;
   align-items:center;
   gap:5px;
+  white-space:nowrap;
+  flex-shrink:0;
   transition:all .15s;
   letter-spacing:.2px;
 }
@@ -3478,7 +3492,10 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   color:rgba(255,255,255,.9);
   font-size:11.5px;
   font-weight:500;
+  white-space:nowrap;
+  flex-shrink:0;
 }
+.topbar-title-full{white-space:nowrap;flex-shrink:0}
 .topbar-user-avatar{
   width:24px;height:24px;border-radius:50%;
   background:linear-gradient(135deg,var(--brand-green),var(--brand-teal));
@@ -3823,6 +3840,8 @@ body.dark #regtbl tbody tr.ov:hover { background-color: #4a2a24 !important; }
 /* Specific styling for the data cells (not header) */
 #regtbl td.docno-cell, #regtbl td:nth-child(3) {
     font-family: 'Consolas', 'Courier New', monospace !important; font-weight: 600 !important; color: var(--brand-teal) !important;
+    white-space: nowrap !important;
+    min-width: 130px;
 }
 
 /* Header z-index for Frozen Columns */
@@ -3995,11 +4014,31 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
 #projbar .pf-val { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; max-width: none !important; }
 
 /* Topbar Project Info (Moved from projbar) */
+#topbar-proj-info { min-width: 0; flex-shrink: 1; }
 #topbar-proj-info:hover { background: rgba(255,255,255,0.08); }
-#topbar-proj-info .pf { display: flex; flex-direction: column; gap: 2px; }
-#topbar-proj-info .pf-lbl { font-size: 9px; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
-#topbar-proj-info .pf-val { font-size: 15px; color: #ffffff; font-weight: 800; white-space: nowrap; max-width: none !important; }
+#topbar-proj-info .pf { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#topbar-proj-info .pf-lbl { font-size: 9px; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
+#topbar-proj-info .pf-val { font-size: 14px; color: #ffffff; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: none !important; }
 #topbar-proj-info .pf.primary .pf-val { font-size: 14px; color: var(--brand-teal); }
+.topbar-proj-edit-btn {
+  background: rgba(255,255,255,0.12) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255,255,255,0.22) !important;
+  padding: 3px 9px !important;
+  border-radius: 9999px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  align-self: center !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+.topbar-proj-edit-btn:hover {
+  background: rgba(255,255,255,0.22) !important;
+  border-color: rgba(255,255,255,0.4) !important;
+  color: #ffffff !important;
+}
 .global-footer { text-align: center; padding: 12px 20px; font-size: 11px; color: var(--mu); margin-top: auto; border-top: 1px solid var(--bd); letter-spacing: 0.3px; }
 .global-footer strong { font-weight: 600; color: var(--tx); }
 
@@ -4590,6 +4629,11 @@ body.dark .uact-btn-del:hover {
   unicode-bidi: isolate !important;
   display: inline-block;
 }
+td.bidi-ltr, th.bidi-ltr {
+  display: table-cell;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
 .rtl-flip {
   display: inline-block;
   transition: transform 0.15s ease;
@@ -4623,7 +4667,62 @@ html[dir="rtl"] .ws-dropdown-menu {
   text-align: right;
 }
 html[dir="rtl"] .topbar-user {
-  padding: 4px 5px 4px 10px;
+  padding: 3px 6px 3px 8px;
+  gap: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+html[dir="rtl"] #topbar {
+  padding: 0 12px;
+  gap: 6px;
+}
+html[dir="rtl"] #topbar .topbar-title-full {
+  font-size: 12.5px !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+html[dir="rtl"] #topbar .tb-btn {
+  padding: 5px 8px;
+  font-size: 11px;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+html[dir="rtl"] #topbar .tb-hub-launcher,
+html[dir="rtl"] #topbar .ws-switcher-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+html[dir="rtl"] #topbar .global-search-trigger {
+  padding: 4px 9px;
+  margin: 0 4px;
+  font-size: 11px;
+}
+html[dir="rtl"] #topbar-proj-info {
+  gap: 12px !important;
+  padding: 3px 10px !important;
+  min-width: 0;
+}
+html[dir="rtl"] #topbar-proj-info .pf-lbl {
+  letter-spacing: 0;
+}
+html[dir="rtl"] #topbar-proj-info .pf-val {
+  font-size: 13px !important;
+}
+@media (max-width: 1366px) and (min-width: 769px) {
+  html[dir="rtl"] #topbar .global-search-trigger .gst-text {
+    max-width: 115px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  html[dir="rtl"] #topbar-proj-info .pf:last-of-type .pf-val {
+    max-width: 190px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 html[dir="rtl"] .stitle {
   padding-left: 0 !important;
@@ -4707,14 +4806,18 @@ window.tCol = function(colKey, defaultLabel) {{
 window.tDt = function(code, defaultName) {{
   const fallback = defaultName || code || '';
   if (window.DCR_LANG !== 'ar') return fallback;
-  const k = 'dt_name.' + String(code || '').trim().toUpperCase();
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return fallback;
+  const k = 'dt_name.' + c;
   const dict = window.DCR_I18N || {{}};
-  return Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : fallback;
+  const tr = Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : '';
+  return (tr && tr !== k && !String(tr).startsWith('dt_name.')) ? tr : fallback;
 }};
 window.tStatus = function(val) {{
   if (!val || window.DCR_LANG !== 'ar') return val || '';
   const raw = String(val).trim();
-  const low = raw.toLowerCase();
+  const low = raw.toLowerCase().replace(/\\s+/g, ' ');
+  const lowNoCommaSpace = low.replace(/\\s*,\\s*/g, ',');
   const map = {{
     'approved': 'status.approved',
     'approved with comments': 'status.approved_with_comments',
@@ -4741,6 +4844,9 @@ window.tStatus = function(val) {{
     'a - approved': 'status.a_approved',
     'b - approved as noted': 'status.b_approved_noted',
     'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b,c - approved and resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved and resubmit': 'status.bc_approved_resubmit',
     'c - revise & resubmit': 'status.c_revise_resubmit',
     'd - review not required': 'status.d_review_not_required',
     'replied': 'status.replied',
@@ -4752,7 +4858,7 @@ window.tStatus = function(val) {{
     'draft': 'status.draft',
     'revised': 'status.revised'
   }};
-  const k = map[low];
+  const k = map[low] || map[lowNoCommaSpace];
   return k ? window.t(k) : raw;
 }};
 window.setLanguage = function(nextLang) {{
@@ -7133,14 +7239,18 @@ window.tCol = function(colKey, defaultLabel) {{
 window.tDt = function(code, defaultName) {{
   const fallback = defaultName || code || '';
   if (window.DCR_LANG !== 'ar') return fallback;
-  const k = 'dt_name.' + String(code || '').trim().toUpperCase();
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return fallback;
+  const k = 'dt_name.' + c;
   const dict = window.DCR_I18N || {{}};
-  return Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : fallback;
+  const tr = Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : '';
+  return (tr && tr !== k && !String(tr).startsWith('dt_name.')) ? tr : fallback;
 }};
 window.tStatus = function(val) {{
   if (!val || window.DCR_LANG !== 'ar') return val || '';
   const raw = String(val).trim();
-  const low = raw.toLowerCase();
+  const low = raw.toLowerCase().replace(/\\s+/g, ' ');
+  const lowNoCommaSpace = low.replace(/\\s*,\\s*/g, ',');
   const map = {{
     'approved': 'status.approved',
     'approved with comments': 'status.approved_with_comments',
@@ -7167,6 +7277,9 @@ window.tStatus = function(val) {{
     'a - approved': 'status.a_approved',
     'b - approved as noted': 'status.b_approved_noted',
     'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b,c - approved and resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved and resubmit': 'status.bc_approved_resubmit',
     'c - revise & resubmit': 'status.c_revise_resubmit',
     'd - review not required': 'status.d_review_not_required',
     'replied': 'status.replied',
@@ -7178,7 +7291,7 @@ window.tStatus = function(val) {{
     'draft': 'status.draft',
     'revised': 'status.revised'
   }};
-  const k = map[low];
+  const k = map[low] || map[lowNoCommaSpace];
   return k ? window.t(k) : raw;
 }};
 window.setLanguage = function(nextLang) {{
@@ -7720,7 +7833,7 @@ html[dir="rtl"] #om-aud-tbl td {{
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
+  <span class="topbar-user" style="color:rgba(255,255,255,.85);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
@@ -7954,20 +8067,27 @@ html[dir="rtl"] #om-aud-tbl td {{
 {_spotlight_modal_html(norm)}
 {_ai_drawer_html(norm)}
 <script>
-const _omT = (k, v, fb) => (typeof window.t === 'function' ? window.t(k, v) : (fb || k));
+const _omT = (k, v, fb) => {{
+  const res = typeof window.t === 'function' ? window.t(k, v) : '';
+  return (res && res !== k) ? res : (fb || k);
+}};
 function _omStatusLbl(val) {{
   const s = String(val || '').trim();
   if (!s) return _omT('status.pending', null, 'Pending');
+  const low = s.toLowerCase().replace(/\\s+/g, ' ');
+  const lowNoCommaSpace = low.replace(/\\s*,\\s*/g, ',');
   const map = {{
     'approved': 'status.approved', 'approved with comments': 'status.approved_with_comments',
     'pending': 'status.pending', 'under review': 'status.under_review',
     'open': 'status.open', 'in progress': 'status.in_progress', 'in-progress': 'status.in_progress',
     'closed': 'status.closed', 'completed': 'status.completed',
     'rejected': 'status.rejected', 'revise & resubmit': 'status.revise_resubmit',
+    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved & resubmit': 'status.bc_approved_resubmit',
     'overdue': 'status.overdue', 'expired': 'status.expired',
     'valid': 'status.valid', 'expiring': 'status.expiring', 'active': 'status.active'
   }};
-  const key = map[s.toLowerCase()];
+  const key = map[low] || map[lowNoCommaSpace];
   return key ? _omT(key, null, s) : s;
 }}
 
@@ -8476,7 +8596,10 @@ let _hseAlertType = '';
 let _hseAuditOffset = 0;
 let _hseAuditHasMore = false;
 let _hseAuditProjMap = {};
-const _hseT = (k, v, fb) => (typeof window.t === 'function' ? window.t(k, v) : (fb || k));
+const _hseT = (k, v, fb) => {
+  const res = typeof window.t === 'function' ? window.t(k, v) : '';
+  return (res && res !== k) ? res : (fb || k);
+};
 const _hseIsRtl = () => (window.DCR_DIR === 'rtl' || document.documentElement.dir === 'rtl');
 
 function showHseTab(tabName, btn) {
@@ -8730,6 +8853,50 @@ function renderHseAlertsTab() {
   }).join('');
 }
 
+function _formatHseRegSubtitle(r) {
+  const code = String((r && r.code) || '').trim().toUpperCase();
+  const sc = (r && r.sub_counts) || {};
+  if (code === 'PTW' || code === 'OBS' || code === 'SVP') {
+    const op = sc.open !== undefined ? sc.open : (r.open || 0);
+    const cl = sc.closed !== undefined ? sc.closed : (r.closed || 0);
+    return _hseT('hse.reg_open_closed', {open: op, closed: cl}, 'Open: ' + op + ' • Closed: ' + cl);
+  }
+  if (code === 'INC') {
+    const lti = sc.lti || 0, mtc = sc.mtc || 0, fac = sc.fac || 0;
+    return _hseT('hse.reg_inc', {lti: lti, mtc: mtc, fac: fac}, 'LTI: ' + lti + ' • MTC: ' + mtc + ' • FAC: ' + fac);
+  }
+  if (code === 'FEI') {
+    const valid = sc.valid || 0, expiring = sc.expiring || 0, expired = sc.expired || 0;
+    return _hseT('hse.reg_fei', {valid: valid, expiring: expiring, expired: expired}, 'Valid: ' + valid + ' • Expiring: ' + expiring + ' • Expired: ' + expired);
+  }
+  if (code === 'MHR') {
+    const months = sc.logged_months !== undefined ? sc.logged_months : (r.total || 0);
+    const hours = fmtHseNum(sc.total_hours || 0, 0);
+    return _hseT('hse.reg_mhr', {months: months, hours: hours}, 'Logged Months: ' + months + ' • ' + hours + ' hrs');
+  }
+  if (code === 'WKR') {
+    const count = sc.workers !== undefined ? sc.workers : (r.total || 0);
+    return _hseT('hse.reg_wkr', {count: count}, 'Registered Workers: ' + count);
+  }
+  if (code === 'JSA') {
+    const approved = sc.approved || 0, pending = sc.pending || 0;
+    return _hseT('hse.reg_jsa', {approved: approved, pending: pending}, 'Approved: ' + approved + ' • Pending/Draft: ' + pending);
+  }
+  if (code === 'TBT') {
+    const count = sc.talks !== undefined ? sc.talks : (r.total || 0);
+    return _hseT('hse.reg_tbt', {count: count}, 'Logged Talks: ' + count);
+  }
+  if (code === 'CEV') {
+    const count = sc.evaluations !== undefined ? sc.evaluations : (r.total || 0);
+    return _hseT('hse.reg_cev', {count: count}, 'Evaluations: ' + count);
+  }
+  if (code === 'EVAC') {
+    const count = sc.drills !== undefined ? sc.drills : (r.total || 0);
+    return _hseT('hse.reg_evac', {count: count}, 'Logged Drills: ' + count);
+  }
+  return r.subtitle || _hseT('hse.reg_open_closed', {open: r.open || 0, closed: r.closed || 0}, 'Open: ' + (r.open || 0) + ' • Closed: ' + (r.closed || 0));
+}
+
 function renderHseRegisterCards() {
   const wrap = document.getElementById('hse-reg-grid');
   if (!wrap) return;
@@ -8739,8 +8906,8 @@ function renderHseRegisterCards() {
     return;
   }
   wrap.innerHTML = regs.map(r => {
-    const dtName = _hseT('dt_name.' + String(r.code || '').toUpperCase(), null, r.name);
-    const sub = r.subtitle || _hseT('hse.reg_open_closed', {open: r.open, closed: r.closed}, 'Open: ' + r.open + ' • Closed: ' + r.closed);
+    const dtName = (typeof window.tDt === 'function') ? window.tDt(r.code, r.name) : (r.name || r.code);
+    const sub = _formatHseRegSubtitle(r);
     return `
     <div class="hse-reg-card">
       <div>
@@ -8748,7 +8915,7 @@ function renderHseRegisterCards() {
           <span class="badge bidi-ltr" style="background:rgba(16,185,129,0.14);color:#047857;font-weight:700;font-family:monospace;font-size:11px;">${escHtml(r.code)}</span>
           <span style="font-weight:700;font-size:12px;">${escHtml(dtName)}</span>
         </div>
-        <div style="font-size:10.5px;color:var(--mu);margin-top:3px;">${escHtml(sub)}</div>
+        <div dir="auto" style="font-size:10.5px;color:var(--mu);margin-top:3px;">${escHtml(sub)}</div>
       </div>
       <div class="bidi-ltr" style="font-size:18px;font-weight:800;font-family:monospace;">${r.total}</div>
     </div>
@@ -9219,7 +9386,7 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
+  <span class="topbar-user" style="color:rgba(255,255,255,.85);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
@@ -11559,7 +11726,7 @@ html[dir="rtl"] #aud-tbl td {{
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
+  <span class="topbar-user" style="color:rgba(255,255,255,.85);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
@@ -11851,27 +12018,36 @@ html[dir="rtl"] #aud-tbl td {{
 <script>
 const ROLE='{role}';
 window._ACCESSIBLE_PROJECTS = {projs_json};
-const _dT = (k, v, fb) => (typeof window.t === 'function' ? window.t(k, v) : (fb || k));
+const _dT = (k, v, fb) => {{
+  const res = typeof window.t === 'function' ? window.t(k, v) : '';
+  return (res && res !== k) ? res : (fb || k);
+}};
 const _dIsRtl = () => (window.DCR_DIR === 'rtl' || document.documentElement.dir === 'rtl');
 function _dDtName(code, defName) {{
+  if (typeof window.tDt === 'function') return window.tDt(code, defName);
   const c = String(code || '').trim().toUpperCase();
   if (!c) return defName || '';
   const key = 'dt_name.' + c;
   const tr = _dT(key, null, '');
-  return (tr && tr !== key) ? tr : (defName || c);
+  return (tr && tr !== key && !String(tr).startsWith('dt_name.')) ? tr : (defName || c);
 }}
 function _dStatusLbl(val) {{
   const s = String(val || '').trim();
   if (!s) return '';
+  if (typeof window.tStatus === 'function') return window.tStatus(s);
+  const low = s.toLowerCase().replace(/\\s+/g, ' ');
+  const lowNoCommaSpace = low.replace(/\\s*,\\s*/g, ',');
   const map = {{
     'approved': 'status.approved', 'approved with comments': 'status.approved_with_comments',
     'pending': 'status.pending', 'under review': 'status.under_review',
     'open': 'status.open', 'in progress': 'status.in_progress', 'in-progress': 'status.in_progress',
     'closed': 'status.closed', 'completed': 'status.completed',
     'rejected': 'status.rejected', 'revise & resubmit': 'status.revise_resubmit',
+    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved & resubmit': 'status.bc_approved_resubmit',
     'overdue': 'status.overdue', 'info / closed': 'status.info_closed', 'not closed': 'status.not_closed'
   }};
-  const k = map[s.toLowerCase()];
+  const k = map[low] || map[lowNoCommaSpace];
   return k ? _dT(k, null, s) : s;
 }}
 let STATS=[],OVERDUE_DATA=[],EXEC_DATA=null;
@@ -13331,6 +13507,20 @@ def render_register(u, proj, active_ws_id=None, lang=None):
         if key not in primary_keys and proj.get(key,"").strip())
     projbar_toggle = ('<button id="projbar-toggle" class="tool-btn" type="button" '
                       f'onclick="toggleProjectInfo()">{t("reg.project_info_btn", norm)}</button>') if projbar_secondary else ''
+    edit_proj_inline_btn = (
+        f'<button type="button" class="proj-edit-btn topbar-proj-edit-btn" '
+        f'onclick="event.stopPropagation();editProject()">'
+        f'{t("reg.btn_edit_project", norm)}</button>'
+    ) if editable else ''
+    projbar_html = (
+        f'<div id="projbar">\n'
+        f'  {logo_html}\n'
+        f'  <div id="projbar-main">\n'
+        f'    {projbar_toggle}\n'
+        f'    <div id="projbar-extra" style="display:flex;gap:20px;flex:1 1 auto;overflow-x:auto">{projbar_secondary}</div>\n'
+        f'  </div>\n'
+        f'</div>'
+    ) if (logo_html or projbar_secondary) else ''
 
     tabs_html = "".join(
         f'<button class="tab-btn" data-id="{dt["id"]}" title="{t_dt(dt["code"], dt.get("name", ""), norm)}" onclick="switchTab(\'{dt["id"]}\')">'
@@ -13863,8 +14053,9 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 
   <div style="flex:1"></div>
   
-  <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:24px;cursor:pointer;padding:4px 16px;border-radius:8px;transition:all 0.2s" title="{t("reg.edit_project_info_title", norm)}">
+  <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:14px;cursor:pointer;padding:3px 10px;border-radius:8px;transition:all 0.2s;min-width:0;flex-shrink:1" title="{t("reg.edit_project_info_title", norm)}">
     {projbar_primary}
+    {edit_proj_inline_btn}
   </div>
 
   <div style="flex:1"></div>
@@ -13881,14 +14072,7 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
   </span>
 </div>
 
-<div id="projbar">
-  {logo_html}
-  <div id="projbar-main">
-    {projbar_toggle}
-    <div id="projbar-extra" style="display:flex;gap:20px;flex:1 1 auto;overflow-x:auto">{projbar_secondary}</div>
-  </div>
-  {'<button class="proj-edit-btn" onclick="editProject()" style="margin-left:auto;background:var(--pr);color:#fff;border:none;padding:5px 12px;border-radius:var(--rd);cursor:pointer;font-size:11px;font-family:inherit;flex-shrink:0">' + t("reg.btn_edit_project", norm) + '</button>' if editable else ''}
-</div>
+{projbar_html}
 
 <div id="tabsbar">
   {tabs_html}
@@ -14605,6 +14789,18 @@ const SC_DEFAULTS={{...{sc_json},
   'Revised':['e0e7ff','3730a3']
 }};
 const SC={{...SC_DEFAULTS, ...{custom_sc_json}}};
+function splitStatusValues(rawVal){{
+  const txt=String(rawVal||'').trim();
+  if(!txt)return [];
+  const norm=(v)=>String(v||'').trim().toLowerCase().replace(/\\s+/g,' ').replace(/\\s*,\\s*/g,',');
+  const txtNorm=norm(txt);
+  if(/^[A-Za-z]\\s*,\\s*[A-Za-z]\\s*-\\s*.+$/.test(txt))return [txt];
+  if(Object.keys(SC).some(k=>norm(k)===txtNorm))return [txt];
+  if(typeof state!=='undefined'&&state?.lists?.status&&Array.isArray(state.lists.status)&&state.lists.status.some(o=>norm(o)===txtNorm))return [txt];
+  const ph='\\u0000';
+  const safe=txt.replace(/\\b([A-Za-z])(\\s*),(\\s*[A-Za-z]\\s*-)/g,'$1$2'+ph+'$3');
+  return safe.split(',').map(s=>s.replaceAll(ph,',').trim()).filter(Boolean);
+}}
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
   ['client','Client'],['landlord','Landlord'],['pmo','PMO'],['mainConsultant','Consultant'],
   ['mepConsultant','MEP'],['contractor','Contractor']];
@@ -15649,15 +15845,16 @@ function renderRows(){{
       else if(key==='status'||isStatusLikeField(col)){{
         val=row[key]||((isLtrTab&&ltrRole)?getLTRValue(row,state.allTabCols,ltrRole):'');
         if(val){{
-          td.innerHTML=String(val).split(',').map(s=>{{
+          td.innerHTML=splitStatusValues(val).map(s=>{{
             s=s.trim();
-            const scKey=Object.keys(SC).find(k=>k.toLowerCase()===s.toLowerCase());
+            const sNorm=s.toLowerCase().replace(/\\s+/g,' ').replace(/\\s*,\\s*/g,',');
+            const scKey=Object.keys(SC).find(k=>k.toLowerCase().replace(/\\s+/g,' ').replace(/\\s*,\\s*/g,',')===sNorm);
             let [bg,fg]=(scKey?SC[scKey]:null)||['e5e7eb','374151'];
             if(!scKey){{
               const up=s.toUpperCase();
               if(up.includes('CANCELLED')) [bg,fg]=['6c757d','ffffff'];
               else if(/^A(-|\\s|$)/.test(up) || up.includes('APPROVED') || up === 'CLOSED' || up.includes('CLOSED') || up.includes('COMPLETE')) [bg,fg]=['bbf7d0','166534'];
-              else if(/^B(-|\\s|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
+              else if(/^B(-|\\s|,|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
               else if(/^C(-|\\s|$)/.test(up) || up.includes('REVISE')) [bg,fg]=['fed7aa','9a3412'];
               else if(/^D(-|\\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
               else if(up === 'OPEN' || up.includes('PENDING') || up.includes('UNDER REVIEW')) [bg,fg]=['fed7aa','7c2d12'];
@@ -16921,7 +17118,8 @@ function getPrItemsFromEditor(){{
   }}
 
 function buildMS(key,options,init,isStatus){{
-  let sel=init?init.split(',').map(s=>s.trim()).filter(Boolean):[];
+  const parseMS=(raw)=>isStatus?splitStatusValues(raw):(raw?String(raw).split(',').map(s=>s.trim()).filter(Boolean):[]);
+  let sel=parseMS(init);
   const con=document.createElement('div');con.className='ms-con';con.id='f-'+key;con.dataset.value=init||'';
   const disp=(v)=>isStatus&&window.tStatus?window.tStatus(v):v;
   function render(){{
@@ -16937,7 +17135,7 @@ function buildMS(key,options,init,isStatus){{
   }}
   con.addEventListener('_update',()=>{{
     const nextVal=String(con.dataset.value||'');
-    sel=nextVal?nextVal.split(',').map(s=>s.trim()).filter(Boolean):[];
+    sel=parseMS(nextVal);
     render();
     con.dispatchEvent(new Event('change'));
   }});
@@ -21120,7 +21318,7 @@ async function openProjectSettings() {{
   }} else if(state.recs) {{
     state.recs.forEach(r => {{
       if(r.status) {{
-        String(r.status).split(',').forEach(s => {{
+        splitStatusValues(r.status).forEach(s => {{
           const st = s.trim();
           if(st) statuses.add(st);
         }});

@@ -224,10 +224,7 @@ def login():
                 remaining_attempts=remaining_attempts
             ), 401
     lang = get_lang(request)
-    try:
-        return render_login(lang=lang)
-    except TypeError:
-        return render_login()
+    return render_login(lang=lang)
 
 @app.route("/logout", methods=["POST", "GET"])
 def logout():
@@ -247,10 +244,7 @@ def logout():
 def launchpad_hub():
     u = current_user()
     lang = get_lang(request)
-    try:
-        return render_launchpad(u, lang=lang)
-    except TypeError:
-        return render_launchpad(u)
+    return render_launchpad(u, lang=lang)
 
 @app.route("/")
 def home():
@@ -264,19 +258,10 @@ def home():
             user_ws = []
         is_super = (str(u.get("role", "")).lower() == "superadmin")
         if is_super or len(user_ws) > 1:
-            try:
-                return render_launchpad(u, lang=lang)
-            except TypeError:
-                return render_launchpad(u)
+            return render_launchpad(u, lang=lang)
         elif len(user_ws) == 1:
             ws_id = user_ws[0]["id"]
-    try:
-        return render_dashboard(u, active_ws_id=ws_id, lang=lang)
-    except TypeError:
-        try:
-            return render_dashboard(u, active_ws_id=ws_id)
-        except TypeError:
-            return render_dashboard(u)
+    return render_dashboard(u, active_ws_id=ws_id, lang=lang)
 
 _recent_project_views = {}
 
@@ -302,13 +287,7 @@ def register():
         pass
     ws_id = request.args.get("ws") or proj.get("workspace_id", "ENG")
     lang = get_lang(request)
-    try:
-        return render_register(u, proj, active_ws_id=ws_id, lang=lang)
-    except TypeError:
-        try:
-            return render_register(u, proj, active_ws_id=ws_id)
-        except TypeError:
-            return render_register(u, proj)
+    return render_register(u, proj, active_ws_id=ws_id, lang=lang)
 
 @app.route("/api/settings/holidays", methods=["GET"])
 def api_get_holidays():

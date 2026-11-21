@@ -768,5 +768,93 @@ class TestPhase3StandaloneViews(unittest.TestCase):
                 self.assertIn("switchDcrLang('en')", html_nf)
 
 
+class TestI18nVisualQAFixes(unittest.TestCase):
+    """Regression coverage for I18N-FIX-01 visual QA defects (Defects 1-7)."""
+
+    def test_bidi_ltr_table_cell_and_docno_nowrap_css(self):
+        self.assertIn("td.bidi-ltr, th.bidi-ltr {", html_render.BASE_CSS)
+        self.assertIn("display: table-cell;", html_render.BASE_CSS)
+        self.assertIn("#regtbl td.docno-cell, #regtbl td:nth-child(3)", html_render.BASE_CSS)
+        self.assertIn("white-space: nowrap !important;", html_render.BASE_CSS)
+        self.assertIn("min-width: 130px;", html_render.BASE_CSS)
+
+    def test_dt_name_coverage_and_no_raw_key_leakage(self):
+        import db
+        import hse_defaults
+
+        required_codes = ("DS", "WN", "QS", "CEV", "EVAC", "WKR", "SD", "MS", "IR", "MIR",
+                          "RFI", "CVI", "PCQ", "SI", "EI", "SVP", "ABD", "NCR", "NOC", "PR", "LTR", "OM", "IOM")
+        for code in required_codes:
+            self.assertIn(f"dt_name.{code}", i18n.TRANSLATIONS["en"])
+            self.assertIn(f"dt_name.{code}", i18n.TRANSLATIONS["ar"])
+            ar_val = i18n.t_dt(code, code, "ar")
+            self.assertFalse(ar_val.startswith("dt_name."), f"Raw dt_name key returned for {code}: {ar_val}")
+            self.assertIn(code, ar_val)
+
+        for code, name, _ in (db.DEFAULT_DOC_TYPES + db.DEFAULT_OM_DOC_TYPES + list(hse_defaults.HSE_REGISTERS)):
+            ar_val = i18n.t_dt(code, name, "ar")
+            self.assertFalse(ar_val.startswith("dt_name."), f"Raw key for {code}")
+            self.assertNotEqual(ar_val, name, f"Expected Arabic translation for built-in {code}")
+
+        # Unknown doc type code never leaks raw 'dt_name.*' key
+        self.assertEqual(i18n.t_dt("CUSTOMX", "Custom Register", "ar"), "Custom Register")
+        self.assertEqual(i18n.t_dt("CUSTOMX", "", "ar"), "CUSTOMX")
+
+        # Client JS window.tDt and HSE register cards never leak raw 'dt_name.*'
+        self.assertIn("window.tDt(r.code, r.name)", html_render.HSE_DASHBOARD_JS)
+        self.assertNotIn("_hseT('dt_name.'", html_render.HSE_DASHBOARD_JS)
+
+    def test_hse_11_register_submetrics_localized(self):
+        for k in ("hse.reg_open_closed", "hse.reg_inc", "hse.reg_fei", "hse.reg_mhr",
+                  "hse.reg_wkr", "hse.reg_jsa", "hse.reg_tbt", "hse.reg_cev", "hse.reg_evac"):
+            self.assertIn(k, i18n.TRANSLATIONS["en"])
+            self.assertIn(k, i18n.TRANSLATIONS["ar"])
+        self.assertIn("LTI:", i18n.TRANSLATIONS["ar"]["hse.reg_inc"])
+        self.assertIn("MTC:", i18n.TRANSLATIONS["ar"]["hse.reg_inc"])
+        self.assertIn("FAC:", i18n.TRANSLATIONS["ar"]["hse.reg_inc"])
+        self.assertIn("_formatHseRegSubtitle", html_render.HSE_DASHBOARD_JS)
+
+    def test_bc_status_translation_and_no_comma_split(self):
+        ar_nospace = i18n.t_status("B,C - Approved & Resubmit", "ar")
+        ar_space = i18n.t_status("B, C - Approved & Resubmit", "ar")
+        self.assertEqual(ar_nospace, "B,C - معتمد ويعاد التقديم")
+        self.assertEqual(ar_space, "B,C - معتمد ويعاد التقديم")
+        self.assertEqual(i18n.t_status("B, C - Approved & Resubmit", "en"), "B, C - Approved & Resubmit")
+
+        user = {"username": "admin_u", "role": "superadmin"}
+        proj = {"id": "p1", "code": "CP01", "name": "Alpha", "workspace_id": "ENG", "status_colors": {}}
+        with patch("html_render.can_edit", return_value=True), \
+             patch("html_render.is_project_admin", return_value=True), \
+             patch("html_render.get_allowed_doc_type_filter", return_value=None), \
+             patch("db.can_user_download", return_value=True), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.get_doc_types", return_value=[]), \
+             patch("db.get_logo", return_value=None), \
+             patch("db.get_user_workspaces", return_value=[]):
+            reg_ar = html_render.render_register(user, proj, active_ws_id="ENG", lang="ar")
+            self.assertIn("splitStatusValues(val)", reg_ar)
+            self.assertNotIn("String(val).split(',').map", reg_ar)
+            # Inline Edit button sits inside topbar-proj-info; no stray empty #projbar row
+            self.assertIn("topbar-proj-edit-btn", reg_ar)
+            self.assertNotIn('<div id="projbar">', reg_ar)
+
+    def test_topbar_rtl_nowrap_and_ai_drawer_fixes(self):
+        self.assertIn('html[dir="rtl"] #topbar .tb-btn', html_render.BASE_CSS)
+        self.assertIn("white-space: nowrap;", html_render.BASE_CSS)
+        # AI Drawer active project reads PROJ_NAME/PROJ_CODE/.pf-val rather than .pf-lbl
+        self.assertIn(".pf-val[data-key=\"code\"]", html_render.AI_DRAWER_COMPONENT)
+        self.assertNotIn("topbarInfo.querySelector('span')", html_render.AI_DRAWER_COMPONENT)
+        # AI Drawer markdown list strips '- ' cleanly (no raw '\\s*' double-backslash bug producing '• -')
+        self.assertIn(r"line.replace(/^[-*•]\s*/, '')", html_render.AI_DRAWER_COMPONENT)
+        self.assertNotIn(r"line.replace(/^[-*•]\\s*/, '')", html_render.AI_DRAWER_COMPONENT)
+
+    def test_app_renderers_do_not_swallow_typeerror(self):
+        import inspect
+        import app as app_mod
+        for fn in (app_mod.login, app_mod.launchpad_hub, app_mod.home, app_mod.register):
+            src = inspect.getsource(fn)
+            self.assertNotIn("except TypeError", src)
+
+
 if __name__ == "__main__":
     unittest.main()
