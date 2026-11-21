@@ -254,19 +254,26 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
 .global-search-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: rgba(255, 255, 255, 0.8);
-  padding: 4px 12px;
+  padding: 4px 8px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer !important;
   user-select: none !important;
-  margin: 0 10px;
+  margin: 0 4px;
+  min-width: 0;
   flex-shrink: 0;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.global-search-trigger .gst-text {
+  max-width: 85px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .global-search-trigger:hover {
   background: rgba(255, 255, 255, 0.15);
@@ -3413,8 +3420,8 @@ body.dark #noc-summary div[style*="color:#64748b"] {
   height:52px;
   display:flex;
   align-items:center;
-  padding:0 18px;
-  gap:10px;
+  padding:0 10px;
+  gap:5px;
   box-shadow:0 2px 12px rgba(0,0,0,.35);
   flex-shrink:0;
   position:relative;
@@ -3458,7 +3465,7 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   background:rgba(255,255,255,.08);
   border:1px solid rgba(255,255,255,.15);
   color:rgba(255,255,255,.9);
-  padding:6px 12px;
+  padding:4px 7px;
   border-radius:var(--rd);
   cursor:pointer;
   font-size:11.5px;
@@ -3467,11 +3474,22 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   text-decoration:none;
   display:inline-flex;
   align-items:center;
-  gap:5px;
+  gap:4px;
   white-space:nowrap;
   flex-shrink:0;
   transition:all .15s;
   letter-spacing:.2px;
+}
+.sr-only{
+  position:absolute;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
 }
 .tb-btn:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.3);transform:translateY(-1px)}
 .tb-btn:active{transform:translateY(0)}
@@ -3485,16 +3503,34 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
 
 /* Topbar user chip */
 .topbar-user{
-  display:inline-flex;align-items:center;gap:7px;
-  padding:4px 10px 4px 5px;
-  border-radius:20px;
+  display:inline-flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:2px;
+  line-height:1.1;
+  padding:3px 8px;
+  border-radius:10px;
   background:rgba(255,255,255,.08);
   border:1px solid rgba(255,255,255,.12);
   color:rgba(255,255,255,.9);
-  font-size:11.5px;
-  font-weight:500;
+  font-size:11px;
+  font-weight:600;
   white-space:nowrap;
   flex-shrink:0;
+}
+.topbar-user-name{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  line-height:1.1;
+}
+.topbar-user-role{
+  font-size:9px !important;
+  padding:1px 5px !important;
+  line-height:1.1;
+  border-radius:3px;
+  font-weight:700;
 }
 .topbar-title-full{white-space:nowrap;flex-shrink:0}
 .topbar-user-avatar{
@@ -4025,7 +4061,7 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
   background: rgba(255,255,255,0.12) !important;
   color: #f8fafc !important;
   border: 1px solid rgba(255,255,255,0.22) !important;
-  padding: 3px 9px !important;
+  padding: 2px 7px !important;
   border-radius: 9999px !important;
   font-size: 11px !important;
   font-weight: 600 !important;
@@ -4668,15 +4704,15 @@ html[dir="rtl"] .ws-dropdown-menu {
   text-align: right;
 }
 html[dir="rtl"] .topbar-user {
-  padding: 3px 6px 3px 8px;
-  gap: 5px;
+  padding: 3px 8px;
+  gap: 2px;
   font-size: 11px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 html[dir="rtl"] #topbar {
-  padding: 0 12px;
-  gap: 6px;
+  padding: 0 10px;
+  gap: 5px;
 }
 html[dir="rtl"] #topbar .topbar-title-full {
   font-size: 12.5px !important;
@@ -4685,7 +4721,7 @@ html[dir="rtl"] #topbar .topbar-title-full {
   flex-shrink: 0;
 }
 html[dir="rtl"] #topbar .tb-btn {
-  padding: 5px 8px;
+  padding: 4px 7px;
   font-size: 11px;
   gap: 4px;
   white-space: nowrap;
@@ -4697,13 +4733,15 @@ html[dir="rtl"] #topbar .ws-switcher-btn {
   font-size: 11px;
 }
 html[dir="rtl"] #topbar .global-search-trigger {
-  padding: 4px 9px;
+  padding: 4px 8px;
   margin: 0 4px;
+  gap: 5px;
   font-size: 11px;
+  min-width: 0;
 }
 html[dir="rtl"] #topbar-proj-info {
-  gap: 12px !important;
-  padding: 3px 10px !important;
+  gap: 8px !important;
+  padding: 3px 8px !important;
   min-width: 0;
 }
 html[dir="rtl"] #topbar-proj-info .pf-lbl {
@@ -4714,13 +4752,13 @@ html[dir="rtl"] #topbar-proj-info .pf-val {
 }
 @media (max-width: 1366px) and (min-width: 769px) {
   html[dir="rtl"] #topbar .global-search-trigger .gst-text {
-    max-width: 115px;
+    max-width: 85px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   html[dir="rtl"] #topbar-proj-info .pf:last-of-type .pf-val {
-    max-width: clamp(180px, 22vw, 340px) !important;
+    max-width: clamp(220px, 34vw, 520px) !important;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -4779,7 +4817,7 @@ html[dir="rtl"] .about-tech-list {
   }
 }
 
-/* ── I18N-FIX-02: Topbar Project Info & Smart BiDi Alignment ── */
+/* ── I18N-FIX-02 / I18N-FIX-03: Topbar Project Info & Smart BiDi Alignment ── */
 #topbar-proj-info .pf.pf-code {
   flex: 0 0 auto !important;
 }
@@ -4793,10 +4831,15 @@ html[dir="rtl"] .about-tech-list {
 #topbar-proj-info .pf.pf-name {
   flex: 1 1 auto !important;
   min-width: 0 !important;
+  overflow: hidden !important;
 }
 @media (min-width: 769px) {
+  #topbar-proj-info .pf.pf-name {
+    min-width: 140px !important;
+  }
   #topbar-proj-info .pf-val[data-key="name"] {
-    max-width: clamp(180px, 22vw, 340px) !important;
+    max-width: clamp(220px, 34vw, 520px) !important;
+    font-size: 13px !important;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -4805,26 +4848,27 @@ html[dir="rtl"] .about-tech-list {
 }
 @media (max-width: 1440px) and (min-width: 769px) {
   #topbar {
-    padding: 0 12px;
-    gap: 6px;
+    padding: 0 10px;
+    gap: 5px;
   }
   #topbar .global-search-trigger {
-    padding: 4px 9px;
+    padding: 4px 8px;
     margin: 0 4px;
-    gap: 6px;
+    gap: 5px;
+    min-width: 0;
   }
   #topbar .global-search-trigger .gst-text {
-    max-width: 120px;
+    max-width: 85px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   #topbar-proj-info {
-    gap: 10px !important;
+    gap: 8px !important;
     padding: 3px 8px !important;
   }
   #topbar .tb-btn {
-    padding: 5px 8px;
+    padding: 4px 7px;
     gap: 4px;
   }
 }
@@ -7894,13 +7938,13 @@ html[dir="rtl"] #om-aud-tbl td {{
   {_global_search_trigger_html(norm)}
   <div class="sp"></div>
   <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="{t("topbar.about_title", norm)}">ℹ️<span class="tb-btn-text">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn tb-about-btn" onclick="openM('about-modal')" title="{t("topbar.about_btn", norm)}" aria-label="{t("topbar.about_btn", norm)}">ℹ️<span class="tb-btn-text sr-only">{t("topbar.about_btn", norm)}</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span class="topbar-user" style="color:rgba(255,255,255,.85);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
-    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  <span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">{uname}</span></span>
+    <span class="topbar-user-role" style="background:{rbg};border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
 
@@ -9447,13 +9491,13 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   {_global_search_trigger_html(norm)}
   <div class="sp"></div>
   <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="{t("topbar.about_title", norm)}">ℹ️<span class="tb-btn-text">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn tb-about-btn" onclick="openM('about-modal')" title="{t("topbar.about_btn", norm)}" aria-label="{t("topbar.about_btn", norm)}">ℹ️<span class="tb-btn-text sr-only">{t("topbar.about_btn", norm)}</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span class="topbar-user" style="color:rgba(255,255,255,.85);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
-    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  <span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">{uname}</span></span>
+    <span class="topbar-user-role" style="background:{rbg};border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
 
@@ -11787,13 +11831,13 @@ html[dir="rtl"] #aud-tbl td {{
   {_global_search_trigger_html(norm)}
   <div class="sp"></div>
   <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="{t("topbar.about_title", norm)}">ℹ️<span class="tb-btn-text">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn tb-about-btn" onclick="openM('about-modal')" title="{t("topbar.about_btn", norm)}" aria-label="{t("topbar.about_btn", norm)}">ℹ️<span class="tb-btn-text sr-only">{t("topbar.about_btn", norm)}</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span class="topbar-user" style="color:rgba(255,255,255,.85);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
-    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  <span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">{uname}</span></span>
+    <span class="topbar-user-role" style="background:{rbg};border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
 
@@ -14127,7 +14171,7 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 
   <div style="flex:1"></div>
   
-  <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:14px;cursor:pointer;padding:3px 10px;border-radius:8px;transition:all 0.2s;min-width:0;flex-shrink:1" title="{t("reg.edit_project_info_title", norm)}">
+  <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:3px 8px;border-radius:8px;transition:all 0.2s;min-width:0;flex-shrink:1" title="{t("reg.edit_project_info_title", norm)}">
     {projbar_primary}
     {edit_proj_inline_btn}
   </div>
@@ -14136,13 +14180,13 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 
   <a href="/?ws={active_ws}" class="tb-btn">📊<span class="tb-btn-text">{t("topbar.dashboard_btn", norm)}</span></a>
   <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="{t("topbar.about_title", norm)}">ℹ️<span class="tb-btn-text">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn tb-about-btn" onclick="openM('about-modal')" title="{t("topbar.about_btn", norm)}" aria-label="{t("topbar.about_btn", norm)}">ℹ️<span class="tb-btn-text sr-only">{t("topbar.about_btn", norm)}</span></button>
   <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span class="topbar-user"><span class="topbar-user-name">👤 {uname}</span>
-    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  <span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">{uname}</span></span>
+    <span class="topbar-user-role" style="background:{rbg};border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
 

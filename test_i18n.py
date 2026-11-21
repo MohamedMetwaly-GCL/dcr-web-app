@@ -865,7 +865,7 @@ class TestI18nFix02TopbarAndBidi(unittest.TestCase):
         self.assertIn('max-width: none !important;', html_render.BASE_CSS)
         self.assertIn('flex-shrink: 0 !important;', html_render.BASE_CSS)
         self.assertIn('#topbar-proj-info .pf-val[data-key="name"]', html_render.BASE_CSS)
-        self.assertIn('max-width: clamp(180px, 22vw, 340px) !important;', html_render.BASE_CSS)
+        self.assertIn('max-width: clamp(220px, 34vw, 520px) !important;', html_render.BASE_CSS)
         self.assertIn('@media (max-width: 1440px) and (min-width: 769px)', html_render.BASE_CSS)
         self.assertNotIn('max-width: 190px !important;', html_render.BASE_CSS)
 
@@ -909,6 +909,52 @@ class TestI18nFix02TopbarAndBidi(unittest.TestCase):
                 self.assertIn("reg-date-cell", html_out)
                 self.assertIn("reg-dur-cell", html_out)
                 self.assertIn("item-ref-cell", html_out)
+
+
+class TestI18nFix03CompactTopbar(unittest.TestCase):
+    """Regression coverage for I18N-FIX-03: compact topbar, icon-only About, stacked user capsule, unlocked project name."""
+
+    def test_compact_topbar_and_stacked_user_capsule_css(self):
+        self.assertIn("max-width: 85px;", html_render.SPOTLIGHT_MODAL_COMPONENT)
+        self.assertIn("min-width: 140px !important;", html_render.BASE_CSS)
+        self.assertIn("overflow: hidden !important;", html_render.BASE_CSS)
+        self.assertIn("font-size: 13px !important;", html_render.BASE_CSS)
+        self.assertIn("padding: 2px 7px !important;", html_render.BASE_CSS)
+        self.assertIn("flex-direction:column;", html_render.BASE_CSS)
+        self.assertIn("align-items:flex-start;", html_render.BASE_CSS)
+        self.assertIn(".topbar-user-role{", html_render.BASE_CSS)
+        self.assertIn(".sr-only{", html_render.BASE_CSS)
+
+    def test_icon_only_about_and_stacked_user_in_register_and_dashboard(self):
+        user = {"username": "admin", "role": "superadmin"}
+        proj = {
+            "id": "p_pem058",
+            "code": "PEM-058",
+            "name": "CFC District Cooling Plant Phase 2",
+            "workspace_id": "ENG",
+            "status_colors": {},
+        }
+        with patch("html_render.can_edit", return_value=True), \
+             patch("html_render.is_project_admin", return_value=True), \
+             patch("html_render.get_allowed_doc_type_filter", return_value=None), \
+             patch("db.can_user_download", return_value=True), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.get_doc_types", return_value=[]), \
+             patch("db.get_logo", return_value=None), \
+             patch("db.get_user_workspaces", return_value=[]):
+            for lang, about_lbl in (("en", "About"), ("ar", "عن النظام")):
+                reg_html = html_render.render_register(user, proj, active_ws_id="ENG", lang=lang)
+                self.assertIn(
+                    f'<button class="tb-btn tb-about-btn" onclick="openM(\'about-modal\')" title="{about_lbl}" aria-label="{about_lbl}">ℹ️<span class="tb-btn-text sr-only">{about_lbl}</span></button>',
+                    reg_html,
+                )
+                self.assertIn('<span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">admin</span></span>', reg_html)
+                self.assertIn('<span class="topbar-user-role"', reg_html)
+
+                dash_html = html_render.render_dashboard(user, active_ws_id="ENG", lang=lang)
+                self.assertIn(f'class="tb-btn tb-about-btn" onclick="openM(\'about-modal\')" title="{about_lbl}" aria-label="{about_lbl}"', dash_html)
+                self.assertIn('<span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">admin</span></span>', dash_html)
+                self.assertIn('<span class="topbar-user-role"', dash_html)
 
 
 if __name__ == "__main__":
