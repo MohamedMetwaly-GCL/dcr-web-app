@@ -216,5 +216,130 @@ class TestPhase1ARenderersAndRoutes(unittest.TestCase):
         self.assertIn("dcr_lang=en", set_cookie_hdr3)
 
 
+class TestPhase1BSharedOverlays(unittest.TestCase):
+    """Verify Spotlight Global Search, AI Assistant Drawer, and Admin/Permissions Modals EN & AR localization and RTL hooks."""
+
+    def test_spotlight_modal_en_and_ar_and_rtl_css(self):
+        sl_en = html_render._spotlight_modal_html("en")
+        self.assertIn('id="spotlight-modal"', sl_en)
+        self.assertIn('placeholder="Search across all accessible projects (min. 2 chars)..."', sl_en)
+        self.assertIn("<option value=\"ALL\">All Projects</option>", sl_en)
+        self.assertIn("<option value=\"ALL\">All Statuses</option>", sl_en)
+        self.assertIn("Instant Global Search", sl_en)
+        self.assertIn("🔒 RBAC-Filtered Results", sl_en)
+
+        sl_ar = html_render._spotlight_modal_html("ar")
+        self.assertIn('id="spotlight-modal"', sl_ar)
+        self.assertIn('placeholder="ابحث في جميع المشروعات المتاحة (حرفان على الأقل)..."', sl_ar)
+        self.assertIn("<option value=\"ALL\">جميع المشروعات</option>", sl_ar)
+        self.assertIn("<option value=\"ALL\">جميع الحالات</option>", sl_ar)
+        self.assertIn("<option value=\"Approved\">معتمد (Approved)</option>", sl_ar)
+        self.assertIn("البحث الشامل الفوري", sl_ar)
+        self.assertIn("🔒 نتائج مفلترة حسب صلاحيات الوصول (RBAC)", sl_ar)
+        self.assertIn("↺ إعادة ضبط", sl_ar)
+
+        # Verify RTL CSS hooks and .bidi-ltr wrappers for doc_no, project_code, and dates
+        self.assertIn('html[dir="rtl"] #spotlight-modal', sl_ar)
+        self.assertIn('html[dir="rtl"] .spotlight-item-meta', sl_ar)
+        self.assertIn('spotlight-item-docno bidi-ltr', sl_ar)
+        self.assertIn('spotlight-item-proj-code bidi-ltr', sl_ar)
+        self.assertIn('_slT(', sl_ar)
+
+    def test_ai_drawer_en_and_ar_and_rtl_docking(self):
+        ai_en = html_render._ai_drawer_html("en")
+        self.assertIn('id="ai-assistant-drawer"', ai_en)
+        self.assertIn('id="ai-fab-btn"', ai_en)
+        self.assertIn('id="ai-drawer-resizer"', ai_en)
+        self.assertIn("DCR Engineering Assistant", ai_en)
+        self.assertIn("Quick Queries:", ai_en)
+        self.assertIn("📌 Overdue Submittals", ai_en)
+        self.assertIn("💵 Approved NOCs Total", ai_en)
+        self.assertIn("📊 Status Summary", ai_en)
+
+        ai_ar = html_render._ai_drawer_html("ar")
+        self.assertIn('id="ai-assistant-drawer"', ai_ar)
+        self.assertIn("مساعد DCR الهندسي الذكي", ai_ar)
+        self.assertIn("🔒 قراءة فقط", ai_ar)
+        self.assertIn("استفسارات سريعة:", ai_ar)
+        self.assertIn("📌 التقديمات المتأخرة", ai_ar)
+        self.assertIn("💵 إجمالي أوامر التغيير المعتمدة (NOC)", ai_ar)
+        self.assertIn("📊 ملخص حالات الوثائق", ai_ar)
+        self.assertIn("جاري استعلام السجلات والتحليل عبر Gemini Flash...", ai_ar)
+        self.assertIn("إجابات موثقة من بيانات السجلات فقط", ai_ar)
+
+        # Verify RTL drawer docking, resizer math, and FAB positioning rules
+        self.assertIn('html[dir="rtl"] #ai-assistant-drawer', ai_ar)
+        self.assertIn('html[dir="rtl"] .ai-drawer-resizer', ai_ar)
+        self.assertIn('html[dir="rtl"] #ai-fab-btn', ai_ar)
+        self.assertIn('transform: translateX(-100%)', ai_ar)
+        self.assertIn("const diff = isRtl ? (e.clientX - startX) : (startX - e.clientX);", ai_ar)
+        self.assertIn('_aiT(', ai_ar)
+
+    def test_admin_and_permissions_modals_en_and_ar(self):
+        shared_en = html_render._shared_js_html("en")
+        self.assertIn('id="admin-modal"', shared_en)
+        self.assertIn('id="permissions-modal"', shared_en)
+        self.assertIn("User Management & Access Control", shared_en)
+        self.assertIn("Scoped Multi-Workspace RBAC Active", shared_en)
+        self.assertIn("⚙ User Permissions", shared_en)
+        self.assertIn("Department Projects & Contracts", shared_en)
+        self.assertIn("Permissions are applied immediately.", shared_en)
+
+        shared_ar = html_render._shared_js_html("ar")
+        self.assertIn('window.DCR_LANG = "ar"', shared_ar)
+        self.assertIn('window.DCR_DIR = "rtl"', shared_ar)
+        self.assertIn("إدارة المستخدمين وصلاحيات الوصول", shared_ar)
+        self.assertIn("نظام التحكم في الصلاحيات متعدد الأقسام (RBAC) نشط", shared_ar)
+        self.assertIn("⚙ صلاحيات المستخدم", shared_ar)
+        self.assertIn("مشروعات وعقود القسم", shared_ar)
+        self.assertIn("ابحث في المشروعات أو العقود...", shared_ar)
+        self.assertIn("تحديد الكل", shared_ar)
+        self.assertIn("إلغاء تحديد الكل", shared_ar)
+        self.assertIn("يتم تطبيق الصلاحيات فوراً.", shared_ar)
+
+        # Verify client dictionary includes keys for Spotlight, AI Drawer, and Admin/Permissions
+        client_ar = i18n.get_client_dict("ar")
+        for required_key in (
+            "spotlight.scope_admin",
+            "spotlight.no_match_title",
+            "ai.title_eng",
+            "ai.title_om",
+            "ai.title_hse",
+            "ai.welcome_eng",
+            "admin.tab_users",
+            "admin.tab_depts",
+            "dept.enterprise_title",
+            "perm.modal_title_user",
+            "perm.dt_none",
+        ):
+            self.assertIn(required_key, client_ar)
+
+        # Verify RTL CSS rules in ADMIN_MODAL_CSS and BASE_CSS
+        self.assertIn('html[dir="rtl"] .user-tbl-th-actions', html_render.ADMIN_MODAL_CSS)
+        self.assertIn('html[dir="rtl"] .user-tbl-th-actions', html_render.BASE_CSS)
+
+    def test_dashboard_and_register_embed_localized_overlays_in_arabic(self):
+        user = {"username": "super_admin", "role": "superadmin"}
+        proj = {"id": "24CP01", "code": "24CP01", "name": "Alpha Plant", "workspace_id": "ENG"}
+        mock_workspaces = [
+            {"id": "ENG", "code": "ENG", "name": "Engineering & Projects", "name_ar": "المشروعات الهندسية", "icon": "🏗️"},
+        ]
+        with patch("db.get_user_workspaces", return_value=mock_workspaces), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.get_doc_types", return_value=[]), \
+             patch("db.get_logo", return_value=None), \
+             patch("html_render.can_edit", return_value=True):
+            dash_ar = html_render.render_dashboard(user, active_ws_id="ENG", lang="ar")
+            self.assertIn("ابحث في جميع المشروعات المتاحة (حرفان على الأقل)...", dash_ar)
+            self.assertIn("مساعد DCR الهندسي الذكي", dash_ar)
+            self.assertIn("إدارة المستخدمين وصلاحيات الوصول", dash_ar)
+
+            reg_ar = html_render.render_register(user, proj, active_ws_id="ENG", lang="ar")
+            self.assertIn('<html lang="ar" dir="rtl">', reg_ar)
+            self.assertIn("ابحث في جميع المشروعات المتاحة (حرفان على الأقل)...", reg_ar)
+            self.assertIn("مساعد DCR الهندسي الذكي", reg_ar)
+            self.assertIn("إدارة المستخدمين وصلاحيات الوصول", reg_ar)
+
+
 if __name__ == "__main__":
     unittest.main()

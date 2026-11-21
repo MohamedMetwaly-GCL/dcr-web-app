@@ -131,6 +131,38 @@ ABOUT_MODAL_HTML = _about_modal_html("en")
 GLOBAL_FOOTER_HTML = _global_footer_html("en")
 GLOBAL_SEARCH_TRIGGER_HTML = _global_search_trigger_html("en")
 
+def _spotlight_modal_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang or get_lang())
+    return (
+        SPOTLIGHT_MODAL_COMPONENT
+        .replace('placeholder="Search across all accessible projects (min. 2 chars)..."', f'placeholder="{t("spotlight.input_placeholder", norm)}"')
+        .replace('title="Clear search"', f'title="{t("spotlight.clear_title", norm)}"')
+        .replace('title="Close (Esc)"', f'title="{t("spotlight.close_title", norm)}"')
+        .replace('title="Filter by Project"', f'title="{t("spotlight.filter_project_title", norm)}"')
+        .replace('<option value="ALL">All Projects</option>', f'<option value="ALL">{t("spotlight.all_projects", norm)}</option>')
+        .replace('title="Filter by Status"', f'title="{t("spotlight.filter_status_title", norm)}"')
+        .replace('<option value="ALL">All Statuses</option>', f'<option value="ALL">{t("spotlight.all_statuses", norm)}</option>')
+        .replace('<option value="Approved">Approved</option>', f'<option value="Approved">{t("spotlight.status_approved", norm)}</option>')
+        .replace('<option value="Under Review">Under Review</option>', f'<option value="Under Review">{t("spotlight.status_under_review", norm)}</option>')
+        .replace('<option value="Revise & Resubmit">Revise & Resubmit</option>', f'<option value="Revise & Resubmit">{t("spotlight.status_revise", norm)}</option>')
+        .replace('<option value="Rejected">Rejected</option>', f'<option value="Rejected">{t("spotlight.status_rejected", norm)}</option>')
+        .replace('title="Date Range"', f'title="{t("spotlight.date_range_title", norm)}"')
+        .replace('title="From Date"', f'title="{t("spotlight.date_from_title", norm)}"')
+        .replace('title="To Date"', f'title="{t("spotlight.date_to_title", norm)}"')
+        .replace('title="Reset all filters">↺ Reset</button>', f'title="{t("spotlight.reset_title", norm)}">{t("spotlight.reset_btn", norm)}</button>')
+        .replace('>🔒 RBAC Scope</span>', f'>{t("spotlight.scope_rbac", norm)}</span>')
+        .replace('>Checking permissions...</span>', f'>{t("spotlight.scope_checking", norm)}</span>')
+        .replace('>0 found</div>', f'>{t("spotlight.count_zero", norm)}</div>')
+        .replace('>Instant Global Search</div>', f'>{t("spotlight.empty_title", norm)}</div>')
+        .replace('Type at least 2 characters to search across all accessible projects, document numbers, subjects, and statuses...', t("spotlight.empty_sub", norm))
+        .replace('<span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>', f'<span><kbd class="bidi-ltr">↑</kbd> <kbd class="bidi-ltr">↓</kbd> {t("spotlight.kbd_navigate", norm)}</span>')
+        .replace('<span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>', f'<span><kbd class="bidi-ltr">↑</kbd><kbd class="bidi-ltr">↓</kbd> {t("spotlight.kbd_navigate", norm)}</span>')
+        .replace('<span><kbd>↵</kbd> Open in new tab</span>', f'<span><kbd class="bidi-ltr">↵</kbd> {t("spotlight.kbd_open_tab", norm)}</span>')
+        .replace('<span><kbd>ESC</kbd> Close</span>', f'<span><kbd class="bidi-ltr">ESC</kbd> {t("spotlight.kbd_close", norm)}</span>')
+        .replace('>🔒 RBAC-Filtered Results</div>', f'>{t("spotlight.footer_rbac", norm)}</div>')
+    )
+
+
 SPOTLIGHT_MODAL_COMPONENT = r"""
 <!-- SPOTLIGHT / GLOBAL SEARCH COMPONENT -->
 <div class="overlay hidden" id="spotlight-modal" style="z-index: 10050;">
@@ -164,9 +196,9 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
       </div>
       <div class="spotlight-filter-group spotlight-dates-group">
         <span class="spotlight-filter-label" title="Date Range">📅</span>
-        <input type="date" id="spotlight-date-from" class="spotlight-date-input" title="From Date">
-        <span class="spotlight-date-sep">→</span>
-        <input type="date" id="spotlight-date-to" class="spotlight-date-input" title="To Date">
+        <input type="date" id="spotlight-date-from" class="spotlight-date-input bidi-ltr" title="From Date">
+        <span class="spotlight-date-sep rtl-flip">→</span>
+        <input type="date" id="spotlight-date-to" class="spotlight-date-input bidi-ltr" title="To Date">
       </div>
       <button type="button" id="spotlight-reset-filters" class="spotlight-reset-btn hidden" onclick="resetSpotlightFilters()" title="Reset all filters">↺ Reset</button>
     </div>
@@ -822,6 +854,29 @@ body.dark .spotlight-item-date, body.dark .result-date,
   color: var(--sl-kbd-text);
   margin-right: 3px;
 }
+
+/* RTL Layout Overrides for Global Spotlight Search */
+html[dir="rtl"] #spotlight-modal,
+html[dir="rtl"] .spotlight-palette {
+  direction: rtl;
+  text-align: right;
+}
+html[dir="rtl"] .spotlight-input {
+  text-align: right;
+}
+html[dir="rtl"] .spotlight-reset-btn {
+  margin-left: 0;
+  margin-right: auto;
+}
+html[dir="rtl"] .spotlight-item-meta {
+  margin-left: 0;
+  margin-right: 14px;
+  align-items: flex-start;
+}
+html[dir="rtl"] .spotlight-footer kbd {
+  margin-right: 0;
+  margin-left: 3px;
+}
 </style>
 
 <script>
@@ -838,6 +893,14 @@ const _spotlightState = {
 
 function _slEsc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function _slT(key, vars, fallback) {
+  if (typeof window.t === 'function') {
+    const res = window.t(key, vars);
+    if (res && res !== key) return res;
+  }
+  return fallback !== undefined ? fallback : key;
 }
 
 async function openGlobalSearch() {
@@ -969,15 +1032,17 @@ async function updateSpotlightContext() {
     const isAdmin = u.role === 'admin' || u.role === 'superadmin';
     if (isAdmin) {
       badgeEl.className = 'spotlight-scope-badge admin';
-      badgeEl.textContent = '👑 Admin Scope';
-      textEl.textContent = 'Searching across all projects (Admin)';
+      badgeEl.textContent = _slT('spotlight.scope_admin', null, '👑 Admin Scope');
+      textEl.textContent = _slT('spotlight.scope_admin_text', null, 'Searching across all projects (Admin)');
     } else {
       const pCount = (u.projects || []).length;
       badgeEl.className = 'spotlight-scope-badge';
-      badgeEl.textContent = '🔒 Assigned Scope';
+      badgeEl.textContent = _slT('spotlight.scope_assigned', null, '🔒 Assigned Scope');
       textEl.textContent = pCount > 0 
-        ? ('Searching in your ' + pCount + ' assigned project' + (pCount === 1 ? '' : 's'))
-        : 'No projects assigned (Results restricted)';
+        ? (pCount === 1
+            ? _slT('spotlight.scope_assigned_one', null, 'Searching in your 1 assigned project')
+            : _slT('spotlight.scope_assigned_many', { count: pCount }, 'Searching in your ' + pCount + ' assigned projects'))
+        : _slT('spotlight.scope_none', null, 'No projects assigned (Results restricted)');
     }
   }
 
@@ -992,7 +1057,10 @@ async function updateSpotlightContext() {
         projs = await apiFetch('/api/projects' + wsParam);
       }
       if (Array.isArray(projs) && projs.length > 0) {
-        projSelect.innerHTML = '<option value="ALL">All ' + (activeWs === 'OM' ? 'Contracts / Facilities' : 'Projects') + '</option>';
+        const allOptLabel = activeWs === 'OM'
+          ? _slT('spotlight.all_contracts_facilities', null, 'All Contracts / Facilities')
+          : _slT('spotlight.all_projects', null, 'All Projects');
+        projSelect.innerHTML = '<option value="ALL">' + _slEsc(allOptLabel) + '</option>';
         projs.forEach(p => {
           const opt = document.createElement('option');
           opt.value = p.id || p.code;
@@ -1048,17 +1116,17 @@ function handleSpotlightInput(val) {
       const badgeEl = document.getElementById('spotlight-scope-badge');
       const textEl = document.getElementById('spotlight-scope-text');
       if (data.user_scope === 'all') {
-        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge admin'; badgeEl.textContent = '👑 Admin Scope'; }
-        if (textEl) textEl.textContent = 'Searching across all projects (Admin)';
+        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge admin'; badgeEl.textContent = _slT('spotlight.scope_admin', null, '👑 Admin Scope'); }
+        if (textEl) textEl.textContent = _slT('spotlight.scope_admin_text', null, 'Searching across all projects (Admin)');
       } else if (data.user_scope === 'filtered') {
-        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge'; badgeEl.textContent = '🔒 Assigned Scope'; }
+        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge'; badgeEl.textContent = _slT('spotlight.scope_assigned', null, '🔒 Assigned Scope'); }
       }
 
       if (countEl) {
         if (_spotlightState.totalFound > _spotlightState.rawResults.length) {
-          countEl.textContent = _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found';
+          countEl.textContent = _slT('spotlight.count_of_total_found', { shown: _spotlightState.rawResults.length, total: _spotlightState.totalFound }, _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found');
         } else {
-          countEl.textContent = _spotlightState.rawResults.length + ' records found';
+          countEl.textContent = _slT('spotlight.count_records_found', { count: _spotlightState.rawResults.length }, _spotlightState.rawResults.length + ' records found');
         }
         countEl.classList.remove('hidden');
       }
@@ -1066,7 +1134,7 @@ function handleSpotlightInput(val) {
       renderSpotlightChips();
       filterSpotlightByChip('all');
     } catch(err) {
-      renderSpotlightError(err.message || 'Error executing search');
+      renderSpotlightError(err.message || _slT('spotlight.err_default', null, 'Error executing search'));
     } finally {
       if (spinner) spinner.style.display = 'none';
     }
@@ -1096,13 +1164,14 @@ function renderSpotlightChips() {
   const allChip = document.createElement('div');
   allChip.className = 'spotlight-chip ' + (_spotlightState.activeChip === 'all' ? 'active' : '');
   allChip.setAttribute('data-dt', 'all');
-  allChip.textContent = 'All (' + recs.length + (hasTruncated ? '+' : '') + ')';
+  const allCountStr = String(recs.length) + (hasTruncated ? '+' : '');
+  allChip.textContent = _slT('spotlight.chip_all', { count: allCountStr }, 'All (' + allCountStr + ')');
   allChip.onclick = () => filterSpotlightByChip('all');
   container.appendChild(allChip);
 
   sortedDts.forEach(dt => {
     const chip = document.createElement('div');
-    chip.className = 'spotlight-chip ' + (_spotlightState.activeChip === dt ? 'active' : '');
+    chip.className = 'spotlight-chip bidi-ltr ' + (_spotlightState.activeChip === dt ? 'active' : '');
     chip.setAttribute('data-dt', dt);
     chip.textContent = dt + ' (' + counts[dt] + (hasTruncated ? '+' : '') + ')';
     chip.onclick = () => filterSpotlightByChip(dt);
@@ -1149,7 +1218,8 @@ async function filterSpotlightByChip(dt) {
         }
 
         if (countEl) {
-          countEl.textContent = (data.total_found || data.results.length) + ' ' + dt + ' records found';
+          const dtTotal = data.total_found || data.results.length;
+          countEl.textContent = _slT('spotlight.count_dt_found', { count: dtTotal, dt: dt }, dtTotal + ' ' + dt + ' records found');
         }
       } else {
         _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
@@ -1164,15 +1234,15 @@ async function filterSpotlightByChip(dt) {
     _spotlightState.filteredResults = [..._spotlightState.rawResults];
     if (countEl) {
       if (_spotlightState.totalFound > _spotlightState.rawResults.length) {
-        countEl.textContent = _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found';
+        countEl.textContent = _slT('spotlight.count_of_total_found', { shown: _spotlightState.rawResults.length, total: _spotlightState.totalFound }, _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found');
       } else {
-        countEl.textContent = _spotlightState.rawResults.length + ' records found';
+        countEl.textContent = _slT('spotlight.count_records_found', { count: _spotlightState.rawResults.length }, _spotlightState.rawResults.length + ' records found');
       }
     }
   } else {
     _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
     if (countEl) {
-      countEl.textContent = _spotlightState.filteredResults.length + ' ' + dt + ' records';
+      countEl.textContent = _slT('spotlight.count_dt_records', { count: _spotlightState.filteredResults.length, dt: dt }, _spotlightState.filteredResults.length + ' ' + dt + ' records');
     }
   }
 
@@ -1186,14 +1256,14 @@ function renderSpotlightInitial() {
   container.innerHTML = `
     <div class="spotlight-empty-state">
       <div style="font-size: 28px; margin-bottom: 8px;">🔍</div>
-      <div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">Instant Global Search</div>
+      <div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">${_slEsc(_slT('spotlight.empty_title', null, 'Instant Global Search'))}</div>
       <div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px; max-width: 440px; margin-left: auto; margin-right: auto;">
-        Type at least 2 characters to search across document numbers, titles, subjects, descriptions, and statuses across your authorized projects.
+        ${_slEsc(_slT('spotlight.empty_initial_sub', null, 'Type at least 2 characters to search across document numbers, titles, subjects, descriptions, and statuses across your authorized projects.'))}
       </div>
       <div style="margin-top: 14px; display: inline-flex; gap: 8px; font-size: 11px; color: var(--sl-empty-sub);">
-        <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
-        <span><kbd>↵</kbd> Open in new tab</span>
-        <span><kbd>ESC</kbd> Close</span>
+        <span><kbd class="bidi-ltr">↑</kbd> <kbd class="bidi-ltr">↓</kbd> ${_slEsc(_slT('spotlight.kbd_navigate', null, 'Navigate'))}</span>
+        <span><kbd class="bidi-ltr">↵</kbd> ${_slEsc(_slT('spotlight.kbd_open_tab', null, 'Open in new tab'))}</span>
+        <span><kbd class="bidi-ltr">ESC</kbd> ${_slEsc(_slT('spotlight.kbd_close', null, 'Close'))}</span>
       </div>
     </div>
   `;
@@ -1202,7 +1272,7 @@ function renderSpotlightInitial() {
 function renderSpotlightError(msg) {
   const container = document.getElementById('spotlight-results');
   if (!container) return;
-  container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div><div style="font-weight: 600; font-size: 13px; color: #ef4444;">Search Error</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">' + _slEsc(msg) + '</div></div>';
+  container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div><div style="font-weight: 600; font-size: 13px; color: #ef4444;">' + _slEsc(_slT('spotlight.err_title', null, 'Search Error')) + '</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">' + _slEsc(msg) + '</div></div>';
 }
 
 function renderSpotlightResults() {
@@ -1211,7 +1281,9 @@ function renderSpotlightResults() {
   const rows = _spotlightState.filteredResults;
   if (!rows.length) {
     const q = document.getElementById('spotlight-input')?.value || '';
-    container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 26px; margin-bottom: 8px;">🔍</div><div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">No Matching Records Found</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">No records matched "' + _slEsc(q) + '" in your accessible projects.</div></div>';
+    const noMatchTitle = _slT('spotlight.no_match_title', null, 'No Matching Records Found');
+    const noMatchSub = _slT('spotlight.no_match_sub', { query: q }, 'No records matched "' + q + '" in your accessible projects.');
+    container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 26px; margin-bottom: 8px;">🔍</div><div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">' + _slEsc(noMatchTitle) + '</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">' + _slEsc(noMatchSub) + '</div></div>';
     return;
   }
 
@@ -1219,16 +1291,18 @@ function renderSpotlightResults() {
   rows.forEach((r, idx) => {
     const isHl = idx === _spotlightState.highlightIndex;
     const docNo = r.doc_no || '—';
-    const title = r.title || 'Untitled Document';
+    const title = r.title || _slT('spotlight.untitled_doc', null, 'Untitled Document');
     const dt = r.dt_id || 'DOC';
     const projCode = r.project_code || r.project_id || '';
     const projName = r.project_name || '';
     const status = r.status || '';
     const stBadge = getSpotlightStatusBadge(status);
-    const driveLink = r.drive_link ? ('<a class="spotlight-drive-link" href="' + _slEsc(r.drive_link) + '" target="_blank" onclick="event.stopPropagation()" title="Open attached Drive link">🔗</a>') : '';
+    const driveTitle = _slT('spotlight.open_drive_title', null, 'Open attached Drive link');
+    const driveLink = r.drive_link ? ('<a class="spotlight-drive-link" href="' + _slEsc(r.drive_link) + '" target="_blank" onclick="event.stopPropagation()" title="' + _slEsc(driveTitle) + '">🔗</a>') : '';
     const rawDate = String(r.doc_date || r.issued_date || '').trim();
     const docDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
-    const dateHtml = docDate ? ('<div class="result-date spotlight-item-date text-muted" style="font-size: 0.85em;" title="Submission Date"><i class="fas fa-calendar-alt"></i> ' + _slEsc(docDate) + '</div>') : '';
+    const dateTitle = _slT('spotlight.submission_date_title', null, 'Submission Date');
+    const dateHtml = docDate ? ('<div class="result-date spotlight-item-date text-muted" style="font-size: 0.85em;" title="' + _slEsc(dateTitle) + '"><i class="fas fa-calendar-alt"></i> <span class="bidi-ltr">' + _slEsc(docDate) + '</span></div>') : '';
 
     const item = document.createElement('div');
     item.className = 'spotlight-item ' + (isHl ? 'highlighted' : '');
@@ -1237,15 +1311,15 @@ function renderSpotlightResults() {
 
     item.innerHTML = '<div class="spotlight-item-main">' +
       '<div class="spotlight-item-header">' +
-        '<span class="spotlight-item-docno">' + _slEsc(docNo) + '</span>' +
-        '<span class="spotlight-item-dt">' + _slEsc(dt) + '</span>' +
+        '<span class="spotlight-item-docno bidi-ltr">' + _slEsc(docNo) + '</span>' +
+        '<span class="spotlight-item-dt bidi-ltr">' + _slEsc(dt) + '</span>' +
         stBadge +
       '</div>' +
-      '<div class="spotlight-item-title">' + _slEsc(title) + '</div>' +
+      '<div class="spotlight-item-title" dir="auto">' + _slEsc(title) + '</div>' +
       '<div class="spotlight-item-proj">' +
-        '<span class="spotlight-item-proj-code">' + _slEsc(projCode) + '</span>' +
+        '<span class="spotlight-item-proj-code bidi-ltr">' + _slEsc(projCode) + '</span>' +
         '<span>•</span>' +
-        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _slEsc(projName) + '</span>' +
+        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" dir="auto">' + _slEsc(projName) + '</span>' +
       '</div>' +
     '</div>' +
     '<div class="spotlight-item-meta">' +
@@ -1408,6 +1482,35 @@ if (document.readyState === 'loading') {
 }
 </script>
 """
+
+def _ai_drawer_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang or get_lang())
+    return (
+        AI_DRAWER_COMPONENT
+        .replace('title="DCR AI Assistant (Gemini Flash) — Drag to reposition"', f'title="{t("ai.fab_title", norm)}"')
+        .replace('aria-label="Open AI Assistant"', f'aria-label="{t("ai.fab_aria", norm)}"')
+        .replace('<span class="ai-fab-text">AI</span>', f'<span class="ai-fab-text">{t("ai.fab_text", norm)}</span>')
+        .replace('aria-label="DCR AI Assistant"', f'aria-label="{t("ai.drawer_aria", norm)}"')
+        .replace('title="Drag horizontally to resize width"', f'title="{t("ai.resizer_title", norm)}"')
+        .replace('<span class="ai-drawer-badge">✨ Gemini Flash</span>', f'<span class="ai-drawer-badge">{t("ai.badge_gemini", norm)}</span>')
+        .replace('<span class="ai-drawer-readonly">🔒 Read-Only</span>', f'<span class="ai-drawer-readonly">{t("ai.badge_readonly", norm)}</span>')
+        .replace('<div class="ai-drawer-title">DCR Engineering Assistant</div>', f'<div class="ai-drawer-title">{t("ai.title_eng", norm)}</div>')
+        .replace('>Scope: Detecting...</div>', f'>{t("ai.scope_detecting", norm)}</div>')
+        .replace('title="Maximize / Restore width"', f'title="{t("ai.btn_expand_title", norm)}"')
+        .replace('title="Clear Chat History"', f'title="{t("ai.btn_clear_title", norm)}"')
+        .replace('title="Close (Esc)"', f'title="{t("ai.btn_close_title", norm)}"')
+        .replace('<div class="ai-quick-label">Quick Queries:</div>', f'<div class="ai-quick-label">{t("ai.quick_label", norm)}</div>')
+        .replace('>📌 Overdue Submittals</button>', f'>{t("ai.chip_eng_overdue", norm)}</button>')
+        .replace('>💵 Approved NOCs Total</button>', f'>{t("ai.chip_eng_noc", norm)}</button>')
+        .replace('>📊 Status Summary</button>', f'>{t("ai.chip_eng_status", norm)}</button>')
+        .replace('>Querying registers & analyzing with Gemini Flash...</span>', f'>{t("ai.loading_text", norm)}</span>')
+        .replace('placeholder="Ask about submittals, NOCs, costs, or document statuses..."', f'placeholder="{t("ai.placeholder_eng", norm)}"')
+        .replace('title="Send (Enter)"', f'title="{t("ai.send_title", norm)}"')
+        .replace('<span><kbd>↵</kbd> Send</span>', f'<span><kbd class="bidi-ltr">↵</kbd> {t("ai.hint_send", norm)}</span>')
+        .replace('<span><kbd>Shift+↵</kbd> New line</span>', f'<span><kbd class="bidi-ltr">Shift+↵</kbd> {t("ai.hint_newline", norm)}</span>')
+        .replace('<span class="ai-foot-sec">Factual responses from register data only</span>', f'<span class="ai-foot-sec">{t("ai.hint_factual", norm)}</span>')
+    )
+
 
 AI_DRAWER_COMPONENT = r"""
 <!-- DCR AI ASSISTANT COMPONENT -->
@@ -2159,6 +2262,56 @@ body.dark .ai-foot-hint kbd,
   font-style: italic;
   font-size: 9.5px;
 }
+
+/* RTL Layout Overrides for AI Assistant Drawer & FAB */
+html[dir="rtl"] #ai-fab-btn {
+  right: auto;
+  left: 18px;
+}
+html[dir="rtl"] #ai-assistant-drawer {
+  right: auto;
+  left: 0;
+  box-shadow: 10px 0 35px rgba(0, 0, 0, 0.25);
+  transform: translateX(-100%);
+  font-family: 'Cairo', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  direction: rtl;
+  text-align: right;
+}
+html[dir="rtl"] #ai-assistant-drawer:not(.hidden) {
+  transform: translateX(0);
+}
+html[dir="rtl"] #ai-assistant-drawer.hidden {
+  transform: translateX(-100%);
+}
+html[dir="rtl"] body.dark .ai-assistant-drawer,
+html[dir="rtl"] .ai-assistant-drawer.dark-theme {
+  border-left: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+html[dir="rtl"] .ai-drawer-resizer {
+  left: auto;
+  right: -4px;
+}
+html[dir="rtl"] .ai-quick-label {
+  letter-spacing: 0;
+}
+html[dir="rtl"] .ai-msg.user .ai-msg-bubble {
+  border-radius: 14px 14px 14px 3px;
+}
+html[dir="rtl"] .ai-msg.assistant .ai-msg-bubble {
+  border-radius: 14px 14px 3px 14px;
+}
+html[dir="rtl"] .ai-msg.assistant .ai-msg-bubble ul,
+html[dir="rtl"] .ai-msg.assistant .ai-msg-bubble ol {
+  margin: 4px 18px 8px 0;
+}
+html[dir="rtl"] .ai-msg.assistant .ai-msg-bubble pre {
+  direction: ltr;
+  text-align: left;
+}
+html[dir="rtl"] .ai-send-btn svg {
+  transform: scaleX(-1);
+}
 </style>
 
 <script>
@@ -2169,6 +2322,14 @@ const _aiAssistantState = {
   activeProjectId: null,
   activeProjectCode: null
 };
+
+function _aiT(key, vars, fallback) {
+  if (typeof window.t === 'function') {
+    const res = window.t(key, vars);
+    if (res && res !== key) return res;
+  }
+  return fallback !== undefined ? fallback : key;
+}
 
 function _aiEscape(str) {
   return String(str || '')
@@ -2316,30 +2477,45 @@ function updateAiScopeBadge() {
   const chipsEl = document.querySelector('.ai-quick-chips');
   const activeWs = resolveActiveWorkspace();
   const isOM = activeWs === 'OM';
+  const isHSE = activeWs === 'HSE';
 
   if (titleEl) {
-    titleEl.textContent = isOM ? 'DCR O&M Assistant' : (activeWs === 'ENG' ? 'DCR Engineering Assistant' : `DCR ${activeWs} Assistant`);
+    titleEl.textContent = isHSE
+      ? _aiT('ai.title_hse', null, 'DCR HSE Safety Assistant')
+      : (isOM
+          ? _aiT('ai.title_om', null, 'DCR O&M Assistant')
+          : (activeWs === 'ENG'
+              ? _aiT('ai.title_eng', null, 'DCR Engineering Assistant')
+              : _aiT('ai.title_ws', { ws: activeWs }, `DCR ${activeWs} Assistant`)));
   }
 
   const promptInput = document.getElementById('ai-prompt-input');
   if (promptInput) {
-    promptInput.placeholder = isOM 
-      ? 'Ask about work orders, PPM schedules, maintenance requests, SLA...' 
-      : 'Ask about submittals, NOCs, costs, or document statuses...';
+    promptInput.placeholder = isHSE
+      ? _aiT('ai.placeholder_hse', null, 'Ask about HSE KPIs, permits (PTW), fire equipment (FEI), or safety compliance...')
+      : (isOM
+          ? _aiT('ai.placeholder_om', null, 'Ask about work orders, PPM schedules, maintenance requests, SLA...')
+          : _aiT('ai.placeholder_eng', null, 'Ask about submittals, NOCs, costs, or document statuses...'));
   }
 
   if (chipsEl) {
-    if (isOM) {
+    if (isHSE) {
       chipsEl.innerHTML = `
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the summary of maintenance contracts, facilities, and active work orders?')">⚡ Maintenance Summary</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all open or pending Work Orders (WO) and maintenance requests.')">📌 Open Work Orders</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show Preventive Maintenance (PPM) schedule and SLA compliance status.')">📊 PPM & SLA Status</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show current HSE KPIs, LTI-Free streak, LTIF, and TRIR.')">${_aiEscape(_aiT('ai.chip_hse_kpis', null, '🛡️ HSE KPIs & Rates'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all expiring permits (PTW) and fire extinguishers (FEI) within 30 days.')">${_aiEscape(_aiT('ai.chip_hse_expiring', null, '⚠️ Expiring PTW / FEI'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Draft an HSE safety violation NCR per OSHA and Egyptian Decision 211.')">${_aiEscape(_aiT('ai.chip_hse_ncr', null, '📝 Draft Safety NCR'))}</button>
+      `;
+    } else if (isOM) {
+      chipsEl.innerHTML = `
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the summary of maintenance contracts, facilities, and active work orders?')">${_aiEscape(_aiT('ai.chip_om_summary', null, '⚡ Maintenance Summary'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all open or pending Work Orders (WO) and maintenance requests.')">${_aiEscape(_aiT('ai.chip_om_wo', null, '📌 Open Work Orders'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show Preventive Maintenance (PPM) schedule and SLA compliance status.')">${_aiEscape(_aiT('ai.chip_om_ppm', null, '📊 PPM & SLA Status'))}</button>
       `;
     } else {
       chipsEl.innerHTML = `
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all overdue submittals and their delay days.')">📌 Overdue Submittals</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the total approved cost for Notice of Change (NOCs) and list the approved items?')">💵 Approved NOCs Total</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Provide a complete status breakdown of documents across the project registers.')">📊 Status Summary</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all overdue submittals and their delay days.')">${_aiEscape(_aiT('ai.chip_eng_overdue', null, '📌 Overdue Submittals'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the total approved cost for Notice of Change (NOCs) and list the approved items?')">${_aiEscape(_aiT('ai.chip_eng_noc', null, '💵 Approved NOCs Total'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Provide a complete status breakdown of documents across the project registers.')">${_aiEscape(_aiT('ai.chip_eng_status', null, '📊 Status Summary'))}</button>
       `;
     }
   }
@@ -2353,9 +2529,11 @@ function updateAiScopeBadge() {
       const titleSpan = topbarInfo.querySelector('span') || topbarInfo;
       projName = titleSpan.textContent.trim() || pid;
     }
-    scopeEl.textContent = 'Active Project: ' + projName;
+    scopeEl.textContent = _aiT('ai.scope_active_project', { name: projName }, 'Active Project: ' + projName);
   } else {
-    scopeEl.textContent = isOM ? 'Scope: O&M Contracts & Facilities' : 'Scope: All Authorized Projects (Global)';
+    scopeEl.textContent = isOM
+      ? _aiT('ai.scope_om', null, 'Scope: O&M Contracts & Facilities')
+      : _aiT('ai.scope_global', null, 'Scope: All Authorized Projects (Global)');
   }
 }
 
@@ -2373,7 +2551,7 @@ function openAiDrawer() {
     if (localStorage.getItem('ai_drawer_expanded') === '1') {
       drawer.classList.add('expanded');
       const expBtn = document.getElementById('ai-expand-btn');
-      if (expBtn) { expBtn.textContent = '🗗'; expBtn.title = 'Restore normal width'; }
+      if (expBtn) { expBtn.textContent = '🗗'; expBtn.title = _aiT('ai.btn_expand_restore', null, 'Restore normal width'); }
     }
   } catch (e) {}
 
@@ -2394,20 +2572,12 @@ function openAiDrawer() {
   _aiAssistantState.currentWs = currentWs;
 
   const titleEl = document.querySelector('#ai-assistant-drawer .ai-drawer-title');
-  const chipsEl = document.querySelector('#ai-assistant-drawer .ai-quick-chips');
   if (currentWs === 'HSE') {
-    if (titleEl) titleEl.textContent = 'DCR HSE Safety Assistant';
-    if (chipsEl) {
-      chipsEl.innerHTML = `
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show current HSE KPIs, LTI-Free streak, LTIF, and TRIR.')">🛡️ HSE KPIs &amp; Rates</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all expiring permits (PTW) and fire extinguishers (FEI) within 30 days.')">⚠️ Expiring PTW / FEI</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Draft an HSE safety violation NCR per OSHA and Egyptian Decision 211.')">📝 Draft Safety NCR</button>
-      `;
-    }
+    if (titleEl) titleEl.textContent = _aiT('ai.title_hse', null, 'DCR HSE Safety Assistant');
   } else if (currentWs === 'OM') {
-    if (titleEl) titleEl.textContent = 'DCR O&M Assistant';
+    if (titleEl) titleEl.textContent = _aiT('ai.title_om', null, 'DCR O&M Assistant');
   } else {
-    if (titleEl) titleEl.textContent = 'DCR Engineering Assistant';
+    if (titleEl) titleEl.textContent = _aiT('ai.title_eng', null, 'DCR Engineering Assistant');
   }
 
   updateAiScopeBadge();
@@ -2450,7 +2620,7 @@ function toggleAiDrawerExpand() {
   const isExp = drawer.classList.contains('expanded');
   if (btn) {
     btn.textContent = isExp ? '🗗' : '⛶';
-    btn.title = isExp ? 'Restore normal width' : 'Maximize width (920px)';
+    btn.title = isExp ? _aiT('ai.btn_expand_restore', null, 'Restore normal width') : _aiT('ai.btn_expand_max', null, 'Maximize width (920px)');
   }
   try {
     localStorage.setItem('ai_drawer_expanded', isExp ? '1' : '0');
@@ -2483,7 +2653,8 @@ function initAiDrawerResizer() {
 
   window.addEventListener('mousemove', function(e) {
     if (!isResizing) return;
-    const diff = startX - e.clientX;
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    const diff = isRtl ? (e.clientX - startX) : (startX - e.clientX);
     const newWidth = Math.min(Math.max(startWidth + diff, 420), window.innerWidth - 20);
     drawer.style.width = newWidth + 'px';
   });
@@ -2512,31 +2683,31 @@ function initAiWelcomeMessage() {
   const isHSE = activeWs === 'HSE';
   let welcomeText = '';
   if (isHSE) {
-    welcomeText =
+    welcomeText = _aiT('ai.welcome_hse', null,
       "Hello! I am your **DCR HSE Safety & Compliance Assistant** powered by Gemini Flash.\n\n" +
       "I have real-time, RBAC-scoped access to your authorized HSE sites and can help with:\n" +
       "- 🛡️ **Safety KPIs & Streaks:** LTI-Free Days, LTIF, TRIR, Severity Rate & Man-Hours\n" +
       "- ⚠️ **Permits & Equipment Alerts:** Overdue/expiring PTWs, FEI extinguishers & stale observations\n" +
       "- ⚖️ **Compliance & NCR Drafting:** OSHA 29 CFR 1910/1926, NFPA 10/51B & Egyptian Labor Law Decision 211/2003\n\n" +
-      "*How can I help keep your sites safe today?*";
+      "*How can I help keep your sites safe today?*");
   } else if (isOM) {
-    welcomeText = 
+    welcomeText = _aiT('ai.welcome_om', null,
       "Hello! I am your **DCR Operation & Maintenance (O&M) AI Assistant** powered by Gemini Flash.\n\n" +
       "I have real-time, read-only access to your maintenance contracts, facilities, and registers:\n" +
       "- ⚙️ **Work Orders (WO)** and Maintenance Requests (MR)\n" +
       "- 📅 **Preventive Maintenance (PPM)** schedules & Corrective Maintenance (CM)\n" +
       "- 📊 **SLA Compliance & Service Reports**\n" +
       "- 🔍 **Contract submittals & incident logs**\n\n" +
-      "*How can I assist you with your maintenance contracts today?*";
+      "*How can I assist you with your maintenance contracts today?*");
   } else {
-    welcomeText = 
+    welcomeText = _aiT('ai.welcome_eng', null,
       "Hello! I am your **DCR Engineering AI Assistant** powered by Gemini Flash.\n\n" +
       "I have real-time, read-only access to your authorized project registers and can help you with:\n" +
       "- 📌 **Overdue submittals** and delay days\n" +
       "- 💵 **Notice of Change (NOC)** cost totals and approvals\n" +
       "- 📊 **Register status breakdowns** (Approved, Under Review, Rejected)\n" +
       "- 🔍 **Specific document numbers** or disciplines\n\n" +
-      "*How can I assist you today?*";
+      "*How can I assist you today?*");
   }
   appendAiMessage('assistant', welcomeText);
 }
@@ -2568,7 +2739,8 @@ function appendAiMessage(role, text) {
 
   const timeDiv = document.createElement('div');
   timeDiv.className = 'ai-msg-time';
-  timeDiv.textContent = (role === 'user' ? 'You • ' : 'Gemini • ') + timeStr;
+  const senderLbl = role === 'user' ? _aiT('ai.sender_you', null, 'You') : _aiT('ai.sender_gemini', null, 'Gemini');
+  timeDiv.textContent = senderLbl + ' • ' + timeStr;
 
   msgDiv.appendChild(bubbleDiv);
   msgDiv.appendChild(timeDiv);
@@ -2643,25 +2815,27 @@ async function sendAiPrompt(promptText) {
     console.log('AI Response:', res.status, data);
 
     if (res.status === 503) {
-      appendAiMessage('assistant', '⚠️ **AI Assistant is not configured on this instance.**\n\nPlease configure the `GEMINI_API_KEY` environment variable on Railway to enable Gemini Flash.');
+      appendAiMessage('assistant', _aiT('ai.err_503', null, '⚠️ **AI Assistant is not configured on this instance.**\n\nPlease configure the `GEMINI_API_KEY` environment variable on Railway to enable Gemini Flash.'));
     } else if (res.status === 403) {
-      appendAiMessage('assistant', '🔒 **Authentication Required.**\n\nYour session may have expired. Please refresh the page and log in.');
+      appendAiMessage('assistant', _aiT('ai.err_403', null, '🔒 **Authentication Required.**\n\nYour session may have expired. Please refresh the page and log in.'));
     } else if (data.error) {
-      appendAiMessage('assistant', '⚠️ **AI Service Error:** ' + data.error);
+      appendAiMessage('assistant', _aiT('ai.err_service', { error: data.error }, '⚠️ **AI Service Error:** ' + data.error));
     } else if (!res.ok) {
-      appendAiMessage('assistant', '⚠️ **Error (' + res.status + '):** ' + (data.error || 'Server error'));
+      const srvErr = data.error || _aiT('ai.err_server', null, 'Server error');
+      appendAiMessage('assistant', _aiT('ai.err_http', { status: res.status, error: srvErr }, '⚠️ **Error (' + res.status + '):** ' + srvErr));
     } else if (data.reply) {
       appendAiMessage('assistant', data.reply);
     } else {
-      appendAiMessage('assistant', '⚠️ Received empty response from AI service.');
+      appendAiMessage('assistant', _aiT('ai.err_empty', null, '⚠️ Received empty response from AI service.'));
     }
   } catch(err) {
     clearTimeout(timeoutId);
     console.error('Fetch error:', err);
     if (err && (err.name === 'AbortError' || err.code === 20)) {
-      appendAiMessage('assistant', '⏱️ **Request Timed Out (60s):** Analysis took too long. Please retry with a simpler query.');
+      appendAiMessage('assistant', _aiT('ai.err_timeout', null, '⏱️ **Request Timed Out (60s):** Analysis took too long. Please retry with a simpler query.'));
     } else {
-      appendAiMessage('assistant', '⚠️ **Network Error:** ' + (err.message || 'Could not reach AI Assistant endpoint.'));
+      const netErr = err.message || _aiT('ai.err_unreachable', null, 'Could not reach AI Assistant endpoint.');
+      appendAiMessage('assistant', _aiT('ai.err_network', { error: netErr }, '⚠️ **Network Error:** ' + netErr));
     }
   } finally {
     clearTimeout(timeoutId);
@@ -2824,14 +2998,20 @@ function _initAiFabDraggable() {
     }
   }, true);
 
-  // Double click resets position to default bottom-right
+  // Double click resets position to default bottom-right (or bottom-left in RTL)
   btn.addEventListener('dblclick', function(e) {
     e.preventDefault();
     e.stopPropagation();
     try { localStorage.removeItem('dcr_ai_fab_pos'); } catch (err) {}
-    btn.style.removeProperty('left');
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
     btn.style.removeProperty('top');
-    btn.style.setProperty('right', '18px', 'important');
+    if (isRtl) {
+      btn.style.removeProperty('right');
+      btn.style.setProperty('left', '18px', 'important');
+    } else {
+      btn.style.removeProperty('left');
+      btn.style.setProperty('right', '18px', 'important');
+    }
     btn.style.setProperty('bottom', '28px', 'important');
     btn.style.setProperty('width', 'max-content', 'important');
   });
@@ -4462,9 +4642,15 @@ html[dir="rtl"] .perm-table,
 html[dir="rtl"] .perm-table th {
   text-align: right;
 }
+html[dir="rtl"] .user-tbl th {
+  letter-spacing: 0 !important;
+}
+html[dir="rtl"] .user-tbl-th-actions {
+  text-align: left !important;
+}
 html[dir="rtl"] .u-avatar {
-  margin-right: 0;
-  margin-left: 8px;
+  margin-right: 0 !important;
+  margin-left: 10px !important;
 }
 html[dir="rtl"] .about-tech-list {
   padding-left: 0 !important;
@@ -4523,7 +4709,20 @@ try {{
 }} catch(e) {{}}
 </script>
 """
-    return i18n_boot + SHARED_JS
+    localized_shared = (
+        SHARED_JS
+        .replace('<strong style="font-size:14px;">User Management & Access Control</strong>', f'<strong style="font-size:14px;">{t("admin.modal_title", norm)}</strong>')
+        .replace('<div style="font-size:11px; color:var(--mu);">Scoped Multi-Workspace RBAC Active</div>', f'<div style="font-size:11px; color:var(--mu);">{t("admin.rbac_active", norm)}</div>')
+        .replace('<button class="btn btn-sc" onclick="closeM(\'admin-modal\')">Close</button>', f'<button class="btn btn-sc" onclick="closeM(\'admin-modal\')">{t("common.close", norm)}</button>')
+        .replace('id="perm-title">⚙ User Permissions</div>', f'id="perm-title">{t("perm.modal_title_default", norm)}</div>')
+        .replace('id="perm-subtitle">Department Projects & Contracts</div>', f'id="perm-subtitle">{t("perm.modal_sub_default", norm)}</div>')
+        .replace('id="perm-search" placeholder="Search projects/contracts..."', f'id="perm-search" placeholder="{t("perm.search_placeholder", norm)}"')
+        .replace('onclick="permSelectAll(event)">Select All</a>', f'onclick="permSelectAll(event)">{t("perm.select_all", norm)}</a>')
+        .replace('onclick="permClearAll(event)">Clear All</a>', f'onclick="permClearAll(event)">{t("perm.clear_all", norm)}</a>')
+        .replace('id="perm-save-status" style="font-size:11px; color:var(--mu);">Permissions are applied immediately.</div>', f'id="perm-save-status" style="font-size:11px; color:var(--mu);">{t("perm.status_immediate", norm)}</div>')
+        .replace('<button class="btn btn-sc" onclick="closeM(\'permissions-modal\')">Done</button>', f'<button class="btn btn-sc" onclick="closeM(\'permissions-modal\')">{t("common.done", norm)}</button>')
+    )
+    return i18n_boot + localized_shared
 
 
 SHARED_JS = """
@@ -4658,6 +4857,24 @@ function escHtml(v){
     .replaceAll('"','&quot;')
     .replaceAll("'",'&#39;');
 }
+function _admT(key, vars, fallback) {
+  if (typeof window.t === 'function') {
+    const res = window.t(key, vars);
+    if (res && res !== key) return res;
+  }
+  return fallback !== undefined ? fallback : key;
+}
+function _admWsLabel(w) {
+  if (!w) return '';
+  const isAr = (window.DCR_LANG === 'ar' || document.documentElement.getAttribute('lang') === 'ar');
+  if (isAr) {
+    if (w.name_ar) return w.name_ar;
+    const idUp = String(w.id || w.code || '').toUpperCase();
+    const tName = _admT('ws.' + idUp + '.name', null, '');
+    if (tName) return tName;
+  }
+  return w.name || w.code || w.id || '';
+}
 
 // ── Unified Multi-Workspace Enterprise Admin Panel ─────────────────────────
 window._ADMIN_DATA = { users: [], projects: [], workspaces: [], whoami: {} };
@@ -4694,10 +4911,10 @@ async function openAdmin() {
       tabNav.style.cssText = 'display:flex;gap:4px;padding:8px 18px 0;background:var(--surface);border-bottom:1px solid var(--bd);';
       tabNav.innerHTML = `
         <button id="admin-tab-btn-users" class="tb-btn active" onclick="switchAdminTab('users')" style="padding:6px 14px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--pr);background:transparent;cursor:pointer;color:var(--tx);border-radius:0;">
-          👥 Users & Access Control
+          ${escHtml(_admT('admin.tab_users', null, '👥 Users & Access Control'))}
         </button>
         <button id="admin-tab-btn-depts" class="tb-btn" onclick="switchAdminTab('depts')" style="padding:6px 14px;font-size:12px;font-weight:600;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:var(--mu);border-radius:0;">
-          🏢 Departments & Workspaces
+          ${escHtml(_admT('admin.tab_depts', null, '🏢 Departments & Workspaces'))}
         </button>
       `;
       body.appendChild(tabNav);
@@ -4717,36 +4934,36 @@ async function openAdmin() {
     const toolbar = document.createElement('div');
     toolbar.className = 'admin-toolbar';
     
-    let deptOptions = '<option value="">All Departments</option>';
+    let deptOptions = `<option value="">${escHtml(_admT('admin.all_depts_opt', null, 'All Departments'))}</option>`;
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-      const label = w.name || w.code || w.id;
-      deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+      const label = _admWsLabel(w);
+      deptOptions += `<option value="${escHtml(w.id)}">${escHtml(icon)} ${escHtml(label)}</option>`;
     });
     
     toolbar.innerHTML = `
       <div class="admin-toolbar-left" style="display:flex;align-items:center;gap:8px;flex:1 1 auto;flex-wrap:wrap;">
-        <input type="text" id="admin-user-search" class="tbl-input" placeholder="🔍 Search by user or email..." style="width:220px;padding:6px 10px;font-size:11.5px;" oninput="renderAdminTable()">
+        <input type="text" id="admin-user-search" class="tbl-input" placeholder="${escHtml(_admT('admin.search_placeholder', null, '🔍 Search by user or email...'))}" style="width:220px;padding:6px 10px;font-size:11.5px;" oninput="renderAdminTable()">
         <select id="admin-dept-filter" class="tbl-select" style="padding:6px 10px;font-weight:600;min-width:180px;font-size:11.5px;" onchange="renderAdminTable()">
           ${deptOptions}
         </select>
         <select id="admin-role-filter" class="tbl-select" style="padding:6px 10px;font-weight:600;min-width:110px;font-size:11.5px;" onchange="renderAdminTable()">
-          <option value="">All Roles</option>
-          ${isSuper ? '<option value="superadmin">Super Admin</option>' : ''}
-          <option value="admin">Admin</option>
-          <option value="editor">Editor</option>
-          <option value="viewer">Viewer</option>
+          <option value="">${escHtml(_admT('admin.all_roles_opt', null, 'All Roles'))}</option>
+          ${isSuper ? `<option value="superadmin">${escHtml(_admT('admin.role_superadmin', null, 'Super Admin'))}</option>` : ''}
+          <option value="admin">${escHtml(_admT('admin.role_admin', null, 'Admin'))}</option>
+          <option value="editor">${escHtml(_admT('admin.role_editor', null, 'Editor'))}</option>
+          <option value="viewer">${escHtml(_admT('admin.role_viewer', null, 'Viewer'))}</option>
         </select>
       </div>
       <div class="admin-toolbar-right" style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
         <button class="btn btn-pr btn-sm" onclick="toggleAddUserCard()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;font-weight:600;">
-          <span>➕</span><span>Add User</span>
+          <span>➕</span><span>${escHtml(_admT('admin.btn_add_user', null, 'Add User'))}</span>
         </button>
-        <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
-          <span>📥</span><span>Export Matrix</span>
+        <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="${escHtml(_admT('admin.btn_export_matrix_title', null, 'Export Users Matrix to Excel/CSV'))}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
+          <span>📥</span><span>${escHtml(_admT('admin.btn_export_matrix', null, 'Export Matrix'))}</span>
         </button>
-        <button class="btn btn-sc btn-sm" onclick="toggleAuditCard()" title="Detect Sequence Gaps" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
-          <span>🔍</span><span>Gap Audit</span>
+        <button class="btn btn-sc btn-sm" onclick="toggleAuditCard()" title="${escHtml(_admT('admin.btn_gap_audit_title', null, 'Detect Sequence Gaps'))}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
+          <span>🔍</span><span>${escHtml(_admT('admin.btn_gap_audit', null, 'Gap Audit'))}</span>
         </button>
       </div>
     `;
@@ -4761,32 +4978,32 @@ async function openAdmin() {
     let addDeptOptions = '';
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-      const label = w.name || w.code || w.id;
-      addDeptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+      const label = _admWsLabel(w);
+      addDeptOptions += `<option value="${escHtml(w.id)}">${escHtml(icon)} ${escHtml(label)}</option>`;
     });
     
     addCard.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <strong style="font-size:13px;color:var(--tx);">➕ Add New User</strong>
-        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAddUserCard();">Close ✕</a>
+        <strong style="font-size:13px;color:var(--tx);">${escHtml(_admT('admin.add_user_title', null, '➕ Add New User'))}</strong>
+        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAddUserCard();">${escHtml(_admT('admin.close_x', null, 'Close ✕'))}</a>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)) auto;gap:8px;align-items:end;">
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Username</label><input id="nu-name" class="tbl-input" placeholder="username" autocomplete="off"></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Email</label><input id="nu-email" class="tbl-input" placeholder="user@company.com"></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Department</label><select id="nu-dept" class="tbl-select" style="width:100%">${addDeptOptions}</select></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Role</label><select id="nu-role" class="tbl-select" style="width:100%">
-          <option value="editor">Editor</option>
-          <option value="viewer">Viewer</option>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_username', null, 'Username'))}</label><input id="nu-name" class="tbl-input bidi-ltr" placeholder="${escHtml(_admT('admin.ph_username', null, 'username'))}" autocomplete="off"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_email', null, 'Email'))}</label><input id="nu-email" class="tbl-input bidi-ltr" placeholder="${escHtml(_admT('admin.ph_email', null, 'user@company.com'))}"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_department', null, 'Department'))}</label><select id="nu-dept" class="tbl-select" style="width:100%">${addDeptOptions}</select></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_role', null, 'Role'))}</label><select id="nu-role" class="tbl-select" style="width:100%">
+          <option value="editor">${escHtml(_admT('admin.role_editor', null, 'Editor'))}</option>
+          <option value="viewer">${escHtml(_admT('admin.role_viewer', null, 'Viewer'))}</option>
           ${isSuper ? '<option value="admin">Admin</option><option value="superadmin">Super Admin</option>' : ''}
         </select></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Password</label><input id="nu-pw" type="password" class="tbl-input" placeholder="••••••••"></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Downloads</label>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_password', null, 'Password'))}</label><input id="nu-pw" type="password" class="tbl-input bidi-ltr" placeholder="••••••••"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_downloads', null, 'Downloads'))}</label>
           <label style="display:flex;align-items:center;gap:4px;height:28px;font-size:11px;font-weight:600;cursor:pointer;background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1);padding:0 8px;border-radius:4px;">
             <input type="checkbox" id="nu-can-dl" style="cursor:pointer;margin:0;">
-            <span>Allow 📥</span>
+            <span>${escHtml(_admT('admin.lbl_allow_dl', null, 'Allow 📥'))}</span>
           </label>
         </div>
-        <button class="btn btn-pr btn-sm" onclick="submitAddUser()" style="height:30px;padding:0 12px;">Create</button>
+        <button class="btn btn-pr btn-sm" onclick="submitAddUser()" style="height:30px;padding:0 12px;">${escHtml(_admT('common.create', null, 'Create'))}</button>
       </div>
     `;
     usersView.appendChild(addCard);
@@ -4797,22 +5014,22 @@ async function openAdmin() {
     auditCard.className = 'add-user-card';
     auditCard.style.display = 'none';
     
-    let auditProjOptions = _ADMIN_DATA.projects.map(p => `<option value="${p.id}">${p.code} - ${escHtml(p.name)}</option>`).join('');
+    let auditProjOptions = _ADMIN_DATA.projects.map(p => `<option value="${escHtml(p.id)}">${escHtml(p.code)} - ${escHtml(p.name)}</option>`).join('');
     auditCard.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <strong style="font-size:13px;color:var(--tx);">Global Sequence Gap Audit</strong>
-        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAuditCard();">Close ✕</a>
+        <strong style="font-size:13px;color:var(--tx);">${escHtml(_admT('admin.audit_title', null, 'Global Sequence Gap Audit'))}</strong>
+        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAuditCard();">${escHtml(_admT('admin.close_x', null, 'Close ✕'))}</a>
       </div>
-      <p style="font-size:11px;color:var(--mu);margin-bottom:10px;">Detect missing sequence numbers (gaps) in document logs for any project.</p>
+      <p style="font-size:11px;color:var(--mu);margin-bottom:10px;">${escHtml(_admT('admin.audit_desc', null, 'Detect missing sequence numbers (gaps) in document logs for any project.'))}</p>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <select id="audit-proj" class="tbl-select" style="min-width:180px;">
-          <option value="">Select Project</option>
+          <option value="">${escHtml(_admT('admin.audit_select_proj', null, 'Select Project'))}</option>
           ${auditProjOptions}
         </select>
         <select id="audit-dt" class="tbl-select" style="min-width:180px;">
-          <option value="">Select Doc Type</option>
+          <option value="">${escHtml(_admT('admin.audit_select_dt', null, 'Select Doc Type'))}</option>
         </select>
-        <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
+        <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">${escHtml(_admT('admin.audit_run_btn', null, 'Run Audit'))}</button>
       </div>
       <div id="audit-result" style="font-size:11px;margin-top:10px;"></div>
     `;
@@ -4825,11 +5042,11 @@ async function openAdmin() {
         const pid = e.target.value;
         const dtSel = document.getElementById('audit-dt');
         if (!dtSel) return;
-        dtSel.innerHTML = '<option value="">Select Doc Type</option>';
+        dtSel.innerHTML = `<option value="">${escHtml(_admT('admin.audit_select_dt', null, 'Select Doc Type'))}</option>`;
         if (!pid) return;
         const dts = await apiFetch('/api/doc_types/' + pid);
         if (dts) {
-          dtSel.innerHTML += dts.map(d => `<option value="${d.id}">${d.code} - ${escHtml(d.name)}</option>`).join('');
+          dtSel.innerHTML += dts.map(d => `<option value="${escHtml(d.id)}">${escHtml(d.code)} - ${escHtml(d.name)}</option>`).join('');
         }
       });
     }
@@ -4843,7 +5060,7 @@ async function openAdmin() {
     renderAdminTable();
     openM('admin-modal');
   } catch (err) {
-    toast('Error opening admin: ' + err.message, 'er');
+    toast(_admT('admin.err_open', { error: err.message }, 'Error opening admin: ' + err.message), 'er');
   }
 }
 
@@ -4956,9 +5173,9 @@ function toggleAddDeptCard(show, reset=false) {
     if (reset || !document.getElementById('dept-form-mode')?.value || document.getElementById('dept-form-mode')?.value === 'add') {
       document.getElementById('dept-form-mode').value = 'add';
       const titleEl = document.getElementById('dept-form-title');
-      if (titleEl) titleEl.innerHTML = '<span>➕ Add New Department (إضافة قسم جديد)</span>';
+      if (titleEl) titleEl.innerHTML = '<span>' + escHtml(_admT('dept.form_add_title', null, '➕ Add New Department (إضافة قسم جديد)')) + '</span>';
       const submitLbl = document.getElementById('dept-submit-lbl');
-      if (submitLbl) submitLbl.textContent = 'Save Department (حفظ القسم)';
+      if (submitLbl) submitLbl.textContent = _admT('dept.btn_save', null, 'Save Department (حفظ القسم)');
       
       const idInp = document.getElementById('dept-inp-id');
       if (idInp) idInp.value = '';
@@ -4985,9 +5202,10 @@ function editDepartment(wsId) {
   if (!w) return;
   toggleAddDeptCard(true, false);
   const titleEl = document.getElementById('dept-form-title');
-  if (titleEl) titleEl.innerHTML = '<span>✏️ Edit Department: ' + escHtml(w.name || w.id) + '</span>';
+  const dispName = _admWsLabel(w) || w.name || w.id;
+  if (titleEl) titleEl.innerHTML = '<span>' + escHtml(_admT('dept.form_edit_title', { name: dispName }, '✏️ Edit Department: ' + dispName)) + '</span>';
   const submitLbl = document.getElementById('dept-submit-lbl');
-  if (submitLbl) submitLbl.textContent = 'Update Department (حفظ التعديلات)';
+  if (submitLbl) submitLbl.textContent = _admT('dept.btn_update', null, 'Update Department (حفظ التعديلات)');
   const modeEl = document.getElementById('dept-form-mode');
   if (modeEl) modeEl.value = 'update';
   
@@ -5018,7 +5236,7 @@ async function submitDepartmentForm() {
   const icon = (document.getElementById('dept-inp-icon')?.value || '').trim() || '📁';
 
   if (!code || !name) {
-    alert('Please enter Department Code and English Name.');
+    alert(_admT('dept.err_code_name_req', null, 'Please enter Department Code and English Name.'));
     return;
   }
 
@@ -5036,7 +5254,7 @@ async function submitDepartmentForm() {
       body: JSON.stringify(payload)
     });
     if (res && res.ok) {
-      toast('✔ Department saved successfully!', 'ok');
+      toast(_admT('dept.toast_saved', null, '✔ Department saved successfully!'), 'ok');
       toggleAddDeptCard(false);
       const updatedWs = await apiFetch('/api/workspaces');
       if (updatedWs) {
@@ -5045,10 +5263,10 @@ async function submitDepartmentForm() {
         refreshAdminDeptDropdowns();
       }
     } else {
-      alert((res && res.error) || 'Failed to save department');
+      alert((res && res.error) || _admT('dept.err_save', null, 'Failed to save department'));
     }
   } catch(e) {
-    alert('Error saving department: ' + e.message);
+    alert(_admT('dept.err_save', null, 'Failed to save department') + ': ' + e.message);
   }
 }
 
@@ -5081,16 +5299,16 @@ async function moveDepartmentOrder(wsId, dir) {
       _ADMIN_DATA.workspaces = updatedWs;
       renderDepartmentsTable();
       refreshAdminDeptDropdowns();
-      toast('✔ Department order updated', 'ok');
+      toast(_admT('dept.toast_order_updated', null, '✔ Department order updated'), 'ok');
     }
   } catch (err) {
-    toast('Error reordering: ' + err.message, 'er');
+    toast(_admT('dept.err_reorder', { error: err.message }, 'Error reordering: ' + err.message), 'er');
   }
 }
 
 function openUserDeptsModal(username) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
-  if (!u) return toast('User not found', 'er');
+  if (!u) return toast(_admT('admin.toast_user_not_found', null, 'User not found'), 'er');
   
   let modal = document.getElementById('user-depts-modal');
   if (!modal) {
@@ -5111,7 +5329,7 @@ function openUserDeptsModal(username) {
     const isAssigned = (w.id in wsMap);
     const wsRole = wsMap[w.id] || 'viewer';
     const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '🏗️' : '📁'));
-    const name = w.name || w.id;
+    const name = _admWsLabel(w) || w.name || w.id;
     const desc = w.description || w.name_ar || '';
     
     rowsHtml += `
@@ -5122,18 +5340,18 @@ function openUserDeptsModal(username) {
                  style="width:16px;height:16px;accent-color:var(--brand-teal);cursor:pointer;">
           <span style="font-size:20px;width:24px;text-align:center;">${icon}</span>
           <div>
-            <div style="font-weight:700;font-size:13px;color:var(--tx);">${escHtml(name)} <span style="font-family:monospace;color:var(--brand-teal);font-size:11px;">(${escHtml(w.code || w.id)})</span></div>
+            <div style="font-weight:700;font-size:13px;color:var(--tx);">${escHtml(name)} <span class="bidi-ltr" style="font-family:monospace;color:var(--brand-teal);font-size:11px;">(${escHtml(w.code || w.id)})</span></div>
             ${desc ? `<div style="font-size:11px;color:var(--mu);">${escHtml(desc)}</div>` : ''}
           </div>
         </label>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:11px;color:var(--mu);font-weight:600;">Role:</span>
+          <span style="font-size:11px;color:var(--mu);font-weight:600;">${escHtml(_admT('dept.lbl_role_colon', null, 'Role:'))}</span>
           <select id="modal-dept-role-${w.id}" class="tbl-select" style="padding:4px 8px;font-size:11.5px;font-weight:600;min-width:95px;"
                   onchange="updUsrWsRole('${escHtml(username)}', '${w.id}', this.value)"
                   ${!isAssigned ? 'disabled style="opacity:0.4;"' : ''}>
-            <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
-            <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
-            <option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>
+            <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>${escHtml(_admT('admin.role_viewer', null, 'Viewer'))}</option>
+            <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>${escHtml(_admT('admin.role_editor', null, 'Editor'))}</option>
+            <option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>${escHtml(_admT('admin.role_admin', null, 'Admin'))}</option>
           </select>
         </div>
       </div>
@@ -5146,18 +5364,18 @@ function openUserDeptsModal(username) {
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">🏢</span>
           <div>
-            <div style="font-weight:800;font-size:14px;color:var(--tx);">Department Access & Roles — ${escHtml(username)}</div>
-            <div style="font-size:11px;color:var(--mu);">Assign company departments and define access level for this user</div>
+            <div style="font-weight:800;font-size:14px;color:var(--tx);">${escHtml(_admT('dept.user_modal_title', { user: username }, 'Department Access & Roles — ' + username))}</div>
+            <div style="font-size:11px;color:var(--mu);">${escHtml(_admT('dept.user_modal_sub', null, 'Assign company departments and define access level for this user'))}</div>
           </div>
         </div>
         <button class="xbtn" onclick="closeUserDeptsModal()">✕</button>
       </div>
       
       <div style="padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:11.5px;font-weight:600;color:var(--tx);">Company Departments (${workspaces.length})</span>
+        <span style="font-size:11.5px;font-weight:600;color:var(--tx);">${escHtml(_admT('dept.company_depts_count', { count: workspaces.length }, 'Company Departments (' + workspaces.length + ')'))}</span>
         <div style="display:flex;gap:10px;">
-          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', true)" style="font-size:11px;padding:3px 8px;">Select All</button>
-          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', false)" style="font-size:11px;padding:3px 8px;">Clear All</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', true)" style="font-size:11px;padding:3px 8px;">${escHtml(_admT('perm.select_all', null, 'Select All'))}</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', false)" style="font-size:11px;padding:3px 8px;">${escHtml(_admT('perm.clear_all', null, 'Clear All'))}</button>
         </div>
       </div>
 
@@ -5167,7 +5385,7 @@ function openUserDeptsModal(username) {
 
       <div style="padding:12px 20px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;align-items:center;background:var(--bg);border-bottom-left-radius:12px;border-bottom-right-radius:12px;">
         <button class="btn btn-pr btn-sm" onclick="closeUserDeptsModal()" style="padding:6px 20px;font-weight:700;background:var(--brand-teal);color:#fff;">
-          Done (إتمام)
+          ${escHtml(_admT('dept.btn_done', null, 'Done (إتمام)'))}
         </button>
       </div>
     </div>
@@ -5217,7 +5435,7 @@ async function updUsrAllDeptsRole(username, role) {
     u.workspaces.forEach(w => w.role = role);
   }
   u.role = role;
-  toast('✔ All department roles updated to ' + role, 'ok');
+  toast(_admT('admin.toast_all_roles_updated', { role: role }, '✔ All department roles updated to ' + role), 'ok');
   renderAdminTable();
 }
 
@@ -5225,11 +5443,11 @@ function refreshAdminDeptDropdowns() {
   const filter = document.getElementById('admin-dept-filter');
   if (filter) {
     const curVal = filter.value;
-    let deptOptions = '<option value="">All Departments</option>';
+    let deptOptions = `<option value="">${escHtml(_admT('admin.all_depts_opt', null, 'All Departments'))}</option>`;
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-      const label = w.name || w.code || w.id;
-      deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+      const label = _admWsLabel(w);
+      deptOptions += `<option value="${escHtml(w.id)}">${escHtml(icon)} ${escHtml(label)}</option>`;
     });
     filter.innerHTML = deptOptions;
     if (curVal) filter.value = curVal;
@@ -5240,8 +5458,8 @@ function refreshAdminDeptDropdowns() {
     let addDeptOptions = '';
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-      const label = w.name || w.code || w.id;
-      addDeptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+      const label = _admWsLabel(w);
+      addDeptOptions += `<option value="${escHtml(w.id)}">${escHtml(icon)} ${escHtml(label)}</option>`;
     });
     nuDept.innerHTML = addDeptOptions;
     if (curVal) nuDept.value = curVal;
@@ -5263,6 +5481,9 @@ function renderDepartmentsTable() {
     const icon = w.icon || (isOm ? '⚙️' : (isEng ? '🏗️' : '📁'));
     const rawDesc = (w.description !== undefined && w.description !== null) ? String(w.description).trim() : '';
     const descDisplay = rawDesc ? escHtml(rawDesc) : '<span style="color:var(--mu);font-style:italic;">—</span>';
+    const pCountLbl = isOm
+      ? _admT('dept.count_contracts', { count: pCount }, pCount + ' Contracts')
+      : _admT('dept.count_projects', { count: pCount }, pCount + ' Projects');
     
     rowsHtml += `
       <tr>
@@ -5273,19 +5494,19 @@ function renderDepartmentsTable() {
             <div style="font-size:11px;color:var(--mu);">${escHtml(w.name_ar || '')}</div>
           </div>
         </td>
-        <td style="font-family:monospace;font-weight:800;color:var(--brand-teal);font-size:12.5px;">${escHtml(w.code || w.id)}</td>
+        <td><span class="bidi-ltr" style="font-family:monospace;font-weight:800;color:var(--brand-teal);font-size:12.5px;">${escHtml(w.code || w.id)}</span></td>
         <td style="font-size:11.5px;color:var(--mu);max-width:280px;">${descDisplay}</td>
-        <td style="text-align:center;"><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-weight:700;">${pCount} ${isOm ? 'Contracts' : 'Projects'}</span></td>
-        <td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;">Active</span></td>
+        <td style="text-align:center;"><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-weight:700;">${escHtml(pCountLbl)}</span></td>
+        <td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;">${escHtml(_admT('dept.status_active', null, 'Active'))}</span></td>
         <td>
           <div style="display:flex;gap:4px;align-items:center;">
-            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', -1)" title="Move Up" ${idx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▲</button>
-            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', 1)" title="Move Down" ${idx === workspaces.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▼</button>
-            <button class="uact-btn" onclick="editDepartment('${escHtml(w.id)}')" title="Edit Department Details">
-              <span>✏️</span><span>Edit</span>
+            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', -1)" title="${escHtml(_admT('dept.move_up_title', null, 'Move Up'))}" ${idx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▲</button>
+            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', 1)" title="${escHtml(_admT('dept.move_down_title', null, 'Move Down'))}" ${idx === workspaces.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▼</button>
+            <button class="uact-btn" onclick="editDepartment('${escHtml(w.id)}')" title="${escHtml(_admT('dept.edit_title', null, 'Edit Department Details'))}">
+              <span>✏️</span><span>${escHtml(_admT('admin.btn_edit', null, 'Edit'))}</span>
             </button>
-            <a href="/?ws=${encodeURIComponent(w.id)}" class="uact-btn" style="text-decoration:none;" title="Open Department Dashboard">
-              <span>👁️</span><span>Open</span>
+            <a href="/?ws=${encodeURIComponent(w.id)}" class="uact-btn" style="text-decoration:none;" title="${escHtml(_admT('dept.open_title', null, 'Open Department Dashboard'))}">
+              <span>👁️</span><span>${escHtml(_admT('admin.btn_open', null, 'Open'))}</span>
             </a>
           </div>
         </td>
@@ -5303,12 +5524,12 @@ function renderDepartmentsTable() {
   deptsView.innerHTML = `
     <div class="admin-toolbar" style="border-bottom:1px solid var(--bd);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;">
       <div style="display:flex;flex-direction:column;">
-        <span style="font-weight:700;font-size:13.5px;color:var(--tx);">🏢 Enterprise Departments & Workspaces</span>
-        <span style="font-size:11px;color:var(--mu);">Configure company departments, codes, descriptions, and icons across the platform</span>
+        <span style="font-weight:700;font-size:13.5px;color:var(--tx);">${escHtml(_admT('dept.enterprise_title', null, '🏢 Enterprise Departments & Workspaces'))}</span>
+        <span style="font-size:11px;color:var(--mu);">${escHtml(_admT('dept.enterprise_sub', null, 'Configure company departments, codes, descriptions, and icons across the platform'))}</span>
       </div>
       <div>
         <button class="btn btn-pr btn-sm" onclick="toggleAddDeptCard(true, true)" style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;font-weight:700;background:var(--brand-teal);color:#fff;">
-          <span>➕</span><span>Add Department</span>
+          <span>➕</span><span>${escHtml(_admT('dept.btn_add', null, 'Add Department'))}</span>
         </button>
       </div>
     </div>
@@ -5317,9 +5538,9 @@ function renderDepartmentsTable() {
     <div id="dept-edit-card" class="add-user-card" style="display:none;margin:14px 18px;background:var(--wh);border:1.5px solid var(--brand-teal);border-radius:10px;padding:16px 20px;box-shadow:0 4px 14px rgba(0,0,0,0.06);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--bd);padding-bottom:8px;">
         <strong id="dept-form-title" style="font-size:13.5px;color:var(--tx);font-weight:800;display:flex;align-items:center;gap:6px;">
-          <span>➕ Add New Department (إضافة قسم جديد)</span>
+          <span>${escHtml(_admT('dept.form_add_title', null, '➕ Add New Department (إضافة قسم جديد)'))}</span>
         </strong>
-        <a href="#" style="font-size:12px;color:var(--mu);text-decoration:none;font-weight:600;" onclick="event.preventDefault();toggleAddDeptCard(false);">Close ✕</a>
+        <a href="#" style="font-size:12px;color:var(--mu);text-decoration:none;font-weight:600;" onclick="event.preventDefault();toggleAddDeptCard(false);">${escHtml(_admT('admin.close_x', null, 'Close ✕'))}</a>
       </div>
       <input type="hidden" id="dept-form-mode" value="add">
       <input type="hidden" id="dept-inp-id" value="">
@@ -5328,21 +5549,21 @@ function renderDepartmentsTable() {
       <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end;">
         <div class="fg" style="margin:0;width:120px;flex:0 0 120px;">
           <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
-            Code (كود القسم) <span style="color:#ef4444">*</span>
+            ${escHtml(_admT('dept.lbl_code', null, 'Code (كود القسم)'))} <span style="color:#ef4444">*</span>
           </label>
-          <input id="dept-inp-code" class="tbl-input" placeholder="e.g. O&M, HSE" style="font-weight:700;text-transform:uppercase;font-family:monospace;letter-spacing:0.5px;width:100%;">
+          <input id="dept-inp-code" class="tbl-input bidi-ltr" placeholder="${escHtml(_admT('dept.ph_code', null, 'e.g. O&M, HSE'))}" style="font-weight:700;text-transform:uppercase;font-family:monospace;letter-spacing:0.5px;width:100%;">
         </div>
         <div class="fg" style="margin:0;flex:1.2;min-width:200px;">
           <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
-            Name in English (اسم القسم بالإنجليزي) <span style="color:#ef4444">*</span>
+            ${escHtml(_admT('dept.lbl_name_en', null, 'Name in English (اسم القسم بالإنجليزي)'))} <span style="color:#ef4444">*</span>
           </label>
-          <input id="dept-inp-name" class="tbl-input" placeholder="e.g. Quality Assurance & Control" style="width:100%;">
+          <input id="dept-inp-name" class="tbl-input bidi-ltr" placeholder="${escHtml(_admT('dept.ph_name_en', null, 'e.g. Quality Assurance & Control'))}" style="width:100%;">
         </div>
         <div class="fg" style="margin:0;flex:1.2;min-width:200px;">
           <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
-            Name in Arabic (اسم القسم بالعربي)
+            ${escHtml(_admT('dept.lbl_name_ar', null, 'Name in Arabic (اسم القسم بالعربي)'))}
           </label>
-          <input id="dept-inp-name-ar" class="tbl-input" placeholder="e.g. توكيد ومراقبة الجودة" dir="rtl" style="width:100%;">
+          <input id="dept-inp-name-ar" class="tbl-input" placeholder="${escHtml(_admT('dept.ph_name_ar', null, 'e.g. توكيد ومراقبة الجودة'))}" dir="rtl" style="width:100%;">
         </div>
       </div>
 
@@ -5350,9 +5571,9 @@ function renderDepartmentsTable() {
       <div style="display:flex;gap:12px;margin-bottom:12px;">
         <div class="fg" style="margin:0;flex:1;">
           <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
-            Subtitle / Description (التعريف البسيط أسفل اسم القسم في القوائم والشاشات)
+            ${escHtml(_admT('dept.lbl_desc', null, 'Subtitle / Description (التعريف البسيط أسفل اسم القسم في القوائم والشاشات)'))}
           </label>
-          <input id="dept-inp-desc" class="tbl-input" placeholder="e.g. Facilities & Maintenance Contracts" style="width:100%;">
+          <input id="dept-inp-desc" class="tbl-input" placeholder="${escHtml(_admT('dept.ph_desc', null, 'e.g. Facilities & Maintenance Contracts'))}" style="width:100%;">
         </div>
       </div>
 
@@ -5360,10 +5581,10 @@ function renderDepartmentsTable() {
       <div style="margin-bottom:14px;background:var(--bg);padding:10px 14px;border-radius:8px;border:1px solid var(--bd);">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:8px;">
-            <label style="font-size:11px;font-weight:700;color:var(--tx);margin:0;">Icon (أيقونة القسم):</label>
+            <label style="font-size:11px;font-weight:700;color:var(--tx);margin:0;">${escHtml(_admT('dept.lbl_icon', null, 'Icon (أيقونة القسم):'))}</label>
             <input id="dept-inp-icon" class="tbl-input" placeholder="🏢" value="📁" style="width:55px;text-align:center;font-size:18px;padding:3px 6px;">
           </div>
-          <span style="font-size:11px;color:var(--mu);">اضغط على أي أيقونة جاهزة أو اكتب أي رمز تريده:</span>
+          <span style="font-size:11px;color:var(--mu);">${escHtml(_admT('dept.icon_hint', null, 'اضغط على أي أيقونة جاهزة أو اكتب أي رمز تريده:'))}</span>
         </div>
         <div id="dept-icon-palette" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
           ${paletteHtml}
@@ -5372,9 +5593,9 @@ function renderDepartmentsTable() {
 
       <!-- Actions -->
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
-        <button class="btn btn-sc btn-sm" onclick="toggleAddDeptCard(false)">Cancel (إلغاء)</button>
+        <button class="btn btn-sc btn-sm" onclick="toggleAddDeptCard(false)">${escHtml(_admT('dept.btn_cancel', null, 'Cancel (إلغاء)'))}</button>
         <button class="btn btn-pr btn-sm" onclick="submitDepartmentForm()" style="padding:7px 18px;font-weight:700;background:var(--brand-teal);color:#fff;">
-          <span>💾</span> <span id="dept-submit-lbl">Save Department (حفظ القسم)</span>
+          <span>💾</span> <span id="dept-submit-lbl">${escHtml(_admT('dept.btn_save', null, 'Save Department (حفظ القسم)'))}</span>
         </button>
       </div>
     </div>
@@ -5384,12 +5605,12 @@ function renderDepartmentsTable() {
       <table class="user-tbl" style="width:100%;">
         <thead>
           <tr>
-            <th style="padding:10px 14px;">Department / Workspace</th>
-            <th style="padding:10px 14px;">Code</th>
-            <th style="padding:10px 14px;">Subtitle / Description</th>
-            <th style="padding:10px 14px;text-align:center;">Projects / Contracts</th>
-            <th style="padding:10px 14px;text-align:center;">Status</th>
-            <th style="padding:10px 14px;">Actions</th>
+            <th style="padding:10px 14px;">${escHtml(_admT('dept.th_workspace', null, 'Department / Workspace'))}</th>
+            <th style="padding:10px 14px;">${escHtml(_admT('dept.th_code', null, 'Code'))}</th>
+            <th style="padding:10px 14px;">${escHtml(_admT('dept.th_desc', null, 'Subtitle / Description'))}</th>
+            <th style="padding:10px 14px;text-align:center;">${escHtml(_admT('dept.th_projects', null, 'Projects / Contracts'))}</th>
+            <th style="padding:10px 14px;text-align:center;">${escHtml(_admT('dept.th_status', null, 'Status'))}</th>
+            <th style="padding:10px 14px;">${escHtml(_admT('dept.th_actions', null, 'Actions'))}</th>
           </tr>
         </thead>
         <tbody>
@@ -5432,7 +5653,7 @@ function renderAdminTable() {
   if (countEl) countEl.textContent = `${filteredUsers.length} / ${_ADMIN_DATA.users.length}`;
   
   if (filteredUsers.length === 0) {
-    tblWrap.innerHTML = '<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">No users match the selected filters.</div>';
+    tblWrap.innerHTML = `<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">${escHtml(_admT('admin.no_users_match', null, 'No users match the selected filters.'))}</div>`;
     return;
   }
   
@@ -5440,11 +5661,11 @@ function renderAdminTable() {
     <table class="user-tbl">
       <thead>
         <tr>
-          <th style="min-width:140px;">User</th>
-          <th style="min-width:180px;">Email</th>
-          <th style="min-width:130px;">Department</th>
-          <th style="min-width:110px;">Role</th>
-          <th style="text-align:right;min-width:180px;">Actions</th>
+          <th style="min-width:140px;">${escHtml(_admT('admin.th_user', null, 'User'))}</th>
+          <th style="min-width:180px;">${escHtml(_admT('admin.th_email', null, 'Email'))}</th>
+          <th style="min-width:130px;">${escHtml(_admT('admin.th_department', null, 'Department'))}</th>
+          <th style="min-width:110px;">${escHtml(_admT('admin.th_role', null, 'Role'))}</th>
+          <th class="user-tbl-th-actions" style="text-align:right;min-width:180px;">${escHtml(_admT('admin.th_actions', null, 'Actions'))}</th>
         </tr>
       </thead>
       <tbody>
@@ -5476,8 +5697,8 @@ function renderAdminTable() {
     let scopedSingleRole = '';
 
     if (isSuperAdminUser) {
-      deptCol = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;">🌐 All Departments</span>';
-      roleCol = '<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;">Super Admin</span>';
+      deptCol = `<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;">${escHtml(_admT('admin.badge_all_depts', null, '🌐 All Departments'))}</span>`;
+      roleCol = `<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;">${escHtml(_admT('admin.role_superadmin', null, 'Super Admin'))}</span>`;
     } else {
       const assignedWorkspaces = availableWorkspaces.filter(w => (String(w.id || '').toUpperCase() in wsMap));
       const allAssigned = (isSuper && availableWorkspaces.length > 1 && assignedWorkspaces.length === availableWorkspaces.length);
@@ -5488,12 +5709,12 @@ function renderAdminTable() {
         deptCol = `
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;display:inline-flex;align-items:center;gap:4px;">
-              <span>🌐 All Departments</span>
+              <span>${escHtml(_admT('admin.badge_all_depts', null, '🌐 All Departments'))}</span>
               <span style="font-size:10px;background:rgba(55,48,163,0.15);padding:1px 5px;border-radius:4px;">${availableWorkspaces.length}</span>
             </span>
             ${isSuper ? `
-              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="Manage department assignments">
-                <span>✏️</span><span>Edit</span>
+              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="${escHtml(_admT('admin.manage_depts_title', null, 'Manage department assignments'))}">
+                <span>✏️</span><span>${escHtml(_admT('admin.btn_edit', null, 'Edit'))}</span>
               </button>
             ` : ''}
           </div>
@@ -5503,10 +5724,10 @@ function renderAdminTable() {
             ${isSuper ? `
               <select class="tbl-select" style="padding:2px 6px;font-size:11px;height:24px;font-weight:600;"
                       onchange="updUsrAllDeptsRole('${escHtml(u.username)}', this.value)">
-                <option value="viewer" ${isUniform && commonRole === 'viewer' ? 'selected' : ''}>All as Viewer</option>
-                <option value="editor" ${isUniform && commonRole === 'editor' ? 'selected' : ''}>All as Editor</option>
-                <option value="admin" ${isUniform && commonRole === 'admin' ? 'selected' : ''}>All as Admin</option>
-                ${!isUniform ? '<option value="" selected disabled>Mixed Roles</option>' : ''}
+                <option value="viewer" ${isUniform && commonRole === 'viewer' ? 'selected' : ''}>${escHtml(_admT('admin.role_all_viewer', null, 'All as Viewer'))}</option>
+                <option value="editor" ${isUniform && commonRole === 'editor' ? 'selected' : ''}>${escHtml(_admT('admin.role_all_editor', null, 'All as Editor'))}</option>
+                <option value="admin" ${isUniform && commonRole === 'admin' ? 'selected' : ''}>${escHtml(_admT('admin.role_all_admin', null, 'All as Admin'))}</option>
+                ${!isUniform ? `<option value="" selected disabled>${escHtml(_admT('admin.role_mixed', null, 'Mixed Roles'))}</option>` : ''}
               </select>
             ` : `<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:600;">${escHtml(commonRole.toUpperCase())}</span>`}
           </div>
@@ -5514,10 +5735,10 @@ function renderAdminTable() {
       } else if (assignedWorkspaces.length === 0) {
         deptCol = `
           <div style="display:flex;align-items:center;gap:6px;">
-            <span style="color:var(--mu);font-size:11px;font-style:italic;">No Departments</span>
+            <span style="color:var(--mu);font-size:11px;font-style:italic;">${escHtml(_admT('admin.no_depts', null, 'No Departments'))}</span>
             ${isSuper ? `
               <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="padding:2px 7px;font-size:10.5px;color:var(--brand-teal);border-color:var(--brand-teal);font-weight:700;">
-                <span>➕ Assign</span>
+                <span>${escHtml(_admT('admin.btn_assign', null, '➕ Assign'))}</span>
               </button>
             ` : ''}
           </div>
@@ -5533,13 +5754,13 @@ function renderAdminTable() {
 
           return `
             <span class="dept-role-pill" style="display:inline-flex;align-items:center;gap:4px;background:var(--wh);border:1px solid var(--bd);padding:2px 6px;border-radius:6px;font-size:11px;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
-              <span style="font-weight:700;color:var(--tx);font-family:monospace;">${icon} ${escHtml(code)}:</span>
+              <span class="bidi-ltr" style="font-weight:700;color:var(--tx);font-family:monospace;">${icon} ${escHtml(code)}:</span>
               ${canManageThisWs ? `
                 <select class="tbl-select" style="padding:0 3px;font-size:10.5px;height:20px;font-weight:600;color:var(--brand-teal);border:none;background:transparent;cursor:pointer;"
                         onchange="updUsrWsRole('${escHtml(u.username)}', '${escHtml(w.id)}', this.value)">
-                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
-                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
-                  ${isSuper ? `<option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>` : ''}
+                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>${escHtml(_admT('admin.role_viewer', null, 'Viewer'))}</option>
+                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>${escHtml(_admT('admin.role_editor', null, 'Editor'))}</option>
+                  ${isSuper ? `<option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>${escHtml(_admT('admin.role_admin', null, 'Admin'))}</option>` : ''}
                 </select>
               ` : `<strong style="font-size:10px;text-transform:uppercase;color:var(--mu);">${escHtml(wsRole)}</strong>`}
             </span>
@@ -5553,59 +5774,68 @@ function renderAdminTable() {
         deptCol = `
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
             ${pills}
-            ${isMultiDeptUser ? '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;" title="Shared across multiple departments — global account controls are managed by Super Admin">🌐 Multi-Dept</span>' : ''}
+            ${isMultiDeptUser ? `<span class="badge" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;" title="${escHtml(_admT('admin.badge_multi_dept_title', null, 'Shared across multiple departments — global account controls are managed by Super Admin'))}">${escHtml(_admT('admin.badge_multi_dept', null, '🌐 Multi-Dept'))}</span>` : ''}
             ${isSuper ? `
-              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;font-size:10px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="Add or remove departments for ${escHtml(u.username)}">
+              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;font-size:10px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="${escHtml(_admT('admin.add_remove_depts_title', { user: u.username }, 'Add or remove departments for ' + u.username))}">
                 <span>➕/✏️</span>
               </button>
             ` : ''}
           </div>
         `;
+        const deptCntLbl = assignedWorkspaces.length === 1
+          ? _admT('admin.dept_count_one', null, '1 Dept')
+          : _admT('admin.dept_count_many', { count: assignedWorkspaces.length }, assignedWorkspaces.length + ' Depts');
         roleCol = scopedSingleRole
           ? `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${escHtml(scopedSingleRole.toUpperCase())}</span>`
-          : `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${assignedWorkspaces.length} ${assignedWorkspaces.length === 1 ? 'Dept' : 'Depts'}</span>`;
+          : `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${escHtml(deptCntLbl)}</span>`;
       }
     }
     
     // Email column
     const emailCol = canEditGlobalAccount
-      ? `<input class="tbl-input email-input" id="email-inp-${escHtml(u.username)}" value="${escHtml(u.email || '')}" placeholder="Add email..." style="border-color:transparent;background:transparent;" onfocus="this.style.borderColor='';this.style.background='var(--wh)';" onblur="this.style.borderColor='transparent';this.style.background='transparent';updUsrEmail('${escHtml(u.username)}', this.value);">`
-      : `<span style="color:var(--mu);font-size:12px;">${escHtml(u.email || '—')}</span>`;
+      ? `<input class="tbl-input email-input bidi-ltr" id="email-inp-${escHtml(u.username)}" value="${escHtml(u.email || '')}" placeholder="${escHtml(_admT('admin.ph_add_email', null, 'Add email...'))}" style="border-color:transparent;background:transparent;" onfocus="this.style.borderColor='';this.style.background='var(--wh)';" onblur="this.style.borderColor='transparent';this.style.background='transparent';updUsrEmail('${escHtml(u.username)}', this.value);">`
+      : `<span class="bidi-ltr" style="color:var(--mu);font-size:12px;">${escHtml(u.email || '—')}</span>`;
     
     // Actions column
     const canDl = !!u.can_download;
     const effectiveRole = (!isSuper && scopedSingleRole) ? scopedSingleRole : (isPeerOrHigherAdmin ? (isSuperAdminUser ? 'superadmin' : 'admin') : (u.role || 'viewer'));
     const isGlobalOrEditor = effectiveRole === 'superadmin' || effectiveRole === 'admin' || effectiveRole === 'editor';
     const dlPill = isGlobalOrEditor
-      ? `<span class="badge" title="Full file download rights included with ${escHtml(effectiveRole)} role" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 6px;font-weight:700;">📥 Full</span>`
+      ? `<span class="badge" title="${escHtml(_admT('admin.dl_full_title', { role: effectiveRole }, 'Full file download rights included with ' + effectiveRole + ' role'))}" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 6px;font-weight:700;">${escHtml(_admT('admin.dl_full', null, '📥 Full'))}</span>`
       : (canEditGlobalAccount
         ? `<button type="button" class="uact-btn ${canDl ? 'dl-allowed' : 'dl-restricted'}"
                  onclick="toggleUserDownloadPerm('${escHtml(u.username)}', ${!canDl})"
-                 title="${canDl ? 'File Downloads: Allowed (Click to Restrict)' : 'File Downloads: Restricted (Click to Allow)'}"
+                 title="${escHtml(canDl ? _admT('admin.dl_allowed_title', null, 'File Downloads: Allowed (Click to Restrict)') : _admT('admin.dl_restricted_title', null, 'File Downloads: Restricted (Click to Allow)'))}"
                  style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;border-radius:6px;cursor:pointer;${canDl ? 'background:#ecfdf5;color:#047857;border:1px solid #10b981;' : 'background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;'}">
            <span>${canDl ? '📥' : '🔒'}</span>
-           <span>${canDl ? 'Downloads: ON' : 'View Only'}</span>
+           <span>${escHtml(canDl ? _admT('admin.dl_on', null, 'Downloads: ON') : _admT('admin.dl_view_only', null, 'View Only'))}</span>
          </button>`
-        : `<span class="badge" title="Global download setting managed by Super Admin" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 6px;font-weight:700;">${canDl ? '📥 Downloads: ON' : '🔒 View Only'}</span>`);
+        : `<span class="badge" title="${escHtml(_admT('admin.dl_global_title', null, 'Global download setting managed by Super Admin'))}" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 6px;font-weight:700;">${escHtml(canDl ? _admT('admin.dl_on_badge', null, '📥 Downloads: ON') : _admT('admin.dl_view_only_badge', null, '🔒 View Only'))}</span>`);
 
-    const lockLabel = isProtected ? '🔒 Protected' : (isSelf ? '👤 You' : (isPeerOrHigherAdmin ? '🔒 Admin' : '🌐 Multi-Dept'));
+    const lockLabel = isProtected
+      ? _admT('admin.lock_protected', null, '🔒 Protected')
+      : (isSelf
+          ? _admT('admin.lock_you', null, '👤 You')
+          : (isPeerOrHigherAdmin
+              ? _admT('admin.lock_admin', null, '🔒 Admin')
+              : _admT('admin.badge_multi_dept', null, '🌐 Multi-Dept')));
 
     let actionsHtml = `
-      <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
+      <div class="user-tbl-actions-cell" style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
         ${dlPill}
         ${canManagePerms ? `
-          <button class="uact-btn uact-btn-perm" id="perm-btn-${escHtml(u.username)}" onclick="openPermissionsModal('${escHtml(u.username)}')" title="Manage project & contract permissions">
-            <span>⚙️</span><span>Permissions</span><span class="badge" style="background:#15803d;color:#fff;padding:1px 5px;font-size:10px;margin-left:2px;">${assignedCount}</span>
+          <button class="uact-btn uact-btn-perm" id="perm-btn-${escHtml(u.username)}" onclick="openPermissionsModal('${escHtml(u.username)}')" title="${escHtml(_admT('admin.btn_permissions_title', null, 'Manage project & contract permissions'))}">
+            <span>⚙️</span><span>${escHtml(_admT('admin.btn_permissions', null, 'Permissions'))}</span><span class="badge" style="background:#15803d;color:#fff;padding:1px 5px;font-size:10px;margin-inline-start:2px;">${assignedCount}</span>
           </button>
         ` : ''}
         ${canEditGlobalAccount ? `
-          <button class="uact-btn" onclick="chgPw('${escHtml(u.username)}')" title="Reset Password">
+          <button class="uact-btn" onclick="chgPw('${escHtml(u.username)}')" title="${escHtml(_admT('admin.btn_reset_pw_title', null, 'Reset Password'))}">
             <span>🔑</span>
           </button>
-          <button class="uact-btn uact-btn-del" onclick="delUsr('${escHtml(u.username)}')" title="Delete User">
+          <button class="uact-btn uact-btn-del" onclick="delUsr('${escHtml(u.username)}')" title="${escHtml(_admT('admin.btn_delete_user_title', null, 'Delete User'))}">
             <span>🗑️</span>
           </button>
-        ` : `<span style="font-size:10px;color:var(--mu);padding:0 6px;">${lockLabel}</span>`}
+        ` : `<span style="font-size:10px;color:var(--mu);padding:0 6px;">${escHtml(lockLabel)}</span>`}
       </div>
     `;
     
@@ -5614,7 +5844,7 @@ function renderAdminTable() {
         <td>
           <div class="u-name-cell">
             <span class="u-avatar" style="width:30px;height:30px;min-width:30px;border-radius:50%;background:#e0f2fe;color:#0369a1;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;margin-right:10px;flex-shrink:0;border:1px solid #bae6fd;">${initial}</span>
-            <span>${escHtml(u.username)}</span>
+            <span class="bidi-ltr">${escHtml(u.username)}</span>
           </div>
         </td>
         <td>${emailCol}</td>
@@ -5644,20 +5874,22 @@ async function toggleUserDownloadPerm(username, canDownload, fromModal = false) 
       if (u) {
         u.can_download = !!canDownload;
       }
-      toast(canDownload ? '📥 File downloads enabled for ' + username : '🔒 File downloads restricted for ' + username, 'ok');
+      toast(canDownload
+        ? _admT('admin.toast_dl_enabled', { user: username }, '📥 File downloads enabled for ' + username)
+        : _admT('admin.toast_dl_restricted', { user: username }, '🔒 File downloads restricted for ' + username), 'ok');
       renderAdminTable();
       if (fromModal && window._ACTIVE_PERM_USER === username) {
         openPermissionsModal(username);
       }
     } else {
-      toast((r && r.error) || 'Failed to update download permission', 'er');
+      toast((r && r.error) || _admT('admin.err_dl_update', null, 'Failed to update download permission'), 'er');
       if (fromModal) {
         const chk = document.getElementById('perm-modal-dl-toggle');
         if (chk) chk.checked = !canDownload;
       }
     }
   } catch (err) {
-    toast('Error updating download permission: ' + err.message, 'er');
+    toast(_admT('admin.err_dl_update', null, 'Failed to update download permission') + ': ' + err.message, 'er');
     if (fromModal) {
       const chk = document.getElementById('perm-modal-dl-toggle');
       if (chk) chk.checked = !canDownload;
@@ -5687,14 +5919,14 @@ async function updUsrWsRole(username, wsId, role) {
         else u.workspaces.push({ workspace_id: wsId, role: role });
         if (String(u.primary_workspace || 'ENG').toUpperCase() === wsIdUp || u.workspaces.length === 1) u.role = role;
       }
-      toast('✔ Role updated for ' + wsId, 'ok');
+      toast(_admT('admin.toast_role_updated_ws', { ws: wsId }, '✔ Role updated for ' + wsId), 'ok');
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to update role', 'er');
+      toast((r && r.error) || _admT('admin.err_role_update', null, 'Failed to update role'), 'er');
       renderAdminTable();
     }
   } catch (err) {
-    toast('Error updating role: ' + err.message, 'er');
+    toast(_admT('admin.err_role_update', null, 'Failed to update role') + ': ' + err.message, 'er');
     renderAdminTable();
   }
 }
@@ -5723,13 +5955,15 @@ async function toggleAllDepts(username, selectAll, e) {
     if (r && r.ok) {
       const oldRoleMap = Object.fromEntries((u.workspaces || []).map(w => [w.workspace_id, w.role]));
       u.workspaces = wsArray.map(w => ({ workspace_id: w, role: oldRoleMap[w] || u.role || 'viewer' }));
-      toast(selectAll ? '✔ Assigned to All Departments' : '✔ Reset to default department', 'ok');
+      toast(selectAll
+        ? _admT('admin.toast_assigned_all_depts', null, '✔ Assigned to All Departments')
+        : _admT('admin.toast_reset_default_dept', null, '✔ Reset to default department'), 'ok');
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to update', 'er');
+      toast((r && r.error) || _admT('admin.err_dept_update', null, 'Failed to update department'), 'er');
     }
   } catch(err) {
-    toast('Error: ' + err.message, 'er');
+    toast(_admT('common.error', null, 'Error') + ': ' + err.message, 'er');
   }
 }
 
@@ -5748,7 +5982,7 @@ async function toggleUserDept(username, changedWs, isChecked) {
   }
   
   if (newWs.size === 0) {
-    toast('User must belong to at least one department', 'wa');
+    toast(_admT('admin.toast_min_one_dept', null, 'User must belong to at least one department'), 'wa');
     renderAdminTable();
     return;
   }
@@ -5773,21 +6007,21 @@ async function toggleUserDept(username, changedWs, isChecked) {
         const removedPids = _ADMIN_DATA.projects.filter(p => (p.workspace_id || 'ENG') === changedWs).map(p => p.id);
         u.projects = u.projects.filter(p => !removedPids.includes(p.project_id));
       }
-      toast('✔ Department updated', 'ok');
+      toast(_admT('admin.toast_dept_updated', null, '✔ Department updated'), 'ok');
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to update department', 'er');
+      toast((r && r.error) || _admT('admin.err_dept_update', null, 'Failed to update department'), 'er');
       renderAdminTable();
     }
   } catch (err) {
-    toast('Error updating department: ' + err.message, 'er');
+    toast(_admT('admin.err_dept_update', null, 'Failed to update department') + ': ' + err.message, 'er');
     renderAdminTable();
   }
 }
 
 function openPermissionsModal(username) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
-  if (!u) return toast('User not found', 'er');
+  if (!u) return toast(_admT('admin.toast_user_not_found', null, 'User not found'), 'er');
   window._ACTIVE_PERM_USER = username;
 
   const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
@@ -5817,16 +6051,18 @@ function openPermissionsModal(username) {
     const fb = fallbacks[id] || { icon: '📁', code: id, name: id, cls: '', style: 'background:#f1f5f9;color:#334155;' };
     const icon = (w && w.icon) || fb.icon;
     const code = (w && w.code) || fb.code;
-    let name = (w && w.name) || fb.name;
-    if (id === 'HSE' && !name.includes('(HSE)')) name = `${name} (HSE)`;
-    if (id === 'OM' && !name.includes('(O&M)')) name = `${name} (O&M)`;
+    let name = _admWsLabel(w) || (w && w.name) || _admT('ws.' + id + '.name', null, fb.name);
+    if (window.DCR_LANG !== 'ar') {
+      if (id === 'HSE' && !name.includes('(HSE)')) name = `${name} (HSE)`;
+      if (id === 'OM' && !name.includes('(O&M)')) name = `${name} (O&M)`;
+    }
     return { id, icon, code, name, cls: fb.cls, style: fb.style };
   };
 
   let deptBadge = '';
   const availWsCount = (_ADMIN_DATA.workspaces || []).length;
   if (isSuper && availWsCount > 1 && allowedWs.length >= availWsCount) {
-    deptBadge = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:600;">🌐 All Departments</span>';
+    deptBadge = `<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:600;">${escHtml(_admT('admin.badge_all_depts', null, '🌐 All Departments'))}</span>`;
   } else {
     deptBadge = allowedWs.map(id => {
       const m = getWsMeta(id);
@@ -5834,19 +6070,19 @@ function openPermissionsModal(username) {
     }).join(' ');
   }
 
-  document.getElementById('perm-title').innerHTML = `⚙️ Project / Contract Permissions — <strong>${escHtml(u.username)}</strong>`;
+  document.getElementById('perm-title').innerHTML = `${escHtml(_admT('perm.modal_title_user', null, '⚙️ Project / Contract Permissions —'))} <strong class="bidi-ltr">${escHtml(u.username)}</strong>`;
   const canDl = !!u.can_download;
   const effectiveRole = (!isSuper && scopedWsIds.length === 1) ? (wsMap[scopedWsIds[0]] || u.role || 'viewer') : (u.role || 'viewer');
   const isGlobalOrEditor = effectiveRole === 'superadmin' || effectiveRole === 'admin' || effectiveRole === 'editor';
   const dlToggleHtml = isGlobalOrEditor
-    ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 7px;font-weight:700;">📥 Full File Downloads (${escHtml(effectiveRole)})</span>`
+    ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 7px;font-weight:700;">${escHtml(_admT('perm.dl_full_role', { role: effectiveRole }, '📥 Full File Downloads (' + effectiveRole + ')'))}</span>`
     : (canEditGlobalAccount
-      ? `<label style="display:inline-flex;align-items:center;gap:5px;background:${canDl ? '#ecfdf5' : '#f8fafc'};border:1px solid ${canDl ? '#10b981' : '#cbd5e1'};color:${canDl ? '#047857' : '#475569'};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px;">
+      ? `<label style="display:inline-flex;align-items:center;gap:5px;background:${canDl ? '#ecfdf5' : '#f8fafc'};border:1px solid ${canDl ? '#10b981' : '#cbd5e1'};color:${canDl ? '#047857' : '#475569'};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-inline-start:6px;">
            <input type="checkbox" id="perm-modal-dl-toggle" ${canDl ? 'checked' : ''} onchange="toggleUserDownloadPerm('${escHtml(u.username)}', this.checked, true)" style="cursor:pointer;margin:0;">
-           <span>📥 Allow File Downloads</span>
+           <span>${escHtml(_admT('perm.dl_allow_chk', null, '📥 Allow File Downloads'))}</span>
          </label>`
-      : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 7px;font-weight:700;margin-left:6px;">${canDl ? '📥 Downloads: ON' : '🔒 View Only'} (Shared Account)</span>`);
-  document.getElementById('perm-subtitle').innerHTML = `${deptBadge} ${dlToggleHtml} <span style="margin-left:6px;color:var(--mu);">Scoped strictly to user's assigned department(s)</span>`;
+      : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 7px;font-weight:700;margin-inline-start:6px;">${escHtml(canDl ? _admT('admin.dl_on_badge', null, '📥 Downloads: ON') : _admT('admin.dl_view_only_badge', null, '🔒 View Only'))} ${escHtml(_admT('perm.dl_shared_suffix', null, '(Shared Account)'))}</span>`);
+  document.getElementById('perm-subtitle').innerHTML = `${deptBadge} ${dlToggleHtml} <span style="margin-inline-start:6px;color:var(--mu);">${escHtml(_admT('perm.scoped_strictly', null, "Scoped strictly to user's assigned department(s)"))}</span>`;
   
   // Filter projects strictly to user's assigned departments AND actor's allowed workspaces (No cross-department leakage)
   let scopedProjects = _ADMIN_DATA.projects.filter(p => {
@@ -5874,7 +6110,7 @@ function renderPermTable(projects) {
   const assignedMap = Object.fromEntries(userProjects.map(p => [p.project_id, p]));
   
   if (!projects || projects.length === 0) {
-    body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">No projects or contracts found for this department.</div>';
+    body.innerHTML = `<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">${escHtml(_admT('perm.no_projects', null, 'No projects or contracts found for this department.'))}</div>`;
     return;
   }
   
@@ -5882,9 +6118,9 @@ function renderPermTable(projects) {
     <table class="perm-table" style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
         <tr style="background:var(--bg,#f8fafc);border-bottom:2px solid var(--bd,#e2e8f0);">
-          <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Project / Contract</th>
-          <th style="padding:10px 14px;text-align:center;width:90px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Access</th>
-          <th style="padding:10px 14px;text-align:center;width:160px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Document Types</th>
+          <th style="padding:10px 14px;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">${escHtml(_admT('perm.th_project', null, 'Project / Contract'))}</th>
+          <th style="padding:10px 14px;text-align:center;width:90px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">${escHtml(_admT('perm.th_access', null, 'Access'))}</th>
+          <th style="padding:10px 14px;text-align:center;width:160px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">${escHtml(_admT('perm.th_doc_types', null, 'Document Types'))}</th>
         </tr>
       </thead>
       <tbody>
@@ -5894,7 +6130,7 @@ function renderPermTable(projects) {
   projects.forEach(p => {
     const access = assignedMap[p.id];
     const hasAccess = !!access;
-    const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • Client: ${escHtml(p.client)}</span>` : '';
+    const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • ${escHtml(_admT('perm.client_prefix', null, 'Client:'))} ${escHtml(p.client)}</span>` : '';
     const pWsId = String(p.workspace_id || 'ENG').toUpperCase();
     const pWs = wsMetaLookup[pWsId];
     const wsIcon = (pWs && pWs.icon) || (pWsId === 'HSE' ? '🛡️' : (pWsId === 'OM' ? '⚙️' : '📐'));
@@ -5905,17 +6141,21 @@ function renderPermTable(projects) {
       : 'font-size:9.5px;padding:1px 6px;';
     
     const allowedDts = (access && Array.isArray(access.allowed_doc_types)) ? access.allowed_doc_types : null;
-    const dtLabel = allowedDts === null ? 'All' : (allowedDts.length === 0 ? '0 types (None)' : `${allowedDts.length} types`);
+    const dtLabel = allowedDts === null
+      ? _admT('perm.dt_all', null, 'All')
+      : (allowedDts.length === 0
+          ? _admT('perm.dt_none', null, '0 types (None)')
+          : _admT('perm.dt_count', { count: allowedDts.length }, `${allowedDts.length} types`));
     const dtBadgeBg = allowedDts === null ? '#e0f2fe' : (allowedDts.length === 0 ? '#fee2e2' : '#fef3c7');
     const dtBadgeColor = allowedDts === null ? '#0369a1' : (allowedDts.length === 0 ? '#991b1b' : '#92400e');
 
     html += `
       <tr class="perm-row" data-pid="${escHtml(p.id)}" data-text="${escHtml((p.code + ' ' + p.name + ' ' + (p.client||'')).toLowerCase())}" style="border-bottom:1px solid var(--bd,#f1f5f9);">
         <td style="padding:10px 14px;">
-          <div style="font-weight:700;color:var(--tx);display:flex;align-items:center;gap:6px;">
-            <span>${escHtml(p.code)}</span>
+          <div style="font-weight:700;color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="bidi-ltr">${escHtml(p.code)}</span>
             <span style="font-weight:500;color:var(--tx-mu,#64748b);">${escHtml(p.name)}</span>
-            <span class="dept-badge ${wsBadgeCls}" style="${wsBadgeStyle}">${wsIcon} ${escHtml(wsCode)}</span>
+            <span class="dept-badge bidi-ltr ${wsBadgeCls}" style="${wsBadgeStyle}">${wsIcon} ${escHtml(wsCode)}</span>
           </div>
           ${clientText}
         </td>
@@ -5926,7 +6166,7 @@ function renderPermTable(projects) {
           ${hasAccess ? `
             <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(p.id)}" onclick="toggleDocTypesPanel('${escHtml(p.id)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
               <span>📄</span>
-              <span id="dt-badge-${escHtml(p.id)}" style="background:${dtBadgeBg};color:${dtBadgeColor};padding:1px 5px;border-radius:4px;font-weight:600;">${dtLabel}</span>
+              <span id="dt-badge-${escHtml(p.id)}" style="background:${dtBadgeBg};color:${dtBadgeColor};padding:1px 5px;border-radius:4px;font-weight:600;">${escHtml(dtLabel)}</span>
               <span>▾</span>
             </button>
           ` : '<span style="color:var(--mu);font-size:11px;">—</span>'}
@@ -5935,15 +6175,15 @@ function renderPermTable(projects) {
       <tr id="dt-box-${escHtml(p.id)}" class="perm-dt-box" style="display:none;background:var(--bg,#f8fafc);border-bottom:2px solid var(--bd,#e2e8f0);">
         <td colspan="3" style="padding:10px 18px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <span style="font-size:11px;font-weight:700;color:var(--tx);">Allowed Document Types for ${escHtml(p.name)}:</span>
+            <span style="font-size:11px;font-weight:700;color:var(--tx);">${escHtml(_admT('perm.allowed_dts_for', { name: p.name }, 'Allowed Document Types for ' + p.name + ':'))}</span>
             <div style="font-size:11px;display:flex;gap:8px;">
-              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();selectAllDocTypes('${escHtml(p.id)}')">Select All</a>
+              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();selectAllDocTypes('${escHtml(p.id)}')">${escHtml(_admT('perm.select_all', null, 'Select All'))}</a>
               <span style="color:var(--bd);">|</span>
-              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();clearAllDocTypes('${escHtml(p.id)}')">Clear All</a>
+              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();clearAllDocTypes('${escHtml(p.id)}')">${escHtml(_admT('perm.clear_all', null, 'Clear All'))}</a>
             </div>
           </div>
           <div id="dt-chips-${escHtml(p.id)}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <span style="color:var(--mu);font-size:11px;">Loading document types...</span>
+            <span style="color:var(--mu);font-size:11px;">${escHtml(_admT('perm.loading_dts', null, 'Loading document types...'))}</span>
           </div>
         </td>
       </tr>
@@ -5967,7 +6207,7 @@ async function toggleDocTypesPanel(pid, forceOpen) {
   if (!chipsDiv) return;
 
   if (!window._PROJECT_DOC_TYPES_CACHE[pid]) {
-    chipsDiv.innerHTML = '<span style="color:var(--mu);font-size:11px;">Loading document types...</span>';
+    chipsDiv.innerHTML = `<span style="color:var(--mu);font-size:11px;">${escHtml(_admT('perm.loading_dts', null, 'Loading document types...'))}</span>`;
     const dts = await apiFetch('/api/doc_types/' + pid + '?all=1');
     window._PROJECT_DOC_TYPES_CACHE[pid] = dts || [];
   }
@@ -5981,7 +6221,7 @@ async function toggleDocTypesPanel(pid, forceOpen) {
     : null;
 
   if (allDts.length === 0) {
-    chipsDiv.innerHTML = '<span style="color:var(--mu);font-size:11px;">No document types configured for this project.</span>';
+    chipsDiv.innerHTML = `<span style="color:var(--mu);font-size:11px;">${escHtml(_admT('perm.no_dts_configured', null, 'No document types configured for this project.'))}</span>`;
     return;
   }
 
@@ -5991,7 +6231,7 @@ async function toggleDocTypesPanel(pid, forceOpen) {
     html += `
       <label style="display:inline-flex;align-items:center;gap:5px;background:var(--surface,#fff);color:var(--tx);border:1px solid var(--bd);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;user-select:none;">
         <input type="checkbox" class="dt-chk-${escHtml(pid)}" value="${escHtml(d.id)}" data-code="${escHtml(d.code)}" ${isChecked ? 'checked' : ''} onchange="onDocTypeCheckboxChange('${escHtml(pid)}')">
-        <strong>${escHtml(d.code)}</strong>
+        <strong class="bidi-ltr">${escHtml(d.code)}</strong>
         <span style="color:var(--mu);font-size:10px;">${escHtml(d.name)}</span>
       </label>
     `;
@@ -6020,7 +6260,11 @@ async function onDocTypeCheckboxChange(pid) {
 
   const badgeEl = document.getElementById('dt-badge-' + pid);
   if (badgeEl) {
-    const label = docTypesPayload === null ? 'All' : (docTypesPayload.length === 0 ? '0 types (None)' : `${docTypesPayload.length} types`);
+    const label = docTypesPayload === null
+      ? _admT('perm.dt_all', null, 'All')
+      : (docTypesPayload.length === 0
+          ? _admT('perm.dt_none', null, '0 types (None)')
+          : _admT('perm.dt_count', { count: docTypesPayload.length }, `${docTypesPayload.length} types`));
     badgeEl.textContent = label;
     badgeEl.style.background = docTypesPayload === null ? '#e0f2fe' : (docTypesPayload.length === 0 ? '#fee2e2' : '#fef3c7');
     badgeEl.style.color = docTypesPayload === null ? '#0369a1' : (docTypesPayload.length === 0 ? '#991b1b' : '#92400e');
@@ -6037,7 +6281,7 @@ async function onDocTypeCheckboxChange(pid) {
       })
     });
   } catch (err) {
-    toast('Error saving document type permissions: ' + err.message, 'er');
+    toast(_admT('admin.err_dt_perm_save', { error: err.message }, 'Error saving document type permissions: ' + err.message), 'er');
   }
 }
 
@@ -6065,17 +6309,18 @@ function filterPermProjects(query) {
 async function togglePermAccess(username, pid, enable, autoExpand = true) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   const statusEl = document.getElementById('perm-save-status');
-  if (statusEl) statusEl.textContent = 'Saving...';
+  if (statusEl) statusEl.textContent = _admT('perm.status_saving', null, 'Saving...');
   
   // Real-time DOM update: Show/hide document types button and box immediately without reload
   const dtCell = document.getElementById('dt-cell-' + pid);
   const box = document.getElementById('dt-box-' + pid);
+  const allLbl = escHtml(_admT('perm.dt_all', null, 'All'));
   if (dtCell) {
     if (enable) {
       dtCell.innerHTML = `
         <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(pid)}" onclick="toggleDocTypesPanel('${escHtml(pid)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
           <span>📄</span>
-          <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">All</span>
+          <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">${allLbl}</span>
           <span>▾</span>
         </button>
       `;
@@ -6106,16 +6351,16 @@ async function togglePermAccess(username, pid, enable, autoExpand = true) {
       }
       updateUserPermBadge(username);
     }
-    if (statusEl) statusEl.textContent = '✔ Changes saved.';
-    setTimeout(() => { if (statusEl) statusEl.textContent = 'Permissions are applied immediately.'; }, 2000);
+    if (statusEl) statusEl.textContent = _admT('perm.status_saved', null, '✔ Changes saved.');
+    setTimeout(() => { if (statusEl) statusEl.textContent = _admT('perm.status_immediate', null, 'Permissions are applied immediately.'); }, 2000);
     
     // Automatically open document types panel so user can immediately choose tabs
     if (enable && autoExpand) {
       toggleDocTypesPanel(pid, true);
     }
   } catch (e) {
-    toast('Failed to update permission: ' + e.message, 'er');
-    if (statusEl) statusEl.textContent = 'Failed to save.';
+    toast(_admT('admin.err_perm_update', { error: e.message }, 'Failed to update permission: ' + e.message), 'er');
+    if (statusEl) statusEl.textContent = _admT('perm.status_failed', null, 'Failed to save.');
     // Revert UI on network failure
     const chk = document.getElementById('chk-access-' + pid);
     if (chk) chk.checked = !enable;
@@ -6124,7 +6369,7 @@ async function togglePermAccess(username, pid, enable, autoExpand = true) {
         dtCell.innerHTML = `
           <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(pid)}" onclick="toggleDocTypesPanel('${escHtml(pid)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
             <span>📄</span>
-            <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">All</span>
+            <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">${allLbl}</span>
             <span>▾</span>
           </button>
         `;
@@ -6139,7 +6384,7 @@ async function togglePermAccess(username, pid, enable, autoExpand = true) {
 async function togglePermDC(username, pid, isDC) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   const statusEl = document.getElementById('perm-save-status');
-  if (statusEl) statusEl.textContent = 'Saving...';
+  if (statusEl) statusEl.textContent = _admT('perm.status_saving', null, 'Saving...');
   
   try {
     await apiFetch('/api/users', {
@@ -6156,11 +6401,11 @@ async function togglePermDC(username, pid, isDC) {
       if (pObj) pObj.is_dc = isDC;
       else u.projects.push({ project_id: pid, is_dc: isDC });
     }
-    if (statusEl) statusEl.textContent = '✔ Changes saved.';
-    setTimeout(() => { if (statusEl) statusEl.textContent = 'Permissions are applied immediately.'; }, 2000);
+    if (statusEl) statusEl.textContent = _admT('perm.status_saved', null, '✔ Changes saved.');
+    setTimeout(() => { if (statusEl) statusEl.textContent = _admT('perm.status_immediate', null, 'Permissions are applied immediately.'); }, 2000);
   } catch (e) {
-    toast('Failed to update DC: ' + e.message, 'er');
-    if (statusEl) statusEl.textContent = 'Failed to save.';
+    toast(_admT('admin.err_perm_update', { error: e.message }, 'Failed to update DC: ' + e.message), 'er');
+    if (statusEl) statusEl.textContent = _admT('perm.status_failed', null, 'Failed to save.');
   }
 }
 
@@ -6214,7 +6459,7 @@ async function submitAddUser() {
   const pw = document.getElementById('nu-pw')?.value;
   const canDl = !!document.getElementById('nu-can-dl')?.checked;
   
-  if (!name || !pw) return toast('Username and password required', 'er');
+  if (!name || !pw) return toast(_admT('admin.err_user_pw_req', null, 'Username and password required'), 'er');
   
   try {
     const r = await apiFetch('/api/users', {
@@ -6230,7 +6475,7 @@ async function submitAddUser() {
       })
     });
     if (r && r.ok) {
-      toast('✔ User added successfully', 'ok');
+      toast(_admT('admin.toast_user_added', null, '✔ User added successfully'), 'ok');
       toggleAddUserCard();
       const updatedUsers = await apiFetch('/api/users');
       if (updatedUsers) {
@@ -6238,10 +6483,10 @@ async function submitAddUser() {
         renderAdminTable();
       }
     } else {
-      toast((r && r.error) || 'Failed to add user', 'er');
+      toast((r && r.error) || _admT('admin.err_user_add', null, 'Failed to add user'), 'er');
     }
   } catch (err) {
-    toast('Error adding user: ' + err.message, 'er');
+    toast(_admT('admin.err_user_add', null, 'Failed to add user') + ': ' + err.message, 'er');
   }
 }
 
@@ -6254,12 +6499,12 @@ async function updUsrEmail(username, email) {
     if (r && r.ok) {
       const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
       if (u) u.email = email;
-      toast('✔ Email updated', 'ok');
+      toast(_admT('admin.toast_email_updated', null, '✔ Email updated'), 'ok');
     } else {
-      toast('Failed to update email', 'er');
+      toast(_admT('admin.err_email_update', null, 'Failed to update email'), 'er');
     }
   } catch (e) {
-    toast('Error updating email: ' + e.message, 'er');
+    toast(_admT('admin.err_email_update', null, 'Failed to update email') + ': ' + e.message, 'er');
   }
 }
 
@@ -6272,13 +6517,13 @@ async function updUsrRole(username, role) {
     if (r && r.ok) {
       const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
       if (u) u.role = role;
-      toast('✔ Role updated', 'ok');
+      toast(_admT('admin.toast_role_updated', null, '✔ Role updated'), 'ok');
     } else {
-      toast((r && r.error) || 'Failed to update role', 'er');
+      toast((r && r.error) || _admT('admin.err_role_update', null, 'Failed to update role'), 'er');
       renderAdminTable();
     }
   } catch (e) {
-    toast('Error updating role: ' + e.message, 'er');
+    toast(_admT('admin.err_role_update', null, 'Failed to update role') + ': ' + e.message, 'er');
     renderAdminTable();
   }
 }
@@ -6292,49 +6537,49 @@ async function updUsrDept(username, dept) {
     if (r && r.ok) {
       const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
       if (u) u.primary_workspace = dept;
-      toast('✔ Department updated to ' + dept, 'ok');
+      toast(_admT('admin.toast_dept_updated_to', { dept: dept }, '✔ Department updated to ' + dept), 'ok');
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to update department', 'er');
+      toast((r && r.error) || _admT('admin.err_dept_update', null, 'Failed to update department'), 'er');
       renderAdminTable();
     }
   } catch (e) {
-    toast('Error updating department: ' + e.message, 'er');
+    toast(_admT('admin.err_dept_update', null, 'Failed to update department') + ': ' + e.message, 'er');
     renderAdminTable();
   }
 }
 
 async function delUsr(username) {
-  if (!confirm(`Are you sure you want to delete user "${username}"?\nThis cannot be undone.`)) return;
+  if (!confirm(_admT('admin.confirm_delete_user', { user: username }, `Are you sure you want to delete user "${username}"?\nThis cannot be undone.`))) return;
   try {
     const r = await apiFetch('/api/users', {
       method: 'POST',
       body: JSON.stringify({ action: 'delete', username: username })
     });
     if (r && r.ok) {
-      toast('✔ User deleted', 'wa');
+      toast(_admT('admin.toast_user_deleted', null, '✔ User deleted'), 'wa');
       _ADMIN_DATA.users = (_ADMIN_DATA.users || []).filter(x => x.username !== username);
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to delete user', 'er');
+      toast((r && r.error) || _admT('admin.err_user_delete', null, 'Failed to delete user'), 'er');
     }
   } catch (e) {
-    toast('Error deleting user: ' + e.message, 'er');
+    toast(_admT('admin.err_user_delete', null, 'Failed to delete user') + ': ' + e.message, 'er');
   }
 }
 
 async function chgPw(username) {
-  const pw = prompt(`Set new password for "${username}" (min 4 characters):`);
+  const pw = prompt(_admT('admin.prompt_new_pw_user', { user: username }, `Set new password for "${username}" (min 4 characters):`));
   if (!pw || pw.length < 4) return;
   try {
     const r = await apiFetch('/api/users', {
       method: 'POST',
       body: JSON.stringify({ action: 'change_password', username: username, password: pw })
     });
-    if (r && r.ok) toast('✔ Password changed', 'ok');
-    else toast((r && r.error) || 'Error changing password', 'er');
+    if (r && r.ok) toast(_admT('common.password_changed', null, '✔ Password changed'), 'ok');
+    else toast((r && r.error) || _admT('admin.err_pw_change', null, 'Error changing password'), 'er');
   } catch (e) {
-    toast('Error: ' + e.message, 'er');
+    toast(_admT('common.error', null, 'Error') + ': ' + e.message, 'er');
   }
 }
 
@@ -6344,35 +6589,35 @@ async function runSequenceAudit() {
   const resEl = document.getElementById('audit-result');
   if (!resEl) return;
   if (!pid || !dtId) {
-    resEl.innerHTML = '<div style="padding:8px 12px;background:#fef08a;color:#854d0e;border-radius:4px;">Please select both Project and Document Type.</div>';
+    resEl.innerHTML = `<div style="padding:8px 12px;background:#fef08a;color:#854d0e;border-radius:4px;">${escHtml(_admT('admin.audit_select_both', null, 'Please select both Project and Document Type.'))}</div>`;
     return;
   }
-  resEl.innerHTML = '<div style="color:var(--mu)">Auditing document sequences...</div>';
+  resEl.innerHTML = `<div style="color:var(--mu)">${escHtml(_admT('admin.audit_running', null, 'Auditing document sequences...'))}</div>`;
   try {
     const r = await apiFetch('/api/audit-sequence?project_id=' + pid + '&dt_id=' + dtId);
     if (r && !r.error) {
       if (r.missing && r.missing.length > 0) {
         resEl.innerHTML = `
           <div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">
-            <strong>⚠️ Missing Sequences Found!</strong><br>
-            Expected range: ${r.min} to ${r.max}<br>
-            Missing numbers: ${r.missing.join(', ')}
+            <strong>${escHtml(_admT('admin.audit_missing_title', null, '⚠️ Missing Sequences Found!'))}</strong><br>
+            ${escHtml(_admT('admin.audit_expected_range', { min: r.min, max: r.max }, 'Expected range: ' + r.min + ' to ' + r.max))}<br>
+            ${escHtml(_admT('admin.audit_missing_nums', { list: r.missing.join(', ') }, 'Missing numbers: ' + r.missing.join(', ')))}
           </div>
         `;
       } else if (r.min === 0 && r.max === 0) {
-        resEl.innerHTML = '<div style="padding:8px 12px;background:#f1f5f9;color:#475569;border-radius:4px;">No numbered documents found to audit.</div>';
+        resEl.innerHTML = `<div style="padding:8px 12px;background:#f1f5f9;color:#475569;border-radius:4px;">${escHtml(_admT('admin.audit_no_docs', null, 'No numbered documents found to audit.'))}</div>`;
       } else {
         resEl.innerHTML = `
           <div style="padding:10px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:4px;">
-            <strong>✅ 100% Intact.</strong> No missing sequence numbers. Range: ${r.min} to ${r.max}.
+            <strong>${escHtml(_admT('admin.audit_intact_title', null, '✅ 100% Intact.'))}</strong> ${escHtml(_admT('admin.audit_intact_desc', { min: r.min, max: r.max }, 'No missing sequence numbers. Range: ' + r.min + ' to ' + r.max + '.'))}
           </div>
         `;
       }
     } else {
-      resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">Error: ${(r && r.error) || 'Unknown error'}</div>`;
+      resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">${escHtml(_admT('common.error', null, 'Error'))}: ${escHtml((r && r.error) || 'Unknown error')}</div>`;
     }
   } catch (e) {
-    resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">Audit failed: ${e.message}</div>`;
+    resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">${escHtml(_admT('admin.audit_failed', { error: e.message }, 'Audit failed: ' + e.message))}</div>`;
   }
 }
 
@@ -6380,7 +6625,7 @@ async function exportUsersCSV() {
   try {
     const users = _ADMIN_DATA.users || [];
     const projects = _ADMIN_DATA.projects || [];
-    if (!users.length || !projects.length) return toast('No user data to export', 'er');
+    if (!users.length || !projects.length) return toast(_admT('admin.err_no_export_data', null, 'No user data to export'), 'er');
     
     const pCodeMap = Object.fromEntries(projects.map(p => [p.id, p.code || p.id]));
     const pNameMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
@@ -6459,9 +6704,9 @@ async function exportUsersCSV() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    toast('✔ Users Matrix exported to CSV', 'ok');
+    toast(_admT('admin.toast_csv_exported', null, '✔ Users Matrix exported to CSV'), 'ok');
   } catch (e) {
-    toast('Export failed: ' + e.message, 'er');
+    toast(_admT('admin.err_export', { error: e.message }, 'Export failed: ' + e.message), 'er');
   }
 }
 
@@ -7573,8 +7818,8 @@ body.dark .tbtn.active {{
 
 {_shared_js_html(norm)}
 {_about_modal_html(norm)}
-{SPOTLIGHT_MODAL_COMPONENT}
-{AI_DRAWER_COMPONENT}
+{_spotlight_modal_html(norm)}
+{_ai_drawer_html(norm)}
 <script>
 function showOmTab(tabName, btn) {{
   document.querySelectorAll('.psel-bar .tbtn').forEach(b => b.classList.remove('active'));
@@ -9005,8 +9250,8 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 
 {_shared_js_html(norm)}
 {_about_modal_html(norm)}
-{SPOTLIGHT_MODAL_COMPONENT}
-{AI_DRAWER_COMPONENT}
+{_spotlight_modal_html(norm)}
+{_ai_drawer_html(norm)}
 <script>{hse_js_block}</script>
 </body></html>"""
 
@@ -9164,6 +9409,27 @@ body.dark .perm-table tr:hover { background: rgba(255, 255, 255, 0.04); }
 #toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
 #toast.ok { background: #16a34a; }
 #toast.er { background: #dc2626; }
+
+/* RTL Overrides for Admin & Permissions Modals */
+html[dir="rtl"] .user-tbl,
+html[dir="rtl"] .perm-table,
+html[dir="rtl"] .perm-table th {
+  text-align: right;
+}
+html[dir="rtl"] .user-tbl th {
+  letter-spacing: 0 !important;
+}
+html[dir="rtl"] .user-tbl-th-actions {
+  text-align: left !important;
+}
+html[dir="rtl"] .u-avatar {
+  margin-right: 0 !important;
+  margin-left: 10px !important;
+}
+html[dir="rtl"] #toast {
+  right: auto;
+  left: 24px;
+}
 """
 
 def render_launchpad(u, lang=None):
@@ -12688,8 +12954,8 @@ init();
 </script>
 {_about_modal_html(norm)}
 {_global_footer_html(norm)}
-{SPOTLIGHT_MODAL_COMPONENT}
-{AI_DRAWER_COMPONENT}
+{_spotlight_modal_html(norm)}
+{_ai_drawer_html(norm)}
 </body></html>"""
 
 
@@ -20528,8 +20794,8 @@ async function saveProjectSettings() {{
 }}
 </script>
 {_about_modal_html(norm)}
-{SPOTLIGHT_MODAL_COMPONENT}
-{AI_DRAWER_COMPONENT}
+{_spotlight_modal_html(norm)}
+{_ai_drawer_html(norm)}
 </body></html>"""
 
 
