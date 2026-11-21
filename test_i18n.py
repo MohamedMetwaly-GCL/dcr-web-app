@@ -856,5 +856,60 @@ class TestI18nVisualQAFixes(unittest.TestCase):
             self.assertNotIn("except TypeError", src)
 
 
+class TestI18nFix02TopbarAndBidi(unittest.TestCase):
+    """Regression coverage for I18N-FIX-02: topbar project code/name & dir=auto BiDi alignment."""
+
+    def test_topbar_project_code_nowrap_and_name_clamp_css(self):
+        self.assertIn('#topbar-proj-info .pf.pf-code', html_render.BASE_CSS)
+        self.assertIn('#topbar-proj-info .pf-val[data-key="code"]', html_render.BASE_CSS)
+        self.assertIn('max-width: none !important;', html_render.BASE_CSS)
+        self.assertIn('flex-shrink: 0 !important;', html_render.BASE_CSS)
+        self.assertIn('#topbar-proj-info .pf-val[data-key="name"]', html_render.BASE_CSS)
+        self.assertIn('max-width: clamp(180px, 22vw, 340px) !important;', html_render.BASE_CSS)
+        self.assertIn('@media (max-width: 1440px) and (min-width: 769px)', html_render.BASE_CSS)
+        self.assertNotIn('max-width: 190px !important;', html_render.BASE_CSS)
+
+    def test_smart_bidi_plaintext_and_rtl_cell_alignment_css(self):
+        self.assertIn('#regtbl td[dir="auto"]', html_render.BASE_CSS)
+        self.assertIn('#projbar .pf-val[dir="auto"]', html_render.BASE_CSS)
+        self.assertIn('unicode-bidi: plaintext;', html_render.BASE_CSS)
+        self.assertIn('text-align: start;', html_render.BASE_CSS)
+        self.assertIn('html[dir="rtl"] #regtbl td.reg-date-cell', html_render.BASE_CSS)
+        self.assertIn('html[dir="rtl"] #regtbl td.reg-dur-cell', html_render.BASE_CSS)
+        self.assertIn('html[dir="rtl"] #regtbl td.docno-cell', html_render.BASE_CSS)
+        self.assertIn('html[dir="rtl"] #regtbl td.item-ref-cell', html_render.BASE_CSS)
+
+    def test_register_renders_topbar_title_and_dir_auto_in_en_and_ar(self):
+        user = {"username": "admin_u", "role": "superadmin"}
+        proj = {
+            "id": "p_pem058",
+            "code": "PEM-058",
+            "name": "CFC District Cooling Plant Phase 2",
+            "mainConsultant": "Allied Consultants Ltd.",
+            "startDate": "2025-01-15",
+            "workspace_id": "ENG",
+            "status_colors": {},
+        }
+        with patch("html_render.can_edit", return_value=True), \
+             patch("html_render.is_project_admin", return_value=True), \
+             patch("html_render.get_allowed_doc_type_filter", return_value=None), \
+             patch("db.can_user_download", return_value=True), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.get_doc_types", return_value=[]), \
+             patch("db.get_logo", return_value=None), \
+             patch("db.get_user_workspaces", return_value=[]):
+            for lang in ("en", "ar"):
+                html_out = html_render.render_register(user, proj, active_ws_id="ENG", lang=lang)
+                self.assertIn('class="pf primary pf-code"', html_out)
+                self.assertIn('class="pf primary pf-name"', html_out)
+                self.assertIn('title="CFC District Cooling Plant Phase 2" data-key="name"', html_out)
+                self.assertIn('dir="auto" data-key="mainConsultant"', html_out)
+                self.assertIn('class="pf-val bidi-ltr" data-key="startDate"', html_out)
+                self.assertIn("td.setAttribute('dir','auto')", html_out)
+                self.assertIn("reg-date-cell", html_out)
+                self.assertIn("reg-dur-cell", html_out)
+                self.assertIn("item-ref-cell", html_out)
+
+
 if __name__ == "__main__":
     unittest.main()

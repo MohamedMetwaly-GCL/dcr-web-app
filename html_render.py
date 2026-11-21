@@ -22,6 +22,7 @@ No routes, no business logic, no database writes.
 """
 import json
 import os
+from html import escape as _html_escape
 
 import db
 from flask import url_for
@@ -4719,7 +4720,7 @@ html[dir="rtl"] #topbar-proj-info .pf-val {
     white-space: nowrap;
   }
   html[dir="rtl"] #topbar-proj-info .pf:last-of-type .pf-val {
-    max-width: 190px !important;
+    max-width: clamp(180px, 22vw, 340px) !important;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -4776,6 +4777,71 @@ html[dir="rtl"] .about-tech-list {
     margin-right: 0 !important;
     margin-left: auto !important;
   }
+}
+
+/* ── I18N-FIX-02: Topbar Project Info & Smart BiDi Alignment ── */
+#topbar-proj-info .pf.pf-code {
+  flex: 0 0 auto !important;
+}
+#topbar-proj-info .pf-val[data-key="code"] {
+  max-width: none !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+#topbar-proj-info .pf.pf-name {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+@media (min-width: 769px) {
+  #topbar-proj-info .pf-val[data-key="name"] {
+    max-width: clamp(180px, 22vw, 340px) !important;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 1440px) and (min-width: 769px) {
+  #topbar {
+    padding: 0 12px;
+    gap: 6px;
+  }
+  #topbar .global-search-trigger {
+    padding: 4px 9px;
+    margin: 0 4px;
+    gap: 6px;
+  }
+  #topbar .global-search-trigger .gst-text {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #topbar-proj-info {
+    gap: 10px !important;
+    padding: 3px 8px !important;
+  }
+  #topbar .tb-btn {
+    padding: 5px 8px;
+    gap: 4px;
+  }
+}
+#regtbl td[dir="auto"],
+#projbar .pf-val[dir="auto"],
+#topbar-proj-info .pf-val[dir="auto"] {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+html[dir="rtl"] #regtbl td.sr,
+html[dir="rtl"] #regtbl td.reg-date-cell,
+html[dir="rtl"] #regtbl td.reg-dur-cell {
+  text-align: center;
+}
+html[dir="rtl"] #regtbl td.docno-cell,
+html[dir="rtl"] #regtbl td.item-ref-cell {
+  text-align: left;
 }
 
 </style>"""
@@ -13496,15 +13562,19 @@ def render_register(u, proj, active_ws_id=None, lang=None):
 
     primary_keys = {"code", "name"}
     projbar_primary = "".join(
-        f'<div class="pf primary"><span class="pf-lbl">{lbl}</span>'
-        f'<span class="pf-val{" bidi-ltr" if key == "code" else ""}" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
-        for key,lbl in PROJ_FIELDS
-        if key in primary_keys and proj.get(key,"").strip())
+        f'<div class="pf primary pf-{key}"><span class="pf-lbl">{lbl}</span>'
+        f'<span class="pf-val{" bidi-ltr" if key == "code" else ""}"'
+        f'{" dir=\"auto\" title=\"" + _html_escape(str(proj.get(key, "") or ""), quote=True) + "\"" if key == "name" else ""}'
+        f' data-key="{key}">{_html_escape(str(proj.get(key, "") or "")) or "—"}</span></div>'
+        for key, lbl in PROJ_FIELDS
+        if key in primary_keys and proj.get(key, "").strip())
     projbar_secondary = "".join(
         f'<div class="pf secondary"><span class="pf-lbl">{lbl}</span>'
-        f'<span class="pf-val{" bidi-ltr" if key in ("startDate", "endDate") else ""}" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
-        for key,lbl in PROJ_FIELDS
-        if key not in primary_keys and proj.get(key,"").strip())
+        f'<span class="pf-val{" bidi-ltr" if key in ("startDate", "endDate") else ""}"'
+        f'{"" if key in ("startDate", "endDate") else " dir=\"auto\""}'
+        f' data-key="{key}">{_html_escape(str(proj.get(key, "") or "")) or "—"}</span></div>'
+        for key, lbl in PROJ_FIELDS
+        if key not in primary_keys and proj.get(key, "").strip())
     projbar_toggle = ('<button id="projbar-toggle" class="tool-btn" type="button" '
                       f'onclick="toggleProjectInfo()">{t("reg.project_info_btn", norm)}</button>') if projbar_secondary else ''
     edit_proj_inline_btn = (
@@ -15829,18 +15899,18 @@ function renderRows(){{
       const longTextMeta=getLongTextMeta(col);
       if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
       if(col.col_type==='docno'||key==='docNo'){{td.classList.add('docno-cell');td.classList.add('bidi-ltr');}}
-      if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';td.classList.add('bidi-ltr');if(row._overdue&&val)td.classList.add('ovdate');}}
-      else if(key==='duration'){{val=row._duration||'';td.classList.add('bidi-ltr');}}
+      if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';td.classList.add('bidi-ltr','reg-date-cell');if(row._overdue&&val)td.classList.add('ovdate');}}
+      else if(key==='duration'){{val=row._duration||'';td.classList.add('bidi-ltr','reg-dur-cell');}}
       else if(col.col_type==='duration_calc'){{
         const[ds,de]=String(col.list_name||'issuedDate,actualReplyDate').split(',');
         val=calcWD(row[ds.trim()]||'',row[de.trim()]||'');
-        td.classList.add('bidi-ltr');
+        td.classList.add('bidi-ltr','reg-dur-cell');
       }}
-      else if(key==='issuedDate'){{val=row._issuedFmt||'';td.classList.add('bidi-ltr');}}
-      else if(key==='actualReplyDate'){{val=row._replyFmt||'';td.classList.add('bidi-ltr');}}
+      else if(key==='issuedDate'){{val=row._issuedFmt||'';td.classList.add('bidi-ltr','reg-date-cell');}}
+      else if(key==='actualReplyDate'){{val=row._replyFmt||'';td.classList.add('bidi-ltr','reg-date-cell');}}
       else if(col.col_type==='date'||col.col_type==='auto_date'){{
         val=row['_fmt_'+key]||row[key]||'';  // use pre-formatted version
-        td.classList.add('bidi-ltr');
+        td.classList.add('bidi-ltr','reg-date-cell');
       }}
       else if(key==='status'||isStatusLikeField(col)){{
         val=row[key]||((isLtrTab&&ltrRole)?getLTRValue(row,state.allTabCols,ltrRole):'');
@@ -15916,7 +15986,7 @@ function renderRows(){{
          }}).join('');
          td.innerHTML = lines;
          if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
-         applyDisplayDirection(td, "");
+         td.classList.add('bidi-ltr','item-ref-cell');
          tr.appendChild(td);
          return;
       }}
@@ -15940,7 +16010,11 @@ function renderRows(){{
           td.title = CAN_EDIT ? window.t('reg.docno_click_edit') : window.t('reg.docno_click_view');
           td.onclick = () => {{ CAN_EDIT ? editRec(row._id) : viewRec(row._id); }};
       }}
-      applyDisplayDirection(td,displayVal);
+      if(!td.classList.contains('bidi-ltr')){{
+        td.setAttribute('dir','auto');
+      }}else{{
+        applyDisplayDirection(td,displayVal);
+      }}
       tr.appendChild(td);
     }});
     const ta=document.createElement('td');ta.className='acts';
