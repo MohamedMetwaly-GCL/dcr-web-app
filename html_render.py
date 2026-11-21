@@ -13561,17 +13561,21 @@ def render_register(u, proj, active_ws_id=None, lang=None):
     PROJ_FIELDS = [(k, custom_labels.get(k, lbl)) for k, lbl in DEFAULT_PROJ_FIELDS]
 
     primary_keys = {"code", "name"}
+    def _pf_extra(k, is_primary):
+        if is_primary:
+            return (' dir="auto" title="' + _html_escape(str(proj.get(k, "") or ""), quote=True) + '"') if k == "name" else ""
+        return "" if k in ("startDate", "endDate") else ' dir="auto"'
     projbar_primary = "".join(
         f'<div class="pf primary pf-{key}"><span class="pf-lbl">{lbl}</span>'
         f'<span class="pf-val{" bidi-ltr" if key == "code" else ""}"'
-        f'{" dir=\"auto\" title=\"" + _html_escape(str(proj.get(key, "") or ""), quote=True) + "\"" if key == "name" else ""}'
+        f'{_pf_extra(key, True)}'
         f' data-key="{key}">{_html_escape(str(proj.get(key, "") or "")) or "—"}</span></div>'
         for key, lbl in PROJ_FIELDS
         if key in primary_keys and proj.get(key, "").strip())
     projbar_secondary = "".join(
         f'<div class="pf secondary"><span class="pf-lbl">{lbl}</span>'
         f'<span class="pf-val{" bidi-ltr" if key in ("startDate", "endDate") else ""}"'
-        f'{"" if key in ("startDate", "endDate") else " dir=\"auto\""}'
+        f'{_pf_extra(key, False)}'
         f' data-key="{key}">{_html_escape(str(proj.get(key, "") or "")) or "—"}</span></div>'
         for key, lbl in PROJ_FIELDS
         if key not in primary_keys and proj.get(key, "").strip())
