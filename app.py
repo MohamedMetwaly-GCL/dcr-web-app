@@ -6,7 +6,7 @@ from utils import get_next_doc_no, get_next_plain_doc_no, doc_type_uses_revision
 
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
 from html_render import render_login, render_launchpad, render_dashboard, render_register, _head_icon_tags
-from i18n import get_lang, LANG_COOKIE_NAME, LANG_COOKIE_MAX_AGE, SUPPORTED_LANGS
+from i18n import get_lang, LANG_COOKIE_NAME, LANG_COOKIE_MAX_AGE, SUPPORTED_LANGS, html_dir, t, get_client_i18n_json
 from security import validate_username, login_limiter, get_client_ip
 from blueprints.projects import projects_bp
 from blueprints.doc_types import doc_types_bp
@@ -710,28 +710,44 @@ def magic_master_view(pid):
         
     p_code = project.get("code", "")
     p_name = project.get("name", "")
+    lang = get_lang(request)
+    dir_attr = html_dir(lang)
+    i18n_json = get_client_i18n_json(lang)
     
     # We serve the empty shell HTML. The frontend will fetch data via AJAX.
     # We embed the pid and token in the template.
     template = """
     <!DOCTYPE html>
-    <html lang="en">
+    <html lang="{{ lang }}" dir="{{ dir_attr }}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Smart Project Digest</title>
+        <title>{{ t_title }}</title>
         {{ icon_tags|safe }}
         <style>
+            @font-face {
+                font-family: 'Cairo';
+                src: url('/static/fonts/Cairo-Regular.ttf') format('truetype');
+                font-weight: 400 800;
+                font-display: swap;
+            }
             body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #0f172a; padding: 20px; margin: 0; }
+            html[dir="rtl"] body { font-family: 'Cairo', 'Inter', sans-serif; direction: rtl; text-align: right; }
+            .bidi-ltr { direction: ltr !important; unicode-bidi: isolate !important; display: inline-block; }
             .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
             .header-bar h1 { font-size: 20px; margin: 0; color: #0f172a; }
-            .controls { display: flex; gap: 10px; align-items: center; }
-            select, input[type="date"] { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 14px; outline: none; }
+            .proj-subtitle { font-size: 16px; color: #64748b; margin-left: 10px; }
+            html[dir="rtl"] .proj-subtitle { margin-left: 0; margin-right: 10px; }
+            .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+            select, input[type="date"] { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 14px; outline: none; background: #fff; color: #0f172a; }
+            .lang-btn { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #0f172a; font-size: 13px; font-weight: 700; cursor: pointer; }
+            .lang-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
             .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
             .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-bottom: 20px; }
             .stat-box { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e2e8f0; }
             .stat-box .val { font-size: 24px; font-weight: bold; color: #0f172a; }
             .stat-box .lbl { font-size: 12px; color: #64748b; margin-top: 4px; text-transform: uppercase; }
+            html[dir="rtl"] .stat-box .lbl { text-transform: none; }
             
             h2 { font-size: 18px; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
             .h-action { color: #dc2626; border-color: #fecaca; }
@@ -742,58 +758,137 @@ def magic_master_view(pid):
             .docno { font-weight: bold; color: #334155; }
             .title { color: #64748b; margin-top: 4px; font-size: 13px; }
             .disc { display: inline-block; padding: 2px 8px; border-radius: 12px; background: #e2e8f0; font-size: 11px; font-weight: 600; color: #475569; margin-top: 4px; }
+            .status-tag { font-size: 11px; font-weight: bold; color: #475569; margin-left: 8px; }
+            html[dir="rtl"] .status-tag { margin-left: 0; margin-right: 8px; }
             .empty { color: #94a3b8; font-size: 14px; font-style: italic; }
+            html[dir="rtl"] .empty { font-style: normal; }
             
             .top-overdue-card { border: 2px solid #fee2e2; }
             .top-overdue-card h2 { color: #b91c1c; border-color: #fecaca; }
             
             #loading { text-align: center; color: #64748b; padding: 40px; display: none; }
+            .digest-footer { text-align: center; color: #64748b; font-size: 12px; margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
         </style>
     </head>
     <body>
         <div class="header-bar">
-            <h1>📋 Smart Project Digest <span style="font-size: 16px; color: #64748b; margin-left: 10px;">{{ p_code }} - {{ p_name }}</span></h1>
+            <h1>📋 {{ t_title }} <span class="proj-subtitle"><span class="bidi-ltr">{{ p_code }}</span> - {{ p_name }}</span></h1>
             <div class="controls">
-                <input type="date" id="datePicker" title="History Date">
+                <input type="date" id="datePicker" class="bidi-ltr" title="{{ t_history_date }}">
                 <select id="roleFilter">
-                    <option value="__ALL__" selected>Show All</option>
+                    <option value="__ALL__" selected>{{ t_show_all }}</option>
                 </select>
+                <button type="button" id="langSwitcherBtn" class="lang-btn" onclick="switchDcrLang('{{ switch_target }}')" title="{{ switch_title }}" aria-label="{{ switch_title }}">{{ switch_label }}</button>
             </div>
         </div>
         
         <div class="stats-grid" id="statsContainer"></div>
         
-        <div id="loading">Loading data...</div>
+        <div id="loading">{{ t_loading }}</div>
         <div id="content" style="display:none;">
 
             
             <div class="card">
-                <h2 style="color: #059669; border-color: #a7f3d0;">📥 Documents Received</h2>
+                <h2 style="color: #059669; border-color: #a7f3d0;">📥 {{ t_sec_received }}</h2>
                 <div id="receivedList"></div>
             </div>
             
             <div class="card">
-                <h2 style="color: #2563eb; border-color: #bfdbfe;">📤 Documents Sent</h2>
+                <h2 style="color: #2563eb; border-color: #bfdbfe;">📤 {{ t_sec_sent }}</h2>
                 <div id="sentList"></div>
             </div>
             
             <div class="card">
-                <h2 style="color: #7c3aed; border-color: #ddd6fe;">↩️ Documents Replied</h2>
+                <h2 style="color: #7c3aed; border-color: #ddd6fe;">↩️ {{ t_sec_replied }}</h2>
                 <div id="repliedList"></div>
             </div>
             
             <div class="card">
-                <h2 style="color: #ea580c; border-color: #fdba74;">📩 Incoming Letters</h2>
+                <h2 style="color: #ea580c; border-color: #fdba74;">📩 {{ t_sec_incoming_letters }}</h2>
                 <div id="incomingLettersList"></div>
             </div>
             
             <div class="card">
-                <h2 style="color: #db2777; border-color: #fbcfe8;">📤 Outgoing Letters</h2>
+                <h2 style="color: #db2777; border-color: #fbcfe8;">📤 {{ t_sec_outgoing_letters }}</h2>
                 <div id="outgoingLettersList"></div>
             </div>
         </div>
+        <div class="digest-footer">{{ t_footer }}</div>
 
         <script>
+            window.DCR_LANG = "{{ lang }}";
+            window.DCR_DIR = "{{ dir_attr }}";
+            window.DCR_I18N = {{ i18n_json|safe }};
+            function _t(key, fallback) {
+                const dict = window.DCR_I18N || {};
+                return Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : (fallback || key);
+            }
+            function _esc(s) {
+                return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            }
+            function _tDt(code, fallback) {
+                const fb = fallback || code || '';
+                if (window.DCR_LANG !== 'ar' || !code) return fb;
+                const k = 'dt_name.' + String(code).trim().toUpperCase();
+                return _t(k, fb);
+            }
+            function _tStatus(val) {
+                if (!val) return _t('magic.no_status', 'No Status');
+                if (window.DCR_LANG !== 'ar') return String(val);
+                const low = String(val).trim().toLowerCase();
+                const map = {
+                    'approved': 'status.approved',
+                    'approved with comments': 'status.approved_with_comments',
+                    'pending': 'status.pending',
+                    'under review': 'status.under_review',
+                    'open': 'status.open',
+                    'in progress': 'status.in_progress',
+                    'in-progress': 'status.in_progress',
+                    'closed': 'status.closed',
+                    'completed': 'status.completed',
+                    'rejected': 'status.rejected',
+                    'revise & resubmit': 'status.revise_resubmit',
+                    'revise and resubmit': 'status.revise_resubmit',
+                    'overdue': 'status.overdue',
+                    'expired': 'status.expired',
+                    'valid': 'status.valid',
+                    'expiring': 'status.expiring',
+                    'active': 'status.active',
+                    'info / closed': 'status.info_closed',
+                    'info/closed': 'status.info_closed',
+                    'not closed': 'status.not_closed',
+                    'cancelled': 'status.cancelled',
+                    'canceled': 'status.cancelled',
+                    'a - approved': 'status.a_approved',
+                    'b - approved as noted': 'status.b_approved_noted',
+                    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+                    'c - revise & resubmit': 'status.c_revise_resubmit',
+                    'd - review not required': 'status.d_review_not_required',
+                    'replied': 'status.replied',
+                    'accepted & to proceed with part c': 'status.noc_accepted_part_c',
+                    'information required': 'status.info_required',
+                    'needs maintenance': 'status.needs_maintenance',
+                    'under refill': 'status.under_refill',
+                    'out of service': 'status.out_of_service',
+                    'draft': 'status.draft',
+                    'revised': 'status.revised'
+                };
+                const k = map[low];
+                return k ? _t(k, val) : String(val);
+            }
+            function switchDcrLang(nextLang) {
+                const next = (String(nextLang || '').trim().toLowerCase() === 'ar') ? 'ar' : 'en';
+                try {
+                    document.cookie = 'dcr_lang=' + next + '; Path=/; Max-Age=31536000; SameSite=Lax';
+                } catch(e) {}
+                try {
+                    const u = new URL(window.location.href);
+                    u.searchParams.set('lang', next);
+                    window.location.href = u.toString();
+                } catch(e) {
+                    window.location.reload();
+                }
+            }
             const PID = "{{ pid }}";
             const TOKEN = "{{ token }}";
             const datePicker = document.getElementById('datePicker');
@@ -830,7 +925,7 @@ def magic_master_view(pid):
                     
                     renderData();
                 } catch (e) {
-                    alert("Error loading data.");
+                    alert(_t('magic.load_error', 'Error loading data.'));
                 } finally {
                     loading.style.display = 'none';
                     if (rawData) content.style.display = 'block';
@@ -895,28 +990,30 @@ def magic_master_view(pid):
                 
                 // Render Stats
                 document.getElementById('statsContainer').innerHTML = `
-                    <div class="stat-box"><div class="val" style="color:#2563eb">${sentDocs.length}</div><div class="lbl">Sent Today</div></div>
-                    <div class="stat-box"><div class="val" style="color:#7c3aed">${repliedDocs.length}</div><div class="lbl">Replied Today</div></div>
-                    <div class="stat-box"><div class="val" style="color:#ea580c">${incomingLetters.length}</div><div class="lbl">Incoming Letters</div></div>
-                    <div class="stat-box"><div class="val" style="color:#db2777">${outgoingLetters.length}</div><div class="lbl">Outgoing Letters</div></div>
+                    <div class="stat-box"><div class="val bidi-ltr" style="color:#2563eb">${sentDocs.length}</div><div class="lbl">${_esc(_t('magic.kpi_sent_today', 'Sent Today'))}</div></div>
+                    <div class="stat-box"><div class="val bidi-ltr" style="color:#7c3aed">${repliedDocs.length}</div><div class="lbl">${_esc(_t('magic.kpi_replied_today', 'Replied Today'))}</div></div>
+                    <div class="stat-box"><div class="val bidi-ltr" style="color:#ea580c">${incomingLetters.length}</div><div class="lbl">${_esc(_t('magic.kpi_incoming_letters', 'Incoming Letters'))}</div></div>
+                    <div class="stat-box"><div class="val bidi-ltr" style="color:#db2777">${outgoingLetters.length}</div><div class="lbl">${_esc(_t('magic.kpi_outgoing_letters', 'Outgoing Letters'))}</div></div>
                 `;
                 
                 // Render Lists
                 const renderList = (arr, elId, emptyMsg, hideStatus=false) => {
                     const el = document.getElementById(elId);
                     if (arr.length === 0) {
-                        el.innerHTML = `<div class="empty">${emptyMsg}</div>`;
+                        el.innerHTML = `<div class="empty">${_esc(emptyMsg)}</div>`;
                     } else {
                         el.innerHTML = arr.map(d => {
                             const disc = (d.discipline || '').trim();
                             const showDisc = disc && disc.toLowerCase() !== 'none' && disc.toLowerCase() !== 'no disc' && disc.toLowerCase() !== 'no disc.';
+                            const dtCode = (d.dt_code || d.doc_type || '').trim();
+                            const dtLabel = dtCode ? _tDt(dtCode, dtCode) : '';
                             return `
                                 <div class="item">
-                                    <div class="docno">${d.docNo}</div>
-                                    <div class="title">${d.title}</div>
+                                    <div class="docno"><span class="bidi-ltr">${_esc(d.docNo)}</span>${dtLabel ? ` <span class="disc">${_esc(dtLabel)}</span>` : ''}</div>
+                                    <div class="title">${_esc(d.title)}</div>
                                     <div>
-                                        ${showDisc ? `<span class="disc">${disc}</span>` : ''}
-                                        ${!hideStatus ? `<span style="font-size:11px;font-weight:bold;color:#475569;margin-left:8px;">${d.status || 'No Status'}</span>` : ''}
+                                        ${showDisc ? `<span class="disc">${_esc(disc)}</span>` : ''}
+                                        ${!hideStatus ? `<span class="status-tag">${_esc(_tStatus(d.status))}</span>` : ''}
                                     </div>
                                 </div>
                             `;
@@ -924,11 +1021,11 @@ def magic_master_view(pid):
                     }
                 };
                 
-                renderList(receivedDocs, 'receivedList', 'No documents received today.');
-                renderList(sentDocs, 'sentList', 'No documents sent today.');
-                renderList(repliedDocs, 'repliedList', 'No documents replied today.');
-                renderList(incomingLetters, 'incomingLettersList', 'No incoming letters today.', true);
-                renderList(outgoingLetters, 'outgoingLettersList', 'No outgoing letters today.', true);
+                renderList(receivedDocs, 'receivedList', _t('magic.empty_received', 'No documents received today.'));
+                renderList(sentDocs, 'sentList', _t('magic.empty_sent', 'No documents sent today.'));
+                renderList(repliedDocs, 'repliedList', _t('magic.empty_replied', 'No documents replied today.'));
+                renderList(incomingLetters, 'incomingLettersList', _t('magic.empty_incoming_letters', 'No incoming letters today.'), true);
+                renderList(outgoingLetters, 'outgoingLettersList', _t('magic.empty_outgoing_letters', 'No outgoing letters today.'), true);
             }
             
             datePicker.addEventListener('change', fetchData);
@@ -941,7 +1038,30 @@ def magic_master_view(pid):
     </html>
     """
     from flask import render_template_string
-    return render_template_string(template, pid=pid, token=token, p_code=p_code, p_name=p_name, icon_tags=_head_icon_tags())
+    return render_template_string(
+        template,
+        pid=pid,
+        token=token,
+        p_code=p_code,
+        p_name=p_name,
+        lang=lang,
+        dir_attr=dir_attr,
+        i18n_json=i18n_json,
+        switch_label=t("lang.switch_label", lang),
+        switch_target=t("lang.switch_target", lang),
+        switch_title=t("lang.switch_title", lang),
+        t_title=t("magic.title", lang),
+        t_history_date=t("magic.history_date_title", lang),
+        t_show_all=t("magic.show_all", lang),
+        t_loading=t("magic.loading", lang),
+        t_sec_received=t("magic.sec_received", lang),
+        t_sec_sent=t("magic.sec_sent", lang),
+        t_sec_replied=t("magic.sec_replied", lang),
+        t_sec_incoming_letters=t("magic.sec_incoming_letters", lang),
+        t_sec_outgoing_letters=t("magic.sec_outgoing_letters", lang),
+        t_footer=t("magic.footer", lang),
+        icon_tags=_head_icon_tags(),
+    )
 
 @app.route("/api/magic/data/<pid>", methods=["GET"])
 def api_magic_data(pid):

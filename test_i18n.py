@@ -623,5 +623,150 @@ class TestPhase2B2RegisterModalsAndViewers(unittest.TestCase):
             self.assertIn("if(regEl) regEl.value = meta.id;", html_ar)
 
 
+class TestPhase3StandaloneViews(unittest.TestCase):
+    """Verify Phase 3 standalone public views (/magic/<pid> and /qr/<qr_token>) in EN/LTR and AR/RTL."""
+
+    def setUp(self):
+        self.app = app
+        self.app.config["TESTING"] = True
+        self.client = self.app.test_client()
+
+    def test_phase3_dictionary_parity_magic_and_qr(self):
+        en = i18n.TRANSLATIONS["en"]
+        ar = i18n.TRANSLATIONS["ar"]
+        magic_keys = [k for k in en if k.startswith("magic.")]
+        qr_keys = [k for k in en if k.startswith("qr.")]
+        self.assertGreaterEqual(len(magic_keys), 15)
+        self.assertGreaterEqual(len(qr_keys), 12)
+        for k in magic_keys + qr_keys:
+            self.assertIn(k, ar, f"Missing Arabic key: {k}")
+            self.assertTrue(str(en[k]).strip(), f"Empty EN key: {k}")
+            self.assertTrue(str(ar[k]).strip(), f"Empty AR key: {k}")
+        self.assertIn("HSE", ar["qr.badge_header"])
+        self.assertIn("FEI", ar["qr.reg_type_fei"])
+        self.assertIn("PTW", ar["qr.reg_type_ptw"])
+
+    def test_magic_master_view_en_and_ar_rtl_and_bidi(self):
+        proj = {"id": "p1", "code": "PRJ-01", "name": "Tower A"}
+        with patch("app._generate_master_magic_token", return_value="tok123"), \
+             patch("db.get_projects", return_value=[proj]), \
+             patch("app._head_icon_tags", return_value=""):
+            # Forbidden without valid token
+            bad = self.client.get("/magic/p1?token=wrong")
+            self.assertEqual(bad.status_code, 403)
+
+            # English (default / explicit)
+            res_en = self.client.get("/magic/p1?token=tok123&lang=en")
+            self.assertEqual(res_en.status_code, 200)
+            html_en = res_en.get_data(as_text=True)
+            self.assertIn('<html lang="en" dir="ltr">', html_en)
+            self.assertIn("Smart Project Digest", html_en)
+            self.assertIn("Documents Received", html_en)
+            self.assertIn("switchDcrLang('ar')", html_en)
+            self.assertIn("عربي", html_en)
+
+            # Arabic RTL
+            res_ar = self.client.get("/magic/p1?token=tok123&lang=ar")
+            self.assertEqual(res_ar.status_code, 200)
+            html_ar = res_ar.get_data(as_text=True)
+            self.assertIn('<html lang="ar" dir="rtl">', html_ar)
+            self.assertIn("/static/fonts/Cairo-Regular.ttf", html_ar)
+            self.assertIn('html[dir="rtl"]', html_ar)
+            self.assertIn("switchDcrLang('en')", html_ar)
+            self.assertIn(">EN</button>", html_ar)
+            self.assertIn("الملخص الذكي للمشروع", html_ar)
+            self.assertIn("المستندات المستلمة", html_ar)
+            self.assertIn("المستندات المرسلة", html_ar)
+            self.assertIn("المستندات المجاب عنها", html_ar)
+            self.assertIn("الخطابات الواردة", html_ar)
+            self.assertIn("الخطابات الصادرة", html_ar)
+            self.assertIn("عرض الكل", html_ar)
+            self.assertIn("ملخص مشروع ذكي للعرض فقط • منصة DCR", html_ar)
+            self.assertIn('<span class="bidi-ltr">PRJ-01</span>', html_ar)
+            self.assertIn('class="bidi-ltr"', html_ar)
+            self.assertIn("dcr_lang=ar", res_ar.headers.get("Set-Cookie", ""))
+
+    def test_public_qr_verify_en_and_ar_valid_and_invalid(self):
+        fei_row = {
+            "id": "rec-fei-1",
+            "project_id": "p-hse",
+            "dt_id": "dt-fei",
+            "proj_name": "Safety Plant",
+            "proj_code": "HSE-01",
+            "workspace_id": "HSE",
+            "dt_code": "FEI",
+            "data": {
+                "docNo": "FEI-2026-009",
+                "legacySubtype": "CO2",
+                "location": "Gate B",
+                "extinguisherStatus": "Valid",
+                "expiryDate": "2027-06-01",
+                "lastInspection": "2026-10-15",
+            },
+        }
+        ptw_row = {
+            "id": "rec-ptw-1",
+            "project_id": "p-hse",
+            "dt_id": "dt-ptw",
+            "proj_name": "Safety Plant",
+            "proj_code": "HSE-01",
+            "workspace_id": "HSE",
+            "dt_code": "PTW",
+            "data": {
+                "docNo": "PTW-2026-042",
+                "legacySubtype": "Hot Work",
+                "location": "Zone 3",
+                "status": "Open",
+                "validUntil": "2027-12-31",
+                "issuedDate": "2026-11-01",
+            },
+        }
+        with patch("html_render._head_icon_tags", return_value=""):
+            # Valid FEI in Arabic
+            with patch("db.q", return_value=fei_row):
+                res_ar = self.client.get("/qr/validtoken123?lang=ar")
+                self.assertEqual(res_ar.status_code, 200)
+                html_ar = res_ar.get_data(as_text=True)
+                self.assertIn('<html lang="ar" dir="rtl">', html_ar)
+                self.assertIn("/static/fonts/Cairo-Regular.ttf", html_ar)
+                self.assertIn('html[dir="rtl"]', html_ar)
+                self.assertIn("switchDcrLang('en')", html_ar)
+                self.assertIn("التحقق الميداني للسلامة (HSE)", html_ar)
+                self.assertIn("فحص معدات الحريق والسلامة (FEI)", html_ar)
+                self.assertIn("المشروع", html_ar)
+                self.assertIn("نوع السجل", html_ar)
+                self.assertIn("رقم السجل", html_ar)
+                self.assertIn("تاريخ الصلاحية / الانتهاء", html_ar)
+                self.assertIn("تاريخ آخر فحص", html_ar)
+                self.assertIn("ساري", html_ar)
+                self.assertIn("شارة تحقق سلامة (HSE) للعرض فقط • منصة DCR للسلامة", html_ar)
+                self.assertIn('<span class="bidi-ltr">FEI-2026-009</span>', html_ar)
+                self.assertIn('<span class="bidi-ltr">HSE-01</span>', html_ar)
+                self.assertIn('<span class="bidi-ltr">2027-06-01</span>', html_ar)
+                self.assertIn('<span class="bidi-ltr">2026-10-15</span>', html_ar)
+
+            # Valid PTW in English
+            with patch("db.q", return_value=ptw_row):
+                res_en = self.client.get("/qr/validtoken456?lang=en")
+                self.assertEqual(res_en.status_code, 200)
+                html_en = res_en.get_data(as_text=True)
+                self.assertIn('<html lang="en" dir="ltr">', html_en)
+                self.assertIn("HSE Field Verification", html_en)
+                self.assertIn("Permit to Work (PTW)", html_en)
+                self.assertIn(">Open<", html_en)
+                self.assertIn("switchDcrLang('ar')", html_en)
+                self.assertIn("عربي", html_en)
+
+            # Invalid / Not Found in Arabic
+            with patch("db.q", return_value=None):
+                res_nf = self.client.get("/qr/missingtoken1?lang=ar")
+                self.assertEqual(res_nf.status_code, 404)
+                html_nf = res_nf.get_data(as_text=True)
+                self.assertIn('<html lang="ar" dir="rtl">', html_nf)
+                self.assertIn("/static/fonts/Cairo-Regular.ttf", html_nf)
+                self.assertIn("سجل رمز الاستجابة (QR) غير موجود", html_nf)
+                self.assertIn("switchDcrLang('en')", html_nf)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,7 @@ import db
 from auth import can_access_doc_type, can_edit, can_view_project, current_user
 from hse_analytics import DEFAULT_WARN_DAYS, get_scoped_hse_analytics, normalize_hse_status, parse_hse_date
 from hse_qr import generate_qr_svg
+from i18n import get_lang, html_dir, t, t_dt, t_status
 
 hse_bp = Blueprint("hse", __name__)
 
@@ -267,6 +268,23 @@ def _compute_public_qr_status(dt_code, data, today=None):
 @hse_bp.route("/qr/<qr_token>")
 def public_qr_verify(qr_token):
     """Strictly read-only public QR verification card for FEI and PTW records (no PII / no Drive URLs)."""
+    lang = get_lang(request)
+    dir_attr = html_dir(lang)
+    switch_label = escape(t("lang.switch_label", lang))
+    switch_target = escape(t("lang.switch_target", lang))
+    switch_title = escape(t("lang.switch_title", lang))
+    lang_toggle_js = (
+        "function switchDcrLang(nextLang){var n=(String(nextLang||'').trim().toLowerCase()==='ar')?'ar':'en';"
+        "try{document.cookie='dcr_lang='+n+'; Path=/; Max-Age=31536000; SameSite=Lax';}catch(e){}"
+        "try{var u=new URL(window.location.href);u.searchParams.set('lang',n);window.location.href=u.toString();}catch(e){window.location.reload();}}"
+    )
+    cairo_font_css = (
+        "@font-face{font-family:'Cairo';src:url('/static/fonts/Cairo-Regular.ttf') format('truetype');font-weight:400 800;font-display:swap}"
+        ".bidi-ltr{direction:ltr!important;unicode-bidi:isolate!important;display:inline-block}"
+        ".lang-btn{padding:4px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;font-size:12px;font-weight:700;cursor:pointer}"
+        ".lang-btn:hover{background:#e2e8f0}"
+    )
+
     token = str(qr_token or "").strip()
     row = None
     if _QR_TOKEN_RE.fullmatch(token):
@@ -288,18 +306,24 @@ def public_qr_verify(qr_token):
     if not row or ws_id != "HSE" or dt_code not in ("FEI", "PTW"):
         from html_render import _head_icon_tags
         icon_tags = _head_icon_tags()
-        not_found_html = f"""<!DOCTYPE html><html lang="en"><head>
+        not_found_html = f"""<!DOCTYPE html><html lang="{lang}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HSE QR Verification — Not Found</title>
+<title>{escape(t("qr.not_found_title", lang))}</title>
 {icon_tags}
 <style>
+  {cairo_font_css}
   body{{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:24px;display:flex;justify-content:center;align-items:center;min-height:90vh}}
+  html[dir="rtl"] body{{font-family:'Cairo',system-ui,-apple-system,sans-serif;direction:rtl}}
   .card{{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;max-width:420px;width:100%;text-align:center;box-shadow:0 10px 25px rgba(15,23,42,.06)}}
+  .top-toggle{{display:flex;justify-content:flex-end;margin-bottom:8px}}
+  .foot{{margin-top:16px;padding-top:10px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;text-align:center}}
 </style></head><body><div class="card">
+  <div class="top-toggle"><button type="button" id="langSwitcherBtn" class="lang-btn" onclick="switchDcrLang('{switch_target}')" title="{switch_title}" aria-label="{switch_title}">{switch_label}</button></div>
   <div style="font-size:36px;margin-bottom:8px;">⚠️</div>
-  <h2 style="margin:0 0 8px;font-size:18px;">QR Record Not Found</h2>
-  <p style="margin:0;color:#64748b;font-size:13px;">This verification badge does not match an active HSE equipment inspection or work permit.</p>
-</div></body></html>"""
+  <h2 style="margin:0 0 8px;font-size:18px;">{escape(t("qr.not_found_heading", lang))}</h2>
+  <p style="margin:0;color:#64748b;font-size:13px;">{escape(t("qr.not_found_desc", lang))}</p>
+  <div class="foot">{escape(t("qr.footer", lang))}</div>
+</div><script>{lang_toggle_js}</script></body></html>"""
         resp = make_response(not_found_html, 404)
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Robots-Tag"] = "noindex, nofollow"
@@ -321,14 +345,19 @@ def public_qr_verify(qr_token):
     }
     bg_hex, fg_hex = badge_colors.get(status_tone, ("#f1f5f9", "#334155"))
 
+    default_reg_type = t("qr.reg_type_fei", "en") if dt_code == "FEI" else t("qr.reg_type_ptw", "en")
+    proj_code_raw = str(row.get("proj_code") or row.get("project_id") or "")
+    proj_name_raw = str(row.get("proj_name") or row.get("project_id") or "")
+
     # Strict whitelist: ONLY non-PII verification fields (never employee PII or raw Drive URLs)
     safe_card = {
-        "project": f"{row.get('proj_code') or row.get('project_id')} — {row.get('proj_name') or row.get('project_id')}",
-        "register_type": "Fire & Equipment Inspection (FEI)" if dt_code == "FEI" else "Permit to Work (PTW)",
+        "project_code": proj_code_raw,
+        "project_name": proj_name_raw,
+        "register_type": t_dt(dt_code, default_reg_type, lang),
         "doc_no": str(data.get("docNo") or row.get("id") or "—"),
         "subtype": _normalize_qr_text(data.get("legacySubtype") or data.get("extinguisherType")),
         "location": str(data.get("location") or "—"),
-        "status": status_label,
+        "status": t_status(status_label, lang),
         "valid_expiry": str(
             (data.get("validUntil") or data.get("valid_until") or "—")
             if dt_code == "PTW"
@@ -339,41 +368,49 @@ def public_qr_verify(qr_token):
 
     from html_render import _head_icon_tags
     icon_tags = _head_icon_tags()
-    html = f"""<!DOCTYPE html><html lang="en"><head>
+    html = f"""<!DOCTYPE html><html lang="{lang}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HSE Verification — {escape(safe_card['doc_no'])}</title>
+<title>{escape(t("qr.page_title_prefix", lang))} — {escape(safe_card['doc_no'])}</title>
 {icon_tags}
 <style>
+  {cairo_font_css}
   body{{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#0f172a;margin:0;padding:18px;display:flex;justify-content:center;align-items:center;min-height:92vh}}
+  html[dir="rtl"] body{{font-family:'Cairo',system-ui,-apple-system,sans-serif;direction:rtl;text-align:right}}
   .card{{background:#fff;border:1px solid #cbd5e1;border-top:5px solid #0d9488;border-radius:14px;padding:22px;max-width:440px;width:100%;box-shadow:0 12px 30px rgba(15,23,42,.08)}}
   .hdr{{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}}
+  .hdr-actions{{display:flex;align-items:center;gap:8px}}
   .code{{font-family:monospace;font-weight:800;font-size:15px;color:#0f766e}}
   .badge{{padding:4px 12px;border-radius:999px;font-size:12px;font-weight:800;background:{bg_hex};color:{fg_hex}}}
   .row{{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:13px}}
   .row:last-child{{border-bottom:none}}
   .lbl{{color:#64748b;font-weight:600;flex-shrink:0}}
   .val{{color:#0f172a;font-weight:700;text-align:right;word-break:break-word}}
+  html[dir="rtl"] .val{{text-align:left}}
   .foot{{margin-top:14px;padding-top:10px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;text-align:center}}
 </style></head><body>
 <div class="card">
   <div class="hdr">
     <div>
-      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🛡️ HSE Field Verification</div>
-      <div class="code">{escape(safe_card['doc_no'])}</div>
+      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🛡️ {escape(t("qr.badge_header", lang))}</div>
+      <div class="code bidi-ltr">{escape(safe_card['doc_no'])}</div>
     </div>
-    <span class="badge">{escape(safe_card['status'])}</span>
+    <div class="hdr-actions">
+      <span class="badge">{escape(safe_card['status'])}</span>
+      <button type="button" id="langSwitcherBtn" class="lang-btn" onclick="switchDcrLang('{switch_target}')" title="{switch_title}" aria-label="{switch_title}">{switch_label}</button>
+    </div>
   </div>
   <div>
-    <div class="row"><span class="lbl">Project</span><span class="val">{escape(safe_card['project'])}</span></div>
-    <div class="row"><span class="lbl">Register Type</span><span class="val">{escape(safe_card['register_type'])}</span></div>
-    <div class="row"><span class="lbl">Register No.</span><span class="val">{escape(safe_card['doc_no'])}</span></div>
-    <div class="row"><span class="lbl">Subtype</span><span class="val">{escape(safe_card['subtype'])}</span></div>
-    <div class="row"><span class="lbl">Location</span><span class="val">{escape(safe_card['location'])}</span></div>
-    <div class="row"><span class="lbl">Valid / Expiry Date</span><span class="val">{escape(safe_card['valid_expiry'])}</span></div>
-    <div class="row"><span class="lbl">Last Inspection Date</span><span class="val">{escape(safe_card['last_inspection'])}</span></div>
+    <div class="row"><span class="lbl">{escape(t("qr.lbl_project", lang))}</span><span class="val"><span class="bidi-ltr">{escape(safe_card['project_code'])}</span> — {escape(safe_card['project_name'])}</span></div>
+    <div class="row"><span class="lbl">{escape(t("qr.lbl_register_type", lang))}</span><span class="val">{escape(safe_card['register_type'])}</span></div>
+    <div class="row"><span class="lbl">{escape(t("qr.lbl_register_no", lang))}</span><span class="val"><span class="bidi-ltr">{escape(safe_card['doc_no'])}</span></span></div>
+    <div class="row"><span class="lbl">{escape(t("qr.lbl_subtype", lang))}</span><span class="val">{escape(safe_card['subtype'])}</span></div>
+    <div class="row"><span class="lbl">{escape(t("qr.lbl_location", lang))}</span><span class="val">{escape(safe_card['location'])}</span></div>
+    <div class="row"><span class="lbl">{escape(t("qr.lbl_valid_expiry", lang))}</span><span class="val"><span class="bidi-ltr">{escape(safe_card['valid_expiry'])}</span></span></div>
+    <div class="row"><span class="lbl">{escape(t("qr.lbl_last_inspection", lang))}</span><span class="val"><span class="bidi-ltr">{escape(safe_card['last_inspection'])}</span></span></div>
   </div>
-  <div class="foot">Read-only HSE verification badge • DCR Safety Platform</div>
+  <div class="foot">{escape(t("qr.footer", lang))}</div>
 </div>
+<script>{lang_toggle_js}</script>
 </body></html>"""
     resp = make_response(html, 200)
     resp.headers["Cache-Control"] = "no-store"
