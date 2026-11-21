@@ -6,6 +6,7 @@ from utils import get_next_doc_no, get_next_plain_doc_no, doc_type_uses_revision
 
 from config import IS_RENDER, SECRET_KEY, SESSION_CONFIG
 from html_render import render_login, render_launchpad, render_dashboard, render_register, _head_icon_tags
+from i18n import get_lang, LANG_COOKIE_NAME, LANG_COOKIE_MAX_AGE, SUPPORTED_LANGS
 from security import validate_username, login_limiter, get_client_ip
 from blueprints.projects import projects_bp
 from blueprints.doc_types import doc_types_bp
@@ -97,6 +98,17 @@ def apply_security_headers(response):
     is_https = IS_RENDER or request.is_secure or (request.headers.get("X-Forwarded-Proto", "").lower() == "https")
     if is_https:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    q_lang = (request.args.get("lang") or "").strip().lower()
+    if q_lang in SUPPORTED_LANGS:
+        response.set_cookie(
+            LANG_COOKIE_NAME,
+            q_lang,
+            max_age=LANG_COOKIE_MAX_AGE,
+            path="/",
+            samesite="Lax",
+            secure=is_https,
+            httponly=False,
+        )
     return response
 
 
@@ -211,7 +223,11 @@ def login():
                 error=f"Invalid username or password. ({remaining_attempts} attempt(s) remaining before temporary lockout).",
                 remaining_attempts=remaining_attempts
             ), 401
-    return render_login()
+    lang = get_lang(request)
+    try:
+        return render_login(lang=lang)
+    except TypeError:
+        return render_login()
 
 @app.route("/logout", methods=["POST", "GET"])
 def logout():
@@ -229,11 +245,17 @@ def logout():
 
 @app.route("/hub")
 def launchpad_hub():
-    return render_launchpad(current_user())
+    u = current_user()
+    lang = get_lang(request)
+    try:
+        return render_launchpad(u, lang=lang)
+    except TypeError:
+        return render_launchpad(u)
 
 @app.route("/")
 def home():
     u = current_user()
+    lang = get_lang(request)
     ws_id = request.args.get("ws")
     if not ws_id and u:
         try:
@@ -242,13 +264,19 @@ def home():
             user_ws = []
         is_super = (str(u.get("role", "")).lower() == "superadmin")
         if is_super or len(user_ws) > 1:
-            return render_launchpad(u)
+            try:
+                return render_launchpad(u, lang=lang)
+            except TypeError:
+                return render_launchpad(u)
         elif len(user_ws) == 1:
             ws_id = user_ws[0]["id"]
     try:
-        return render_dashboard(u, active_ws_id=ws_id)
+        return render_dashboard(u, active_ws_id=ws_id, lang=lang)
     except TypeError:
-        return render_dashboard(u)
+        try:
+            return render_dashboard(u, active_ws_id=ws_id)
+        except TypeError:
+            return render_dashboard(u)
 
 _recent_project_views = {}
 
@@ -273,10 +301,14 @@ def register():
     except Exception as e:
         pass
     ws_id = request.args.get("ws") or proj.get("workspace_id", "ENG")
+    lang = get_lang(request)
     try:
-        return render_register(u, proj, active_ws_id=ws_id)
+        return render_register(u, proj, active_ws_id=ws_id, lang=lang)
     except TypeError:
-        return render_register(u, proj)
+        try:
+            return render_register(u, proj, active_ws_id=ws_id)
+        except TypeError:
+            return render_register(u, proj)
 
 @app.route("/api/settings/holidays", methods=["GET"])
 def api_get_holidays():

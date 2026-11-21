@@ -27,6 +27,15 @@ import db
 from flask import url_for
 from auth import can_edit, is_project_admin, get_allowed_doc_type_filter, get_user_doc_type_scope
 from utils import STATUS_COLORS
+from i18n import (
+    get_lang,
+    normalize_lang,
+    is_rtl,
+    html_dir,
+    t,
+    get_client_i18n_json,
+    translate_workspace_meta,
+)
 
 
 def _asset_ver(rel_path: str) -> str:
@@ -50,49 +59,77 @@ def _head_icon_tags() -> str:
         f'<meta name="theme-color" content="#0f1d2e">'
     )
 
-ABOUT_MODAL_HTML = """
+
+def _lang_switcher_btn_html(lang: str = "en", btn_class: str = "tb-btn lang-switch-btn", btn_id: str = "langBtn") -> str:
+    norm = normalize_lang(lang)
+    target = t("lang.switch_target", norm)
+    label = t("lang.switch_label", norm)
+    title = t("lang.switch_title", norm)
+    return (
+        f'<button type="button" class="{btn_class}" id="{btn_id}" '
+        f'onclick="setLanguage(\'{target}\')" title="{title}" aria-label="{title}">'
+        f'<span class="lang-switch-ico">🌐</span>'
+        f'<span class="lang-switch-txt">{label}</span>'
+        f'</button>'
+    )
+
+
+def _about_modal_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang)
+    return f"""
 <!-- ABOUT SYSTEM MODAL -->
 <div class="overlay hidden" id="about-modal" style="z-index: 10000;">
   <div class="modal" style="max-width:550px">
     <div class="mhdr" style="display:flex;align-items:center;">
-      <span style="flex:1;">ℹ️<span class="tb-btn-text"> About</span> System</span>
+      <span style="flex:1;">ℹ️<span class="tb-btn-text"> {t("about.header_prefix", norm)}</span> {t("about.header_suffix", norm)}</span>
       <button class="xbtn" onclick="closeM('about-modal')">✕</button>
     </div>
     <div class="mbody" style="padding: 24px; font-size: 13px; color: var(--tx); line-height: 1.6;">
       <div style="text-align: center; margin-bottom: 20px;">
-        <div style="font-size: 20px; font-weight: 800; color: var(--brand-teal); margin-bottom: 4px;">Document Control Register</div>
-        <div style="font-size: 12px; color: var(--mu); font-family: 'IBM Plex Mono', monospace;">v1.0.0 — Stable Release</div>
+        <div style="font-size: 20px; font-weight: 800; color: var(--brand-teal); margin-bottom: 4px;">{t("about.system_title", norm)}</div>
+        <div class="bidi-ltr" style="font-size: 12px; color: var(--mu); font-family: 'IBM Plex Mono', monospace;">{t("about.release_badge", norm)}</div>
       </div>
       
-      <div class="stitle" style="margin-top:0;">🎯 PURPOSE & BUSINESS IMPACT</div>
-      <p style="margin-bottom: 16px;">An enterprise-grade Document Management System developed in-house to digitize engineering workflows, ensure zero data loss, and accelerate the decision-making process. Built to eliminate manual tracking and centralize document control for Project Management and Operations teams.</p>
+      <div class="stitle" style="margin-top:0;">{t("about.purpose_title", norm)}</div>
+      <p style="margin-bottom: 16px;">{t("about.purpose_body", norm)}</p>
       
-      <div class="stitle">⚙️ CORE TECHNOLOGIES</div>
-      <ul style="margin-bottom: 16px; padding-left: 20px; color: var(--mu);">
-        <li><strong>Database:</strong> PostgreSQL with dynamic JSONB architecture for high scalability.</li>
-        <li><strong>Backend Engine:</strong> Python / Flask.</li>
-        <li><strong>Frontend:</strong> Vanilla JavaScript & CSS (Optimized for speed and zero latency).</li>
+      <div class="stitle">{t("about.tech_title", norm)}</div>
+      <ul class="about-tech-list" style="margin-bottom: 16px; padding-inline-start: 20px; color: var(--mu);">
+        <li><strong>{t("about.tech_db_label", norm)}</strong> {t("about.tech_db_val", norm)}</li>
+        <li><strong>{t("about.tech_backend_label", norm)}</strong> {t("about.tech_backend_val", norm)}</li>
+        <li><strong>{t("about.tech_frontend_label", norm)}</strong> {t("about.tech_frontend_val", norm)}</li>
       </ul>
       
-      <div class="stitle">👨‍💻 CREDITS</div>
-      <p style="margin-bottom: 0;"><strong>Architect & Full-Stack Developer:</strong> Mohamed Metwaly<br><span style="color:var(--mu); font-size: 11px;">Document Control Department</span></p>
+      <div class="stitle">{t("about.credits_title", norm)}</div>
+      <p style="margin-bottom: 0;"><strong>{t("about.credits_role", norm)}</strong> {t("footer.developer_name", norm)}<br><span style="color:var(--mu); font-size: 11px;">{t("footer.department", norm)}</span></p>
     </div>
-    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('about-modal')">Close</button></div>
+    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('about-modal')">{t("about.close_btn", norm)}</button></div>
   </div>
 </div>
 """
 
-GLOBAL_FOOTER_HTML = """
-<div class="global-footer">Designed & Developed by <strong>Mohamed Metwaly</strong> - Document Control Department</div>
+
+def _global_footer_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang)
+    return f"""
+<div class="global-footer">{t("footer.designed_by", norm)} <strong>{t("footer.developer_name", norm)}</strong> - {t("footer.department", norm)}</div>
 """
 
-GLOBAL_SEARCH_TRIGGER_HTML = """
-<div class="global-search-trigger" onclick="openGlobalSearch()" title="Global Search (Ctrl+K)" style="cursor: pointer; user-select: none;">
+
+def _global_search_trigger_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang)
+    return f"""
+<div class="global-search-trigger" onclick="openGlobalSearch()" title="{t("topbar.global_search_title", norm)}" style="cursor: pointer; user-select: none;">
   <span class="gst-icon">🔍</span>
-  <span class="gst-text">Search all projects...</span>
-  <kbd>Ctrl+K</kbd>
+  <span class="gst-text">{t("topbar.global_search_placeholder", norm)}</span>
+  <kbd class="bidi-ltr">Ctrl+K</kbd>
 </div>
 """
+
+
+ABOUT_MODAL_HTML = _about_modal_html("en")
+GLOBAL_FOOTER_HTML = _global_footer_html("en")
+GLOBAL_SEARCH_TRIGGER_HTML = _global_search_trigger_html("en")
 
 SPOTLIGHT_MODAL_COMPONENT = r"""
 <!-- SPOTLIGHT / GLOBAL SEARCH COMPONENT -->
@@ -2832,26 +2869,50 @@ if (document.readyState === 'loading') {
 </script>
 """
 
-def _user_info_html(u):
+def _user_info_html(u, lang=None):
+    norm = normalize_lang(lang or get_lang())
     if not u:
-        return ('<a href="/login"><button class="tb-btn glow">🔐 Login</button></a>', "guest", "GUEST", "#fff3")
+        return (
+            f'<a href="/login"><button class="tb-btn glow">🔐 {t("topbar.login_btn", norm)}</button></a>',
+            "guest",
+            t("role.guest", norm),
+            "#fff3",
+        )
     role = u["role"]
-    colors = {"superadmin":"rgba(240,165,0,.35)","admin":"rgba(255,255,255,.2)",
-              "editor":"rgba(99,102,241,.3)","viewer":"rgba(255,255,255,.15)","guest":"rgba(255,255,255,.1)"}
+    colors = {
+        "superadmin": "rgba(240,165,0,.35)",
+        "admin": "rgba(255,255,255,.2)",
+        "editor": "rgba(99,102,241,.3)",
+        "viewer": "rgba(255,255,255,.15)",
+        "guest": "rgba(255,255,255,.1)",
+    }
     rbg = colors.get(role, "#fff3")
-    labels = {"superadmin":"SUPER ADMIN","admin":"ADMIN","editor":"EDITOR","viewer":"VIEWER"}
+    labels = {
+        "superadmin": t("role.superadmin", norm),
+        "admin": t("role.admin", norm),
+        "editor": t("role.editor", norm),
+        "viewer": t("role.viewer", norm),
+    }
     rlbl = labels.get(role, role.upper())
     btns = ""
     if role in ("superadmin", "admin"):
-        btns += '<button class="tb-btn" onclick="openAdmin()">⚙<span class="tb-btn-text"> Admin</span></button>'
-    btns += '<button class="tb-btn" onclick="changePw()">🔑</button>'
-    btns += '<form action="/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 6px;" title="Logout"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button></form>'
+        btns += f'<button class="tb-btn" onclick="openAdmin()">⚙<span class="tb-btn-text"> {t("topbar.admin_btn", norm)}</span></button>'
+    btns += f'<button class="tb-btn" onclick="changePw()" title="{t("topbar.change_pw_title", norm)}">🔑</button>'
+    btns += (
+        f'<form action="/logout" method="post" style="display:inline">'
+        f'<button type="submit" class="tb-btn" style="padding:4px 6px;" title="{t("topbar.logout_title", norm)}">'
+        f'<svg class="rtl-flip" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-inline-end:2px">'
+        f'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>'
+        f'</svg></button></form>'
+    )
     name = u["username"]
     return btns, name, rlbl, rbg
 
-def _workspace_switcher_html(u, active_ws_id=None):
+
+def _workspace_switcher_html(u, active_ws_id=None, lang=None):
     if not u:
         return ""
+    norm = normalize_lang(lang or get_lang())
     try:
         workspaces = db.get_user_workspaces(u.get("username", "")) if hasattr(db, "get_user_workspaces") else []
     except Exception:
@@ -2868,15 +2929,12 @@ def _workspace_switcher_html(u, active_ws_id=None):
         current_id = workspaces[0]["id"]
 
     current_ws = ws_map.get(current_id, workspaces[0])
+    cur_meta = translate_workspace_meta(current_ws, norm)
+    cur_disp_name = cur_meta["name"]
     is_multi = len(workspaces) > 1
     arrow_html = '<span class="ws-arrow">▾</span>' if is_multi else ''
     btn_class = "ws-switcher-btn" if is_multi else "ws-switcher-btn single-ws"
     btn_onclick = 'onclick="toggleWsDropdown(event)"' if is_multi else ''
-
-    sub_map = {
-        "ENG": "EPC & Site Submittals",
-        "OM": "Facilities & Maintenance Contracts"
-    }
 
     items_html = ""
     if is_multi:
@@ -2884,17 +2942,15 @@ def _workspace_switcher_html(u, active_ws_id=None):
             is_active = (ws["id"] == current_id)
             active_class = "active" if is_active else ""
             check_html = '<span class="ws-item-check">✓</span>' if is_active else ""
-            raw_sub = ws.get("description")
-            if raw_sub is not None:
-                sub_title = str(raw_sub).strip()
-            else:
-                sub_title = sub_map.get(ws["id"], ws.get("name_ar", ""))
+            meta = translate_workspace_meta(ws, norm)
+            item_title = meta["name"]
+            sub_title = meta["sub"]
             sub_title_html = f'<div class="ws-item-sub">{sub_title}</div>' if sub_title else ''
             items_html += f'''
             <a href="/?ws={ws['id']}" class="ws-item {active_class}" onclick="selectWorkspace('{ws['id']}', event)">
               <span class="ws-item-icon">{ws.get('icon', '📁')}</span>
               <div class="ws-item-text">
-                <div class="ws-item-title">{ws['name']}</div>
+                <div class="ws-item-title">{item_title}</div>
                 {sub_title_html}
               </div>
               {check_html}
@@ -2902,7 +2958,7 @@ def _workspace_switcher_html(u, active_ws_id=None):
             '''
         dropdown_html = f'''
         <div class="ws-dropdown-menu" id="ws-dropdown-menu">
-          <div class="ws-dropdown-header">Enterprise Workspaces</div>
+          <div class="ws-dropdown-header">{t("topbar.enterprise_workspaces", norm)}</div>
           {items_html}
         </div>
         '''
@@ -2910,18 +2966,18 @@ def _workspace_switcher_html(u, active_ws_id=None):
         dropdown_html = ""
 
     return f'''
-    <a href="/hub" class="tb-hub-launcher" title="Return to Company Workspaces Launchpad">
+    <a href="/hub" class="tb-hub-launcher" title="{t("topbar.workspaces_title", norm)}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
         <circle cx="5" cy="5" r="2.2"/><circle cx="12" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/>
         <circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/>
         <circle cx="5" cy="19" r="2.2"/><circle cx="12" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/>
       </svg>
-      <span class="tb-btn-text">Workspaces</span>
+      <span class="tb-btn-text">{t("topbar.workspaces", norm)}</span>
     </a>
     <div class="ws-switcher" id="ws-switcher" data-active-ws="{current_id}">
-      <button class="{btn_class}" {btn_onclick} title="Active Workspace: {current_ws.get('name', 'Engineering & Projects')}">
+      <button class="{btn_class}" {btn_onclick} title="{t("topbar.active_workspace", norm, name=cur_disp_name)}">
         <span class="ws-icon">{current_ws.get('icon', '📁')}</span>
-        <span class="ws-name">{current_ws.get('name', 'Engineering & Projects')}</span>
+        <span class="ws-name">{cur_disp_name}</span>
         {arrow_html}
       </button>
       {dropdown_html}
@@ -2932,7 +2988,14 @@ def _workspace_switcher_html(u, active_ws_id=None):
 
 BASE_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap');
+@font-face {
+  font-family: 'Cairo';
+  src: url('/static/fonts/Cairo-Regular.ttf') format('truetype');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* ═══════════════════════════════════════════════════════
    GAS CHILL DCR — Enterprise Design Token System v2.0
@@ -4327,7 +4390,141 @@ body.dark .uact-btn-del:hover {
   transform: scale(1.15);
 }
 
+/* ═══════════════════════════════════════════════════════
+   I18N-01A: RTL & BIDI FOUNDATION (Arabic / English)
+═══════════════════════════════════════════════════════ */
+.bidi-ltr {
+  direction: ltr !important;
+  unicode-bidi: isolate !important;
+  display: inline-block;
+}
+.rtl-flip {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+html[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}
+html[dir="rtl"] body {
+  font-family: 'Cairo', 'Inter', 'Segoe UI', Tahoma, Arial, sans-serif;
+  direction: rtl;
+  text-align: right;
+}
+html[dir="rtl"] #topbar::after {
+  background: linear-gradient(270deg, var(--brand-green) 0%, var(--brand-teal) 60%, transparent 100%);
+}
+html[dir="rtl"] .tb-hub-launcher {
+  margin-left: 0;
+  margin-right: 6px;
+}
+html[dir="rtl"] .ws-switcher {
+  margin-left: 0;
+  margin-right: 8px;
+}
+html[dir="rtl"] .ws-switcher-btn .ws-arrow {
+  margin-left: 0;
+  margin-right: 2px;
+}
+html[dir="rtl"] .ws-dropdown-menu {
+  left: auto;
+  right: 0;
+  text-align: right;
+}
+html[dir="rtl"] .topbar-user {
+  padding: 4px 5px 4px 10px;
+}
+html[dir="rtl"] .stitle {
+  padding-left: 0 !important;
+  padding-right: 10px !important;
+  border-left: none !important;
+  border-right: 4px solid var(--brand-navy) !important;
+  background: linear-gradient(270deg, rgba(126,200,50,0.07) 0%, transparent 100%) !important;
+  border-radius: 4px 0 0 4px !important;
+  letter-spacing: 0 !important;
+}
+html[dir="rtl"] body.dark .stitle {
+  border-right-color: var(--brand-teal) !important;
+  background: linear-gradient(270deg, rgba(126,200,50,0.1) 0%, transparent 100%) !important;
+}
+html[dir="rtl"] .fg label,
+html[dir="rtl"] .form-section-title,
+html[dir="rtl"] .klbl,
+html[dir="rtl"] .om-kpi-lbl,
+html[dir="rtl"] .hse-kpi-lbl {
+  letter-spacing: 0 !important;
+}
+html[dir="rtl"] #toast {
+  right: auto;
+  left: 18px;
+}
+html[dir="rtl"] .user-tbl,
+html[dir="rtl"] .perm-table,
+html[dir="rtl"] .perm-table th {
+  text-align: right;
+}
+html[dir="rtl"] .u-avatar {
+  margin-right: 0;
+  margin-left: 8px;
+}
+html[dir="rtl"] .about-tech-list {
+  padding-left: 0 !important;
+  padding-right: 20px !important;
+}
+.lang-switch-btn {
+  font-family: 'Cairo', 'Inter', sans-serif !important;
+  font-weight: 700 !important;
+}
+@media (max-width: 768px) {
+  html[dir="rtl"] .topbar-title-short {
+    margin-right: 0 !important;
+    margin-left: auto !important;
+  }
+}
+
 </style>"""
+
+def _shared_js_html(lang=None) -> str:
+    norm = normalize_lang(lang or get_lang())
+    i18n_json = get_client_i18n_json(norm)
+    i18n_boot = f"""<script>
+window.DCR_LANG = "{norm}";
+window.DCR_DIR = "{html_dir(norm)}";
+window.DCR_I18N = {i18n_json};
+window.t = function(key, vars) {{
+  const dict = window.DCR_I18N || {{}};
+  let val = Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : key;
+  if (vars && typeof val === 'string') {{
+    Object.keys(vars).forEach(function(k) {{
+      val = val.replaceAll('{{' + k + '}}', String(vars[k] == null ? '' : vars[k]));
+    }});
+  }}
+  return val;
+}};
+window.setLanguage = function(nextLang) {{
+  const lang = (String(nextLang || '').trim().toLowerCase() === 'ar') ? 'ar' : 'en';
+  try {{
+    document.cookie = 'dcr_lang=' + lang + '; path=/; max-age=31536000; SameSite=Lax';
+  }} catch(e) {{}}
+  try {{
+    localStorage.setItem('dcr_lang', lang);
+  }} catch(e) {{}}
+  try {{
+    const u = new URL(window.location.href);
+    if (u.searchParams.has('lang')) {{
+      u.searchParams.set('lang', lang);
+      window.location.href = u.toString();
+      return;
+    }}
+  }} catch(e) {{}}
+  window.location.reload();
+}};
+try {{
+  localStorage.setItem('dcr_lang', window.DCR_LANG);
+}} catch(e) {{}}
+</script>
+"""
+    return i18n_boot + SHARED_JS
+
 
 SHARED_JS = """
 <!-- ADMIN MODAL (Users & Access Control) -->
@@ -4437,21 +4634,21 @@ function toggleProjectInfo(){
   const btn=document.getElementById('projbar-toggle');
   if(!bar||!btn)return;
   const open=bar.classList.toggle('show-details');
-  btn.textContent=open?'Hide Info':'Project Info';
+  btn.textContent=open?(typeof t==='function'?t('common.hide_info'):'Hide Info'):(typeof t==='function'?t('common.project_info'):'Project Info');
 }
 async function apiFetch(url,opts={}){
   const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},cache:'no-store',...opts});
   if(r.status===403){const d=await r.json().catch(()=>({}));
     if(d.error==='LOGIN_REQUIRED'){window.location='/login';return null;}
-    throw new Error(d.error||'Forbidden');}
+    throw new Error(d.error||(typeof t==='function'?t('common.forbidden'):'Forbidden'));}
   if(!r.ok)throw new Error(await r.text());
   return r.json();
 }
 async function changePw(){
-  const pw=prompt('New password (min 4 chars):');
+  const pw=prompt(typeof t==='function'?t('common.new_password_prompt'):'New password (min 4 chars):');
   if(!pw||pw.length<4)return;
   const r=await apiFetch('/api/change_password',{method:'POST',body:JSON.stringify({password:pw})});
-  if(r&&r.ok)toast('✔ Password changed','ok');else toast((r&&r.error)||'Error','er');
+  if(r&&r.ok)toast(typeof t==='function'?t('common.password_changed'):'✔ Password changed','ok');else toast((r&&r.error)||(typeof t==='function'?t('common.error'):'Error'),'er');
 }
 function escHtml(v){
   return String(v==null?'':v)
@@ -6271,22 +6468,39 @@ async function exportUsersCSV() {
 </script>"""
 
 
-def render_login():
+def render_login(lang=None):
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
+    i18n_json = get_client_i18n_json(norm)
+    lang_btn = _lang_switcher_btn_html(norm, btn_class="login-lang-btn", btn_id="loginLangBtn")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     logo_name = "logo-login.png"
     logo_file = os.path.join(static_dir, logo_name)
-    import time
-    logo_ver = str(int(os.path.getmtime(logo_file))) if os.path.exists(logo_file) else "1"
-    logo_src = url_for("static", filename=logo_name) + f"?v={logo_ver}"
-    return f"""<!DOCTYPE html><html lang="en"><head>
+    try:
+        logo_ver = str(int(os.path.getmtime(logo_file))) if os.path.exists(logo_file) else "1"
+        logo_src = url_for("static", filename=logo_name) + f"?v={logo_ver}"
+    except Exception:
+        logo_src = "/static/logo-login.png"
+    return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gas Chill DCR — Sign In</title>
+<title>{t("login.page_title", norm)}</title>
 {_head_icon_tags()}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+@font-face {{
+  font-family: 'Cairo';
+  src: url('/static/fonts/Cairo-Regular.ttf') format('truetype');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}}
 *{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:hidden}}
+html[dir="rtl"],html[dir="rtl"] body{{font-family:'Cairo','Inter','Segoe UI',Tahoma,Arial,sans-serif;direction:rtl;text-align:right}}
+.bidi-ltr{{direction:ltr!important;unicode-bidi:isolate!important;display:inline-block}}
+.rtl-flip{{display:inline-block;transition:transform .15s ease}}
+html[dir="rtl"] .rtl-flip{{transform:scaleX(-1)}}
 
 /* ── Split Layout ── */
 .login-wrap{{
@@ -6328,6 +6542,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
 .ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}}
+html[dir="rtl"] .ll-tagline{{letter-spacing:0}}
 
 .ll-brand-sep {{
   width: 48px;
@@ -6336,7 +6551,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   margin: 0 auto 16px;
 }}
 
-.valmore-logo {{ display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 32px; opacity: 0.95; }}
+.valmore-logo {{ display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 32px; opacity: 0.95; direction: ltr; }}
 .valmore-icon {{ width: 20px; height: 20px; background: #fff; color: #1a2f4e; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; font-weight: 900; font-size: 13px; }}
 .valmore-text {{ display: flex; align-items: baseline; }}
 .v-main {{ font-family: Georgia, serif; font-size: 17px; color: #fff; letter-spacing: 0.5px; font-weight: 700; }}
@@ -6348,19 +6563,21 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   background:linear-gradient(90deg,transparent,#7ec832,transparent);
 }}
 
-.ll-desc{{font-size:13px;color:rgba(255,255,255,.55);line-height:1.7;max-width:260px;margin:0 auto 40px}}
+.ll-desc{{font-size:13px;color:rgba(255,255,255,.55);line-height:1.7;max-width:280px;margin:0 auto 40px}}
 
 /* Stats */
 .ll-stats{{display:flex;justify-content:center;gap:28px}}
 .ll-stat{{text-align:center}}
 .ll-stat-num{{font-size:22px;font-weight:800;color:#7ec832;letter-spacing:-1px;font-variant-numeric:tabular-nums}}
 .ll-stat-lbl{{font-size:9px;color:rgba(255,255,255,.45);font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-top:2px}}
+html[dir="rtl"] .ll-stat-lbl{{letter-spacing:0;font-size:10px}}
 
 /* Bottom brand text */
 .ll-footer{{
   position:absolute;bottom:24px;left:0;right:0;z-index:1;
   text-align:center;font-size:10px;color:rgba(255,255,255,.25);letter-spacing:.5px;
 }}
+html[dir="rtl"] .ll-footer{{letter-spacing:0}}
 
 /* ── RIGHT PANEL: Clean Form ── */
 .login-right{{
@@ -6373,6 +6590,25 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 .login-right::before{{
   content:'';position:absolute;top:0;left:0;right:0;height:3px;
   background:linear-gradient(90deg,#1a2f4e 0%,#7ec832 50%,#00b4a6 100%);
+}}
+
+/* Language Switcher Corner Button */
+.login-lang-corner{{
+  position:absolute;top:18px;right:24px;z-index:20;
+}}
+html[dir="rtl"] .login-lang-corner{{
+  right:auto;left:24px;
+}}
+.login-lang-btn{{
+  display:inline-flex;align-items:center;gap:6px;
+  background:#fff;border:1.5px solid #cbd5e1;color:#1a2f4e;
+  padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;
+  font-family:'Cairo','Inter',sans-serif;cursor:pointer;
+  box-shadow:0 2px 8px rgba(26,47,78,.08);transition:all .18s ease;
+}}
+.login-lang-btn:hover{{
+  border-color:#00b4a6;color:#00b4a6;transform:translateY(-1px);
+  box-shadow:0 4px 12px rgba(0,180,166,.16);
 }}
 
 /* White card wrapping the form for depth */
@@ -6388,6 +6624,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 .lf-title{{
   font-size:22px;font-weight:800;color:#1a2f4e;margin-bottom:4px;letter-spacing:-.3px;
 }}
+html[dir="rtl"] .lf-title{{letter-spacing:0}}
 .lf-sub{{font-size:12px;color:#6b7a94;margin-bottom:32px;}}
 
 .fld{{margin-bottom:20px}}
@@ -6395,6 +6632,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   display:block;font-size:10.5px;font-weight:700;color:#4a5568;
   text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;
 }}
+html[dir="rtl"] .fld label{{letter-spacing:0;font-size:11.5px}}
 /* Always show border — no invisible fields */
 .fld input{{
   width:100%;padding:13px 15px;
@@ -6423,6 +6661,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   box-shadow:0 4px 14px rgba(26,47,78,.3);
   display:flex;align-items:center;justify-content:center;gap:8px;
 }}
+html[dir="rtl"] .btn-login{{letter-spacing:0}}
 .btn-login:hover{{
   background:linear-gradient(135deg,#243347 0%,#1a2f4e 100%);
   transform:translateY(-2px);
@@ -6434,6 +6673,13 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   margin-top:20px;text-align:center;font-size:11px;color:#94a3b8;
 }}
 .lf-footer a{{color:#7ec832;text-decoration:none;font-weight:600}}
+
+.login-credit{{
+  position:absolute;bottom:24px;right:32px;font-size:10px;color:#94a3b8;letter-spacing:0.3px;font-weight:500;
+}}
+html[dir="rtl"] .login-credit{{
+  right:auto;left:32px;letter-spacing:0;
+}}
 
 /* ── Mobile: Stack vertically ── */
 @media(max-width:700px){{
@@ -6458,6 +6704,8 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   
   /* Bottom Panel (Fixed Flex Direction to push card up) */
   .login-right {{ flex-direction: column !important; flex: 1 1 auto; padding: 16px 20px; justify-content: flex-start !important; align-items: center !important; position: relative; }}
+  .login-lang-corner {{ top: 10px; right: 14px; }}
+  html[dir="rtl"] .login-lang-corner {{ right: auto; left: 14px; }}
   .login-form-wrap {{ padding: 24px 20px; margin-top: 0; width: 100%; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-radius: 12px; }}
   .lf-title {{ font-size: 18px; margin-bottom: 4px; }}
   .lf-sub {{ font-size: 11px; margin-bottom: 16px; }}
@@ -6468,10 +6716,11 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   .lf-footer {{ margin-top: 12px; font-size: 10px; }}
   
   /* Copyright Text Centered at Bottom */
-  .login-right > div[style*="position:absolute"] {{
+  .login-credit {{
       position: absolute !important;
       bottom: 12px !important;
       right: 0 !important;
+      left: 0 !important;
       width: 100% !important;
       text-align: center !important;
       font-size: 9px !important;
@@ -6487,7 +6736,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
         <img src="{logo_src}" alt="Gas Chill">
       </div>
       <div class="ll-brand">GAS CHILL</div>
-      <div class="ll-tagline">Energy. Redefined.</div>
+      <div class="ll-tagline">{t("login.tagline", norm)}</div>
       <div class="ll-brand-sep"></div>
       <div class="valmore-logo">
         <div class="valmore-icon"><span>V</span></div>
@@ -6498,53 +6747,91 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
       </div>
       <div class="ll-divider"></div>
       <div class="ll-desc">
-        Enterprise Document Control System — Unified hub managing company workspaces, registers, and submittals with precision.
+        {t("login.platform_desc", norm)}
       </div>
       <div class="ll-stats">
         <div class="ll-stat">
-          <div class="ll-stat-num">DCR</div>
-          <div class="ll-stat-lbl">Platform</div>
+          <div class="ll-stat-num bidi-ltr">DCR</div>
+          <div class="ll-stat-lbl">{t("login.stat_platform", norm)}</div>
         </div>
         <div class="ll-stat">
-          <div class="ll-stat-num">v2</div>
-          <div class="ll-stat-lbl">Version</div>
+          <div class="ll-stat-num bidi-ltr">v2</div>
+          <div class="ll-stat-lbl">{t("login.stat_version", norm)}</div>
         </div>
         <div class="ll-stat">
-          <div class="ll-stat-num">24/7</div>
-          <div class="ll-stat-lbl">Access</div>
+          <div class="ll-stat-num bidi-ltr">24/7</div>
+          <div class="ll-stat-lbl">{t("login.stat_access", norm)}</div>
         </div>
       </div>
     </div>
-    <div class="ll-footer">Gas Chill &nbsp;&bull;&nbsp; A Valmore Holding Company</div>
+    <div class="ll-footer">{t("login.left_footer", norm)}</div>
   </div>
 
   <!-- RIGHT: Clean Login Form -->
   <div class="login-right">
+    <div class="login-lang-corner">
+      {lang_btn}
+    </div>
     <div class="login-form-wrap">
-      <div class="lf-title">Welcome Back</div>
-      <div class="lf-sub">Sign in to your workspace to continue</div>
+      <div class="lf-title">{t("login.welcome_title", norm)}</div>
+      <div class="lf-sub">{t("login.welcome_sub", norm)}</div>
       <div class="err" id="err" style="display:none"></div>
       <div class="fld">
-        <label>Username</label>
-        <input id="un" type="text" autofocus autocomplete="username" placeholder="Enter your username" maxlength="40" pattern="[a-zA-Z0-9_.-]{3,40}">
+        <label>{t("login.username_label", norm)}</label>
+        <input id="un" type="text" dir="ltr" autofocus autocomplete="username" placeholder="{t("login.username_placeholder", norm)}" maxlength="40" pattern="[a-zA-Z0-9_.-]{{3,40}}">
       </div>
       <div class="fld">
-        <label>Password</label>
-        <input id="pw" type="password" autocomplete="current-password" placeholder="Enter your password">
+        <label>{t("login.password_label", norm)}</label>
+        <input id="pw" type="password" dir="ltr" autocomplete="current-password" placeholder="{t("login.password_placeholder", norm)}">
       </div>
       <button class="btn-login" onclick="login()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-        Sign In
+        <svg class="rtl-flip" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <span>{t("login.signin_btn", norm)}</span>
       </button>
       <div class="lf-footer">
-        Gas Chill Document Control System &nbsp;&mdash;&nbsp; Secure Access
+        {t("login.form_footer", norm)}
       </div>
     </div>
-    <div style="position:absolute; bottom:24px; right:32px; font-size:10px; color:#94a3b8; letter-spacing:0.3px; font-weight:500;">Designed &amp; Developed in-house by Mohamed Metwaly</div>
+    <div class="login-credit">{t("footer.inhouse_by", norm)}</div>
   </div>
 
 </div>
 <script>
+window.DCR_LANG = "{norm}";
+window.DCR_DIR = "{dir_attr}";
+window.DCR_I18N = {i18n_json};
+window.t = function(key, vars) {{
+  const dict = window.DCR_I18N || {{}};
+  let val = Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : key;
+  if (vars && typeof val === 'string') {{
+    Object.keys(vars).forEach(function(k) {{
+      val = val.replaceAll('{{' + k + '}}', String(vars[k] == null ? '' : vars[k]));
+    }});
+  }}
+  return val;
+}};
+window.setLanguage = function(nextLang) {{
+  const lang = (String(nextLang || '').trim().toLowerCase() === 'ar') ? 'ar' : 'en';
+  try {{
+    document.cookie = 'dcr_lang=' + lang + '; path=/; max-age=31536000; SameSite=Lax';
+  }} catch(e) {{}}
+  try {{
+    localStorage.setItem('dcr_lang', lang);
+  }} catch(e) {{}}
+  try {{
+    const u = new URL(window.location.href);
+    if (u.searchParams.has('lang')) {{
+      u.searchParams.set('lang', lang);
+      window.location.href = u.toString();
+      return;
+    }}
+  }} catch(e) {{}}
+  window.location.reload();
+}};
+try {{
+  localStorage.setItem('dcr_lang', window.DCR_LANG);
+}} catch(e) {{}}
+
 document.getElementById('pw').onkeydown=e=>{{if(e.key==='Enter')login();}};
 document.getElementById('un').onkeydown=e=>{{if(e.key==='Enter')document.getElementById('pw').focus();}};
 async function login(){{
@@ -6556,10 +6843,10 @@ async function login(){{
   err.style.borderColor='#fecaca';
   err.style.color='#b91c1c';
   err.style.fontWeight='normal';
-  if(!un||!pw){{err.textContent='Please enter username and password';err.style.display='flex';return;}}
+  if(!un||!pw){{err.textContent=t('login.err_missing');err.style.display='flex';return;}}
   const unameRegex = /^[a-zA-Z0-9_.-]{{3,40}}$/;
   if(!unameRegex.test(un)){{
-    err.textContent='Invalid username format: letters, numbers, dots, hyphens, and underscores only (3-40 chars).';
+    err.textContent=t('login.err_format');
     err.style.display='block';
     return;
   }}
@@ -6569,7 +6856,7 @@ async function login(){{
     const d=await r.json();
     if(d.ok) window.location=d.redirect_to||'/';
     else{{
-      err.textContent=d.error||'Invalid credentials';
+      err.textContent=d.error||t('login.err_invalid');
       err.style.display='block';
       if(d.locked){{
         err.style.background='#fee2e2';
@@ -6579,7 +6866,7 @@ async function login(){{
       }}
     }}
   }} catch(e){{
-    err.textContent='Connection error. Please try again.';
+    err.textContent=t('login.err_connection');
     err.style.display='block';
   }}
 }}
@@ -6589,7 +6876,9 @@ async function login(){{
 
 
 
-def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="OM"):
+def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="OM", lang=None):
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
     role = u["role"] if u else "guest"
     can_manage = role in ("superadmin", "admin")
     
@@ -6623,7 +6912,10 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     doc_types_breakdown = []
 
     if pids:
-        dt_scope = get_user_doc_type_scope(u, pids) if u else {}
+        try:
+            dt_scope = get_user_doc_type_scope(u, pids) if u else {}
+        except Exception:
+            dt_scope = None
         dt_info_map = {}  # (pid, dt_id_upper) -> (code, name)
         dt_agg = {}       # (code, name) -> {"code": ..., "name": ..., "count": 0, "completed": 0}
         try:
@@ -6634,7 +6926,11 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
                    ORDER BY sort_order, code, id""",
                 (pids,),
             ) or []
+            if not isinstance(dt_rows, list):
+                dt_rows = []
             for dt in dt_rows:
+                if not isinstance(dt, dict):
+                    continue
                 p_id = dt.get("project_id")
                 dt_id = dt.get("id")
                 dt_c = dt.get("code") or dt_id or "DOC"
@@ -6656,30 +6952,33 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
                    WHERE project_id = ANY(%s)""",
                 (pids,),
             ) or []
-            for r in rec_rows:
-                p_id = r.get("project_id")
-                dt_id = r.get("dt_id")
-                dt_key = (p_id, str(dt_id or "").strip().upper())
-                dt_meta = dt_info_map.get(dt_key)
-                dt_code_hint = dt_meta[0] if dt_meta else ""
-                if not db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code_hint):
-                    continue
-                total_records += 1
-                st_low = str(r.get("status_val") or "").lower()
-                is_comp = ("not closed" not in st_low) and any(k in st_low for k in ("complete", "close", "approved"))
-                is_pend = any(k in st_low for k in ("open", "progress", "pending", "review"))
-                if is_comp:
-                    completed_records += 1
-                if is_pend:
-                    pending_records += 1
-                if dt_meta is None:
-                    fallback_code = str(dt_id or "DOC")
-                    dt_meta = (fallback_code, fallback_code)
-                    if dt_meta not in dt_agg:
-                        dt_agg[dt_meta] = {"code": dt_meta[0], "name": dt_meta[1], "count": 0, "completed": 0}
-                dt_agg[dt_meta]["count"] += 1
-                if is_comp:
-                    dt_agg[dt_meta]["completed"] += 1
+            if isinstance(rec_rows, list):
+                for r in rec_rows:
+                    if not isinstance(r, dict):
+                        continue
+                    p_id = r.get("project_id")
+                    dt_id = r.get("dt_id")
+                    dt_key = (p_id, str(dt_id or "").strip().upper())
+                    dt_meta = dt_info_map.get(dt_key)
+                    dt_code_hint = dt_meta[0] if dt_meta else ""
+                    if not db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code_hint):
+                        continue
+                    total_records += 1
+                    st_low = str(r.get("status_val") or "").lower()
+                    is_comp = ("not closed" not in st_low) and any(k in st_low for k in ("complete", "close", "approved"))
+                    is_pend = any(k in st_low for k in ("open", "progress", "pending", "review"))
+                    if is_comp:
+                        completed_records += 1
+                    if is_pend:
+                        pending_records += 1
+                    if dt_meta is None:
+                        fallback_code = str(dt_id or "DOC")
+                        dt_meta = (fallback_code, fallback_code)
+                        if dt_meta not in dt_agg:
+                            dt_agg[dt_meta] = {"code": dt_meta[0], "name": dt_meta[1], "count": 0, "completed": 0}
+                    dt_agg[dt_meta]["count"] += 1
+                    if is_comp:
+                        dt_agg[dt_meta]["completed"] += 1
         except Exception:
             pass
 
@@ -6793,7 +7092,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
         </div>
         '''
 
-    return f'''<!DOCTYPE html><html lang="en"><head>
+    return f'''<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — {ws_name}</title>
 {_head_icon_tags()}
@@ -7032,14 +7331,15 @@ body.dark .tbtn.active {{
 <body data-workspace="{active_ws}">
 <div id="topbar">
   <span style="font-size:20px">📋</span>
-  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
-  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">{t("app.title_full", norm)}</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">{t("app.title_short", norm)}</span>
   {ws_switcher_html}
-  {GLOBAL_SEARCH_TRIGGER_HTML}
+  {_global_search_trigger_html(norm)}
   <div class="sp"></div>
-  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
-  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="openM('about-modal')" title="{t("topbar.about_title", norm)}">ℹ️<span class="tb-btn-text">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
+  {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
@@ -7271,8 +7571,8 @@ body.dark .tbtn.active {{
   </div>
 </div>
 
-{SHARED_JS}
-{ABOUT_MODAL_HTML}
+{_shared_js_html(norm)}
+{_about_modal_html(norm)}
 {SPOTLIGHT_MODAL_COMPONENT}
 {AI_DRAWER_COMPONENT}
 <script>
@@ -8359,10 +8659,12 @@ window.addEventListener('load', function() {
 """
 
 
-def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="HSE"):
+def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="HSE", lang=None):
     from html import escape as _h_esc
     from hse_analytics import build_hse_overview, get_scoped_hse_analytics
 
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
     role = (u or {}).get("role") or "guest"
     can_manage = role in ("superadmin", "admin")
     try:
@@ -8459,7 +8761,7 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     safe_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     hse_js_block = HSE_DASHBOARD_JS.replace("__HSE_INIT_JSON__", safe_json)
 
-    return f"""<!DOCTYPE html><html lang="en"><head>
+    return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — {ws_name} Command Dashboard</title>
 {_head_icon_tags()}
@@ -8470,14 +8772,15 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 <body data-workspace="{_h_esc(active_ws)}">
 <div id="topbar">
   <span style="font-size:20px">📋</span>
-  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
-  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">{t("app.title_full", norm)}</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">{t("app.title_short", norm)}</span>
   {ws_switcher_html}
-  {GLOBAL_SEARCH_TRIGGER_HTML}
+  {_global_search_trigger_html(norm)}
   <div class="sp"></div>
-  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
-  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="openM('about-modal')" title="{t("topbar.about_title", norm)}">ℹ️<span class="tb-btn-text">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
+  {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
@@ -8700,8 +9003,8 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   </div>
 </div>
 
-{SHARED_JS}
-{ABOUT_MODAL_HTML}
+{_shared_js_html(norm)}
+{_about_modal_html(norm)}
 {SPOTLIGHT_MODAL_COMPONENT}
 {AI_DRAWER_COMPONENT}
 <script>{hse_js_block}</script>
@@ -8863,8 +9166,11 @@ body.dark .perm-table tr:hover { background: rgba(255, 255, 255, 0.04); }
 #toast.er { background: #dc2626; }
 """
 
-def render_launchpad(u):
+def render_launchpad(u, lang=None):
     """Render the executive Company Workspaces Launchpad (8-Department Grid Hub)."""
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
+    lang_btn_html = _lang_switcher_btn_html(norm, btn_class="hub-theme-toggle lang-switch-btn", btn_id="hub-lang-btn")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     logo_name = "logo-login.png"
     logo_file = os.path.join(static_dir, logo_name)
@@ -8880,15 +9186,15 @@ def render_launchpad(u):
     primary_ws = str((u or {}).get("primary_workspace") or "ENG").strip().upper()
 
     role_labels = {
-        "superadmin": "SUPER ADMIN",
-        "admin": "DEPARTMENT ADMIN",
-        "editor": "DOCUMENT CONTROL • EDITOR",
-        "viewer": "DOCUMENT CONTROL • VIEWER",
+        "superadmin": t("role.superadmin", norm),
+        "admin": t("role.dept_admin", norm),
+        "editor": t("role.dc_editor", norm),
+        "viewer": t("role.dc_viewer", norm),
     }
     can_admin = (role in ("superadmin", "admin"))
-    admin_btn_html = '''<button type="button" class="hub-admin-btn" onclick="openAdmin()" title="Open Enterprise Admin Panel">
+    admin_btn_html = f'''<button type="button" class="hub-admin-btn" onclick="openAdmin()" title="{t("hub.admin_title", norm)}">
         <span>⚙️</span>
-        <span>Admin</span>
+        <span>{t("hub.admin_btn", norm)}</span>
       </button>''' if can_admin else ''
     role_tag = role_labels.get(role, role.upper())
     parts = [p for p in uname.replace(".", " ").replace("_", " ").replace("-", " ").split() if p]
@@ -8907,60 +9213,60 @@ def render_launchpad(u):
 
     default_meta = {
         "ENG": {
-            "code": "ENG", "name": "Engineering & Projects", "icon": "🏗️",
-            "desc": "EPC Submittals, Drawings, Material Approvals, IR, MIR, RFI & NOC Variation Orders.",
+            "code": "ENG", "name": t("ws.ENG.name", norm), "icon": "🏗️",
+            "desc": t("ws.ENG.desc", norm),
             "bar": "linear-gradient(90deg, #7ec832, #00b4a6)", "glow": "rgba(126, 200, 50, 0.22)",
             "codeColor": "#7ec832", "iconBg": "rgba(126, 200, 50, 0.12)", "iconBorder": "rgba(126, 200, 50, 0.35)",
-            "lbl1": "Projects", "lbl2": "Records"
+            "lbl1": t("hub.kpi_projects", norm), "lbl2": t("hub.kpi_records", norm)
         },
         "OM": {
-            "code": "O&M", "name": "Operation & Maintenance (O&M)", "icon": "⚙️",
-            "desc": "Facilities maintenance contracts, Work Orders, PPM schedules and SLA compliance metrics.",
+            "code": "O&M", "name": t("ws.OM.name", norm), "icon": "⚙️",
+            "desc": t("ws.OM.desc", norm),
             "bar": "linear-gradient(90deg, #00b4a6, #38bdf8)", "glow": "rgba(0, 180, 166, 0.22)",
             "codeColor": "#00b4a6", "iconBg": "rgba(0, 180, 166, 0.12)", "iconBorder": "rgba(0, 180, 166, 0.35)",
-            "lbl1": "Contracts", "lbl2": "Records"
+            "lbl1": t("hub.kpi_contracts", norm), "lbl2": t("hub.kpi_records", norm)
         },
         "HR": {
-            "code": "HR", "name": "Human Resources", "icon": "👥",
-            "desc": "Personnel archives, employee onboarding, credential files, attendance and corporate policies.",
+            "code": "HR", "name": t("ws.HR.name", norm), "icon": "👥",
+            "desc": t("ws.HR.desc", norm),
             "bar": "linear-gradient(90deg, #8b5cf6, #ec4899)", "glow": "rgba(139, 92, 246, 0.22)",
             "codeColor": "#8b5cf6", "iconBg": "rgba(139, 92, 246, 0.12)", "iconBorder": "rgba(139, 92, 246, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "FIN": {
-            "code": "FIN", "name": "Finance & Accounting", "icon": "💰",
-            "desc": "Interim Payment Certificates (IPC), subcontractor invoices, project budgets and cost audits.",
+            "code": "FIN", "name": t("ws.FIN.name", norm), "icon": "💰",
+            "desc": t("ws.FIN.desc", norm),
             "bar": "linear-gradient(90deg, #f59e0b, #fbbf24)", "glow": "rgba(245, 158, 11, 0.22)",
             "codeColor": "#d97706", "iconBg": "rgba(245, 158, 11, 0.12)", "iconBorder": "rgba(245, 158, 11, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "PROC": {
-            "code": "PROC", "name": "Procurement", "icon": "🛒",
-            "desc": "Purchase Orders (PO), vendor quotations, material requisition packages and approved suppliers.",
+            "code": "PROC", "name": t("ws.PROC.name", norm), "icon": "🛒",
+            "desc": t("ws.PROC.desc", norm),
             "bar": "linear-gradient(90deg, #06b6d4, #3b82f6)", "glow": "rgba(6, 182, 212, 0.22)",
             "codeColor": "#06b6d4", "iconBg": "rgba(6, 182, 212, 0.12)", "iconBorder": "rgba(6, 182, 212, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "WH": {
-            "code": "WH", "name": "Warehousing", "icon": "🏬",
-            "desc": "Central store inventory, Material Receipt Notes (MRN), site dispatch and stock balances.",
+            "code": "WH", "name": t("ws.WH.name", norm), "icon": "🏬",
+            "desc": t("ws.WH.desc", norm),
             "bar": "linear-gradient(90deg, #eab308, #84cc16)", "glow": "rgba(234, 179, 8, 0.22)",
             "codeColor": "#ca8a04", "iconBg": "rgba(234, 179, 8, 0.12)", "iconBorder": "rgba(234, 179, 8, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "HSE": {
-            "code": "HSE", "name": "Health, Safety & Environment (HSE)", "icon": "🛡️",
-            "desc": "Occupational safety audits, site inspection checklists, incident registers and ISO certifications.",
+            "code": "HSE", "name": t("ws.HSE.name", norm), "icon": "🛡️",
+            "desc": t("ws.HSE.desc", norm),
             "bar": "linear-gradient(90deg, #10b981, #059669)", "glow": "rgba(16, 185, 129, 0.22)",
             "codeColor": "#10b981", "iconBg": "rgba(16, 185, 129, 0.12)", "iconBorder": "rgba(16, 185, 129, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "TND": {
-            "code": "TND", "name": "Tendering", "icon": "📑",
-            "desc": "Tender submissions, BOQ bill of quantities, tender addendums, commercial bids and award tracking.",
+            "code": "TND", "name": t("ws.TND.name", norm), "icon": "📑",
+            "desc": t("ws.TND.desc", norm),
             "bar": "linear-gradient(90deg, #6366f1, #a855f7)", "glow": "rgba(99, 102, 241, 0.22)",
             "codeColor": "#6366f1", "iconBg": "rgba(99, 102, 241, 0.12)", "iconBorder": "rgba(99, 102, 241, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
     }
 
@@ -9005,11 +9311,18 @@ def render_launchpad(u):
     if all_lit_pids:
         try:
             dt_scope = get_user_doc_type_scope(u, all_lit_pids)
+        except Exception:
+            dt_scope = None
+        try:
             if dt_scope is None:
                 rows = db.q(
                     "SELECT project_id, COUNT(*) as c FROM records WHERE project_id = ANY(%s) GROUP BY project_id",
                     (all_lit_pids,),
                 ) or []
+                if not rows:
+                    rows = db.q(
+                        "SELECT project_id, COUNT(*) as c FROM records GROUP BY project_id"
+                    ) or []
                 for r in rows:
                     if isinstance(r, dict) and r.get("project_id"):
                         rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
@@ -9036,6 +9349,13 @@ def render_launchpad(u):
                     dt_code = dt_code_map.get((p_id, str(dt_id or "").strip().upper()), "")
                     if db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code):
                         rec_counts_by_proj[p_id] = rec_counts_by_proj.get(p_id, 0) + int(r.get("c") or 0)
+                if not rows and isinstance(dt_scope, dict) and all(not v for v in dt_scope.values()):
+                    fallback_rows = db.q(
+                        "SELECT project_id, COUNT(*) as c FROM records GROUP BY project_id"
+                    ) or []
+                    for r in fallback_rows:
+                        if isinstance(r, dict) and r.get("project_id"):
+                            rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
         except Exception:
             pass
 
@@ -9046,16 +9366,15 @@ def render_launchpad(u):
         ws_id = str(ws.get("id") or "").strip()
         ws_id_up = ws_id.upper()
         ws_code = str(ws.get("code") or ws_id).strip()
-        ws_name = str(ws.get("name") or ws_id).strip()
         meta = default_meta.get(ws_id_up) or default_meta.get(ws_code.upper()) or palette_cycle[idx % len(palette_cycle)]
+        loc_meta = translate_workspace_meta(ws, norm)
+        ws_name = loc_meta["name"] or meta["name"]
 
         ws_icon = str(ws.get("icon") or "").strip()
         if not ws_icon or ws_icon == "📁":
             ws_icon = meta["icon"]
 
-        ws_desc = str(ws.get("description") or "").strip()
-        if not ws_desc or ws_desc in ("EPC & Site Submittals", "Facilities & Maintenance Contracts"):
-            ws_desc = meta["desc"]
+        ws_desc = loc_meta["desc"] or meta["desc"]
 
         is_lit = (ws_id_up in allowed_ids) or is_super
         is_primary = (ws_id_up == primary_ws)
@@ -9070,25 +9389,25 @@ def render_launchpad(u):
             val1 = "&mdash;"
             val2 = "&mdash;"
 
-        lbl1 = meta.get("lbl1", "Registers")
-        lbl2 = meta.get("lbl2", "Documents")
+        lbl1 = meta.get("lbl1", t("hub.kpi_registers", norm))
+        lbl2 = meta.get("lbl2", t("hub.kpi_documents", norm))
         card_cls = "lit" if is_lit else "dimmed"
-        primary_badge = '<span class="hc-primary-pill">★ Primary</span>' if (is_primary and is_lit) else ''
-        status_badge = '<span class="hc-status-pill active">● Active</span>' if is_lit else '<span class="hc-status-pill locked">🔒 Locked</span>'
+        primary_badge = f'<span class="hc-primary-pill">{t("hub.badge_primary", norm)}</span>' if (is_primary and is_lit) else ''
+        status_badge = f'<span class="hc-status-pill active">{t("hub.badge_active", norm)}</span>' if is_lit else f'<span class="hc-status-pill locked">{t("hub.badge_locked", norm)}</span>'
 
         if is_lit:
             onclick_attr = f"window.location.href='/?ws={ws_id}'"
-            action_html = """<button class="btn-enter-workspace" type="button">
-                <span>Enter Workspace</span>
-                <span class="btn-enter-arrow">➔</span>
+            action_html = f"""<button class="btn-enter-workspace" type="button">
+                <span>{t("hub.btn_enter", norm)}</span>
+                <span class="btn-enter-arrow rtl-flip">➔</span>
               </button>"""
         else:
             onclick_attr = "notifyRestrictedToast()"
-            action_html = """<button class="btn-enter-workspace" type="button" disabled>
-                <span>🔒 Restricted Access</span>
+            action_html = f"""<button class="btn-enter-workspace" type="button" disabled>
+                <span>{t("hub.btn_restricted", norm)}</span>
                 <span>&times;</span>
               </button>
-              <div class="dim-tooltip">🔒 Access Restricted: Contact System Administrator to request permissions</div>"""
+              <div class="dim-tooltip">{t("hub.restricted_tooltip", norm)}</div>"""
 
         cards_html_list.append(f"""
         <div class="h-card {card_cls}" data-ws-id="{ws_id}" data-lit="{'1' if is_lit else '0'}"
@@ -9100,7 +9419,7 @@ def render_launchpad(u):
                 <div class="hc-icon">{ws_icon}</div>
                 <div class="hc-meta">
                   <div style="display:flex;align-items:center;gap:5px;">
-                    <span class="hc-code">{ws_code}</span>
+                    <span class="hc-code bidi-ltr">{ws_code}</span>
                     {primary_badge}
                   </div>
                   <span class="hc-title">{ws_name}</span>
@@ -9113,11 +9432,11 @@ def render_launchpad(u):
             <div class="hc-desc">{ws_desc}</div>
             <div class="hc-kpi-row">
               <div class="hc-kpi-cell">
-                <div class="hc-kpi-num">{val1}</div>
+                <div class="hc-kpi-num bidi-ltr">{val1}</div>
                 <div class="hc-kpi-lbl">{lbl1}</div>
               </div>
               <div class="hc-kpi-cell">
-                <div class="hc-kpi-num">{val2}</div>
+                <div class="hc-kpi-num bidi-ltr">{val2}</div>
                 <div class="hc-kpi-lbl">{lbl2}</div>
               </div>
             </div>
@@ -9131,15 +9450,60 @@ def render_launchpad(u):
     cards_html = "\n".join(cards_html_list)
 
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{norm}" dir="{dir_attr}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gas Chill &mdash; Company Workspaces Launchpad</title>
+<title>{t("hub.page_title", norm)}</title>
 {_head_icon_tags()}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+@font-face {{
+  font-family: 'Cairo';
+  src: url('/static/fonts/Cairo-Regular.ttf') format('truetype');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}}
+.bidi-ltr {{
+  direction: ltr !important;
+  unicode-bidi: isolate !important;
+  display: inline-block;
+}}
+.rtl-flip {{
+  display: inline-block;
+  transition: transform 0.2s ease;
+}}
+html[dir="rtl"] .rtl-flip {{
+  transform: scaleX(-1);
+}}
+html[dir="rtl"], html[dir="rtl"] body {{
+  font-family: 'Cairo', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  direction: rtl;
+  text-align: right;
+}}
+html[dir="rtl"] .h-card.lit:hover .btn-enter-arrow {{
+  transform: scaleX(-1) translateX(4px);
+}}
+html[dir="rtl"] .h-card.lit::after {{
+  right: auto;
+  left: -35px;
+}}
+html[dir="rtl"] #toast-box {{
+  right: auto;
+  left: 24px;
+  border-left: none;
+  border-right: 4px solid #7ec832;
+}}
+html[dir="rtl"] .hc-kpi-lbl,
+html[dir="rtl"] .hub-u-role,
+html[dir="rtl"] .gc-brand-text span {{
+  letter-spacing: 0 !important;
+}}
+.valmore-hub-brand, .gc-brand-box {{
+  direction: ltr;
+}}
 :root {{
   --brand-navy: #1a2f4e;
   --brand-navy-dark: #0f1d2e;
@@ -10053,29 +10417,30 @@ body.dark .hc-status-pill.active {{
 
     <div class="hub-center-group">
       <div class="hub-subtitle-pill">
-        <span>🏢 Enterprise Document Control Hub</span>
+        <span>{t("hub.subtitle_pill", norm)}</span>
       </div>
     </div>
 
     <div class="hub-user-corner">
       {admin_btn_html}
-      <button class="hub-theme-toggle" onclick="toggleHubTheme()" id="hub-theme-btn" title="Toggle Light / Dark Mode">
+      {lang_btn_html}
+      <button class="hub-theme-toggle" onclick="toggleHubTheme()" id="hub-theme-btn" title="{t("hub.theme_title", norm)}">
         <span id="hub-theme-ico">🌙</span>
-        <span id="hub-theme-txt">Dark Mode</span>
+        <span id="hub-theme-txt">{t("hub.theme_dark", norm)}</span>
       </button>
 
       <div class="hub-u-info">
         <div class="hub-avatar">{avatar_txt}</div>
         <div class="hub-u-text">
-          <span class="hub-u-name">{uname}</span>
+          <span class="hub-u-name bidi-ltr">{uname}</span>
           <span class="hub-u-role">{role_tag}</span>
         </div>
       </div>
 
       <form action="/logout" method="post" style="display:inline;margin:0;">
-        <button type="submit" class="hub-signout-btn" title="Sign Out">
+        <button type="submit" class="hub-signout-btn" title="{t("hub.signout_btn", norm)}">
           <span>🚪</span>
-          <span>Sign Out</span>
+          <span>{t("hub.signout_btn", norm)}</span>
         </button>
       </form>
     </div>
@@ -10084,12 +10449,12 @@ body.dark .hc-status-pill.active {{
   <main class="hub-content-wrap">
     <div class="hub-headline-bar">
       <div>
-        <h1>Company Workspaces Launchpad</h1>
-        <p>Select your authorized workspace to access live engineering registers, contracts, and submittals.</p>
+        <h1>{t("hub.headline_title", norm)}</h1>
+        <p>{t("hub.headline_sub", norm)}</p>
       </div>
       <div class="hub-legend">
-        <span class="legend-lit">Authorized Workspace (Active)</span>
-        <span class="legend-dim">🔒 Restricted (Contact Administrator)</span>
+        <span class="legend-lit">{t("hub.legend_active", norm)}</span>
+        <span class="legend-dim">{t("hub.legend_restricted", norm)}</span>
       </div>
     </div>
 
@@ -10099,14 +10464,14 @@ body.dark .hc-status-pill.active {{
   </main>
 
   <footer class="hub-bottom-strip">
-    <span>Gas Chill &mdash; Enterprise Document Control System (DCR)</span>
-    <span>Designed &amp; Developed in-house by <strong>Mohamed Metwaly</strong></span>
+    <span>{t("hub.footer_left", norm)}</span>
+    <span>{t("footer.designed_by", norm)} <strong>{t("footer.developer_name", norm)}</strong></span>
   </footer>
 </div>
 
 <div id="toast-box"></div>
 
-{SHARED_JS}
+{_shared_js_html(norm)}
 
 <script>
 (function initHubTheme() {{
@@ -10115,7 +10480,7 @@ body.dark .hc-status-pill.active {{
     const ico = document.getElementById('hub-theme-ico');
     const txt = document.getElementById('hub-theme-txt');
     if (ico) ico.textContent = '☀️';
-    if (txt) txt.textContent = 'Light Mode';
+    if (txt) txt.textContent = t('hub.theme_light');
   }}
 }})();
 
@@ -10125,22 +10490,22 @@ function toggleHubTheme() {{
   const ico = document.getElementById('hub-theme-ico');
   const txt = document.getElementById('hub-theme-txt');
   if (ico) ico.textContent = isDark ? '☀️' : '🌙';
-  if (txt) txt.textContent = isDark ? 'Light Mode' : 'Dark Mode';
-  notifyToast(isDark ? '🌙 Switched to Dark Mode' : '☀️ Switched to Light Mode');
+  if (txt) txt.textContent = isDark ? t('hub.theme_light') : t('hub.theme_dark');
+  notifyToast(isDark ? t('hub.theme_switched_dark') : t('hub.theme_switched_light'));
 }}
 
 let _toastTimer = null;
 function notifyToast(msg) {{
-  const t = document.getElementById('toast-box');
-  if (!t) return;
-  t.textContent = msg;
-  t.classList.add('show');
+  const tEl = document.getElementById('toast-box');
+  if (!tEl) return;
+  tEl.textContent = msg;
+  tEl.classList.add('show');
   clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
+  _toastTimer = setTimeout(() => tEl.classList.remove('show'), 3400);
 }}
 
 function notifyRestrictedToast() {{
-  notifyToast('🔒 Access Restricted: Contact System Administrator to request permissions');
+  notifyToast(t('hub.restricted_tooltip'));
 }}
 
 window.addEventListener('keydown', (e) => {{
@@ -10162,8 +10527,10 @@ window.addEventListener('keydown', (e) => {{
 </body>
 </html>"""
 
-def render_dashboard(u, active_ws_id=None):
-    btns, uname, rlbl, rbg = _user_info_html(u)
+def render_dashboard(u, active_ws_id=None, lang=None):
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
+    btns, uname, rlbl, rbg = _user_info_html(u, lang=norm)
     role = u["role"] if u else "guest"
     audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;, this)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
     user_ws = db.get_user_workspaces(u["username"]) if u else []
@@ -10185,14 +10552,14 @@ def render_dashboard(u, active_ws_id=None):
     except Exception:
         accessible_projs = []
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
-    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
+    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws, lang=norm)
 
     if active_ws == "HSE":
-        return _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws)
+        return _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws, lang=norm)
     if active_ws != "ENG":
-        return _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws)
+        return _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws, lang=norm)
 
-    return f"""<!DOCTYPE html><html lang="en"><head>
+    return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — Dashboard</title>
 {_head_icon_tags()}
@@ -10661,14 +11028,15 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
 <div id="topbar">
   <span style="font-size:20px">📋</span>
-  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
-  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">{t("app.title_full", norm)}</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">{t("app.title_short", norm)}</span>
   {ws_switcher_html}
-  {GLOBAL_SEARCH_TRIGGER_HTML}
+  {_global_search_trigger_html(norm)}
   <div class="sp"></div>
-  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
-  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="openM('about-modal')" title="{t("topbar.about_title", norm)}">ℹ️<span class="tb-btn-text">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
+  {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
@@ -10959,7 +11327,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
 
 
-{SHARED_JS}
+{_shared_js_html(norm)}
 <script>
 const ROLE='{role}';
 window._ACCESSIBLE_PROJECTS = {projs_json};
@@ -12318,15 +12686,17 @@ function auditPage(dir){{
 
 init();
 </script>
-{ABOUT_MODAL_HTML}
-{GLOBAL_FOOTER_HTML}
+{_about_modal_html(norm)}
+{_global_footer_html(norm)}
 {SPOTLIGHT_MODAL_COMPONENT}
 {AI_DRAWER_COMPONENT}
 </body></html>"""
 
 
 
-def render_register(u, proj, active_ws_id=None):
+def render_register(u, proj, active_ws_id=None, lang=None):
+    norm     = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
     pid      = proj["id"]
     pcode    = (proj.get("code") or pid) if proj else pid
     pname    = (proj.get("name") or "") if proj else ""
@@ -12334,7 +12704,7 @@ def render_register(u, proj, active_ws_id=None):
     role     = u["role"]     if u else "guest"
     editable = can_edit(pid)
     can_dl   = bool(editable or (hasattr(db, "can_user_download") and db.can_user_download(uname, pid)))
-    btns, _, rlbl, rbg = _user_info_html(u)
+    btns, _, rlbl, rbg = _user_info_html(u, lang=norm)
     sc_json  = json.dumps(STATUS_COLORS)
     custom_sc_json = json.dumps(proj.get("status_colors", {}))
     active_ws = active_ws_id or proj.get("workspace_id", "ENG") if proj else "ENG"
@@ -12343,7 +12713,7 @@ def render_register(u, proj, active_ws_id=None):
     except Exception:
         accessible_projs = []
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
-    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
+    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws, lang=norm)
 
     dts       = db.get_doc_types(pid)
     try:
@@ -12385,7 +12755,10 @@ def render_register(u, proj, active_ws_id=None):
         f'<span>{dt["code"]}</span><span class="tcnt" id="cnt-{dt["id"]}">0</span></button>'
         for dt in dts)
 
-    _can_manage_proj = bool(u and is_project_admin(pid, u))
+    try:
+        _can_manage_proj = bool(u and is_project_admin(pid, u))
+    except Exception:
+        _can_manage_proj = bool(u and u.get("role") in ("superadmin", "admin"))
     _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _can_manage_proj else ''
     _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _can_manage_proj else ''
     _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _can_manage_proj else ''
@@ -12400,7 +12773,7 @@ def render_register(u, proj, active_ws_id=None):
                  '<span style="font-size:11px;color:rgba(255,255,255,.5);padding:4px 8px">'
                  '👁 Read-only — <a href="/login" style="color:#f0a500">login to edit</a></span>')
 
-    return f"""<!DOCTYPE html><html lang="en"><head>
+    return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — {proj.get("name","Register")}</title>
 {_head_icon_tags()}
@@ -12878,10 +13251,10 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 
 <div id="topbar">
   <span class="topbar-mark" style="font-size:20px">📋</span>
-  <span class="topbar-title-full" style="font-weight:700;font-size:14px;letter-spacing:.3px">Document Control Register</span>
-  <span class="topbar-title-short" style="font-weight:800;font-size:13px;letter-spacing:.35px">DCR</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px;letter-spacing:.3px">{t("app.title_full", norm)}</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px;letter-spacing:.35px">{t("app.title_short", norm)}</span>
   
-  {GLOBAL_SEARCH_TRIGGER_HTML}
+  {_global_search_trigger_html(norm)}
 
   <div style="flex:1"></div>
   
@@ -12891,10 +13264,11 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 
   <div style="flex:1"></div>
 
-  <a href="/?ws={active_ws}" class="tb-btn">📊<span class="tb-btn-text"> Dashboard</span></a>
-  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
-  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <a href="/?ws={active_ws}" class="tb-btn">📊<span class="tb-btn-text">{t("topbar.dashboard_btn", norm)}</span></a>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="openM('about-modal')" title="{t("topbar.about_title", norm)}">ℹ️<span class="tb-btn-text">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
+  {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
   <span class="topbar-user"><span class="topbar-user-name">👤 {uname}</span>
@@ -13599,7 +13973,7 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 
 </div>
 
-{SHARED_JS}
+{_shared_js_html(norm)}
 <script>
 window._ACCESSIBLE_PROJECTS = {projs_json};
 const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'}, CAN_DOWNLOAD={'true' if can_dl else 'false'};
@@ -20153,7 +20527,7 @@ async function saveProjectSettings() {{
   }}
 }}
 </script>
-{ABOUT_MODAL_HTML}
+{_about_modal_html(norm)}
 {SPOTLIGHT_MODAL_COMPONENT}
 {AI_DRAWER_COMPONENT}
 </body></html>"""
