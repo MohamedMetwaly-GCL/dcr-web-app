@@ -13551,6 +13551,17 @@ body.dark .ms-opt input{{accent-color:#60a5fa}}
 .letter-branch-cue{{color:#7d8a95;font-weight:800;margin-right:8px}}
 .letter-connector{{position:absolute;left:-24px;top:0;bottom:22px;width:2px;background:#cbd5df;border-radius:2px}}
 .letter-connector-arm{{position:absolute;left:-24px;top:24px;width:18px;height:2px;background:#cbd5df;border-radius:2px}}
+html[dir="rtl"] .letter-flow{{padding-left:0;padding-right:10px}}
+html[dir="rtl"] .letter-flow-line{{left:auto;right:13px}}
+html[dir="rtl"] .letter-node{{padding-left:0;padding-right:30px}}
+html[dir="rtl"] .letter-dot{{left:auto;right:8px}}
+html[dir="rtl"] .letter-card{{border-left:1px solid #d7e0e6;border-right:4px solid #d7e0e6}}
+html[dir="rtl"] .letter-card.current{{border-left-color:#8BC34A;border-right-color:#8BC34A}}
+html[dir="rtl"] .letter-branch-cue{{margin-right:0;margin-left:8px}}
+html[dir="rtl"] .letter-connector{{left:auto;right:-24px}}
+html[dir="rtl"] .letter-connector-arm{{left:auto;right:-24px}}
+html[dir="rtl"] body.dark .letter-card{{border-left-color:#304257;border-right-color:#496780}}
+html[dir="rtl"] body.dark .letter-card.current{{border-left-color:#8BC34A;border-right-color:#8BC34A}}
 body.dark .letter-flow-line{{background:linear-gradient(180deg,#3a526d,#253648)}}
 body.dark .letter-dot{{background:#60a5fa;border-color:#101a29;box-shadow:0 0 0 2px rgba(96,165,250,.28)}}
 body.dark .letter-dot.current{{background:#8BC34A;box-shadow:0 0 0 2px rgba(139,195,74,.42)}}
@@ -13939,12 +13950,12 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 <!-- ADD/EDIT RECORD -->
 <div class="overlay hidden" id="rec-modal">
   <div class="modal record-modal">
-    <div class="mhdr"><span id="rec-title">Add Document</span>
+    <div class="mhdr"><span id="rec-title">{t("form.add_title", norm)}</span>
       <button class="xbtn" onclick="closeM('rec-modal')">✕</button></div>
     <div class="mbody"><div class="record-form-shell" id="rec-form"></div></div>
     <div class="mfoot record-modal-actions">
-      <button class="btn btn-sc" id="rec-cancel-btn" onclick="closeM('rec-modal')">Cancel</button>
-      <button class="btn btn-pr" id="rec-save-btn" onclick="saveRecord()">Save</button>
+      <button class="btn btn-sc" id="rec-cancel-btn" onclick="closeM('rec-modal')">{t("form.cancel", norm)}</button>
+      <button class="btn btn-pr" id="rec-save-btn" onclick="saveRecord()">{t("form.save", norm)}</button>
     </div>
   </div>
 </div>
@@ -13952,11 +13963,11 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 <!-- LETTER THREAD -->
 <div class="overlay hidden" id="thread-modal">
   <div class="modal" style="max-width:760px">
-    <div class="mhdr"><span id="thread-title">Letter Thread</span>
+    <div class="mhdr"><span id="thread-title">{t("ltr.thread_title", norm)}</span>
       <button class="xbtn" onclick="closeM('thread-modal')">✕</button></div>
     <div class="mbody" id="thread-body"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('thread-modal')">Close</button>
+      <button class="btn btn-sc" onclick="closeM('thread-modal')">{t("form.close", norm)}</button>
     </div>
   </div>
 </div>
@@ -13964,11 +13975,11 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 <!-- LETTER TIMELINE -->
 <div class="overlay hidden" id="timeline-modal">
   <div class="modal" style="max-width:760px">
-    <div class="mhdr"><span id="timeline-title">Letter Timeline</span>
+    <div class="mhdr"><span id="timeline-title">{t("ltr.timeline_title", norm)}</span>
       <button class="xbtn" onclick="closeM('timeline-modal')">✕</button></div>
     <div class="mbody" id="timeline-body"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('timeline-modal')">Close</button>
+      <button class="btn btn-sc" onclick="closeM('timeline-modal')">{t("form.close", norm)}</button>
     </div>
   </div>
 </div>
@@ -14159,59 +14170,59 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 <!-- BATCH DRIVE UPLOAD MODAL -->
 <div class="overlay hidden" id="batch-drive-modal">
   <div class="modal" style="max-width:780px;width:95vw">
-    <div class="mhdr"><span>☁ Batch Upload Files to Google Drive</span>
+    <div class="mhdr"><span>{t("drive.batch_title", norm)}</span>
       <button class="xbtn" onclick="closeBatchDriveUpload()">✕</button></div>
     <div class="mbody" style="display:flex;flex-direction:column;gap:12px">
       <div id="batch-drv-slot-wrap" style="display:flex;flex-direction:column;gap:8px;background:#f8fafc;padding:10px 12px;border:1px solid var(--bd);border-radius:8px">
-        <div style="font-size:11px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px">Upload Target Slot</div>
+        <div style="font-size:11px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px">{t("drive.batch_slot_hdr", norm)}</div>
         <div id="batch-drv-slot-cards-dual" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
           <label id="batch-slot-card-submission" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">
             <input type="radio" name="batch-drv-slot" value="submission" checked onchange="onBatchSlotChange(this.value)" style="accent-color:#2563eb">
-            <span>📤 Submission Files (ملفات التقديم الأصلي)</span>
+            <span>{t("drive.batch_slot_subm", norm)}</span>
           </label>
           <label id="batch-slot-card-approval" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">
             <input type="radio" name="batch-drv-slot" value="approval" onchange="onBatchSlotChange(this.value)" style="accent-color:#0f766e">
-            <span>📋 Consultant Replies (ردود الاستشاري)</span>
+            <span>{t("drive.batch_slot_reply", norm)}</span>
           </label>
         </div>
         <div id="batch-drv-slot-cards-noc" style="display:none;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
-          <label id="batch-slot-card-part_a" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part A: Notice of Change">
+          <label id="batch-slot-card-part_a" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{t("noc.part_a_title", norm)}">
             <input type="radio" name="batch-drv-slot" value="part_a" onchange="onBatchSlotChange(this.value)" style="accent-color:#2563eb">
-            <span style="overflow:hidden;text-overflow:ellipsis">🅰️ Part A: Notice of Change</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅰️ {t("noc.part_a_title", norm)}</span>
           </label>
-          <label id="batch-slot-card-part_b" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part B: Consultant Reply">
+          <label id="batch-slot-card-part_b" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{t("noc.part_b_title", norm)}">
             <input type="radio" name="batch-drv-slot" value="part_b" onchange="onBatchSlotChange(this.value)" style="accent-color:#0f766e">
-            <span style="overflow:hidden;text-overflow:ellipsis">🅱️ Part B: Consultant Reply</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅱️ {t("noc.part_b_title", norm)}</span>
           </label>
-          <label id="batch-slot-card-part_c" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part C: Cost Claim">
+          <label id="batch-slot-card-part_c" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{t("noc.part_c_title", norm)}">
             <input type="radio" name="batch-drv-slot" value="part_c" onchange="onBatchSlotChange(this.value)" style="accent-color:#0284c7">
-            <span style="overflow:hidden;text-overflow:ellipsis">🅲 Part C: Cost Claim</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅲 {t("noc.part_c_title", norm)}</span>
           </label>
-          <label id="batch-slot-card-part_d" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part D: Final Approval / VO">
+          <label id="batch-slot-card-part_d" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{t("noc.part_d_title", norm)}">
             <input type="radio" name="batch-drv-slot" value="part_d" onchange="onBatchSlotChange(this.value)" style="accent-color:#16a34a">
-            <span style="overflow:hidden;text-overflow:ellipsis">🅳 Part D: Final Approval</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅳 {t("noc.part_d_title", norm)}</span>
           </label>
         </div>
         <div id="batch-drv-target-path" style="font-size:11px;color:#0f766e;font-weight:600;display:flex;align-items:center;gap:6px;background:#f0fdfa;border:1px solid #ccfbf1;padding:6px 10px;border-radius:6px">
           <span style="font-size:12px">📁</span>
-          <span>Target Drive Folder: <strong id="batch-drv-target-path-txt">...</strong></span>
+          <span>{t("drive.batch_target_folder", norm)} <strong id="batch-drv-target-path-txt" class="bidi-ltr">...</strong></span>
         </div>
         <label id="batch-noc-rev-wrap" style="display:none;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;padding:6px 10px;border-radius:6px;cursor:pointer">
           <input type="checkbox" id="batch-noc-new-rev" checked style="accent-color:#2563eb">
-          <span>↻ Archive existing Part attachment as previous revision (New Rev) instead of overwriting</span>
+          <span>{t("drive.batch_noc_new_rev", norm)}</span>
         </label>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input type="file" id="batch-drv-input" multiple style="display:none" onchange="onBatchFilesSelected(this.files)">
-        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-input').click()">📄 Select Files (PDF / ZIP / DWG)</button>
+        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-input').click()">{t("drive.batch_select_files", norm)}</button>
         <input type="file" id="batch-drv-folder-input" webkitdirectory directory multiple style="display:none" onchange="onBatchFolderSelected(this.files)">
-        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-folder-input').click()" style="border-color:#0f766e;color:#0f766e">📁 Select Folder (مجلد كامل للمستند)</button>
-        <span id="batch-drv-summary" style="font-size:11px;color:var(--mu)">Files or Folders are matched to records automatically by Document No.</span>
+        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-folder-input').click()" style="border-color:#0f766e;color:#0f766e">{t("drive.batch_select_folder", norm)}</button>
+        <span id="batch-drv-summary" style="font-size:11px;color:var(--mu)">{t("drive.batch_summary_empty", norm)}</span>
       </div>
       <div id="batch-drv-overall" style="display:none;flex-direction:column;gap:4px;background:#f1f5f9;padding:8px 10px;border-radius:6px">
         <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--pr)">
-          <span id="batch-drv-overall-txt">Queue Progress: 0 / 0</span>
-          <span id="batch-drv-overall-pct">0%</span>
+          <span id="batch-drv-overall-txt">0 / 0</span>
+          <span id="batch-drv-overall-pct" class="bidi-ltr">0%</span>
         </div>
         <div style="width:100%;height:8px;background:#cbd5e1;border-radius:4px;overflow:hidden">
           <div id="batch-drv-overall-bar" style="width:0%;height:100%;background:#0284c7;transition:width .2s"></div>
@@ -14220,26 +14231,26 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
       <div style="max-height:340px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px">
         <table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead>
-            <tr class="batch-drv-th-row" style="border-bottom:1px solid var(--bd);text-align:left;color:var(--mu)">
+            <tr class="batch-drv-th-row" style="border-bottom:1px solid var(--bd);text-align:start;color:var(--mu)">
               <th style="padding:7px 8px">#</th>
-              <th style="padding:7px 8px">File Name</th>
-              <th style="padding:7px 8px;width:75px">Size</th>
-              <th style="padding:7px 8px;width:230px">Matched Record (Doc No.)</th>
-              <th style="padding:7px 8px;width:170px">Status / Progress</th>
+              <th style="padding:7px 8px">{t("drive.batch_th_file", norm)}</th>
+              <th style="padding:7px 8px;width:75px">{t("drive.batch_th_size", norm)}</th>
+              <th style="padding:7px 8px;width:230px">{t("drive.batch_th_record", norm)}</th>
+              <th style="padding:7px 8px;width:170px">{t("drive.batch_th_status", norm)}</th>
               <th style="padding:7px 4px;width:32px;text-align:center"></th>
             </tr>
           </thead>
           <tbody id="batch-drv-tbody">
-            <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" above to queue files.</td></tr>
+            <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">{t("drive.batch_empty_tbl", norm)}</td></tr>
           </tbody>
         </table>
       </div>
     </div>
     <div class="mfoot" style="justify-content:space-between">
-      <button type="button" class="btn btn-sc hidden" id="batch-drv-stop-btn" style="color:#dc2626;border-color:#fca5a5" onclick="stopBatchDriveUpload()">⏹ Stop Queue</button>
-      <div style="display:flex;gap:8px;margin-left:auto">
-        <button type="button" class="btn btn-sc" onclick="closeBatchDriveUpload()">Close</button>
-        <button type="button" class="btn btn-pr" id="batch-drv-start-btn" onclick="startBatchDriveUpload()" disabled>🚀 Start Sequential Upload</button>
+      <button type="button" class="btn btn-sc hidden" id="batch-drv-stop-btn" style="color:#dc2626;border-color:#fca5a5" onclick="stopBatchDriveUpload()">{t("drive.batch_stop", norm)}</button>
+      <div style="display:flex;gap:8px;margin-inline-start:auto">
+        <button type="button" class="btn btn-sc" onclick="closeBatchDriveUpload()">{t("form.close", norm)}</button>
+        <button type="button" class="btn btn-pr" id="batch-drv-start-btn" onclick="startBatchDriveUpload()" disabled>{t("drive.batch_start", norm)}</button>
       </div>
     </div>
   </div>
@@ -14248,17 +14259,17 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 <!-- HSE QR BADGE MODAL -->
 <div class="overlay hidden" id="hse-qr-modal" onclick="if(event.target===this)closeM('hse-qr-modal')">
   <div class="modal" style="max-width:440px;width:94vw">
-    <div class="mhdr"><span>📱 HSE Field QR Verification Label</span>
+    <div class="mhdr"><span>{t("hse_form.qr_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('hse-qr-modal')">✕</button></div>
     <div class="mbody" style="padding:18px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px">
-      <div id="hse-qr-meta" style="font-size:12px;color:var(--tx);font-weight:700;">Loading QR Badge...</div>
+      <div id="hse-qr-meta" style="font-size:12px;color:var(--tx);font-weight:700;">{t("hse_form.qr_loading", norm)}</div>
       <div id="hse-qr-svg-wrap" style="background:#fff;padding:12px;border:1px solid #cbd5e1;border-radius:10px;display:inline-flex;justify-content:center;align-items:center;min-height:180px;"></div>
       <div id="hse-qr-sub" style="font-size:11px;color:var(--mu);"></div>
-      <a id="hse-qr-link" href="#" target="_blank" rel="noopener" style="font-size:11px;color:var(--pr);font-weight:600;word-break:break-all;">Open Public Verification Card ↗</a>
+      <a id="hse-qr-link" href="#" target="_blank" rel="noopener" style="font-size:11px;color:var(--pr);font-weight:600;word-break:break-all;">{t("hse_form.qr_open_link", norm)}</a>
     </div>
     <div class="mfoot" style="justify-content:flex-end;gap:8px">
-      <button type="button" class="btn btn-sc" onclick="closeM('hse-qr-modal')">Close</button>
-      <button type="button" class="btn btn-pr" onclick="printHseQrLabel()">🖨 Print Label</button>
+      <button type="button" class="btn btn-sc" onclick="closeM('hse-qr-modal')">{t("form.close", norm)}</button>
+      <button type="button" class="btn btn-pr" onclick="printHseQrLabel()">{t("hse_form.qr_print", norm)}</button>
     </div>
   </div>
 </div>
@@ -14266,36 +14277,36 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 <!-- HSE FEI BATCH INSPECT MODAL -->
 <div class="overlay hidden" id="fei-batch-inspect-modal" onclick="if(event.target===this)closeM('fei-batch-inspect-modal')">
   <div class="modal" style="max-width:460px;width:94vw">
-    <div class="mhdr"><span>🧯 Batch Extinguisher / Equipment Inspection</span>
+    <div class="mhdr"><span>{t("hse_form.fei_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('fei-batch-inspect-modal')">✕</button></div>
     <div class="mbody" style="padding:16px 18px;display:flex;flex-direction:column;gap:10px">
-      <div id="fei-batch-summary" style="font-size:12px;font-weight:700;color:var(--brand-teal);background:rgba(16,185,129,0.1);padding:7px 10px;border-radius:6px;">0 selected FEI record(s)</div>
+      <div id="fei-batch-summary" style="font-size:12px;font-weight:700;color:var(--brand-teal);background:rgba(16,185,129,0.1);padding:7px 10px;border-radius:6px;">{t("hse_form.fei_selected_count", norm, count=0)}</div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Last Inspection Date *</label>
-        <input type="date" id="fei-batch-last" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">{t("hse_form.fei_last_date", norm)}</label>
+        <input type="date" id="fei-batch-last" class="bidi-ltr" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Next Expiry Date</label>
-        <input type="date" id="fei-batch-expiry" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">{t("hse_form.fei_expiry_date", norm)}</label>
+        <input type="date" id="fei-batch-expiry" class="bidi-ltr" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Inspection Status</label>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">{t("hse_form.fei_status", norm)}</label>
         <select id="fei-batch-status" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
-          <option value="Valid">Valid</option>
-          <option value="Needs Maintenance">Needs Maintenance</option>
-          <option value="Expired">Expired</option>
-          <option value="Under Refill">Under Refill</option>
-          <option value="Out of Service">Out of Service</option>
+          <option value="Valid">{t("status.valid", norm)}</option>
+          <option value="Needs Maintenance">{t("status.needs_maintenance", norm)}</option>
+          <option value="Expired">{t("status.expired", norm)}</option>
+          <option value="Under Refill">{t("status.under_refill", norm)}</option>
+          <option value="Out of Service">{t("status.out_of_service", norm)}</option>
         </select>
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Condition / Inspection Notes</label>
-        <textarea id="fei-batch-notes" rows="2" placeholder="Optional inspection remarks..." style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;font-family:inherit;"></textarea>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">{t("hse_form.fei_notes", norm)}</label>
+        <textarea id="fei-batch-notes" rows="2" placeholder="{t("hse_form.fei_notes_ph", norm)}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;font-family:inherit;"></textarea>
       </div>
     </div>
     <div class="mfoot" style="justify-content:flex-end;gap:8px">
-      <button type="button" class="btn btn-sc" onclick="closeM('fei-batch-inspect-modal')">Cancel</button>
-      <button type="button" class="btn btn-pr" id="fei-batch-save-btn" onclick="submitFeiBatchInspect()">✔ Save Inspection</button>
+      <button type="button" class="btn btn-sc" onclick="closeM('fei-batch-inspect-modal')">{t("form.cancel", norm)}</button>
+      <button type="button" class="btn btn-pr" id="fei-batch-save-btn" onclick="submitFeiBatchInspect()">{t("hse_form.fei_save_btn", norm)}</button>
     </div>
   </div>
 </div>
@@ -14315,6 +14326,9 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
   .dv-scroll::-webkit-scrollbar-corner {{ background:#e2e8f0; }}
   .dv-mob-bar {{ display:none; }}
   .dv-mob-back {{ display:none; }}
+  html[dir="rtl"] #dv-side {{ border-right: none !important; border-left: 1px solid var(--bd) !important; }}
+  html[dir="rtl"] .dv-mob-back {{ margin-right: 0; margin-left: 6px; }}
+  html[dir="rtl"] #doc-viewer-modal.mob-view-list #dv-side {{ border-left: none !important; }}
 
   @media (max-width: 768px) {{
     #doc-viewer-modal.hidden {{
@@ -14516,25 +14530,25 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 </style>
 <div class="overlay hidden" id="doc-viewer-modal" style="z-index:10600">
   <div class="modal" style="max-width:1180px;width:96vw;height:88vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
-    <div class="mhdr" style="gap:8px"><span id="dv-title" style="min-width:0;flex:1;word-break:break-word">Document</span>
+    <div class="mhdr" style="gap:8px"><span id="dv-title" style="min-width:0;flex:1;word-break:break-word">{t("drive.dv_document", norm)}</span>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-        <button type="button" id="dv-fs-btn" class="btn btn-sc btn-sm" onclick="dvToggleModalFullscreen()" title="Toggle Fullscreen Window" style="padding:3px 9px;font-size:11px">⛶ Fullscreen</button>
+        <button type="button" id="dv-fs-btn" class="btn btn-sc btn-sm" onclick="dvToggleModalFullscreen()" title="{t("drive.dv_fullscreen", norm)}" style="padding:3px 9px;font-size:11px">{t("drive.dv_fullscreen", norm)}</button>
         <button class="xbtn" onclick="dvCloseModal()">✕</button>
       </div>
     </div>
     <div id="dv-rev-bar" style="display:none;padding:6px 14px;background:#f8fafc;border-bottom:1px solid var(--bd);align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0"></div>
     <div id="dv-mob-bar" class="dv-mob-bar" style="display:none">
       <button type="button" id="dv-mob-tab-list" class="dv-mob-tab active" onclick="dvMobTab(0)">
-        📁 Files (<span id="dv-mob-cnt">0</span>)
+        {t("drive.dv_files_tab", norm)} (<span id="dv-mob-cnt" class="bidi-ltr">0</span>)
       </button>
       <button type="button" id="dv-mob-tab-view" class="dv-mob-tab" onclick="dvMobTab(1)">
-        👁️ Preview
+        {t("drive.dv_preview_tab", norm)}
       </button>
     </div>
     <div id="dv-body-wrap" style="flex:1;min-height:0;height:100%;overflow:hidden;display:flex;flex-direction:row">
       <div id="dv-side" style="width:310px;flex-shrink:0;height:100%;max-height:100%;min-height:0;border-right:1px solid var(--bd);display:none;flex-direction:column;background:#fff;overflow:hidden">
         <div style="padding:8px;border-bottom:1px solid var(--bd);flex-shrink:0">
-          <input id="dv-search" type="text" placeholder="🔍 Search files in folder..." oninput="dvFilter(this.value)" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--bd);border-radius:6px">
+          <input id="dv-search" type="text" placeholder="{t("drive.dv_search_ph", norm)}" oninput="dvFilter(this.value)" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--bd);border-radius:6px">
           <div id="dv-list-count" style="font-size:10.5px;color:#64748b;margin-top:4px;font-weight:600;display:flex;justify-content:space-between"></div>
         </div>
         <div id="dv-list" class="dv-scroll" style="flex:1;min-height:0;overflow-y:scroll;overflow-x:hidden"></div>
@@ -14543,7 +14557,7 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
     </div>
     <div class="mfoot" style="justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0">
       <div id="dv-foot-left" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>
-      <button type="button" class="btn btn-sc" onclick="dvCloseModal()">Close</button>
+      <button type="button" class="btn btn-sc" onclick="dvCloseModal()">{t("form.close", norm)}</button>
     </div>
   </div>
 </div>
@@ -15556,46 +15570,51 @@ function renderRows(){{
           if(isNoc && (hasPartA || hasPartB || hasPartC || hasPartD)){{
             if(hasPartA){{
               const _revA=getNocPartRev(norm.part_a);
-              box.appendChild(_chip('A','part_a',norm.part_a,'#2563eb','#eff6ff','Part A - Notice of Change ('+formatNocRevLabel(_revA)+')',null,_revA));
+              box.appendChild(_chip('A','part_a',norm.part_a,'#2563eb','#eff6ff',window.t('noc.chip_part_a',{{rev:formatNocRevLabel(_revA)}}),null,_revA));
             }}
             if(hasPartB){{
               const _stB=_getNocPartStatus(row,'B')||norm.part_b.consultant_status||'';
+              const _stBDisp=_stB?(window.tStatus?_stB: _stB):'';
+              const _stBLbl=_stB?(window.tStatus?window.tStatus(_stB):_stB):'';
               const _thB=_getReplyStatusTheme(_stB);
               const _revB=getNocPartRev(norm.part_b);
-              const _nmB='Part B - Consultant Reply ('+formatNocRevLabel(_revB)+')'+(_stB?' ('+_stB+')':'');
+              const _nmB=window.t('noc.chip_part_b',{{rev:formatNocRevLabel(_revB)}})+(_stBLbl?' ('+_stBLbl+')':'');
               box.appendChild(_chip('B','part_b',norm.part_b,_thB.color,_thB.bg,_nmB,_thB,_revB));
             }}
             if(hasPartC){{
               const _revC=getNocPartRev(norm.part_c);
-              box.appendChild(_chip('C','part_c',norm.part_c,'#0284c7','#f0f9ff','Part C - Cost & Time Claim ('+formatNocRevLabel(_revC)+')',null,_revC));
+              box.appendChild(_chip('C','part_c',norm.part_c,'#0284c7','#f0f9ff',window.t('noc.chip_part_c',{{rev:formatNocRevLabel(_revC)}}),null,_revC));
             }}
             if(hasPartD){{
               const _stD=_getNocPartStatus(row,'D')||norm.part_d.consultant_status||'';
+              const _stDLbl=_stD?(window.tStatus?window.tStatus(_stD):_stD):'';
               const _thD=_getReplyStatusTheme(_stD);
               const _revD=getNocPartRev(norm.part_d);
-              const _nmD='Part D - Final Approval ('+formatNocRevLabel(_revD)+')'+(_stD?' ('+_stD+')':'');
+              const _nmD=window.t('noc.chip_part_d',{{rev:formatNocRevLabel(_revD)}})+(_stDLbl?' ('+_stDLbl+')':'');
               box.appendChild(_chip('D','part_d',norm.part_d,_thD.color,_thD.bg,_nmD,_thD,_revD));
             }}
           }}else if(hasSubm && hasAppr){{
             const _isHseCo = isHseCloseoutTab();
+            const _stLbl = row.status ? (window.tStatus ? window.tStatus(row.status) : row.status) : '';
             const _rTheme=_getReplyStatusTheme(row.status||(_isHseCo?norm.approval.closeout_status:norm.approval.consultant_status));
-            const _rName=_isHseCo?('2. Close-Out Document'+(row.status?' ('+row.status+')':'')):('Consultant Reply'+(row.status?' ('+row.status+')':''));
-            box.appendChild(_chip(_isHseCo?'1. Submission':'Subm','submission',norm.submission,'#2563eb','#eff6ff',_isHseCo?'1. Submission Document':'Submission',null));
-            box.appendChild(_chip(_isHseCo?'2. Close-Out':'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+            const _rName=_isHseCo?(window.t('form.slot_closeout_title')+(_stLbl?' ('+_stLbl+')':'')):(window.t('form.slot_reply_title')+(_stLbl?' ('+_stLbl+')':''));
+            box.appendChild(_chip(_isHseCo?window.t('form.slot_subm_title'):'Subm','submission',norm.submission,'#2563eb','#eff6ff',_isHseCo?window.t('form.slot_subm_title'):window.t('form.slot_subm_title'),null));
+            box.appendChild(_chip(_isHseCo?window.t('form.slot_closeout_title'):'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasAppr){{
             const _isHseCo = isHseCloseoutTab();
+            const _stLbl = row.status ? (window.tStatus ? window.tStatus(row.status) : row.status) : '';
             const _rTheme=_getReplyStatusTheme(row.status||(_isHseCo?norm.approval.closeout_status:norm.approval.consultant_status));
-            const _rName=_isHseCo?('2. Close-Out Document'+(row.status?' ('+row.status+')':'')):('Consultant Reply'+(row.status?' ('+row.status+')':''));
-            box.appendChild(_chip(_isHseCo?'2. Close-Out':'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+            const _rName=_isHseCo?(window.t('form.slot_closeout_title')+(_stLbl?' ('+_stLbl+')':'')):(window.t('form.slot_reply_title')+(_stLbl?' ('+_stLbl+')':''));
+            box.appendChild(_chip(_isHseCo?window.t('form.slot_closeout_title'):'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasSubm){{
             const _isHseCo = isHseCloseoutTab();
             const isFlatDoc = Boolean(norm.is_flat_doc || (norm.submission && norm.submission.is_flat_doc));
             if(_isHseCo){{
-              box.appendChild(_chip('1. Submission','submission',norm.submission,'#2563eb','#eff6ff','1. Submission Document',null));
+              box.appendChild(_chip(window.t('form.slot_subm_title'),'submission',norm.submission,'#2563eb','#eff6ff',window.t('form.slot_subm_title'),null));
             }}else if(_cyc && !isFlatDoc){{
-              box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff','Submission',null));
+              box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff',window.t('form.slot_subm_title'),null));
             }}else{{
-              box.appendChild(_chip('Doc','submission',norm.submission,'#0f766e','#f0fdfa','Document'));
+              box.appendChild(_chip('Doc','submission',norm.submission,'#0f766e','#f0fdfa',window.t('form.slot_doc_title')));
             }}
           }}
           td.appendChild(box);
@@ -15861,17 +15880,26 @@ async function openLetterTimeline(id){{
   openM('timeline-modal');
 }}
 
+function tLtrDirection(dir){{
+  const d=String(dir||'').trim().toLowerCase();
+  if(d==='sent')return window.t('ltr.dir_sent');
+  if(d==='received')return window.t('ltr.dir_received');
+  return String(dir||'');
+}}
+
 function renderLetterThread(data){{
   const body=document.getElementById('thread-body');
   const title=document.getElementById('thread-title');
   const items=Array.isArray(data?.items)?data.items:[];
   const currentId=String(data?.current_id||'').trim();
   const current=items.find(it=>it.id===currentId)||items[0]||null;
-  title.textContent=current?.doc_no?('Letter Thread — '+current.doc_no):'Letter Thread';
+  const isRtl=document.documentElement.dir==='rtl';
+  title.textContent=current?.doc_no?window.t('ltr.thread_title_doc',{{docNo:current.doc_no}}):window.t('ltr.thread_title');
   if(!items.length){{
-    body.innerHTML='<div style="padding:12px;color:var(--mu);font-size:12px">This letter has no linked thread yet.</div>';
+    body.innerHTML=`<div style="padding:12px;color:var(--mu);font-size:12px">${{escHtml(window.t('ltr.thread_empty'))}}</div>`;
     return;
   }}
+  const connectorColor='#cbd5df';
   body.innerHTML=items.map(it=>{{
     const isCurrent=it.id===currentId;
     const margin=it.level*42;
@@ -15879,27 +15907,30 @@ function renderLetterThread(data){{
     const bg=isCurrent?'#f6fbef':'#fff';
     const shadow=isCurrent?'0 10px 26px rgba(139,195,74,.14)':'0 6px 18px rgba(15,23,42,.05)';
     const titleText=escHtml(it.subject||'');
-    const refText=escHtml(it.doc_no||'Untitled');
+    const refText=escHtml(it.doc_no||window.t('ltr.untitled'));
     const metaParts=[
-      it.direction?escHtml(it.direction):'',
-      it.from_party?('From: '+escHtml(it.from_party)):'',
-      it.to_party?('To: '+escHtml(it.to_party)):'',
-      it.date?escHtml(it.date):''
+      it.direction?escHtml(tLtrDirection(it.direction)):'',
+      it.from_party?escHtml(window.t('ltr.from_prefix',{{party:it.from_party}})):'',
+      it.to_party?escHtml(window.t('ltr.to_prefix',{{party:it.to_party}})):'',
+      it.date?`<span class="bidi-ltr">${{escHtml(it.date)}}</span>`:''
     ].filter(Boolean);
-    const currentBadge=isCurrent?'<span class="letter-current-badge">Current</span>':'';
-    const subjectHtml=titleText||'<span style="color:var(--mu)">No subject</span>';
-    const branchCue=it.level>0?'<span style="color:#7d8a95;font-weight:800;margin-right:8px">↳</span>':'';
-    const levelLabel=it.level>0?('Reply level '+it.level):'Root letter';
-    const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
-    return `<div style="margin-left:${{margin}}px;margin-bottom:10px;position:relative">
-      ${{it.level>0?`<div style="position:absolute;left:-24px;top:0;bottom:22px;width:2px;background:${{connectorColor}};border-radius:2px"></div>
-      <div style="position:absolute;left:-24px;top:24px;width:18px;height:2px;background:${{connectorColor}};border-radius:2px"></div>`:''}}
-      <div style="background:${{bg}};border:1px solid ${{border}};border-left:6px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
-        <div style="font-size:9px;color:#7d8a95;text-transform:uppercase;letter-spacing:.35px;margin-bottom:6px">${{levelLabel}}</div>
+    const currentBadge=isCurrent?`<span class="letter-current-badge">${{escHtml(window.t('ltr.current_badge'))}}</span>`:'';
+    const subjectHtml=titleText||`<span style="color:var(--mu)">${{escHtml(window.t('ltr.no_subject'))}}</span>`;
+    const branchCue=it.level>0?`<span class="letter-branch-cue">${{isRtl?'↵':'↳'}}</span>`:'';
+    const levelLabel=it.level>0?window.t('ltr.reply_level',{{level:it.level}}):window.t('ltr.root_letter');
+    const metaHtml=metaParts.length?'<div class="letter-card-meta">'+metaParts.join(' • ')+'</div>':'';
+    const indentStyle=isRtl?`margin-right:${{margin}}px`:`margin-left:${{margin}}px`;
+    const connSide=isRtl?'right:-24px':'left:-24px';
+    const cardBorderSide=isRtl?`border-right:6px solid ${{border}}`:`border-left:6px solid ${{border}}`;
+    return `<div style="${{indentStyle}};margin-bottom:10px;position:relative">
+      ${{it.level>0?`<div style="position:absolute;${{connSide}};top:0;bottom:22px;width:2px;background:${{connectorColor}};border-radius:2px"></div>
+      <div style="position:absolute;${{connSide}};top:24px;width:18px;height:2px;background:${{connectorColor}};border-radius:2px"></div>`:''}}
+      <div style="background:${{bg}};border:1px solid ${{border}};${{cardBorderSide}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
+        <div class="letter-card-kicker">${{escHtml(levelLabel)}}</div>
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
           <div style="min-width:0">
-            <div style="font-size:12px;font-weight:800;color:var(--pr);display:flex;align-items:center" dir="auto">${{branchCue}}<span>${{refText}}</span></div>
-            <div style="font-size:12px;color:var(--tx);margin-top:4px;line-height:1.45" dir="auto">${{subjectHtml}}</div>
+            <div class="letter-card-ref bidi-ltr" style="display:flex;align-items:center">${{branchCue}}<span>${{refText}}</span></div>
+            <div class="letter-card-subject" dir="auto">${{subjectHtml}}</div>
           </div>
           ${{currentBadge}}
         </div>
@@ -15915,35 +15946,32 @@ function renderLetterTimeline(data){{
   const items=Array.isArray(data?.items)?data.items:[];
   const currentId=String(data?.current_id||'').trim();
   const current=items.find(it=>it.id===currentId)||items[0]||null;
-  title.textContent=current?.doc_no?('Letter Timeline — '+current.doc_no):'Letter Timeline';
+  title.textContent=current?.doc_no?window.t('ltr.timeline_title_doc',{{docNo:current.doc_no}}):window.t('ltr.timeline_title');
   if(!items.length){{
-    body.innerHTML='<div style="padding:12px;color:var(--mu);font-size:12px">This letter has no linked timeline yet.</div>';
+    body.innerHTML=`<div style="padding:12px;color:var(--mu);font-size:12px">${{escHtml(window.t('ltr.timeline_empty'))}}</div>`;
     return;
   }}
   const cards=items.map(it=>{{
     const isCurrent=String(it.id||'')===currentId;
-    const border=isCurrent?'#8BC34A':'#d7e0e6';
-    const bg=isCurrent?'#f6fbef':'#fff';
-    const shadow=isCurrent?'0 10px 26px rgba(139,195,74,.14)':'0 6px 18px rgba(15,23,42,.05)';
-    const refText=escHtml(it.doc_no||'Untitled');
-    const subjectHtml=escHtml(it.subject||'')||'<span style="color:var(--mu)">No subject</span>';
+    const refText=escHtml(it.doc_no||window.t('ltr.untitled'));
+    const subjectHtml=escHtml(it.subject||'')||`<span style="color:var(--mu)">${{escHtml(window.t('ltr.no_subject'))}}</span>`;
     const dateText=escHtml(it.date||it.created_at||'');
     const metaParts=[
-      it.direction?escHtml(it.direction):'',
-      it.from_party?('From: '+escHtml(it.from_party)):'',
-      it.to_party?('To: '+escHtml(it.to_party)):''
+      it.direction?escHtml(tLtrDirection(it.direction)):'',
+      it.from_party?escHtml(window.t('ltr.from_prefix',{{party:it.from_party}})):'',
+      it.to_party?escHtml(window.t('ltr.to_prefix',{{party:it.to_party}})):''
     ].filter(Boolean);
-    const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
-    const badge=isCurrent?'<span style="flex-shrink:0;background:#8BC34A;color:#17351b;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase">Current</span>':'';
-    const dateBadge=dateText?'<div style="display:inline-flex;align-items:center;background:#eef4f8;color:#2F4F64;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:800;letter-spacing:.2px">'+dateText+'</div>':'';
-    return `<div style="position:relative;padding-left:30px;margin-bottom:14px">
-      <div style="position:absolute;left:8px;top:14px;width:12px;height:12px;border-radius:999px;background:${{isCurrent?'#8BC34A':'#2F4F64'}};border:3px solid #fff;box-shadow:0 0 0 2px ${{isCurrent?'rgba(139,195,74,.35)':'rgba(47,79,100,.18)'}}"></div>
-      <div style="background:${{bg}};border:1px solid ${{border}};border-left:4px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
+    const metaHtml=metaParts.length?'<div class="letter-card-meta">'+metaParts.join(' • ')+'</div>':'';
+    const badge=isCurrent?`<span class="letter-current-badge">${{escHtml(window.t('ltr.current_badge'))}}</span>`:'';
+    const dateBadge=dateText?`<div class="letter-date-badge bidi-ltr">${{dateText}}</div>`:'';
+    return `<div class="letter-node">
+      <div class="letter-dot${{isCurrent?' current':''}}"></div>
+      <div class="letter-card${{isCurrent?' current':''}}">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
           <div style="min-width:0">
-            <div style="font-size:12px;font-weight:800;color:var(--pr)" dir="auto">${{refText}}</div>
+            <div class="letter-card-ref bidi-ltr">${{refText}}</div>
             <div style="margin-top:5px">${{dateBadge}}</div>
-            <div style="font-size:12px;color:var(--tx);margin-top:6px;line-height:1.45" dir="auto">${{subjectHtml}}</div>
+            <div class="letter-card-subject" dir="auto">${{subjectHtml}}</div>
           </div>
           ${{badge}}
         </div>
@@ -15951,8 +15979,8 @@ function renderLetterTimeline(data){{
       </div>
     </div>`;
   }}).join('');
-  body.innerHTML=`<div style="position:relative;padding-left:10px">
-    <div style="position:absolute;left:13px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,#d7e0e6,#c7d2da)"></div>
+  body.innerHTML=`<div class="letter-flow">
+    <div class="letter-flow-line"></div>
     ${{cards}}
   </div>`;
 }}
@@ -15980,11 +16008,11 @@ function parseSafeNumber(val){{
 
 function getNocStageProgress(data){{
   const d=data||{{}};
-  if(d.partDReturnDate||d.partDStatus||d.finalApprovedCost||d.voNo||d.voIssueDate||d.voValueWithSIAndVAT)return 'Stage D';
-  if(d.partCIssueDate||d.submittedCost)return 'Stage C';
-  if(d.partBReturnDate||d.partBStatus)return 'Stage B';
-  if(d.partAIssueDate||d.docNo||d.title||d.nocDescription||d.originatingDocument)return 'Stage A';
-  return 'Not Started';
+  if(d.partDReturnDate||d.partDStatus||d.finalApprovedCost||d.voNo||d.voIssueDate||d.voValueWithSIAndVAT)return window.t('noc.stage_d');
+  if(d.partCIssueDate||d.submittedCost)return window.t('noc.stage_c');
+  if(d.partBReturnDate||d.partBStatus)return window.t('noc.stage_b');
+  if(d.partAIssueDate||d.docNo||d.title||d.nocDescription||d.originatingDocument)return window.t('noc.stage_a');
+  return window.t('noc.stage_not_started');
 }}
 
 function getNocAutoBaseValue(data){{
@@ -16084,19 +16112,19 @@ function highlightText(text, search) {{
     const pr = parseFloat(prQty) || 0;
     const po = parseFloat(poQty) || 0;
     const del = parseFloat(delQty) || 0;
-    if (po === 0) return `<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">🔴 Pending PO</span>`;
-    if (po > 0 && po < pr) return `<span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #facc15;">🟡 Short by ${{pr - po}}</span>`;
-    if (po >= pr && del < po) return `<span class="badge" style="background:#ffedd5;color:#9a3412;border:1px solid #fb923c;">🟠 Awaiting ${{po - del}}</span>`;
-    if (del > po) return `<span class="badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #c084fc;">🟣 Over-delivered: +${{del - po}}</span>`;
-    if (po > pr && del >= po) return `<span class="badge" style="background:#e0f2fe;color:#075985;border:1px solid #38bdf8;">🔵 Over-ordered: +${{po - pr}}</span>`;
-    if (del === po && po === pr) return `<span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #4ade80;">🟢 Completed</span>`;
-    return `<span class="badge" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;">Unknown</span>`;
+    if (po === 0) return `<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">${{escHtml(window.t('pr.badge_pending_po'))}}</span>`;
+    if (po > 0 && po < pr) return `<span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #facc15;">${{escHtml(window.t('pr.badge_short',{{n:pr - po}}))}}</span>`;
+    if (po >= pr && del < po) return `<span class="badge" style="background:#ffedd5;color:#9a3412;border:1px solid #fb923c;">${{escHtml(window.t('pr.badge_awaiting',{{n:po - del}}))}}</span>`;
+    if (del > po) return `<span class="badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #c084fc;">${{escHtml(window.t('pr.badge_over_del',{{n:del - po}}))}}</span>`;
+    if (po > pr && del >= po) return `<span class="badge" style="background:#e0f2fe;color:#075985;border:1px solid #38bdf8;">${{escHtml(window.t('pr.badge_over_ord',{{n:po - pr}}))}}</span>`;
+    if (del === po && po === pr) return `<span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #4ade80;">${{escHtml(window.t('pr.badge_completed'))}}</span>`;
+    return `<span class="badge" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;">${{escHtml(window.t('pr.badge_unknown'))}}</span>`;
   }}
 
 function renderPrItemsTable(items, legacyText, search){{
     if(!items||!items.length){{
-      const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
-      return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div><div class="pr-items-empty">No items added</div>${{legacy}}`;
+      const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${{escHtml(window.t('pr.legacy_details'))}}</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
+      return `<div class="pr-items-title">${{escHtml(window.t('pr.tracking_title'))}}</div><div class="pr-items-empty">${{escHtml(window.t('pr.no_items'))}}</div>${{legacy}}`;
     }}
     const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
       ? `<div class="pr-items-section" style="grid-column: 1 / -1">${{highlightText(it.item_name||'', search)}}</div>`
@@ -16108,17 +16136,17 @@ function renderPrItemsTable(items, legacyText, search){{
          <div class="pr-items-cell del-qty bidi-ltr">${{escHtml(it.delivered_qty??'')}}</div>
          <div class="pr-items-cell status">${{getPrVarianceBadge(it.quantity, it.po_qty, it.delivered_qty)}}</div>
          <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`).join('');
-    return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div>
+    return `<div class="pr-items-title">${{escHtml(window.t('pr.tracking_title'))}}</div>
       <div class="pr-items-grid-wrap">
         <div class="pr-items-grid">
-          <div class="pr-items-grid-head">Item</div>
-          <div class="pr-items-grid-head">Unit</div>
-          <div class="pr-items-grid-head">PR Qty</div>
-          <div class="pr-items-grid-head">PO Ref</div>
-          <div class="pr-items-grid-head">PO Qty</div>
-          <div class="pr-items-grid-head">Delivered</div>
-          <div class="pr-items-grid-head">Status</div>
-          <div class="pr-items-grid-head">Remarks</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_item'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_unit'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_pr_qty'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_po_ref'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_po_qty'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_delivered'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_status'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_remarks'))}}</div>
           ${{rows}}
         </div>
       </div>`;
@@ -16243,7 +16271,7 @@ function buildRevisionDraftFromSelected(){{
   if(isLTRTab())return null;
   const selectedRows=getCheckedRecordRows();
   if(selectedRows.length>1){{
-    alert('Please select only one document to create a new revision.');
+    alert(window.t('form.err_one_rev_only'));
     return false;
   }}
   const selected=selectedRows[0]||null;
@@ -16262,15 +16290,15 @@ function addRecord(){{
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
-  if(cBtn) cBtn.textContent='Cancel';
+  if(cBtn) cBtn.textContent=window.t('form.cancel');
   const draft=buildRevisionDraftFromSelected();
   if(draft===false)return;
   if(draft){{
     state.revisionDraftActive=true;
-    document.getElementById('rec-title').textContent='Add Revision Draft';
+    document.getElementById('rec-title').textContent=window.t('form.add_rev_title');
     buildForm(draft,{{mode:'revisionDraft'}});
   }}else{{
-    document.getElementById('rec-title').textContent='Add Document';
+    document.getElementById('rec-title').textContent=window.t('form.add_title');
     buildForm(null,{{suggestedDocNo:suggestNextDocNoFromVisibleRows()}});
   }}
   openM('rec-modal');
@@ -16286,7 +16314,7 @@ async function editRec(id){{
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
-  if(cBtn) cBtn.textContent='Cancel';
+  if(cBtn) cBtn.textContent=window.t('form.cancel');
   const row=state.recs.find(r=>r._id===id);
   if(!row)return;
   const docNo=row.docNo||row.nocNo||'';
@@ -16304,7 +16332,7 @@ async function editRec(id){{
       }})
     }});
   }} catch(e) {{}}
-  document.getElementById('rec-title').textContent='Edit Document';
+  document.getElementById('rec-title').textContent=window.t('form.edit_title');
   await buildForm(row);
   if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   openM('rec-modal');
@@ -16319,7 +16347,7 @@ async function viewRec(id){{
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn){{ saveBtn.style.setProperty('display', 'none', 'important'); saveBtn.classList.add('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
-  if(cBtn) cBtn.textContent='Close';
+  if(cBtn) cBtn.textContent=window.t('form.close');
   const row=state.recs.find(r=>r._id===id);
   if(!row)return;
   const docNo=row.docNo||row.nocNo||'';
@@ -16337,7 +16365,7 @@ async function viewRec(id){{
       }})
     }});
   }} catch(e) {{}}
-  document.getElementById('rec-title').textContent='Document Details (View Only)';
+  document.getElementById('rec-title').textContent=window.t('form.view_title');
   await buildForm(row, {{readonly: true}});
   if(saveBtn){{ saveBtn.style.setProperty('display', 'none', 'important'); saveBtn.classList.add('hidden'); }}
   openM('rec-modal');
@@ -16347,7 +16375,7 @@ function setRecordSaveState(isSaving){{
   const btn=document.getElementById('rec-save-btn');
   if(!btn)return;
   btn.disabled=!!isSaving;
-  btn.textContent=isSaving?'Saving...':'Save';
+  btn.textContent=isSaving?window.t('form.saving'):window.t('form.save');
   btn.style.opacity=isSaving?'.72':'';
   btn.style.cursor=isSaving?'wait':'';
 }}
@@ -16486,7 +16514,7 @@ async function buildForm(row,opts={{}}){{
 
   let nocStageInp=null,nocBaseInp=null,nocTotalInp=null;
   if(isNocTab){{
-    const sf=makeReadOnlyField('Stage Progress',getNocStageProgress(row||{{}}));
+    const sf=makeReadOnlyField(window.t('noc.stage_progress'),getNocStageProgress(row||{{}}));
     nocStageInp=sf.inp;
     if(!isAddMode)getOrCreateFormSection(formRoot,sectionBodies,'Calculated / System Fields').appendChild(sf.grp);
   }}
@@ -16504,7 +16532,7 @@ async function buildForm(row,opts={{}}){{
     const span=getDynamicFieldSpan(col,ctx);
     const grp=document.createElement('div');grp.className='fg'+(span==='full'?' full':(span==='span-2'?' span-2':''));
     const targetSection=getDynamicFormSection(col,{{isPrTab,isLtrTab,isNocTab}});
-    const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
+    const lbl=document.createElement('label');lbl.textContent=window.tCol?window.tCol(col.col_key,col.label):col.label;grp.appendChild(lbl);
     const ltrRole=isLtrTab?getLTRFieldRole(col):'';
     const val=(isLtrTab&&ltrRole)?(row?.[key]||getLTRValue(row,allCols,ltrRole)||''):(row?.[key]||'');
     if(AUTO.has(col.col_key)||isCalculatedFormField(col)){{
@@ -16512,6 +16540,7 @@ async function buildForm(row,opts={{}}){{
       const inp=document.createElement('input');inp.id='f-'+key;inp.value=getCalculatedDisplayValue(col,row);
       inp.readOnly=true;
       inp.placeholder='';
+      inp.className='bidi-ltr';
       inp.style.cssText='background:var(--bg);font-weight:700;color:var(--mu)';
       grp.appendChild(inp);
       getOrCreateFormSection(formRoot,sectionBodies,getDynamicFormSection(col,ctx)).appendChild(grp);
@@ -16521,18 +16550,18 @@ async function buildForm(row,opts={{}}){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
       ta.rows=2;
       ta.style.cssText='resize:vertical;min-height:52px;overflow:hidden';
-      ta.placeholder='Leave blank to auto-generate from items';
+      ta.placeholder=window.t('form.pr_details_ph');
       bindSmartTextarea(ta);
       grp.appendChild(ta);
       const hint=document.createElement('div');
       hint.style.cssText='font-size:10px;color:var(--mu);margin-top:4px';
-      hint.textContent='Leave blank to auto-generate from PR items.';
+      hint.textContent=window.t('form.pr_details_hint');
       grp.appendChild(hint);
       getOrCreateFormSection(formRoot,sectionBodies,targetSection).appendChild(grp);
       continue;
     }}
     if(isLtrTab&&getLTRFieldRole(col)==='parentLetterRef'){{
-      lbl.textContent='Parent Letter';
+      lbl.textContent=window.t('ltr.parent_label');
       const currentParentId=String(ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):(getLTRValue(row,allCols,'parentLetterId')||'')).trim();
       const currentParentRef=String(val||'').trim();
       const options=[...ltrParentOptions];
@@ -16548,7 +16577,7 @@ async function buildForm(row,opts={{}}){{
         }});
       }}
       const sel=document.createElement('select');sel.id='f-'+key+'-selector';
-      sel.innerHTML='<option value="">No parent letter</option>'+options.map(o=>`<option value="${{escHtml(o.id)}}">${{escHtml(formatLTRParentLabel(o))}}</option>`).join('');
+      sel.innerHTML=`<option value="">${{escHtml(window.t('ltr.no_parent'))}}</option>`+options.map(o=>`<option value="${{escHtml(o.id)}}">${{escHtml(formatLTRParentLabel(o))}}</option>`).join('');
       sel.value=currentParentId||'';
       grp.appendChild(sel);
       const meta=document.createElement('div');
@@ -16565,7 +16594,7 @@ async function buildForm(row,opts={{}}){{
       getOrCreateFormSection(formRoot,sectionBodies,targetSection).appendChild(grp);
       continue;
     }}
-    if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
+    if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.className='bidi-ltr';inp.value=val;grp.appendChild(inp);}}
     else if(isLtrTab&&col.col_type==='dropdown'&&col.list_name){{
       const sel=document.createElement('select');sel.id='f-'+key;
       const ltrRole=getLTRFieldRole(col);
@@ -16574,7 +16603,10 @@ async function buildForm(row,opts={{}}){{
         : (ltrRole==='direction' ? 'letter_direction' : (ltrRole==='status' ? 'letter_status' : col.list_name));
       const opts=[...(state.lists[listName]||[])];
       if(val&&!opts.includes(val))opts.push(val);
-      sel.innerHTML='<option value=""></option>'+opts.map(o=>`<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
+      sel.innerHTML='<option value=""></option>'+opts.map(o=>{{
+        const disp = ltrRole==='status' ? window.tStatus(o) : (ltrRole==='direction' ? tLtrDirection(o) : o);
+        return `<option value="${{escHtml(o)}}">${{escHtml(disp)}}</option>`;
+      }}).join('');
       sel.value=val||'';
       grp.appendChild(sel);
     }}
@@ -16583,18 +16615,19 @@ async function buildForm(row,opts={{}}){{
       const role=getLTRFieldRole(col);
       ta.rows=2;
       ta.style.cssText=role==='description'?'resize:vertical; min-height:58px; overflow:hidden':'resize:vertical; min-height:52px; overflow:hidden';
-      ta.placeholder=role==='title'?'Use Enter for a multiline subject':'Use Enter for multiline text';
+      ta.placeholder=role==='title'?window.t('form.ltr_subject_ph'):window.t('form.ltr_text_ph');
       bindSmartTextarea(ta);
       grp.appendChild(ta);
     }}
     else if(col.col_type==='dropdown'&&col.list_name){{
       // Add free-text input below multiselect
       const wrapper=document.createElement('div');
-      wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],val));
+      const isStatusCol = key==='status' || isStatusLikeField(col) || String(col.list_name||'').toLowerCase().includes('status');
+      wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],val,isStatusCol));
       const freeInp=document.createElement('input');
-      freeInp.id='f-free-'+key;freeInp.placeholder='Or type custom value...';
+      freeInp.id='f-free-'+key;freeInp.placeholder=window.t('form.custom_val_ph');
       freeInp.style.cssText='margin-top:4px;width:100%;padding:5px 8px;border:1px dashed var(--bd);border-radius:var(--rd);font-size:11px;color:var(--mu);outline:none';
-      freeInp.title='Type a custom value not in the list';
+      freeInp.title=window.t('form.custom_val_title');
       bindDirectionalInput(freeInp);
       freeInp.onchange=()=>{{
         const v=freeInp.value.trim();
@@ -16614,7 +16647,7 @@ async function buildForm(row,opts={{}}){{
       grp.appendChild(wrapper);
     }}
     else if(col.col_type==='docno'){{
-      const inp=document.createElement('input');inp.id='f-'+key;
+      const inp=document.createElement('input');inp.id='f-'+key;inp.className='bidi-ltr';
       if(row){{inp.value=val;}}
       else{{inp.value=nextNo;inp.placeholder=nextNo?'':state.tab+'-001 REV00';}}
       inp.style.cssText='font-family:Consolas,monospace;font-weight:600';
@@ -16622,7 +16655,7 @@ async function buildForm(row,opts={{}}){{
       grp.appendChild(inp);
     }}
     else if(col.col_type==='number'){{
-      const inp=document.createElement('input');inp.type='number';inp.step='0.01';inp.id='f-'+key;inp.value=val;
+      const inp=document.createElement('input');inp.type='number';inp.step='0.01';inp.id='f-'+key;inp.className='bidi-ltr';inp.value=val;
       if(isCurrencyField(col))inp.placeholder='0.00';
       grp.appendChild(inp);
       if(key==='voBaseValue')nocBaseInp=inp;
@@ -16642,16 +16675,16 @@ async function buildForm(row,opts={{}}){{
       wrap.innerHTML=`
         <table class="sd-table" style="width:100%;border-collapse:collapse;margin-top:4px">
           <thead>
-            <tr style="border-bottom:1px solid var(--bd);text-align:left;font-size:11px;color:var(--mu)">
-              <th style="padding:4px">Item Ref. / DWG No.</th>
-              <th style="padding:4px;width:140px">Status</th>
+            <tr style="border-bottom:1px solid var(--bd);text-align:start;font-size:11px;color:var(--mu)">
+              <th style="padding:4px">${{escHtml(window.t('form.sd_item_ref_hdr'))}}</th>
+              <th style="padding:4px;width:140px">${{escHtml(window.t('form.sd_status_hdr'))}}</th>
               <th style="padding:4px;width:30px"></th>
             </tr>
           </thead>
           <tbody id="sd-items-body-${{key}}"></tbody>
         </table>
         <div style="margin-top:6px">
-          <button type="button" class="btn btn-sc btn-sm" onclick="addSdItemRow('${{key}}')" style="font-size:11px;padding:3px 8px">+ Add Item</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="addSdItemRow('${{key}}')" style="font-size:11px;padding:3px 8px">${{escHtml(window.t('form.sd_add_item'))}}</button>
         </div>`;
       grp.appendChild(wrap);
       setTimeout(() => initSdItemsEditor(key, val), 0);
@@ -16686,17 +16719,17 @@ async function buildForm(row,opts={{}}){{
   if(isPrTab){{
     const prSection=getOrCreateFormSection(formRoot,sectionBodies,'PR Items');
     const grp=document.createElement('div');grp.className='fg full pr-items-editor';
-    const lbl=document.createElement('label');lbl.textContent='PR Items';grp.appendChild(lbl);
+    const lbl=document.createElement('label');lbl.textContent=window.t('pr.items_label');grp.appendChild(lbl);
     const wrap=document.createElement('div');wrap.id='pr-items-editor';
     wrap.innerHTML=`
       <style>#pr-items-editor table input {{ width: 100%; box-sizing: border-box; }}</style>
       <table style="width: 100%; border-collapse: collapse;">
-        <thead><tr><th style="width: 30%;">Item Name</th><th style="width: 8%;">Unit</th><th style="width: 9%;">PR Qty</th><th style="width: 12%;">PO Ref</th><th style="width: 9%;">PO Qty</th><th style="width: 9%;">Del. Qty</th><th style="width: 15%;">Remarks</th><th style="width: 90px; text-align: center;"></th></tr></thead>
+        <thead><tr><th style="width: 30%;">${{escHtml(window.t('pr.th_item_name'))}}</th><th style="width: 8%;">${{escHtml(window.t('pr.th_unit'))}}</th><th style="width: 9%;">${{escHtml(window.t('pr.th_pr_qty'))}}</th><th style="width: 12%;">${{escHtml(window.t('pr.th_po_ref'))}}</th><th style="width: 9%;">${{escHtml(window.t('pr.th_po_qty'))}}</th><th style="width: 9%;">${{escHtml(window.t('pr.th_del_qty'))}}</th><th style="width: 15%;">${{escHtml(window.t('pr.th_remarks'))}}</th><th style="width: 90px; text-align: center;"></th></tr></thead>
         <tbody id="pr-items-body"></tbody>
       </table>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-        <button class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Item</button>
-        <button class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
+        <button class="btn btn-sc btn-sm" onclick="addPrItemRow()">${{escHtml(window.t('pr.add_item'))}}</button>
+        <button class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">${{escHtml(window.t('pr.add_section_header'))}}</button>
         <div id="pr-legacy" style="font-size:11px;color:var(--mu);white-space:pre-line;display:none"></div>
       </div>`;
     grp.appendChild(wrap);prSection.appendChild(grp);
@@ -16748,17 +16781,17 @@ function addPrItemRow(item={{}}){{
     const tr=document.createElement('tr');
     tr.dataset.rowType='item';
     tr.innerHTML=`
-      <td><input class="pri-item" placeholder="Item Name"></td>
-      <td><input class="pri-unit" placeholder="Unit"></td>
-      <td><input class="pri-qty" type="number" min="0" step="any" placeholder="PR Qty"></td>
-      <td><input class="pri-po-ref" placeholder="PO Ref"></td>
-      <td><input class="pri-po-qty" type="number" min="0" step="any" placeholder="PO Qty"></td>
-      <td><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
-      <td><input class="pri-remarks" placeholder="Remarks"></td>
-      <td style="white-space:nowrap; text-align:right;">
-        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
-        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
-        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">&times;</button>
+      <td><input class="pri-item" placeholder="${{escHtml(window.t('pr.th_item_name'))}}"></td>
+      <td><input class="pri-unit" placeholder="${{escHtml(window.t('pr.th_unit'))}}"></td>
+      <td><input class="pri-qty bidi-ltr" type="number" min="0" step="any" placeholder="${{escHtml(window.t('pr.th_pr_qty'))}}"></td>
+      <td><input class="pri-po-ref bidi-ltr" placeholder="${{escHtml(window.t('pr.th_po_ref'))}}"></td>
+      <td><input class="pri-po-qty bidi-ltr" type="number" min="0" step="any" placeholder="${{escHtml(window.t('pr.th_po_qty'))}}"></td>
+      <td><input class="pri-del-qty bidi-ltr" type="number" min="0" step="any" placeholder="${{escHtml(window.t('pr.th_delivered'))}}"></td>
+      <td><input class="pri-remarks" placeholder="${{escHtml(window.t('pr.th_remarks'))}}"></td>
+      <td style="white-space:nowrap; text-align:end;">
+        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="${{escHtml(window.t('pr.move_up'))}}">&#9650;</button>
+        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="${{escHtml(window.t('pr.move_down'))}}">&#9660;</button>
+        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-inline-start:4px;" onclick="this.closest('tr').remove()" title="${{escHtml(window.t('reg.act_delete_title'))}}">&times;</button>
       </td>`;
     tr.querySelector('.pri-item').value=item.item_name||'';
     tr.querySelector('.pri-unit').value=item.unit||'';
@@ -16780,13 +16813,13 @@ function addPrHeaderRow(item={{}}){{
     tr.dataset.rowType='header';
     tr.innerHTML=`
       <td colspan="7">
-        <div class="pr-head-label">Section Header</div>
-      <input class="pri-header" placeholder="Section title / description" style="width:100%; box-sizing:border-box;">
+        <div class="pr-head-label">${{escHtml(window.t('pr.section_header_lbl'))}}</div>
+      <input class="pri-header" placeholder="${{escHtml(window.t('pr.section_header_ph'))}}" style="width:100%; box-sizing:border-box;">
     </td>
-    <td style="white-space:nowrap; text-align:right; width:90px;">
-      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
-      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
-      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">✕</button>
+    <td style="white-space:nowrap; text-align:end; width:90px;">
+      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="${{escHtml(window.t('pr.move_up'))}}">&#9650;</button>
+      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="${{escHtml(window.t('pr.move_down'))}}">&#9660;</button>
+      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-inline-start:4px;" onclick="this.closest('tr').remove()" title="${{escHtml(window.t('reg.act_delete_title'))}}">✕</button>
     </td>`;
   tr.querySelector('.pri-header').value=item.item_name||'';
   bindDirectionalInput(tr.querySelector('.pri-header'));
@@ -16818,9 +16851,9 @@ function addSdItemRow(key, item={{}}) {{
   const tr = document.createElement('tr');
   const baseStatuses = [...(state.lists['status'] || [])];
   if (item.item_status && !baseStatuses.includes(item.item_status)) baseStatuses.push(item.item_status);
-  const statusOptions = baseStatuses.map(o => `<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
+  const statusOptions = baseStatuses.map(o => `<option value="${{escHtml(o)}}">${{escHtml(window.tStatus ? window.tStatus(o) : o)}}</option>`).join('');
   tr.innerHTML = `
-    <td style="padding:2px"><input class="sd-ref" placeholder="DWG-0001" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"></td>
+    <td style="padding:2px"><input class="sd-ref bidi-ltr" placeholder="DWG-0001" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"></td>
     <td style="padding:2px"><select class="sd-status" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"><option value=""></option>${{statusOptions}}</select></td>
     <td style="padding:2px"><button type="button" class="btn btn-er btn-sm" onclick="this.closest('tr').remove(); syncSdItems('${{key}}')" style="padding:2px 6px;font-size:10px">✕</button></td>
   `;
@@ -16887,18 +16920,19 @@ function getPrItemsFromEditor(){{
     }}).filter(it=>it.row_type==='header'?it.item_name:(it.item_name||it.unit||it.quantity||it.remarks));
   }}
 
-function buildMS(key,options,init){{
+function buildMS(key,options,init,isStatus){{
   let sel=init?init.split(',').map(s=>s.trim()).filter(Boolean):[];
   const con=document.createElement('div');con.className='ms-con';con.id='f-'+key;con.dataset.value=init||'';
+  const disp=(v)=>isStatus&&window.tStatus?window.tStatus(v):v;
   function render(){{
     con.innerHTML='';
     sel.forEach(v=>{{
       const t=document.createElement('span');t.className='ms-tag';
-      t.innerHTML=`${{escHtml(v)}} <span class="ms-rm" data-v="${{escHtml(v)}}">✕</span>`;
+      t.innerHTML=`${{escHtml(disp(v))}} <span class="ms-rm" data-v="${{escHtml(v)}}">✕</span>`;
       t.querySelector('.ms-rm').onclick=e=>{{e.stopPropagation();sel.splice(sel.indexOf(v),1);con.dataset.value=sel.join(', ');render();con.dispatchEvent(new Event('change'));}};
       con.appendChild(t);
     }});
-    if(!sel.length)con.innerHTML='<span class="ms-ph">Select or type below...</span>';
+    if(!sel.length)con.innerHTML=`<span class="ms-ph">${{escHtml(window.t('form.ms_placeholder'))}}</span>`;
     con.dataset.value=sel.join(', ');
   }}
   con.addEventListener('_update',()=>{{
@@ -16916,7 +16950,7 @@ function buildMS(key,options,init){{
       const it=document.createElement('div');
       it.className='ms-opt'+(sel.includes(opt)?' sel':'');
       const chk=document.createElement('input');chk.type='checkbox';chk.checked=sel.includes(opt);chk.style.cssText='flex-shrink:0;width:14px;height:14px;pointer-events:none';
-      const lbl=document.createElement('span');lbl.textContent=opt;lbl.style.flex='1';
+      const lbl=document.createElement('span');lbl.textContent=disp(opt);lbl.style.flex='1';
       it.appendChild(chk);it.appendChild(lbl);
       it.onclick=ev=>{{
         ev.stopPropagation();
@@ -16934,29 +16968,54 @@ function buildMS(key,options,init){{
   render();return con;
 }}
 
+function tFormSectionTitle(title){{
+  const map={{
+    'Core Register Fields':'form.sec_core',
+    'Interactive Injury Body Map':'form.sec_bodymap',
+    'References / Technical Fields':'form.sec_refs',
+    'Dates / Timeline':'form.sec_dates',
+    'Status / Workflow':'form.sec_status',
+    'Files / Notes':'form.sec_files',
+    'Calculated / System Fields':'form.sec_calc',
+    'Other Dynamic Fields':'form.sec_other',
+    'Commercial & Quantities':'form.sec_commercial',
+    'PR Items':'form.sec_pr_items',
+    'NOC Basic Info':'form.sec_noc_basic',
+    'Part A / B Tracking':'form.sec_noc_ab',
+    'Part C / D & Cost Tracking':'form.sec_noc_cd',
+    'VO Details':'form.sec_vo',
+    'Remarks / Files':'form.sec_remarks_files',
+    'Other NOC Fields':'form.sec_other_noc',
+    'Letter Information':'form.sec_ltr_info',
+    'Correspondence Routing':'form.sec_ltr_routing',
+    'Additional Details':'form.sec_add_details'
+  }};
+  return map[title]?window.t(map[title]):title;
+}}
+
 function getFormSectionHint(title){{
   const hints={{
-    'Core Register Fields':'Primary register identity and classification fields',
-    'Interactive Injury Body Map':'Click Front or Back anatomical regions to populate the injured body part and coordinates',
-    'References / Technical Fields':'Drawing, MS, parent, and technical reference details',
-    'Dates / Timeline':'Submission, issue, received, reply, and timeline dates',
-    'Status / Workflow':'Status, direction, review, approval, and response controls',
-    'Files / Notes':'Attachments, file links, remarks, comments, and descriptions',
-    'Calculated / System Fields':'Readonly calculated values shown for context',
-    'Other Dynamic Fields':'Additional fields configured for this document type',
-    'Commercial & Quantities':'Values, quantities, and related numeric fields',
-    'PR Items':'Line items and grouped procurement details',
-    'NOC Basic Info':'NOC number, subject, description, and originating document',
-    'Part A / B Tracking':'Part A issue and Part B return/status tracking',
-    'Part C / D & Cost Tracking':'Part C/D tracking with submitted and final approved costs',
-    'VO Details':'Variation order references, dates, and values',
-    'Remarks / Files':'Remarks, original files, links, and attachments',
-    'Other NOC Fields':'Additional NOC fields configured for this project',
-    'Letter Information':'Reference and headline details for the letter',
-    'Correspondence Routing':'Direction, parties, and linked parent correspondence',
-    'Additional Details':'Remaining project-specific fields'
+    'Core Register Fields':'form.hint_core',
+    'Interactive Injury Body Map':'form.hint_bodymap',
+    'References / Technical Fields':'form.hint_refs',
+    'Dates / Timeline':'form.hint_dates',
+    'Status / Workflow':'form.hint_status',
+    'Files / Notes':'form.hint_files',
+    'Calculated / System Fields':'form.hint_calc',
+    'Other Dynamic Fields':'form.hint_other',
+    'Commercial & Quantities':'form.hint_commercial',
+    'PR Items':'form.hint_pr_items',
+    'NOC Basic Info':'form.hint_noc_basic',
+    'Part A / B Tracking':'form.hint_noc_ab',
+    'Part C / D & Cost Tracking':'form.hint_noc_cd',
+    'VO Details':'form.hint_vo',
+    'Remarks / Files':'form.hint_remarks_files',
+    'Other NOC Fields':'form.hint_other_noc',
+    'Letter Information':'form.hint_ltr_info',
+    'Correspondence Routing':'form.hint_ltr_routing',
+    'Additional Details':'form.hint_add_details'
   }};
-  return hints[title]||'Structured fields for this document section';
+  return window.t(hints[title]||'form.hint_default');
 }}
 
 const FORM_SECTION_ORDER=[
@@ -17108,7 +17167,7 @@ function getOrCreateFormSection(root, sectionMap, title){{
   sec.dataset.sectionOrder=String(getFormSectionOrder(title));
   const hdr=document.createElement('div');
   hdr.className='form-section-header';
-  hdr.innerHTML=`<div><div class="form-section-title">${{escHtml(title)}}</div><div class="form-section-sub">${{escHtml(getFormSectionHint(title))}}</div></div>`;
+  hdr.innerHTML=`<div><div class="form-section-title">${{escHtml(tFormSectionTitle(title))}}</div><div class="form-section-sub">${{escHtml(getFormSectionHint(title))}}</div></div>`;
   const body=document.createElement('div');
   body.className='form-section-grid';
   sec.appendChild(hdr);
@@ -17200,12 +17259,12 @@ function durChoice(docNo){{
   return new Promise(resolve=>{{
     const ov=document.createElement('div');ov.className='overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
     ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:28px 24px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-      <div style="font-size:16px;font-weight:700;margin-bottom:8px">⏱ Duration</div>
-      <p style="font-size:13px;color:#64748b;margin-bottom:20px">Issue date is set but no reply date yet.<br>How should Duration be shown?</p>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px">${{escHtml(window.t('form.dur_title'))}}</div>
+      <p style="font-size:13px;color:#64748b;margin-bottom:20px;white-space:pre-line">${{escHtml(window.t('form.dur_prompt'))}}</p>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button id="dur-today" style="padding:10px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">📅 Calculate from issue date → Today</button>
-        <button id="dur-empty" style="padding:10px 16px;background:#f1f5f9;color:#374151;border:none;border-radius:6px;cursor:pointer;font-size:13px">— Leave Duration empty</button>
-        <button id="dur-cancel" style="padding:8px;background:none;border:none;cursor:pointer;font-size:12px;color:#94a3b8">Cancel</button>
+        <button id="dur-today" style="padding:10px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">${{escHtml(window.t('form.dur_today'))}}</button>
+        <button id="dur-empty" style="padding:10px 16px;background:#f1f5f9;color:#374151;border:none;border-radius:6px;cursor:pointer;font-size:13px">${{escHtml(window.t('form.dur_empty'))}}</button>
+        <button id="dur-cancel" style="padding:8px;background:none;border:none;cursor:pointer;font-size:12px;color:#94a3b8">${{escHtml(window.t('form.cancel'))}}</button>
       </div></div>`;
     document.body.appendChild(ov);
     ov.querySelector('#dur-today').onclick=()=>{{document.body.removeChild(ov);resolve('today');}};
@@ -17361,6 +17420,11 @@ function _highlightIncBodyUi(regionId, px, py){{
     b.classList.toggle('active', Boolean(regionId && b.dataset.region === regionId));
   }});
 }}
+function tBodyRegionLabel(regionId, fallbackLabel){{
+  const k='hse_form.region_'+String(regionId||'').trim();
+  const tr=window.t?window.t(k):k;
+  return (tr&&tr!==k)?tr:(fallbackLabel||regionId||'');
+}}
 function selectIncBodyRegion(regionId, clickX, clickY, skipFieldSync){{
   const meta = INC_BODY_REGIONS.find(r => r.id === regionId) || null;
   const regEl = document.getElementById('f-bodyRegion');
@@ -17369,7 +17433,7 @@ function selectIncBodyRegion(regionId, clickX, clickY, skipFieldSync){{
   if(!meta){{
     if(regEl) regEl.value = '';
     if(coordEl) coordEl.value = '';
-    if(readEl) readEl.textContent = 'Selected Region: None (click Front or Back diagram)';
+    if(readEl) readEl.textContent = window.t('hse_form.selected_none');
     _highlightIncBodyUi('', NaN, NaN);
     if(!skipFieldSync) setDynamicFieldValue('bodyPart', '');
     return;
@@ -17379,7 +17443,9 @@ function selectIncBodyRegion(regionId, clickX, clickY, skipFieldSync){{
   const viewSide = px >= 220 ? 'back' : meta.view;
   if(regEl) regEl.value = meta.id;
   if(coordEl) coordEl.value = `${{viewSide}}:${{px}},${{py}}`;
-  if(readEl) readEl.textContent = `Selected Region: ${{meta.label}} (${{viewSide.toUpperCase()}} @ ${{px}}, ${{py}})`;
+  const dispLabel = tBodyRegionLabel(meta.id, meta.label);
+  const sideDisp = viewSide === 'back' ? window.t('hse_form.back_view') : window.t('hse_form.front_view');
+  if(readEl) readEl.textContent = window.t('hse_form.selected_region_coords', {{label: dispLabel, side: sideDisp, x: px, y: py}});
   _highlightIncBodyUi(meta.id, px, py);
   if(!skipFieldSync){{
     setDynamicFieldValue('bodyPart', meta.label);
@@ -17393,7 +17459,7 @@ function syncIncBodyMapFromField(){{
   if(!firstToken){{
     _highlightIncBodyUi('', NaN, NaN);
     const readEl = document.getElementById('inc-body-readout');
-    if(readEl) readEl.textContent = 'Selected Region: None (click Front or Back diagram)';
+    if(readEl) readEl.textContent = window.t('hse_form.selected_none');
     return;
   }}
   const matched = INC_BODY_REGIONS.find(r => r.label.toLowerCase() === firstToken || r.id.toLowerCase() === firstToken);
@@ -17409,7 +17475,7 @@ function syncIncBodyMapFromField(){{
     const regEl = document.getElementById('f-bodyRegion');
     if(regEl) regEl.value = matched.id;
     const readEl = document.getElementById('inc-body-readout');
-    if(readEl) readEl.textContent = `Selected Region: ${{matched.label}}`;
+    if(readEl) readEl.textContent = window.t('hse_form.selected_region', {{label: tBodyRegionLabel(matched.id, matched.label)}});
     _highlightIncBodyUi(matched.id, px, py);
   }}
 }}
@@ -17429,9 +17495,9 @@ function mountIncBodyMapSection(formRoot, sectionBodies, row, opts){{
     <div id="inc-body-missing-fallback"></div>
     <div class="inc-bodymap-wrap">
       <div class="inc-bodymap-stage">
-        <svg id="inc-body-map-svg" viewBox="0 0 440 340" role="img" aria-label="Interactive Human Injury Body Map (Front and Back)">
-          <text x="110" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">FRONT VIEW</text>
-          <text x="330" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">BACK VIEW</text>
+        <svg id="inc-body-map-svg" viewBox="0 0 440 340" role="img" aria-label="${{escHtml(window.t('hse_form.bodymap_aria'))}}">
+          <text x="110" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">${{escHtml(window.t('hse_form.front_view'))}}</text>
+          <text x="330" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">${{escHtml(window.t('hse_form.back_view'))}}</text>
           <text x="26" y="76" font-size="9" font-weight="700" fill="#94a3b8">R</text>
           <text x="190" y="76" font-size="9" font-weight="700" fill="#94a3b8">L</text>
           <text x="246" y="76" font-size="9" font-weight="700" fill="#94a3b8">L</text>
@@ -17483,19 +17549,31 @@ function mountIncBodyMapSection(formRoot, sectionBodies, row, opts){{
         </svg>
       </div>
       <div class="inc-body-panel">
-        <div class="inc-body-readout" id="inc-body-readout">Selected Region: None (click Front or Back diagram)</div>
-        <div style="font-size:11px;font-weight:700;color:var(--mu);">Anatomical Regions:</div>
-        <div class="inc-body-pills-wrap" id="inc-body-pills">${{INC_BODY_REGIONS.map(r => `<button type="button" class="inc-body-pill" data-region="${{r.id}}"${{readonly ? ' disabled' : ''}}>${{escHtml(r.label)}}</button>`).join('')}}</div>
-        ${{readonly ? '' : '<div><button type="button" class="btn btn-sc btn-sm" id="inc-body-clear" style="font-size:11px;padding:3px 9px;">Clear Region</button></div>'}}
+        <div class="inc-body-readout" id="inc-body-readout">${{escHtml(window.t('hse_form.selected_none'))}}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--mu);">${{escHtml(window.t('hse_form.anatomical_regions'))}}</div>
+        <div class="inc-body-pills-wrap" id="inc-body-pills">${{INC_BODY_REGIONS.map(r => `<button type="button" class="inc-body-pill" data-region="${{r.id}}"${{readonly ? ' disabled' : ''}}>${{escHtml(tBodyRegionLabel(r.id, r.label))}}</button>`).join('')}}</div>
+        ${{readonly ? '' : `<div><button type="button" class="btn btn-sc btn-sm" id="inc-body-clear" style="font-size:11px;padding:3px 9px;">${{escHtml(window.t('hse_form.clear_region'))}}</button></div>`}}
       </div>
     </div>`;
   secBody.appendChild(fg);
+
+  const svgZones = fg.querySelector('#inc-body-map-svg');
+  if(svgZones){{
+    svgZones.querySelectorAll('.inc-body-zone').forEach(z => {{
+      const tEl = z.querySelector('title');
+      if(tEl && z.dataset.region){{
+        const isBack = tEl.textContent.includes('(Back)');
+        const lbl = tBodyRegionLabel(z.dataset.region, z.dataset.label);
+        tEl.textContent = isBack ? `${{lbl}} (${{window.t('hse_form.back_view')}})` : lbl;
+      }}
+    }});
+  }}
 
   if(!document.getElementById('f-bodyPart')){{
     const fbWrap = fg.querySelector('#inc-body-missing-fallback');
     if(fbWrap){{
       fbWrap.style.marginBottom = '8px';
-      fbWrap.innerHTML = '<label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Injured Body Part</label><input id="f-bodyPart" type="text" placeholder="Click diagram or enter body part..." style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">';
+      fbWrap.innerHTML = `<label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">${{escHtml(window.t('hse_form.injured_body_part'))}}</label><input id="f-bodyPart" type="text" placeholder="${{escHtml(window.t('hse_form.body_part_ph'))}}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">`;
       const fbInp = fbWrap.querySelector('#f-bodyPart');
       if(fbInp){{
         fbInp.value = initPart;
@@ -17614,7 +17692,7 @@ function printHseQrLabel(){{
 function openFeiBatchInspectModal(){{
   if(!CAN_EDIT || !isHseFeiTab()) return;
   const ids = [...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb => cb.dataset.id);
-  if(!ids.length) return toast('Select at least one FEI record first', 'wa');
+  if(!ids.length) return toast(window.t('hse_form.fei_select_first'), 'wa');
   const today = new Date();
   const nextYr = new Date(today); nextYr.setFullYear(today.getFullYear() + 1);
   const sumEl = document.getElementById('fei-batch-summary');
@@ -17622,7 +17700,7 @@ function openFeiBatchInspectModal(){{
   const expEl = document.getElementById('fei-batch-expiry');
   const stEl = document.getElementById('fei-batch-status');
   const notesEl = document.getElementById('fei-batch-notes');
-  if(sumEl) sumEl.textContent = `${{ids.length}} selected extinguisher / equipment record(s)`;
+  if(sumEl) sumEl.textContent = window.t('hse_form.fei_selected_count', {{count: ids.length}});
   if(lastEl && !lastEl.value) lastEl.value = today.toISOString().slice(0, 10);
   if(expEl && !expEl.value) expEl.value = nextYr.toISOString().slice(0, 10);
   if(stEl) stEl.value = 'Valid';
@@ -17631,7 +17709,7 @@ function openFeiBatchInspectModal(){{
 }}
 async function submitFeiBatchInspect(){{
   const ids = [...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb => cb.dataset.id);
-  if(!ids.length) return toast('No records selected', 'wa');
+  if(!ids.length) return toast(window.t('hse_form.fei_none_selected'), 'wa');
   const last_inspection = document.getElementById('fei-batch-last')?.value || '';
   const expiry_date = document.getElementById('fei-batch-expiry')?.value || '';
   const status = document.getElementById('fei-batch-status')?.value || '';
@@ -17647,12 +17725,12 @@ async function submitFeiBatchInspect(){{
       closeM('fei-batch-inspect-modal');
       clearSel();
       await loadRecords();
-      toast(`✔ Batch inspected ${{res.updated || ids.length}} record(s)`, 'ok');
+      toast(window.t('hse_form.fei_success', {{count: res.updated || ids.length}}), 'ok');
     }} else {{
-      toast((res && res.error) || 'Batch inspection failed', 'er');
+      toast((res && res.error) || window.t('hse_form.fei_failed'), 'er');
     }}
   }} catch(e) {{
-    toast('Error: ' + e.message, 'er');
+    toast(window.t('form.err_save_detail', {{err: e.message}}), 'er');
   }} finally {{
     if(btn) btn.disabled = false;
   }}
@@ -17683,7 +17761,7 @@ function dvCloseModal(){{
     m.classList.remove('dv-fs','mob-view-list','mob-view-preview','dv-single');
   }}
   const b=_dvEl('dv-fs-btn');
-  if(b)b.textContent='⛶ Fullscreen';
+  if(b)b.textContent=window.t('drive.dv_fullscreen');
   const rb=_dvEl('dv-rev-bar');
   if(rb){{rb.style.display='none';rb.innerHTML='';}}
   if(document.fullscreenElement){{try{{document.exitFullscreen();}}catch(_e){{}}}}
@@ -17723,7 +17801,7 @@ function dvToggleModalFullscreen(){{
   if(!m)return;
   const isFs=m.classList.toggle('dv-fs');
   const b=_dvEl('dv-fs-btn');
-  if(b)b.textContent=isFs?'🗗 Exit Fullscreen':'⛶ Fullscreen';
+  if(b)b.textContent=isFs?window.t('drive.dv_exit_fullscreen'):window.t('drive.dv_fullscreen');
 }}
 function dvFullscreenPane(targetId){{
   const el=(targetId&&_dvEl(targetId))||_dvEl('dv-pane');
@@ -17750,7 +17828,7 @@ function _dvPreviewBadge(f){{
   if(f.preview==='excel')return '<span style="color:#16a34a;font-weight:600">Excel</span>';
   if(f.preview==='word')return '<span style="color:#2563eb;font-weight:600">Word</span>';
   if(f.preview==='text')return '<span style="color:#475569;font-weight:600">Text</span>';
-  return '<span style="color:#94a3b8">Download only</span>';
+  return `<span style="color:#94a3b8">${{escHtml(window.t('drive.dv_dl_only'))}}</span>`;
 }}
 function _dvSetBusy(msg){{
   const pane=_dvEl('dv-pane');
@@ -17761,9 +17839,9 @@ function _dvError(j,status){{
   const pane=_dvEl('dv-pane');
   let html='<div style="margin:auto;max-width:440px;text-align:center;padding:24px;color:#334155">'
     +'<div style="font-size:34px">⚠️</div>'
-    +'<div style="font-weight:700;margin:8px 0">Could not open this document</div>'
+    +'<div style="font-weight:700;margin:8px 0">'+escHtml(window.t('drive.dv_open_error'))+'</div>'
     +'<div style="font-size:12px;color:#64748b;line-height:1.6">'+escHtml((j&&(j.hint||j.error))||('Error '+status))+'</div>';
-  if(j&&j.fallback_url)html+='<a class="btn btn-sc" style="margin-top:14px;display:inline-block" target="_blank" rel="noopener" href="'+escHtml(j.fallback_url)+'">🔗 Open original link</a>';
+  if(j&&j.fallback_url)html+='<a class="btn btn-sc" style="margin-top:14px;display:inline-block" target="_blank" rel="noopener" href="'+escHtml(j.fallback_url)+'">'+escHtml(window.t('drive.dv_open_original'))+'</a>';
   pane.innerHTML=html+'</div>';
   _dvEl('dv-foot-left').innerHTML='';
 }}
@@ -17771,12 +17849,12 @@ async function openDocViewer(rid,slot,opts){{
   opts=opts||{{}};
   const reqRev=(opts.rev!==undefined && opts.rev!==null && String(opts.rev).trim()!=='')?opts.rev:null;
   DV.rid=rid;DV.slot=slot;DV.rev=reqRev;DV.info=null;DV.cur=-1;DV.filter='';DV.label=opts.label||'';
-  _dvEl('dv-title').textContent='Loading document...';
+  _dvEl('dv-title').textContent=window.t('drive.dv_loading_doc');
   _dvEl('dv-side').style.display='none';
   const rb=_dvEl('dv-rev-bar');
   if(rb){{rb.style.display='none';rb.innerHTML='';}}
   _dvEl('dv-foot-left').innerHTML='';
-  _dvSetBusy('Loading...');
+  _dvSetBusy(window.t('drive.dv_loading'));
   const fab=_dvEl('ai-fab-btn');
   if(fab){{fab.style.opacity='0';fab.style.pointerEvents='none';fab.style.visibility='hidden';}}
   openM('doc-viewer-modal');
@@ -17784,7 +17862,7 @@ async function openDocViewer(rid,slot,opts){{
     const qs=reqRev!==null?('?rev='+encodeURIComponent(reqRev)):'';
     const r=await fetch('/api/drive/view-info/'+encodeURIComponent(rid)+'/'+slot+qs);
     const j=await r.json().catch(()=>({{}}));
-    if(!r.ok||!j.ok){{_dvError(j,r.status);_dvEl('dv-title').textContent='Document';return;}}
+    if(!r.ok||!j.ok){{_dvError(j,r.status);_dvEl('dv-title').textContent=window.t('drive.dv_document');return;}}
     DV.info=j;
     _dvRender();
   }}catch(e){{_dvError({{error:e.message||String(e)}},0);}}
@@ -17797,10 +17875,10 @@ function _dvRender(){{
   const total=_dvFmt(j.total_size||0);
   const isNocPart=String(DV.slot||'').startsWith('part_');
   const docHead=isNocPart?(parseDocNo(docNo).base||docNo):docNo;
-  const rawLabel=String(DV.label||j.name||'Document').replace(/\\s*\\(REV\\d+\\)/ig,'').trim();
+  const rawLabel=String(DV.label||j.name||window.t('drive.dv_document')).replace(/\\s*\\(REV\\d+\\)/ig,'').trim();
   const revLabel=(j.rev_label&&(isNocPart||(Array.isArray(j.revisions)&&j.revisions.length>1)))?(' — '+j.rev_label):'';
   const head=(isFolder?'📁 ':'📄 ')+(docHead?docHead+' — ':'')+rawLabel+revLabel;
-  _dvEl('dv-title').innerHTML=escHtml(head)+' <span style="font-weight:500;color:var(--mu);font-size:11px;margin-left:6px">'
+  _dvEl('dv-title').innerHTML=`<span class="bidi-ltr">${{escHtml(head)}}</span> <span class="bidi-ltr" style="font-weight:500;color:var(--mu);font-size:11px;margin-inline-start:6px">`
     +(isFolder?(j.files.length+' file'+(j.files.length===1?'':'s')+' · '):'')+total+'</span>';
   const revBar=_dvEl('dv-rev-bar');
   if(revBar){{
@@ -17809,13 +17887,13 @@ function _dvRender(){{
       revBar.innerHTML='';
       const tag=document.createElement('span');
       tag.style.cssText='font-size:10.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.3px';
-      tag.textContent=revs.length>1?'Revisions:':'Revision:';
+      tag.textContent=revs.length>1?window.t('drive.dv_revisions'):window.t('drive.dv_revision');
       revBar.appendChild(tag);
       (revs.length?revs:[{{rev:j.rev||0,rev_label:j.rev_label||'REV00',current:true}}]).forEach(rv=>{{
         const active=Number(rv.rev)===Number(j.rev||0);
         const btn=document.createElement('button');
         btn.type='button';
-        btn.textContent=String(rv.rev_label||formatNocRevLabel(rv.rev))+(rv.current?' (Current)':' (Archived)');
+        btn.innerHTML=`<span class="bidi-ltr">${{escHtml(String(rv.rev_label||formatNocRevLabel(rv.rev)))}}</span> ${{escHtml(rv.current?window.t('drive.dv_current'):window.t('drive.dv_archived'))}}`;
         btn.style.cssText=active
           ? 'padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:default'
           : 'padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer';
@@ -17849,12 +17927,13 @@ function _dvRender(){{
   _dvRenderList();
   const first=j.files.findIndex(f=>f.preview!=='other');
   if(j.files.length)dvSelect(first>-1?first:0);
-  else _dvSetBusy('This folder is empty.');
+  else _dvSetBusy(window.t('drive.dv_empty_folder'));
   _dvRenderFooter();
 }}
 function _dvRenderList(){{
   const j=DV.info;const box=_dvEl('dv-list');if(!j||!box)return;
   const q=DV.filter.trim().toLowerCase();
+  const isRtl=document.documentElement.dir==='rtl';
   box.innerHTML='';
   let shown=0;
   let activeRowEl=null;
@@ -17866,14 +17945,15 @@ function _dvRenderList(){{
     row.dataset.idx=i;
     const active=(i===DV.cur);
     if(active)activeRowEl=row;
-    row.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--bd);'+(active?'background:#eff6ff;border-left:3px solid #2563eb':'border-left:3px solid transparent');
-    const subBadge=sub?`<span style="display:inline-block;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:600;margin-right:4px">📁 ${{escHtml(sub)}}</span>`:'';
-    row.innerHTML='<span style="font-size:10px;font-weight:700;color:#94a3b8;min-width:16px;text-align:right">'+(i+1)+'.</span>'
+    const activeBorder=isRtl?(active?'background:#eff6ff;border-right:3px solid #2563eb':'border-right:3px solid transparent'):(active?'background:#eff6ff;border-left:3px solid #2563eb':'border-left:3px solid transparent');
+    row.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--bd);'+activeBorder;
+    const subBadge=sub?`<span class="bidi-ltr" style="display:inline-block;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:600;margin-inline-end:4px">📁 ${{escHtml(sub)}}</span>`:'';
+    row.innerHTML='<span class="bidi-ltr" style="font-size:10px;font-weight:700;color:#94a3b8;min-width:16px;text-align:end">'+(i+1)+'.</span>'
       +'<span style="font-size:17px">'+_dvIcon(f)+'</span>'
-      +'<span style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;word-break:break-all;line-height:1.3">'+escHtml(f.name)+'</div>'
-      +'<div style="font-size:10px;color:var(--mu);margin-top:2px">'+subBadge+_dvFmt(f.size)+' · '+_dvPreviewBadge(f)+'</div></span>';
+      +'<span style="flex:1;min-width:0"><div class="bidi-ltr" style="font-size:12px;font-weight:600;word-break:break-all;line-height:1.3">'+escHtml(f.name)+'</div>'
+      +'<div style="font-size:10px;color:var(--mu);margin-top:2px">'+subBadge+'<span class="bidi-ltr">'+_dvFmt(f.size)+'</span> · '+_dvPreviewBadge(f)+'</div></span>';
     if(f.download_url){{
-      const a=document.createElement('a');a.href=f.download_url;a.title='Download';a.textContent='⬇';
+      const a=document.createElement('a');a.href=f.download_url;a.title=window.t('drive.dv_dl');a.textContent='⬇';
       a.style.cssText='font-size:13px;text-decoration:none;color:#475569;padding:2px 4px';
       a.onclick=(ev)=>ev.stopPropagation();
       row.appendChild(a);
@@ -17883,9 +17963,9 @@ function _dvRenderList(){{
   }});
   const cntEl=_dvEl('dv-list-count');
   if(cntEl){{
-    cntEl.innerHTML=`<span>Showing ${{shown}} of ${{j.files.length}} files</span><span style="color:#94a3b8">↕ Scroll</span>`;
+    cntEl.innerHTML=`<span>${{escHtml(window.t('drive.dv_showing_files',{{shown,total:j.files.length}}))}}</span><span style="color:#94a3b8">${{escHtml(window.t('drive.dv_scroll'))}}</span>`;
   }}
-  if(!shown)box.innerHTML='<div style="padding:16px;font-size:12px;color:var(--mu);text-align:center">No matching files</div>';
+  if(!shown)box.innerHTML=`<div style="padding:16px;font-size:12px;color:var(--mu);text-align:center">${{escHtml(window.t('drive.dv_no_matching'))}}</div>`;
   if(activeRowEl){{try{{activeRowEl.scrollIntoView({{block:'nearest'}});}}catch(_e){{}}}}
 }}
 function dvFilter(v){{DV.filter=v||'';_dvRenderList();}}
@@ -18201,12 +18281,12 @@ async function _dvLoadOfficePreview(f){{
     else _dvRenderWordView(f);
     return;
   }}
-  box.innerHTML='<div style="margin:auto;color:var(--mu);font-size:13px">⏳ Rendering Office document inside DCR...</div>';
+  box.innerHTML=`<div style="margin:auto;color:var(--mu);font-size:13px">${{escHtml(window.t('drive.dv_office_rendering'))}}</div>`;
   try{{
     const r=await fetch(f.office_url);
     const j=await r.json().catch(()=>({{}}));
     if(!r.ok||!j.ok){{
-      box.innerHTML='<div style="margin:auto;text-align:center;padding:24px;color:#dc2626;max-width:400px"><div style="font-size:28px">⚠️</div><div style="font-weight:700;margin:6px 0">Could not render Office preview</div><div style="font-size:12px;color:#64748b">'+escHtml(j.error||('HTTP '+r.status))+'</div>'+(f.download_url?'<a class="btn btn-pr" style="margin-top:12px;display:inline-block" href="'+f.download_url+'">⬇ Download file</a>':'')+'</div>';
+      box.innerHTML=`<div style="margin:auto;text-align:center;padding:24px;color:#dc2626;max-width:400px"><div style="font-size:28px">⚠️</div><div style="font-weight:700;margin:6px 0">${{escHtml(window.t('drive.dv_office_err'))}}</div><div style="font-size:12px;color:#64748b">`+escHtml(j.error||('HTTP '+r.status))+'</div>'+(f.download_url?`<a class="btn btn-pr" style="margin-top:12px;display:inline-block" href="${{f.download_url}}">${{escHtml(window.t('drive.dv_dl_file'))}}</a>`:'')+'</div>';
       return;
     }}
     f._officeData=j;
@@ -18231,21 +18311,21 @@ function dvSelect(i){{
   }}
   const pane=_dvEl('dv-pane');
   const noCopy=!j.can_download;
-  const mobBack=(j.kind==='folder'&&j.files.length>1)?'<button type="button" class="dv-mob-back" onclick="dvMobTab(0)">← Files</button>':'';
+  const mobBack=(j.kind==='folder'&&j.files.length>1)?`<button type="button" class="dv-mob-back" onclick="dvMobTab(0)">${{escHtml(window.t('drive.dv_back_files'))}}</button>`:'';
   let body='';
   if(f.preview==='pdf'){{
     const isMob=window.innerWidth<=768||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     DV.pdfMode=DV.pdfMode||{{}};
     const pdfMode=DV.pdfMode[f.id]||(isMob&&f.drive_embed_url?'cloud':'direct');
     const pdfSrc=(pdfMode==='cloud'&&f.drive_embed_url)?f.drive_embed_url:(f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH'));
-    const toggleBtn=f.drive_embed_url?`<button type="button" class="btn btn-sc btn-sm" onclick="dvTogglePdfMode('${{f.id}}')" style="padding:2px 8px;font-size:11px;font-weight:600" title="Switch PDF View Mode">${{pdfMode==='cloud'?'📄 Direct Stream':'☁️ Cloud Preview'}}</button>`:'';
-    const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:4px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
+    const toggleBtn=f.drive_embed_url?`<button type="button" class="btn btn-sc btn-sm" onclick="dvTogglePdfMode('${{f.id}}')" style="padding:2px 8px;font-size:11px;font-weight:600">${{escHtml(pdfMode==='cloud'?window.t('drive.dv_direct_stream'):window.t('drive.dv_cloud_preview'))}}</button>`:'';
+    const subLabel=f.subfolder?` <span class="bidi-ltr" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-inline-start:4px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
     const pdfTools = `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">`
       +toggleBtn
-      +(!noCopy?`<a href="${{f.stream_url}}" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:11px;text-decoration:none">🔗 Open</a>`:'')
+      +(!noCopy?`<a href="${{f.stream_url}}" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:11px;text-decoration:none">${{escHtml(window.t('drive.dv_open_pdf'))}}</a>`:'')
       +`</div>`;
     pane.innerHTML='<div style="padding:4px 10px;border-bottom:1px solid var(--bd);background:#fff;font-size:11.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0;min-height:30px">'
-      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px;min-width:0">'+mobBack+_dvIcon(f)+' <span style="color:#0f172a">'+escHtml(f.name)+'</span>'+subLabel+' <span style="color:var(--mu);font-weight:500;white-space:nowrap;font-size:10.5px">('+_dvFmt(f.size)+')</span></span>'+pdfTools+'</div>'
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px;min-width:0">'+mobBack+_dvIcon(f)+' <span class="bidi-ltr" style="color:#0f172a">'+escHtml(f.name)+'</span>'+subLabel+' <span class="bidi-ltr" style="color:var(--mu);font-weight:500;white-space:nowrap;font-size:10.5px">('+_dvFmt(f.size)+')</span></span>'+pdfTools+'</div>'
       +'<iframe id="dv-pdf-frame" allowfullscreen title="'+escHtml(f.name)+'" src="'+pdfSrc+'" style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>';
     pane.style.display='flex';pane.style.flexDirection='column';
     _dvRenderFooter();
@@ -18253,15 +18333,15 @@ function dvSelect(i){{
   }}else if(f.preview==='image'){{
     body='<div style="padding:6px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0">'
       +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(-0.25)" title="Zoom Out" style="padding:3px 9px;font-weight:700">🔍−</button>'
-      +'<span id="dv-img-zoom-lbl" style="font-size:11px;font-weight:700;min-width:44px;text-align:center;color:#0f172a">100%</span>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(0.25)" title="Zoom In" style="padding:3px 9px;font-weight:700">🔍+</button>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgReset()" title="Reset 100%" style="padding:3px 9px">↺ Reset</button>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(-90)" title="Rotate Left 90°" style="padding:3px 9px">⟲ 90°</button>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(90)" title="Rotate Right 90°" style="padding:3px 9px">⟳ 90°</button>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgFullscreen()" title="Fullscreen" style="padding:3px 9px">⛶ Fullscreen</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(-0.25)" style="padding:3px 9px;font-weight:700">🔍−</button>'
+      +'<span id="dv-img-zoom-lbl" class="bidi-ltr" style="font-size:11px;font-weight:700;min-width:44px;text-align:center;color:#0f172a">100%</span>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(0.25)" style="padding:3px 9px;font-weight:700">🔍+</button>'
+      +`<button type="button" class="btn btn-sc btn-sm" onclick="dvImgReset()" style="padding:3px 9px">${{escHtml(window.t('drive.dv_reset'))}}</button>`
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(-90)" style="padding:3px 9px">⟲ 90°</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(90)" style="padding:3px 9px">⟳ 90°</button>'
+      +`<button type="button" class="btn btn-sc btn-sm" onclick="dvImgFullscreen()" style="padding:3px 9px">${{escHtml(window.t('drive.dv_fullscreen'))}}</button>`
       +'</div>'
-      +'<span style="font-size:10.5px;color:#64748b">🖱️ Scroll to zoom · Drag to pan · Double-click to 200%</span>'
+      +`<span style="font-size:10.5px;color:#64748b">${{escHtml(window.t('drive.dv_img_hint'))}}</span>`
       +'</div>'
       +'<div id="dv-img-stage" style="flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:12px;background:#1e293b;position:relative;user-select:none">'
       +'<img id="dv-img-el" alt="'+escHtml(f.name)+'" src="'+f.stream_url+'" draggable="false" '+(noCopy?'oncontextmenu="return false" ':'')+'style="max-width:94%;max-height:94%;object-fit:contain;box-shadow:0 8px 28px rgba(0,0,0,.45);background:#fff;transition:transform .08s ease-out;transform-origin:center center">'
@@ -18273,15 +18353,15 @@ function dvSelect(i){{
   }}else{{
     body='<div style="margin:auto;text-align:center;padding:24px;color:#334155;max-width:380px">'
       +'<div style="font-size:48px">'+_dvIcon(f)+'</div>'
-      +'<div style="font-weight:700;margin:10px 0 4px;word-break:break-all">'+escHtml(f.name)+'</div>'
-      +'<div style="font-size:12px;color:#64748b;line-height:1.6">This file type (CAD / archive) cannot be previewed directly inside the browser.'
-      +(f.download_url?'':'<br>You do not have download permission - ask the Document Controller.')+'</div>'
-      +(f.download_url?'<a class="btn btn-pr" style="margin-top:14px;display:inline-block" href="'+f.download_url+'">⬇ Download file</a>':'')
+      +'<div class="bidi-ltr" style="font-weight:700;margin:10px 0 4px;word-break:break-all">'+escHtml(f.name)+'</div>'
+      +`<div style="font-size:12px;color:#64748b;line-height:1.6">${{escHtml(window.t('drive.dv_cannot_preview'))}}`
+      +(f.download_url?'':`<br>${{escHtml(window.t('drive.dv_no_dl_perm'))}}`)+'</div>'
+      +(f.download_url?`<a class="btn btn-pr" style="margin-top:14px;display:inline-block" href="${{f.download_url}}">${{escHtml(window.t('drive.dv_dl_file'))}}</a>`:'')
       +'</div>';
   }}
-  const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
+  const subLabel=f.subfolder?` <span class="bidi-ltr" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-inline-start:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
   pane.innerHTML='<div style="padding:6px 12px;border-bottom:1px solid var(--bd);background:#fff;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0">'
-    +'<span style="word-break:break-all;display:flex;align-items:center;gap:4px">'+mobBack+_dvIcon(f)+' '+escHtml(f.name)+subLabel+'</span><span style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
+    +'<span style="word-break:break-all;display:flex;align-items:center;gap:4px">'+mobBack+_dvIcon(f)+' <span class="bidi-ltr">'+escHtml(f.name)+'</span>'+subLabel+'</span><span class="bidi-ltr" style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
   pane.style.display='flex';pane.style.flexDirection='column';
   if(f.preview==='image')_dvBindImgStage();
   if(f.preview==='excel'||f.preview==='word')_dvLoadOfficePreview(f);
@@ -18295,14 +18375,14 @@ function _dvRenderFooter(){{
     if(newTab){{a.target='_blank';a.rel='noopener';}}
     box.appendChild(a);
   }};
-  if(j.zip_url)mk('⬇ Download All (ZIP)',j.zip_url,'btn-pr',false);
+  if(j.zip_url)mk(window.t('drive.dv_dl_all_zip'),j.zip_url,'btn-pr',false);
   const f=j.files[DV.cur];
-  if(f&&f.download_url&&j.files.length>1)mk('⬇ This file',f.download_url,'btn-sc',false);
-  if(f&&f.download_url&&j.files.length===1)mk('⬇ Download',f.download_url,'btn-pr',false);
-  if(j.can_open_drive&&j.drive_url)mk('🔗 Open in Google Drive',j.drive_url,'btn-sc',true);
+  if(f&&f.download_url&&j.files.length>1)mk(window.t('drive.dv_dl_this'),f.download_url,'btn-sc',false);
+  if(f&&f.download_url&&j.files.length===1)mk(window.t('drive.dv_dl'),f.download_url,'btn-pr',false);
+  if(j.can_open_drive&&j.drive_url)mk(window.t('drive.dv_open_drive'),j.drive_url,'btn-sc',true);
   if(!j.can_download){{
     const n=document.createElement('span');n.style.cssText='font-size:11px;color:var(--mu)';
-    n.textContent='View only - download is restricted for your account';box.appendChild(n);
+    n.textContent=window.t('drive.dv_view_only_note');box.appendChild(n);
   }}
 }}
 document.addEventListener('keydown',function(ev){{
@@ -18554,7 +18634,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const flInput=formRoot.querySelector('#f-fileLocation');
   if(flInput && flInput.parentElement){{
     const flLbl=flInput.parentElement.querySelector('label');
-    if(flLbl)flLbl.textContent='Drive Link (Legacy / Manual Override)';
+    if(flLbl)flLbl.textContent=window.t('form.drive_link_legacy');
   }}
 
   const wrap=document.createElement('div');
@@ -18585,17 +18665,17 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const isHseCo=isHseCloseoutTab();
   const hasDual=hasReply||isHseCo;
   const slots=isNoc
-    ? [{{key:'part_a',title:'Part A: Notice of Change',pathSub:'Part A',emptyText:'No Part A attached',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
-       {{key:'part_b',title:'Part B: Consultant Reply',pathSub:'Part B',emptyText:'No Part B attached',color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
-       {{key:'part_c',title:'Part C: Cost Claim',pathSub:'Part C',emptyText:'No Part C attached',color:isDark?'#38bdf8':'#0284c7',bg:isDark?'rgba(2,132,199,0.15)':'#f0f9ff',bd:isDark?'rgba(56,189,248,0.35)':'#bae6fd'}},
-       {{key:'part_d',title:'Part D: Final Approval',pathSub:'Part D',emptyText:'No Part D attached',color:initPartDTheme.color,bg:initPartDTheme.bg,bd:initPartDTheme.bd}}]
+    ? [{{key:'part_a',title:window.t('noc.part_a_title'),pathSub:'Part A',emptyText:window.t('noc.part_a_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
+       {{key:'part_b',title:window.t('noc.part_b_title'),pathSub:'Part B',emptyText:window.t('noc.part_b_empty'),color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
+       {{key:'part_c',title:window.t('noc.part_c_title'),pathSub:'Part C',emptyText:window.t('noc.part_c_empty'),color:isDark?'#38bdf8':'#0284c7',bg:isDark?'rgba(2,132,199,0.15)':'#f0f9ff',bd:isDark?'rgba(56,189,248,0.35)':'#bae6fd'}},
+       {{key:'part_d',title:window.t('noc.part_d_title'),pathSub:'Part D',emptyText:window.t('noc.part_d_empty'),color:initPartDTheme.color,bg:initPartDTheme.bg,bd:initPartDTheme.bd}}]
     : (hasReply
-      ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
-         {{key:'approval',title:'2. Consultant Reply',pathSub:'Replied',emptyText:'No consultant reply attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
+      ? [{{key:'submission',title:window.t('form.slot_subm_title'),pathSub:'Submit',emptyText:window.t('form.slot_subm_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
+         {{key:'approval',title:window.t('form.slot_reply_title'),pathSub:'Replied',emptyText:window.t('form.slot_reply_empty'),color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
       : (isHseCo
-        ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
-           {{key:'approval',title:'2. Close-Out Document',pathSub:'Replied',emptyText:'No close-out file attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
-        : [{{key:'submission',title:'Document Attachment',pathSub:'',emptyText:'No file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}]));
+        ? [{{key:'submission',title:window.t('form.slot_subm_title'),pathSub:'Submit',emptyText:window.t('form.slot_subm_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
+           {{key:'approval',title:window.t('form.slot_closeout_title'),pathSub:'Replied',emptyText:window.t('form.slot_closeout_empty'),color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
+        : [{{key:'submission',title:window.t('form.slot_doc_title'),pathSub:'',emptyText:window.t('form.slot_doc_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}]));
   const grid=document.createElement('div');
   grid.style.cssText=isNoc
     ? 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:6px'
@@ -18619,7 +18699,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     hdrTitle.style.cssText='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
     hdrTitle.textContent=s.title;
     const revBadge=document.createElement('span');
-    revBadge.style.cssText='display:none;flex-shrink:0;font-size:9px;font-weight:800;padding:1px 5px;border-radius:999px;background:#1e3a8a;color:#fff;margin-left:4px';
+    revBadge.className='bidi-ltr';
+    revBadge.style.cssText='display:none;flex-shrink:0;font-size:9px;font-weight:800;padding:1px 5px;border-radius:999px;background:#1e3a8a;color:#fff;margin-inline-start:4px';
     hdr.appendChild(hdrTitle);
     hdr.appendChild(revBadge);
     hdr.title=s.title;
@@ -18674,21 +18755,21 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(isNoc && entry && !entry.legacy && !pending){{
         const nextLbl=formatNocRevLabel(getNocPartRev(entry)+1);
         const activeMode=revModeWrap.dataset.revMode||slotRevMode||'new_revision';
-        if(upBtn)upBtn.textContent=(activeMode==='new_revision')?('📄 File ('+nextLbl+')'):'🔄 Replace File';
-        if(fldBtn)fldBtn.textContent=(activeMode==='new_revision')?('📁 Folder ('+nextLbl+')'):'🔄 Replace Folder';
+        if(upBtn)upBtn.textContent=(activeMode==='new_revision')?window.t('noc.btn_file_rev',{{rev:nextLbl}}):window.t('form.replace_file');
+        if(fldBtn)fldBtn.textContent=(activeMode==='new_revision')?window.t('noc.btn_folder_rev',{{rev:nextLbl}}):window.t('form.replace_folder');
         return;
       }}
       if(upBtn){{
         if(pending || (entry && !entry.legacy)){{
-          upBtn.textContent=isNoc?'📤 File':'🔄 Replace File';
+          upBtn.textContent=isNoc?window.t('noc.btn_file'):window.t('form.replace_file');
         }}else if(entry && entry.legacy){{
-          upBtn.textContent=isNoc?'📤 File':'🔄 Replace File';
+          upBtn.textContent=isNoc?window.t('noc.btn_file'):window.t('form.replace_file');
         }}else{{
-          upBtn.textContent=isNoc?'📤 File':'📤 Upload File';
+          upBtn.textContent=isNoc?window.t('noc.btn_file'):window.t('form.upload_file');
         }}
       }}
       if(fldBtn){{
-        fldBtn.textContent=isNoc?'📁 Folder':'📁 Upload Folder';
+        fldBtn.textContent=isNoc?window.t('noc.btn_folder'):window.t('form.upload_folder');
       }}
     }};
 
@@ -18737,8 +18818,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           }};
           return b;
         }};
-        revModeWrap.appendChild(mkSegBtn('new_revision',`↻ New ${{nextLbl}}`,'#2563eb'));
-        revModeWrap.appendChild(mkSegBtn('overwrite',`🔄 Overwrite ${{curLbl}}`,'#d97706'));
+        revModeWrap.appendChild(mkSegBtn('new_revision',window.t('noc.new_rev',{{rev:nextLbl}}),'#2563eb'));
+        revModeWrap.appendChild(mkSegBtn('overwrite',window.t('noc.overwrite_rev',{{rev:curLbl}}),'#d97706'));
         revModeWrap.style.display='grid';
       }}else{{
         revModeWrap.style.display='none';
@@ -18749,7 +18830,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(rawHist.length>0){{
         const hTitle=document.createElement('div');
         hTitle.style.cssText='font-weight:700;color:var(--mu);font-size:9px;text-transform:uppercase;letter-spacing:.3px';
-        hTitle.textContent=`🕒 History (${{rawHist.length}})`;
+        hTitle.textContent=window.t('noc.history_title',{{count:rawHist.length}});
         histWrap.appendChild(hTitle);
         const sorted=[...rawHist].sort((a,b)=>getNocPartRev(b)-getNocPartRev(a));
         const _recId=row&&row._id?row._id:(state.editId||'');
@@ -18761,10 +18842,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           const hRow=document.createElement('div');
           hRow.style.cssText='display:flex;align-items:center;gap:4px;min-width:0';
           const hPill=document.createElement('span');
+          hPill.className='bidi-ltr';
           hPill.style.cssText='font-weight:800;font-size:8.5px;padding:1px 4px;border-radius:4px;background:'+(isDark?'#334155':'#e2e8f0')+';color:'+(isDark?'#e2e8f0':'#334155')+';flex-shrink:0';
           hPill.textContent=hLbl;
           hRow.appendChild(hPill);
           const hName=document.createElement('span');
+          hName.className='bidi-ltr';
           hName.style.cssText='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;color:'+(isDark?'#cbd5e1':'#475569');
           const dLabel=h.is_folder?('📁 '+(h.folder_name||h.file_name||'Folder')):(h.file_name||hLbl);
           hName.textContent=dLabel;
@@ -18799,9 +18882,9 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             hx.type='button';
             hx.style.cssText='padding:0 4px;border-radius:3px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:8.5px;cursor:pointer;flex-shrink:0';
             hx.textContent='✕';
-            hx.title='Remove archived '+hLbl+' and move to Google Drive Trash';
+            hx.title=window.t('noc.remove_archived_title',{{rev:hLbl}});
             hx.onclick=async()=>{{
-              if(!confirm('Remove archived '+s.key+' '+hLbl+' and move its file/folder to Google Drive Trash?'))return;
+              if(!confirm(window.t('noc.confirm_remove_archived',{{slot:s.key,rev:hLbl}})))return;
               hx.disabled=true;
               try{{
                 const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?rev='+encodeURIComponent(String(hRev)),{{method:'DELETE'}});
@@ -18811,10 +18894,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
                 if(row){{row.attachments=j.attachments||{{}};}}
                 renderSlotInfo(cur[s.key],null);
                 renderRows();
-                toast('Archived revision '+hLbl+' removed','ok');
+                toast(window.t('noc.archived_removed',{{rev:hLbl}}),'ok');
               }}catch(e){{
                 hx.disabled=false;
-                toast('Could not remove archived revision: '+(e.message||e),'er');
+                toast(window.t('noc.archived_remove_failed',{{err:e.message||e}}),'er');
               }}
             }};
             hRow.appendChild(hx);
@@ -18839,14 +18922,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           ? (`${{pending.file_count||1}} file(s) in ${{pending.folder_name||'folder'}}`)
           : (pending.file_name||'file');
         const pRevTxt=(isNoc && pending.part_rev!==undefined)?(` [${{formatNocRevLabel(pending.part_rev)}}]`):'';
-        b.textContent='✓ Uploaded ('+pDesc+')'+pRevTxt+' — will link on Save';
+        b.textContent=window.t('form.uploaded_pending',{{desc:pDesc,rev:pRevTxt}});
         statusLine.appendChild(b);
         if(CAN_EDIT && !(opts&&opts.readonly)){{
           const clrBtn=document.createElement('button');
           clrBtn.type='button';
           clrBtn.style.cssText='padding:1px 6px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
           clrBtn.textContent='✕';
-          clrBtn.title='Cancel pending attachment';
+          clrBtn.title=window.t('form.cancel_pending');
           clrBtn.onclick=()=>{{
             delete state.pendingDriveAttachments[s.key];
             renderSlotInfo(cur[s.key],null);
@@ -18861,13 +18944,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(!vUrl){{
         const empty=document.createElement('span');
         empty.style.cssText='color:#64748b;font-style:italic';
-        empty.textContent=s.emptyText||(s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet');
+        empty.textContent=s.emptyText||(s.key==='approval'?window.t('form.slot_reply_empty'):window.t('form.slot_subm_empty'));
         statusLine.appendChild(empty);
         renderRevControls(null,null);
         syncUploadButtonLabel(null,null);
         return;
       }}
       const nameSpan=document.createElement('span');
+      nameSpan.className='bidi-ltr';
       nameSpan.style.cssText='font-weight:600;max-width:'+(isNoc?'110px':'190px')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       if(entry.is_folder || vUrl.includes('/folders/')){{
         const fCount=entry.file_count?` (${{entry.file_count}})`:'';
@@ -18886,7 +18970,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       vA.href=_recId?'#':vUrl;
       if(!_recId){{vA.target='_blank';vA.rel='noopener';}}
       vA.style.cssText=`padding:2px 5px;border-radius:4px;background:${{isDark?'#1e293b':'#fff'}};border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:9.5px;cursor:pointer;white-space:nowrap`;
-      vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'👁 Folder':'👁 View';
+      vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?window.t('form.view_folder_btn'):window.t('form.view_btn');
       vA.onclick=(ev)=>{{
         if(_recId){{ev.preventDefault();openDocViewer(_recId,_slotKey,{{label:s.title,rev:_curRev}});}}
         else logFileAction('DRIVE_LINK_CLICK',row?.docNo||row?.nocNo||'',vUrl);
@@ -18899,7 +18983,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         dA.href=_dlHref;
         if(!_recId){{dA.target='_blank';dA.rel='noopener';}}
         dA.style.cssText=`padding:2px 5px;border-radius:4px;background:${{isDark?'#1e293b':'#fff'}};border:1px solid ${{isDark?'#475569':'#64748b'}};color:${{isDark?'#cbd5e1':'#334155'}};text-decoration:none;font-weight:600;font-size:9.5px;white-space:nowrap`;
-        dA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'⬇ ZIP':'⬇ DL';
+        dA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?window.t('form.dl_zip_btn'):window.t('form.dl_btn');
         dA.onclick=()=>{{if(!_recId)logFileAction('FILE_DOWNLOAD',row?.docNo||row?.nocNo||'',_dlHref);}};
         statusLine.appendChild(dA);
       }}
@@ -18910,11 +18994,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         unBtn.style.cssText='padding:1px 5px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
         unBtn.textContent='✕';
         const hasHist=Array.isArray(entry.history)&&entry.history.length>0;
-        unBtn.title=hasHist?'Remove active revision (restores previous archived revision)':'Remove this attachment and move it to Google Drive Trash';
+        unBtn.title=hasHist?window.t('form.confirm_unlink_rev',{{slot:s.key,rev:formatNocRevLabel(_curRev)}}):window.t('form.confirm_unlink',{{slot:s.key}});
         unBtn.onclick=async()=>{{
           const msg=hasHist
-            ? 'Remove active '+s.key+' ('+formatNocRevLabel(_curRev)+') and move it to Drive Trash? The previous revision will be restored as active.'
-            : 'Remove this '+s.key+' attachment from the record and move the old file/folder to Google Drive Trash?';
+            ? window.t('form.confirm_unlink_rev',{{slot:s.key,rev:formatNocRevLabel(_curRev)}})
+            : window.t('form.confirm_unlink',{{slot:s.key}});
           if(!confirm(msg))return;
           unBtn.disabled=true;
           try{{
@@ -18930,10 +19014,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             if(flInp&&typeof j.fileLocation==='string')flInp.value=j.fileLocation;
             renderSlotInfo(cur[s.key],null);
             renderRows();
-            toast(cur[s.key]?'Active revision removed; previous revision restored ('+s.key+')':'Attachment removed and moved to Drive Trash ('+s.key+')','ok');
+            toast(cur[s.key]?window.t('form.unlinked_restored',{{slot:s.key}}):window.t('form.unlinked_trashed',{{slot:s.key}}),'ok');
           }}catch(e){{
             unBtn.disabled=false;
-            toast('Could not unlink attachment: '+(e.message||e),'er');
+            toast(window.t('form.unlink_failed',{{err:e.message||e}}),'er');
           }}
         }};
         statusLine.appendChild(unBtn);
@@ -18970,7 +19054,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const f=fileInp.files&&fileInp.files[0];
         if(!f)return;
         if(isIgnoredUploadJunkFile(f)){{
-          toast('Skipped OS/Office junk file: '+f.name,'wa');
+          toast(window.t('form.skipped_junk',{{name:f.name}}),'wa');
           fileInp.value='';
           return;
         }}
@@ -18978,7 +19062,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         progWrap.style.display='flex';
         progBarInner.style.width='0%';
         progTxt.style.color='#475569';
-        progTxt.textContent='Starting upload session...';
+        progTxt.textContent=window.t('form.starting_upload');
         state.activeDriveUploads=(state.activeDriveUploads||0)+1;
         const dirEl=formRoot.querySelector('#f-direction')||formRoot.querySelector('[name="direction"]');
         const formDir=(dirEl&&dirEl.value)?dirEl.value:(row?.direction||'');
@@ -18998,7 +19082,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           if(res&&res.pending){{
             state.pendingDriveAttachments[s.key]=res;
             renderSlotInfo(cur[s.key],res);
-            progTxt.textContent='✓ Uploaded 100% — click Save to finish';
+            progTxt.textContent=window.t('form.uploaded_click_save');
           }}else if(res&&res.attachment){{
             cur[s.key]=res.attachment;
             if(row){{
@@ -19013,9 +19097,9 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const flInp=document.getElementById('f-fileLocation');
             if(flInp&&!flInp.value.trim()&&res.attachment.url)flInp.value=res.attachment.url;
             renderSlotInfo(res.attachment,null);
-            progTxt.textContent='✓ Attached & saved';
+            progTxt.textContent=window.t('form.attached_saved');
             renderRows();
-            toast('File uploaded and linked ('+s.key+')','ok');
+            toast(window.t('form.file_uploaded_linked',{{slot:s.key}}),'ok');
           }}
         }}catch(e){{
           progTxt.style.color='#dc2626';
@@ -19023,8 +19107,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
             ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
             : (e.message || e);
-          progTxt.textContent='✕ Upload failed: ' + friendly;
-          toast('Upload failed: ' + friendly, 'er');
+          progTxt.textContent=window.t('form.upload_failed',{{err:friendly}});
+          toast(window.t('form.upload_failed_toast',{{err:friendly}}), 'er');
         }}finally{{
           state.activeDriveUploads=Math.max(0,(state.activeDriveUploads||1)-1);
           upBtn.disabled=false;
@@ -19038,8 +19122,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       fldBtn.type='button';
       fldBtn.className='btn btn-sc btn-sm';
       fldBtn.style.cssText=`font-size:${{isNoc?'10px':'11px'}};padding:${{isNoc?'3px 5px':'4px 8px'}};border-color:#0f766e;color:${{isDark?'#2dd4bf':'#0f766e'}};background:${{isDark?'#1e293b':'#fff'}};white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
-      fldBtn.textContent=isNoc?'📁 Folder':'📁 Upload Folder';
-      fldBtn.title='Upload an uncompressed folder of files for this document';
+      fldBtn.textContent=isNoc?window.t('noc.btn_folder'):window.t('form.upload_folder');
+      fldBtn.title=window.t('form.upload_folder_title');
       fldBtn.onclick=()=>folderInp.click();
 
       progWrap.style.cssText='width:100%;display:none;flex-direction:column;gap:5px;background:#f8fafc;padding:8px 10px;border-radius:6px;border:1px solid #cbd5e1;box-sizing:border-box;margin-top:4px';
@@ -19484,9 +19568,11 @@ function updateBatchControlsState(){{
   const sumEl=document.getElementById('batch-drv-summary');
   if(sumEl){{
     if(!q.length){{
-      sumEl.textContent='Files or folders are matched to records automatically by Document No.';
+      sumEl.textContent=window.t('drive.batch_summary_empty');
     }}else{{
-      sumEl.textContent=`Queued ${{q.length}} item(s) — ${{matched}} matched (${{done}} done, ${{pending}} pending${{err?`, ${{err}} failed`:''}}${{cancelled?`, ${{cancelled}} cancelled`:''}}).`;
+      const errTxt=err?`, ${{err}} failed`:'';
+      const canTxt=cancelled?`, ${{cancelled}} cancelled`:'';
+      sumEl.textContent=window.t('drive.batch_summary_counts',{{total:q.length,matched,done,pending,err:errTxt,cancelled:canTxt}});
     }}
   }}
 
@@ -19494,16 +19580,16 @@ function updateBatchControlsState(){{
   if(stBtn){{
     if(state.batchRunning){{
       stBtn.disabled=true;
-      stBtn.textContent='⏳ Uploading in progress...';
+      stBtn.textContent=window.t('drive.batch_uploading');
     }}else if(pending>0){{
       stBtn.disabled=false;
-      stBtn.textContent=(done>0)?`🚀 Upload Remaining (${{pending}} item${{pending>1?'s':''}})`:'🚀 Start Sequential Upload';
+      stBtn.textContent=(done>0)?window.t('drive.batch_upload_rem',{{count:pending}}):window.t('drive.batch_start');
     }}else if(done>0&&done===matched&&matched>0){{
       stBtn.disabled=true;
-      stBtn.textContent='✓ All Done';
+      stBtn.textContent=window.t('drive.batch_all_done');
     }}else{{
       stBtn.disabled=true;
-      stBtn.textContent='🚀 Start Sequential Upload';
+      stBtn.textContent=window.t('drive.batch_start');
     }}
   }}
 }}
@@ -19519,11 +19605,11 @@ function updateBatchOverallProgress(){{
   const pct=Math.min(100,Math.round((done/total)*100));
   if(ovBar)ovBar.style.width=pct+'%';
   if(ovPct)ovPct.textContent=pct+'%';
-  if(ovTxt)ovTxt.textContent=`Completed ${{done}} of ${{total}} item(s)`;
+  if(ovTxt)ovTxt.textContent=window.t('drive.batch_completed_n',{{done,total}});
 }}
 
 function openBatchDriveUpload(){{
-  if(!CAN_EDIT){{toast('Edit permission required','wa');return;}}
+  if(!CAN_EDIT){{toast(window.t('form.err_view_only'),'wa');return;}}
   state.batchQueue=[];
   state.batchRunning=false;
   state.batchCancel=false;
@@ -19535,8 +19621,8 @@ function openBatchDriveUpload(){{
   const isEng=tabHasReplyCycle()||isHseCo||isNoc;
   const subSpan=document.querySelector('#batch-slot-card-submission span');
   const appSpan=document.querySelector('#batch-slot-card-approval span');
-  if(subSpan)subSpan.textContent=isHseCo?'📤 1. Submission Documents':'📤 Submission Files (ملفات التقديم الأصلي)';
-  if(appSpan)appSpan.textContent=isHseCo?'📋 2. Close-Out Documents':'📋 Consultant Replies (ردود الاستشاري)';
+  if(subSpan)subSpan.textContent=isHseCo?window.t('drive.batch_slot_hse_subm'):window.t('drive.batch_slot_subm');
+  if(appSpan)appSpan.textContent=isHseCo?window.t('drive.batch_slot_hse_co'):window.t('drive.batch_slot_reply');
   const slotWrap=document.getElementById('batch-drv-slot-wrap');
   if(slotWrap)slotWrap.style.display=isEng?'flex':'none';
   const dualCards=document.getElementById('batch-drv-slot-cards-dual');
@@ -19567,7 +19653,7 @@ function openBatchDriveUpload(){{
 
 function closeBatchDriveUpload(){{
   if(state.batchRunning){{
-    if(!confirm('Uploads are currently in progress. Stop the queue and close?'))return;
+    if(!confirm(window.t('drive.batch_confirm_close')))return;
     state.batchCancel=true;
     if(state.batchCurrentAbort)try{{state.batchCurrentAbort.abort();}}catch(_e){{}}
   }}
@@ -19616,7 +19702,7 @@ function onBatchFilesSelected(fileList){{
     recordId:extractDocNoFromFilename(file.name,recs),
     status:'ready',
     pct:0,
-    msg:'Ready'
+    msg:window.t('drive.batch_ready')
   }}));
   state.batchQueue = [...curQ, ...newItems];
   renderBatchDriveTable();
@@ -19657,7 +19743,7 @@ function onBatchFolderSelected(fileList){{
       recordId:recId,
       status:'ready',
       pct:0,
-      msg:`Ready (${{files.length}} files)`
+      msg:window.t('drive.batch_ready_files',{{count:files.length}})
     }};
   }});
   state.batchQueue = [...curQ, ...newItems];
@@ -19671,7 +19757,7 @@ function renderBatchDriveTable(){{
   if(!tbody)return;
   const q=state.batchQueue||[];
   if(!q.length){{
-    tbody.innerHTML='<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" or "Select Folder" above to queue items.</td></tr>';
+    tbody.innerHTML=`<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">${{escHtml(window.t('drive.batch_empty_tbl'))}}</td></tr>`;
     return;
   }}
   const recs=state.recs||[];
@@ -19680,9 +19766,9 @@ function renderBatchDriveTable(){{
     const tr=document.createElement('tr');
     tr.id='batch-drv-tr-'+item.id;
     tr.style.borderBottom='1px solid var(--bd)';
-    const tdIdx=document.createElement('td');tdIdx.style.padding='6px 8px';tdIdx.textContent=String(i+1);
-    const tdName=document.createElement('td');tdName.style.cssText='padding:6px 8px;font-weight:600;word-break:break-all';tdName.textContent=item.file.name;
-    const tdSize=document.createElement('td');tdSize.style.cssText='padding:6px 8px;color:var(--mu);white-space:nowrap';tdSize.textContent=_fmtBytes(item.file.size);
+    const tdIdx=document.createElement('td');tdIdx.className='bidi-ltr';tdIdx.style.padding='6px 8px';tdIdx.textContent=String(i+1);
+    const tdName=document.createElement('td');tdName.className='bidi-ltr';tdName.style.cssText='padding:6px 8px;font-weight:600;word-break:break-all';tdName.textContent=item.file.name;
+    const tdSize=document.createElement('td');tdSize.className='bidi-ltr';tdSize.style.cssText='padding:6px 8px;color:var(--mu);white-space:nowrap';tdSize.textContent=_fmtBytes(item.file.size);
 
     const tdRec=document.createElement('td');tdRec.style.padding='6px 8px';
     const recWrap=document.createElement('div');
@@ -19693,7 +19779,7 @@ function renderBatchDriveTable(){{
     inp.setAttribute('list','batch-drv-datalist');
     inp.setAttribute('autocomplete','off');
     inp.style.cssText='width:100%;padding:4px 22px 4px 6px;font-size:11px;border-radius:4px;outline:none;transition:all .15s;border:1px solid '+(item.recordId?'#16a34a':'#f59e0b')+';background:'+(item.recordId?'#f0fdf4':'#fff');
-    inp.placeholder='🔍 Search Doc No or Title...';
+    inp.placeholder=window.t('drive.batch_search_ph');
     // CRITICAL: Only disable input for the active uploading item or finished items!
     // Waiting, error, or cancelled items REMAIN FULLY EDITABLE even when queue is running!
     inp.disabled=(item.status==='uploading'||item.status==='done');
@@ -19872,20 +19958,20 @@ function stopBatchDriveUpload(){{
   state.batchCancel=true;
   if(state.batchCurrentAbort)try{{state.batchCurrentAbort.abort();}}catch(_e){{}}
   const spBtn=document.getElementById('batch-drv-stop-btn');
-  if(spBtn){{spBtn.disabled=true;spBtn.textContent='Stopping queue...';}}
+  if(spBtn){{spBtn.disabled=true;spBtn.textContent=window.t('drive.batch_stopping');}}
 }}
 
 async function startBatchDriveUpload(){{
   if(state.batchRunning)return;
   const q=(state.batchQueue||[]).filter(it=>it.recordId&&it.status!=='done');
-  if(!q.length){{toast('Please match at least one file to a record first.','wa');return;}}
+  if(!q.length){{toast(window.t('drive.batch_match_first'),'wa');return;}}
 
   // Reset any cancelled or failed items with records back to 'ready'
   (state.batchQueue||[]).forEach(it=>{{
     if(it.recordId&&it.status!=='done'){{
       it.status='ready';
       it.pct=0;
-      it.msg='Ready';
+      it.msg=window.t('drive.batch_ready');
       const cell=document.getElementById('batch-drv-st-'+it.id);
       if(cell)updateBatchRowStatusCell(cell,it);
       const actCell=document.getElementById('batch-drv-act-'+it.id);
@@ -19897,9 +19983,9 @@ async function startBatchDriveUpload(){{
   state.batchCancel=false;
   const slot=state.batchSlot||'submission';
   const stBtn=document.getElementById('batch-drv-start-btn');
-  if(stBtn){{stBtn.disabled=true;stBtn.textContent='⏳ Uploading in progress...';}}
+  if(stBtn){{stBtn.disabled=true;stBtn.textContent=window.t('drive.batch_uploading');}}
   const spBtn=document.getElementById('batch-drv-stop-btn');
-  if(spBtn){{spBtn.classList.remove('hidden');spBtn.disabled=false;spBtn.textContent='⏹ Stop Queue';}}
+  if(spBtn){{spBtn.classList.remove('hidden');spBtn.disabled=false;spBtn.textContent=window.t('drive.batch_stop');}}
   const ov=document.getElementById('batch-drv-overall');
   if(ov)ov.style.display='flex';
   updateBatchOverallProgress();
@@ -20028,16 +20114,16 @@ async function startBatchDriveUpload(){{
     updateBatchControlsState();
     renderRows();
     if(newlyDone>0){{
-      toast(`Batch upload completed (${{newlyDone}} linked)`,'ok');
+      toast(window.t('drive.batch_done_toast',{{count:newlyDone}}),'ok');
     }}else if(state.batchCancel){{
-      toast('Upload queue stopped','wa');
+      toast(window.t('drive.batch_stopped_toast'),'wa');
     }}
   }}
 }}
 
 async function saveRecord(){{
-  if(!CAN_EDIT){{toast('You have view-only permissions.', 'wa');return;}}
-  if(state.activeDriveUploads>0){{toast('Please wait for the active file upload to finish.','wa');return;}}
+  if(!CAN_EDIT){{toast(window.t('form.err_view_only'), 'wa');return;}}
+  if(state.activeDriveUploads>0){{toast(window.t('form.err_upload_active'),'wa');return;}}
   if(state.savingRecord)return;
   state.savingRecord=true;setRecordSaveState(true);
   try{{
@@ -20068,23 +20154,23 @@ async function saveRecord(){{
     const issued=String(getLTRValue(data,allCols,'issuedDate')||'').trim();
     const received=String(getLTRValue(data,allCols,'receivedDate')||'').trim();
     const parentId=String(getLTRValue(data,allCols,'parentLetterId')||'').trim();
-    if(direction==='sent'&&!issued){{toast('Issue Date is required for Sent letters','er');releaseRecordSave();return;}}
-    if(direction==='received'&&!received){{toast('Received Date is required for Received letters','er');releaseRecordSave();return;}}
-    if(state.editId&&parentId&&parentId===state.editId){{toast('A letter cannot reference itself as parent','er');releaseRecordSave();return;}}
+    if(direction==='sent'&&!issued){{toast(window.t('ltr.err_sent_date'),'er');releaseRecordSave();return;}}
+    if(direction==='received'&&!received){{toast(window.t('ltr.err_received_date'),'er');releaseRecordSave();return;}}
+    if(state.editId&&parentId&&parentId===state.editId){{toast(window.t('ltr.err_self_parent'),'er');releaseRecordSave();return;}}
   }}
   if(isNOCTab()&&!String(data.voBaseValue||'').trim()&&String(data.voValueWithSIAndVAT||'').trim()){{
     const autoBase=getNocAutoBaseValue(data);
     if(autoBase)data.voBaseValue=autoBase;
   }}
-  if(!data.docNo){{toast('Document No. required','er');releaseRecordSave();return;}}
+  if(!data.docNo){{toast(window.t('form.err_doc_no_required'),'er');releaseRecordSave();return;}}
   for(const [k,v] of Object.entries(data)){{
     if(typeof v==='string' && /\\[object Object\\]/i.test(v)){{
-      toast('Invalid "[object Object]" value detected in field "'+k+'". Please refresh or re-enter items before saving.','er');
+      toast(window.t('form.err_invalid_obj',{{field:k}}),'er');
       releaseRecordSave();
       return;
     }}
     if(Array.isArray(v) && v.some(it=>it&&typeof it==='object'&&Object.values(it).some(x=>typeof x==='string'&&/\\[object Object\\]/i.test(x)))){{
-      toast('Invalid "[object Object]" value detected in structured list "'+k+'". Please correct it before saving.','er');
+      toast(window.t('form.err_invalid_list',{{field:k}}),'er');
       releaseRecordSave();
       return;
     }}
@@ -20092,11 +20178,11 @@ async function saveRecord(){{
     // Duration is computed server-side automatically
   let valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
   if(valErr&&valErr.startsWith('GAP')){{
-    const ok=confirm('Sequence gap detected: '+valErr.replace('GAP:','')+'. Continue anyway?');
+    const ok=confirm(window.t('form.confirm_seq_gap',{{gap:valErr.replace('GAP:','')}}));
     if(!ok){{releaseRecordSave();return;}}
     valErr=null;
   }}
-  if(valErr){{toast('Validation error: '+valErr,'er');releaseRecordSave();return;}}
+  if(valErr){{toast(window.t('form.err_validation',{{err:valErr}}),'er');releaseRecordSave();return;}}
   if(state.editId)data._id=state.editId;
   const r=await apiFetch('/api/records/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify(data)}});
   if(r&&r.ok){{
@@ -20108,26 +20194,26 @@ async function saveRecord(){{
       try{{
         const prRes=await apiFetch('/api/pr_items/'+recId,{{method:'POST',body:JSON.stringify({{items}})}});
         if(prRes&&prRes.ok)state.prItemsCache[recId]=items;
-        else {{toast('Items save failed','er');releaseRecordSave();return;}}
+        else {{toast(window.t('pr.items_save_failed'),'er');releaseRecordSave();return;}}
       }}catch(e){{
-        toast('Items save failed: '+e.message,'er');releaseRecordSave();return;
+        toast(window.t('pr.items_save_failed_err',{{err:e.message}}),'er');releaseRecordSave();return;
       }}
     }}
     if(wasRevisionDraft)clearSel();
     state.revisionDraftActive=false;
-    closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');releaseRecordSave();
+    closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?window.t('form.updated'):window.t('form.added'),'ok');releaseRecordSave();
   }}
-  else {{toast('Error saving','er');releaseRecordSave();}}
+  else {{toast(window.t('form.err_save'),'er');releaseRecordSave();}}
   }}catch(e){{
-    toast('Error saving: '+e.message,'er');
+    toast(window.t('form.err_save_detail',{{err:e.message}}),'er');
     releaseRecordSave();
   }}
 }}
 
 async function delRec(id){{
-  if(!confirm('Delete this record?'))return;
+  if(!confirm(window.t('form.confirm_delete')))return;
   await apiFetch('/api/records/'+id,{{method:'DELETE'}});
-  await loadRecords();await refreshCounts();toast('Deleted','wa');
+  await loadRecords();await refreshCounts();toast(window.t('form.deleted'),'wa');
 }}
 
 // Bulk

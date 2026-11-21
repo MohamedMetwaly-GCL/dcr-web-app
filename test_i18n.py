@@ -548,5 +548,80 @@ class TestPhase2B1RegisterGridAndSettings(unittest.TestCase):
             self.assertIn("window.tDt", html_ar)
 
 
+class TestPhase2B2RegisterModalsAndViewers(unittest.TestCase):
+    def test_phase2b2_dictionary_namespaces_and_client_exposure(self):
+        en = i18n.TRANSLATIONS["en"]
+        ar = i18n.TRANSLATIONS["ar"]
+        for prefix in ("form.", "noc.", "ltr.", "pr.", "hse_form.", "drive."):
+            en_keys = {k for k in en if k.startswith(prefix)}
+            ar_keys = {k for k in ar if k.startswith(prefix)}
+            self.assertTrue(len(en_keys) > 0, f"Missing {prefix} keys")
+            self.assertEqual(en_keys, ar_keys, f"Parity mismatch for {prefix}")
+        client_ar = i18n.get_client_dict("ar")
+        self.assertIn("form.add_title", client_ar)
+        self.assertIn("noc.part_a_title", client_ar)
+        self.assertIn("ltr.dir_sent", client_ar)
+        self.assertIn("pr.badge_pending_po", client_ar)
+        self.assertIn("hse_form.region_head_face", client_ar)
+        self.assertIn("drive.dv_fullscreen", client_ar)
+
+    def test_register_modals_and_viewers_en_ar_rtl_and_canonical_values(self):
+        import html_render
+        user = {"id": "u1", "username": "testuser", "name": "Test User", "role": "admin", "workspace": "ENG"}
+        proj = {"id": "p1", "code": "PRJ-01", "name": "Test Project", "workspace_id": "ENG", "drive_folder_id": "fld1", "status_colors": {}}
+        dts = [{"id": "SD", "code": "SD", "name": "Shop Drawings", "visible": True}]
+        with patch("html_render.can_edit", return_value=True), \
+             patch("html_render.is_project_admin", return_value=True), \
+             patch("html_render.get_allowed_doc_type_filter", return_value=None), \
+             patch("db.can_user_download", return_value=True), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.get_doc_types", return_value=dts), \
+             patch("db.get_logo", return_value=None), \
+             patch("db.get_user_workspaces", return_value=[{"id": "ENG", "code": "ENG", "name": "Engineering & Projects", "name_ar": "المشروعات الهندسية", "icon": "🏗️"}]):
+            html_en = html_render.render_register(user, proj, active_ws_id="ENG", lang="en")
+            self.assertIn('<span id="rec-title">Add Document</span>', html_en)
+            self.assertIn("Batch Upload Files to Google Drive", html_en)
+            self.assertIn("Batch Extinguisher / Equipment Inspection", html_en)
+
+            html_ar = html_render.render_register(user, proj, active_ws_id="ENG", lang="ar")
+            # Record Add/Edit, Thread & Timeline modals
+            self.assertIn('<span id="rec-title">إضافة مستند</span>', html_ar)
+            self.assertIn('<span id="thread-title">سلسلة المراسلات</span>', html_ar)
+            self.assertIn('<span id="timeline-title">الجدول الزمني للمراسلات</span>', html_ar)
+
+            # Batch Drive Upload & HSE FEI Batch Inspect modals
+            self.assertIn("☁ الرفع الجماعي للملفات إلى Google Drive", html_ar)
+            self.assertIn("مجلد Drive المستهدف:", html_ar)
+            self.assertIn("Part A: إشعار التغيير", html_ar)
+            self.assertIn("🧯 الفحص الجماعي للطفايات / المعدات (FEI)", html_ar)
+            # Canonical English <option value="..."> preserved with Arabic display text
+            self.assertIn('<option value="Valid">ساري</option>', html_ar)
+            self.assertIn('<option value="Needs Maintenance">يحتاج صيانة</option>', html_ar)
+            self.assertIn('<option value="Under Refill">قيد إعادة التعبئة</option>', html_ar)
+
+            # In-App Drive Viewer
+            self.assertIn("⛶ ملء الشاشة", html_ar)
+            self.assertIn("📁 الملفات", html_ar)
+            self.assertIn("👁️ معاينة", html_ar)
+            self.assertIn('placeholder="🔍 ابحث عن ملفات في المجلد..."', html_ar)
+
+            # Mandatory RTL CSS & JS fixes for .letter-flow and #doc-viewer-modal
+            self.assertIn('html[dir="rtl"] .letter-flow{padding-left:0;padding-right:10px}', html_ar)
+            self.assertIn('html[dir="rtl"] .letter-flow-line{left:auto;right:13px}', html_ar)
+            self.assertIn('html[dir="rtl"] .letter-node{padding-left:0;padding-right:30px}', html_ar)
+            self.assertIn('html[dir="rtl"] .letter-dot{left:auto;right:8px}', html_ar)
+            self.assertIn('html[dir="rtl"] .letter-card{border-left:1px solid #d7e0e6;border-right:4px solid #d7e0e6}', html_ar)
+            self.assertIn("isRtl?`margin-right:${margin}px`:`margin-left:${margin}px`", html_ar)
+            self.assertIn('html[dir="rtl"] #dv-side { border-right: none !important; border-left: 1px solid var(--bd) !important; }', html_ar)
+
+            # BiDi isolation & canonical body-map preservation
+            self.assertIn('id="batch-drv-target-path-txt" class="bidi-ltr"', html_ar)
+            self.assertIn('class="letter-card-ref bidi-ltr"', html_ar)
+            self.assertIn('class="letter-date-badge bidi-ltr"', html_ar)
+            self.assertIn('class="pri-qty bidi-ltr"', html_ar)
+            self.assertIn("setDynamicFieldValue('bodyPart', meta.label);", html_ar)
+            self.assertIn("if(regEl) regEl.value = meta.id;", html_ar)
+
+
 if __name__ == "__main__":
     unittest.main()
