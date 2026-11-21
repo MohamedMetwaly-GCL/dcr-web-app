@@ -341,5 +341,105 @@ class TestPhase1BSharedOverlays(unittest.TestCase):
             self.assertIn("إدارة المستخدمين وصلاحيات الوصول", reg_ar)
 
 
+class TestPhase2AWorkspaceDashboards(unittest.TestCase):
+    """Verify I18N-02A localization, BiDi/RTL CSS/JS hooks, and Chart.js RTL config for ENG, O&M/Dynamic, and HSE dashboards."""
+
+    def test_display_helpers_preserve_abbreviations_and_canonical_en(self):
+        self.assertEqual(i18n.t_status("Approved", "en"), "Approved")
+        self.assertEqual(i18n.t_status("Approved", "ar"), "معتمد")
+        self.assertEqual(i18n.t_status("Under Review", "ar"), "قيد المراجعة")
+        self.assertEqual(i18n.t_status("CustomStatus", "ar"), "CustomStatus")
+
+        self.assertEqual(i18n.t_dt("NOC", "No Objection Certificates", "en"), "No Objection Certificates")
+        self.assertEqual(i18n.t_dt("NOC", "No Objection Certificates", "ar"), "طلبات عدم الممانعة (NOC)")
+        self.assertEqual(i18n.t_dt("RFI", "Requests for Information", "ar"), "طلبات المعلومات (RFI)")
+        self.assertEqual(i18n.t_dt("VO", "Variation Orders", "ar"), "أوامر التغيير (VO)")
+        self.assertEqual(i18n.t_dt("PR", "Purchase Requisitions", "ar"), "طلبات الشراء (PR)")
+        self.assertEqual(i18n.t_dt("PTW", "Permit to Work", "ar"), "تصاريح العمل (PTW)")
+
+        client_ar = i18n.get_client_dict("ar")
+        for key in ("dash.kpi_total_submittals", "om.kpi_contracts", "hse.kpi_ltif", "dt_name.NOC", "status.approved"):
+            self.assertIn(key, client_ar)
+
+    def test_eng_dashboard_en_and_ar_rtl_hooks(self):
+        user = {"username": "super_admin", "role": "superadmin"}
+        proj = {"id": "24CP01", "code": "CP01", "name": "Alpha Plant", "workspace_id": "ENG"}
+        mock_ws = [{"id": "ENG", "code": "ENG", "name": "Engineering & Projects", "name_ar": "المشروعات الهندسية", "icon": "🏗️"}]
+        with patch("db.get_user_workspaces", return_value=mock_ws), \
+             patch("db.get_projects_for_user", return_value=[proj]):
+            html_en = html_render.render_dashboard(user, active_ws_id="ENG", lang="en")
+            self.assertIn('<html lang="en" dir="ltr">', html_en)
+            self.assertIn("Submittals KPI Summary", html_en)
+            self.assertIn("PR Analytics", html_en)
+
+            html_ar = html_render.render_dashboard(user, active_ws_id="ENG", lang="ar")
+            self.assertIn('<html lang="ar" dir="rtl">', html_ar)
+            self.assertIn("مؤشرات أداء الاعتمادات (KPIs)", html_ar)
+            self.assertIn("تحليلات طلبات الشراء (PR)", html_ar)
+            self.assertIn("نظرة عامة على الخطابات (LTR)", html_ar)
+            self.assertIn("سجل التدقيق", html_ar)
+            # RTL sticky first column, accent borders, and audit column resizer hooks
+            self.assertIn('html[dir="rtl"] .dt-tbl th:first-child', html_ar)
+            self.assertIn("right:0", html_ar)
+            self.assertIn('html[dir="rtl"] #aud-tbl th .aud-rz', html_ar)
+            self.assertIn("document.documentElement.dir==='rtl'", html_ar)
+            self.assertIn('html[dir="rtl"] .pr-total', html_ar)
+            self.assertIn('html[dir="rtl"] .ltr-summary-card', html_ar)
+            # Chart.js RTL config & prValueLabels RTL support
+            self.assertIn("rtl:isRtl,textDirection:isRtl?'rtl':'ltr'", html_ar)
+            self.assertIn("prValueLabels", html_ar)
+            # BiDi isolation on KPIs and inputs
+            self.assertIn('class="kval bidi-ltr" id="kpi-total"', html_ar)
+            self.assertIn('id="digest-date" class="bidi-ltr"', html_ar)
+
+    def test_om_and_dynamic_dashboard_en_and_ar(self):
+        user = {"username": "om_admin", "role": "admin"}
+        proj = {"id": "OM-01", "code": "OM01", "name": "CFC Facility", "workspace_id": "OM", "data": {"client": "Al-Futtaim"}}
+        ws_om = {"id": "OM", "code": "OM", "name": "Operation & Maintenance (O&M)", "name_ar": "الصيانة والتشغيل", "icon": "⚙️"}
+        with patch("db.get_user_workspaces", return_value=[ws_om]), \
+             patch("db.get_workspace", return_value=ws_om), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.q", return_value=[]), \
+             patch("db.get_overdue_records", return_value=[]):
+            html_en = html_render.render_dashboard(user, active_ws_id="OM", lang="en")
+            self.assertIn('<html lang="en" dir="ltr">', html_en)
+            self.assertIn("Total Facilities & Contracts", html_en)
+
+            html_ar = html_render.render_dashboard(user, active_ws_id="OM", lang="ar")
+            self.assertIn('<html lang="ar" dir="rtl">', html_ar)
+            self.assertIn("الصيانة والتشغيل", html_ar)
+            self.assertIn("إجمالي المنشآت والعقود", html_ar)
+            self.assertIn("فتح السجل", html_ar)
+            self.assertIn('class="om-code-badge bidi-ltr"', html_ar)
+            self.assertIn('<span class="rtl-flip">➔</span>', html_ar)
+            self.assertIn('html[dir="rtl"] .om-header-bar', html_ar)
+
+    def test_hse_dashboard_en_and_ar_rtl_and_charts(self):
+        user = {"username": "hse_admin", "role": "admin"}
+        proj = {"id": "HSE-01", "code": "HSE01", "name": "Main Plant HSE", "workspace_id": "HSE", "data": {"client": "GasChill"}}
+        ws_hse = {"id": "HSE", "code": "HSE", "name": "Health, Safety & Environment", "name_ar": "الصحة والسلامة والبيئة", "icon": "🛡️"}
+        with patch("db.get_user_workspaces", return_value=[ws_hse]), \
+             patch("db.get_workspace", return_value=ws_hse), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("hse_analytics.get_scoped_hse_analytics", side_effect=RuntimeError("mocked")):
+            html_en = html_render.render_dashboard(user, active_ws_id="HSE", lang="en")
+            self.assertIn('<html lang="en" dir="ltr">', html_en)
+            self.assertIn("Executive Command Center", html_en)
+            self.assertIn("LTIF (per 1M Man-Hours)", html_en)
+
+            html_ar = html_render.render_dashboard(user, active_ws_id="HSE", lang="ar")
+            self.assertIn('<html lang="ar" dir="rtl">', html_ar)
+            self.assertIn("الصحة والسلامة والبيئة", html_ar)
+            self.assertIn("مركز القيادة التنفيذي (HSE)", html_ar)
+            self.assertIn("LTIF", html_ar)
+            self.assertIn("TRIR", html_ar)
+            self.assertIn("PTW", html_ar)
+            self.assertIn('html[dir="rtl"] .hse-header-bar', html_ar)
+            self.assertIn('html[dir="rtl"] .hse-alert-item', html_ar)
+            self.assertIn("rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr'", html_ar)
+            self.assertIn('class="om-code-badge bidi-ltr"', html_ar)
+            self.assertIn('<span class="rtl-flip">➔</span>', html_ar)
+
+
 if __name__ == "__main__":
     unittest.main()

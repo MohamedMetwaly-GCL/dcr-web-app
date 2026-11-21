@@ -33,6 +33,8 @@ from i18n import (
     is_rtl,
     html_dir,
     t,
+    t_status,
+    t_dt,
     get_client_i18n_json,
     translate_workspace_meta,
 )
@@ -7136,15 +7138,11 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
             "id": active_ws, "code": active_ws, "name": "Operation & Maintenance (O&M)" if active_ws == "OM" else f"{active_ws} Department",
             "icon": "⚙️" if active_ws == "OM" else "📁", "name_ar": "الصيانة والتشغيل" if active_ws == "OM" else ""
         }
-    ws_name = ws_obj.get("name") or "Operation & Maintenance (O&M)"
+    ws_meta = translate_workspace_meta(ws_obj, norm)
+    ws_name = ws_meta["name"] or ws_obj.get("name") or "Operation & Maintenance (O&M)"
     ws_icon = ws_obj.get("icon") or "⚙️"
     ws_code = ws_obj.get("code") or active_ws
-    ws_name_ar = ws_obj.get("name_ar") or ""
-    raw_ws_desc = ws_obj.get("description")
-    if raw_ws_desc is not None:
-        ws_desc = str(raw_ws_desc).strip()
-    else:
-        ws_desc = ws_name_ar or ("Facilities & Maintenance Contracts" if active_ws == "OM" else "")
+    ws_desc = ws_meta["desc"] or ""
 
     # Calculate Universal Dynamic KPIs
     total_contracts = len(accessible_projs)
@@ -7237,12 +7235,22 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
         except Exception:
             overdue_records = 0
 
+    is_om = (active_ws == "OM")
+    add_btn_lbl = t("om.add_contract", norm) if is_om else t("om.add_project", norm)
+    empty_btn_lbl = t("om.empty_add_contract", norm) if is_om else t("om.empty_add_project", norm)
+    empty_icon = "⚙️" if is_om else ws_icon
+    empty_title = t("om.empty_title_om", norm) if is_om else t("om.empty_title_ws", norm, ws_name=ws_name)
+    empty_sub = t("om.empty_sub_om", norm) if is_om else t("om.empty_sub_ws", norm, ws_name=ws_name)
+    kpi_contracts_lbl = t("om.kpi_contracts", norm) if is_om else t("om.kpi_projects", norm)
+    kpi_records_lbl = t("om.kpi_work_orders", norm) if is_om else t("om.kpi_records", norm)
+    breakdown_lbl = t("om.sec_registers_om", norm) if is_om else t("om.sec_registers_ws", norm)
+
     dt_cards_html = ""
     for dt in doc_types_breakdown:
         if not isinstance(dt, dict):
             continue
         dt_c = dt.get("code") or dt.get("name") or "DOC"
-        dt_n = dt.get("name") or dt_c
+        dt_n = t_dt(dt_c, dt.get("name") or dt_c, norm)
         cnt = dt.get("count") or 0
         cmp = dt.get("completed") or 0
         pct = round((cmp / cnt) * 100) if cnt else 0
@@ -7250,39 +7258,25 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
         <div style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
           <div>
             <div style="display:flex;align-items:center;gap:6px;">
-              <span class="badge" style="background:rgba(0,180,166,0.12);color:var(--brand-teal);font-weight:700;font-size:11px;font-family:monospace;">{dt_c}</span>
+              <span class="badge bidi-ltr" style="background:rgba(0,180,166,0.12);color:var(--brand-teal);font-weight:700;font-size:11px;font-family:monospace;">{dt_c}</span>
               <span style="font-weight:600;font-size:12px;color:var(--tx);">{dt_n}</span>
             </div>
-            <div style="font-size:10px;color:var(--mu);margin-top:2px;">{cmp} of {cnt} completed ({pct}%)</div>
+            <div style="font-size:10px;color:var(--mu);margin-top:2px;">{t("om.reg_completed_pct", norm, cmp=cmp, cnt=cnt, pct=pct)}</div>
           </div>
-          <div style="font-size:16px;font-weight:800;color:var(--tx);font-family:monospace;">{cnt}</div>
+          <div class="bidi-ltr" style="font-size:16px;font-weight:800;color:var(--tx);font-family:monospace;">{cnt}</div>
         </div>
         '''
 
     doc_breakdown_section = f'''
     <div style="margin-bottom:20px;">
       <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
-        <span>📄</span><span>Active Document Registers & Submittals</span>
+        <span>📄</span><span>{breakdown_lbl}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;">
         {dt_cards_html}
       </div>
     </div>
     ''' if dt_cards_html else ""
-
-    is_om = (active_ws == "OM")
-    add_btn_lbl = "➕ New Contract / Facility" if is_om else "➕ New Project / Register"
-    empty_btn_lbl = "➕ Register First Contract / Facility" if is_om else "➕ Register First Project / Register"
-    empty_icon = "⚙️" if is_om else ws_icon
-    empty_title = "No Maintenance Contracts Registered Yet" if is_om else f"No Projects or Registers Registered Yet in {ws_name}"
-    empty_sub = (
-        "Register your first client facility or maintenance contract to start logging Work Orders, PPM schedules, and SLA reports."
-        if is_om else
-        f"Register your first project, contract, or register in {ws_name} to start logging documents and tracking records."
-    )
-    kpi_contracts_lbl = "Total Facilities & Contracts" if is_om else "Total Projects & Registers"
-    kpi_records_lbl = "Total Work Orders & Records" if is_om else "Total Registered Records"
-    breakdown_lbl = "Active Document Registers & Submittals" if is_om else "Configured Registers & Document Types"
 
     # Render Contract Cards
     empty_add_btn = (
@@ -7297,7 +7291,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     ) if can_manage else ""
 
     audit_btn = (
-        '<button class="tbtn" onclick="showOmTab(&#39;audit&#39;, this)">📜 Audit Log</button>'
+        f'<button class="tbtn" onclick="showOmTab(&#39;audit&#39;, this)">{t("om.tab_audit", norm)}</button>'
     ) if can_manage else ""
 
     cards_html = ""
@@ -7310,18 +7304,18 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
             try: p_data = json.loads(p_data)
             except Exception: p_data = {}
         client = p_data.get("client", "—")
-        del_btn = f'<button type="button" class="pcard-btn pcard-del" title="Delete Contract" onclick="event.preventDefault();event.stopPropagation();delProject(&#39;{p_id}&#39;,&#39;{p_name}&#39;)">🗑️</button>' if can_manage else ''
+        del_btn = f'<button type="button" class="pcard-btn pcard-del" title="{t("om.del_contract_title", norm)}" onclick="event.preventDefault();event.stopPropagation();delProject(&#39;{p_id}&#39;,&#39;{p_name}&#39;)">🗑️</button>' if can_manage else ''
         
         cards_html += f'''
-        <div class="om-card" onclick="window.location='/app?p={p_id}'" title="Open {p_name}">
+        <div class="om-card" onclick="window.location='/app?p={p_id}'" title="{t("om.open_title", norm, name=p_name)}">
           <div class="om-card-header">
-            <span class="om-code-badge">{p_code}</span>
-            <span class="om-status-badge">Active</span>
+            <span class="om-code-badge bidi-ltr">{p_code}</span>
+            <span class="om-status-badge">{t("om.status_active", norm)}</span>
           </div>
           <div class="om-card-title">{p_name}</div>
-          <div class="om-card-client">🏢 Client: <strong>{client}</strong></div>
+          <div class="om-card-client">🏢 {t("om.lbl_client", norm)} <strong>{client}</strong></div>
           <div class="om-card-footer">
-            <span class="om-card-action">Open Register ➔</span>
+            <span class="om-card-action">{t("om.open_register", norm)} <span class="rtl-flip">➔</span></span>
             {del_btn}
           </div>
         </div>
@@ -7571,6 +7565,21 @@ body.dark .tbtn.active {{
   color: #fff !important;
   border-color: var(--brand-teal) !important;
 }}
+html[dir="rtl"] .om-header-bar,
+html[dir="rtl"] .om-kpi-card,
+html[dir="rtl"] .om-card {{
+  text-align: right;
+}}
+html[dir="rtl"] .om-kpi-lbl {{
+  letter-spacing: 0;
+  text-transform: none;
+}}
+html[dir="rtl"] .user-tbl th,
+html[dir="rtl"] .user-tbl td,
+html[dir="rtl"] #om-aud-tbl th,
+html[dir="rtl"] #om-aud-tbl td {{
+  text-align: right;
+}}
 </style>
 </head>
 <body data-workspace="{active_ws}">
@@ -7587,7 +7596,7 @@ body.dark .tbtn.active {{
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
+  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
@@ -7607,15 +7616,15 @@ body.dark .tbtn.active {{
   <!-- Unified Navigation Toolbar -->
   <div class="psel-bar">
     <div style="display:flex;align-items:center;gap:8px;">
-      <input type="text" id="om-search" placeholder="🔍 Search in {ws_name}..." oninput="filterOmCards(this.value)" style="min-width:220px;">
+      <input type="text" id="om-search" placeholder="{t("om.search_ph", norm, ws_name=ws_name)}" oninput="filterOmCards(this.value)" style="min-width:220px;">
     </div>
     <div class="sp" style="flex:1"></div>
     <div style="display:flex;gap:4px;flex-wrap:nowrap;justify-content:flex-end;">
-      <button class="tbtn active" onclick="showOmTab('overview', this)">📊 Overview</button>
-      <button class="tbtn" onclick="showOmTab('analytics', this)">📈 Analytics</button>
-      <button class="tbtn" onclick="showOmTab('overdue', this)">⚠️ Overdue</button>
-      <button class="tbtn" onclick="showOmTab('executive', this)">📋 Executive</button>
-      <button class="tbtn" onclick="showOmTab('daily-digest', this)">🌟 Daily Digest</button>
+      <button class="tbtn active" onclick="showOmTab('overview', this)">{t("om.tab_overview", norm)}</button>
+      <button class="tbtn" onclick="showOmTab('analytics', this)">{t("om.tab_analytics", norm)}</button>
+      <button class="tbtn" onclick="showOmTab('overdue', this)">{t("om.tab_overdue", norm)}</button>
+      <button class="tbtn" onclick="showOmTab('executive', this)">{t("om.tab_executive", norm)}</button>
+      <button class="tbtn" onclick="showOmTab('daily-digest', this)">{t("om.tab_daily_digest", norm)}</button>
       {audit_btn}
     </div>
   </div>
@@ -7626,23 +7635,23 @@ body.dark .tbtn.active {{
     <div class="om-kpi-grid">
       <div class="om-kpi-card">
         <span class="om-kpi-lbl">{kpi_contracts_lbl}</span>
-        <span class="om-kpi-val primary">{total_contracts}</span>
+        <span class="om-kpi-val primary bidi-ltr">{total_contracts}</span>
       </div>
       <div class="om-kpi-card">
         <span class="om-kpi-lbl">{kpi_records_lbl}</span>
-        <span class="om-kpi-val">{total_records}</span>
+        <span class="om-kpi-val bidi-ltr">{total_records}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Completed / Closed</span>
-        <span class="om-kpi-val success">{completed_records}</span>
+        <span class="om-kpi-lbl">{t("om.kpi_completed", norm)}</span>
+        <span class="om-kpi-val success bidi-ltr">{completed_records}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">In-Progress / Open</span>
-        <span class="om-kpi-val warning">{pending_records}</span>
+        <span class="om-kpi-lbl">{t("om.kpi_in_progress", norm)}</span>
+        <span class="om-kpi-val warning bidi-ltr">{pending_records}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Overdue Items</span>
-        <span class="om-kpi-val" style="color:{'#ef4444' if overdue_records > 0 else 'var(--tx)'};">{overdue_records}</span>
+        <span class="om-kpi-lbl">{t("om.kpi_overdue", norm)}</span>
+        <span class="om-kpi-val bidi-ltr" style="color:{'#ef4444' if overdue_records > 0 else 'var(--tx)'};">{overdue_records}</span>
       </div>
     </div>
 
@@ -7658,47 +7667,47 @@ body.dark .tbtn.active {{
   <!-- TAB PANE: DAILY DIGEST -->
   <div id="tab-om-daily-digest" class="tab-pane" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
-      <div style="font-weight:700;font-size:14px;color:var(--tx);">🌟 Daily Digest & Activity Stream</div>
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">{t("om.digest_title", norm)}</div>
       <div>
-        <input type="date" id="om-digest-date" style="padding:5px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);" onchange="loadOmDailyDigest()">
+        <input type="date" id="om-digest-date" class="bidi-ltr" style="padding:5px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);" onchange="loadOmDailyDigest()">
       </div>
     </div>
     <div id="om-daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
-      <div style="color:var(--mu);font-size:14px;">Loading Daily Digest...</div>
+      <div style="color:var(--mu);font-size:14px;">{t("om.digest_loading", norm)}</div>
     </div>
   </div>
 
   <!-- TAB PANE: EXECUTIVE SUMMARY -->
   <div id="tab-om-executive" class="tab-pane" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
-      <div style="font-weight:700;font-size:14px;color:var(--tx);">📋 Executive Summary & SLA Metrics</div>
-      <button class="tb-btn" onclick="loadOmExecutiveReport()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">{t("om.exec_title", norm)}</div>
+      <button class="tb-btn" onclick="loadOmExecutiveReport()" style="padding:5px 12px;font-size:11px;">{t("hse.refresh_btn", norm)}</button>
     </div>
     <div id="om-exec-content" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:18px;">
-      <div style="color:var(--mu);font-size:14px;">Loading Executive Report...</div>
+      <div style="color:var(--mu);font-size:14px;">{t("om.exec_loading", norm)}</div>
     </div>
   </div>
 
   <!-- TAB PANE: OVERDUE -->
   <div id="tab-om-overdue" class="tab-pane" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
-      <div style="font-weight:700;font-size:14px;color:var(--tx);">⚠️ Overdue Actions & Records</div>
-      <button class="tb-btn" onclick="loadOmOverdue()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">{t("om.ov_title", norm)}</div>
+      <button class="tb-btn" onclick="loadOmOverdue()" style="padding:5px 12px;font-size:11px;">{t("hse.refresh_btn", norm)}</button>
     </div>
     <div id="om-overdue-content" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;overflow-x:auto;">
       <table class="user-tbl" id="om-overdue-tbl" style="width:100%;">
         <thead>
           <tr>
-            <th style="padding:10px 14px;">Contract / Project</th>
-            <th style="padding:10px 14px;">Doc / Ref</th>
-            <th style="padding:10px 14px;">Title / Subject</th>
-            <th style="padding:10px 14px;">Target Date</th>
-            <th style="padding:10px 14px;">Status</th>
-            <th style="padding:10px 14px;">Delay</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_contract", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_doc", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_title", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_target", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_status", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_delay", norm)}</th>
           </tr>
         </thead>
         <tbody id="om-overdue-tbody">
-          <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">Loading overdue records...</td></tr>
+          <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">{t("om.ov_loading", norm)}</td></tr>
         </tbody>
       </table>
     </div>
@@ -7707,17 +7716,17 @@ body.dark .tbtn.active {{
   <!-- TAB PANE: ANALYTICS -->
   <div id="tab-om-analytics" class="tab-pane" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
-      <div style="font-weight:700;font-size:14px;color:var(--tx);">📈 Operational Analytics & Turnaround</div>
-      <button class="tb-btn" onclick="loadOmAnalytics()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">{t("om.ana_title", norm)}</div>
+      <button class="tb-btn" onclick="loadOmAnalytics()" style="padding:5px 12px;font-size:11px;">{t("hse.refresh_btn", norm)}</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;">
       <div class="panel" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">📊 Aging & Turnaround Analysis</div>
-        <div id="om-aging-chart">Loading...</div>
+        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">{t("om.ana_aging_title", norm)}</div>
+        <div id="om-aging-chart">{t("common.loading", norm)}</div>
       </div>
       <div class="panel" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">📈 Monthly Volume Trend</div>
-        <div id="om-trend-chart">Loading...</div>
+        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">{t("om.ana_trend_title", norm)}</div>
+        <div id="om-trend-chart">{t("common.loading", norm)}</div>
       </div>
     </div>
   </div>
@@ -7726,24 +7735,24 @@ body.dark .tbtn.active {{
   <div id="tab-om-audit" class="tab-pane" style="display:none;">
     <div class="panel">
       <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <span>📜 Activity & Audit Log — {ws_name}</span>
+        <span>{t("om.aud_title", norm, ws_name=ws_name)}</span>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button class="tbtn" onclick="loadOmAudit(true)">🔄 Refresh</button>
+          <button class="tbtn" onclick="loadOmAudit(true)">{t("hse.refresh_btn", norm)}</button>
         </div>
       </div>
       <!-- Filters -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <select id="om-aud-pid" onchange="loadOmAudit(true)"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;min-width:160px;background:var(--bg);color:var(--tx)">
-          <option value="">All Contracts / Facilities</option>
+          <option value="">{t("om.aud_all_contracts", norm)}</option>
         </select>
         <select id="om-aud-user" onchange="loadOmAudit(true)"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;background:var(--bg);color:var(--tx)">
-          <option value="">All Users</option>
+          <option value="">{t("dash.aud_all_users", norm)}</option>
         </select>
         <select id="om-aud-action" onchange="loadOmAudit(true)"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;background:var(--bg);color:var(--tx)">
-          <option value="">All Actions</option>
+          <option value="">{t("dash.aud_all_actions", norm)}</option>
         </select>
       </div>
       <!-- Table -->
@@ -7755,29 +7764,29 @@ body.dark .tbtn.active {{
       <div style="overflow:auto;max-height:calc(100vh - 270px);border:1px solid var(--bd);border-radius:var(--rd);background:var(--wh)">
         <table class="dt-tbl" id="om-aud-tbl" style="min-width:1050px;width:100%;table-layout:fixed">
           <thead><tr>
-            <th style="width:130px">Time</th>
-            <th style="width:90px">User</th>
-            <th style="width:95px">Action</th>
-            <th style="width:130px">Contract / Facility</th>
-            <th style="width:110px">Document</th>
-            <th style="width:90px">Field</th>
-            <th style="width:120px">Old Value</th>
-            <th style="width:120px">New Value</th>
-            <th style="width:160px">Detail</th>
-            <th style="width:105px">IP Address</th>
-            <th style="width:125px">Device</th>
+            <th style="width:130px">{t("dash.aud_th_time", norm)}</th>
+            <th style="width:90px">{t("dash.aud_th_user", norm)}</th>
+            <th style="width:95px">{t("dash.aud_th_action", norm)}</th>
+            <th style="width:130px">{t("om.ov_th_contract", norm)}</th>
+            <th style="width:110px">{t("dash.aud_th_document", norm)}</th>
+            <th style="width:90px">{t("dash.aud_th_field", norm)}</th>
+            <th style="width:120px">{t("dash.aud_th_old", norm)}</th>
+            <th style="width:120px">{t("dash.aud_th_new", norm)}</th>
+            <th style="width:160px">{t("dash.aud_th_detail", norm)}</th>
+            <th style="width:105px">{t("dash.aud_th_ip", norm)}</th>
+            <th style="width:125px">{t("dash.aud_th_device", norm)}</th>
           </tr></thead>
           <tbody id="om-aud-tbody">
-            <tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">Loading logs...</td></tr>
+            <tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">{t("om.aud_loading", norm)}</td></tr>
           </tbody>
         </table>
       </div>
       <div id="om-aud-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--mu)">
         <span id="om-aud-count"></span>
         <div style="display:flex;gap:8px">
-          <button id="om-aud-prev" class="tbtn" onclick="omAuditPage(-1)" disabled>← Prev</button>
-          <span id="om-aud-page" style="padding:5px 10px;font-size:11px">Page 1</span>
-          <button id="om-aud-next" class="tbtn" onclick="omAuditPage(1)">Next →</button>
+          <button id="om-aud-prev" class="tbtn" onclick="omAuditPage(-1)" disabled>{t("dash.aud_prev", norm)}</button>
+          <span id="om-aud-page" style="padding:5px 10px;font-size:11px">{t("dash.aud_page", norm, page=1)}</span>
+          <button id="om-aud-next" class="tbtn" onclick="omAuditPage(1)">{t("dash.aud_next", norm)}</button>
         </div>
       </div>
     </div>
@@ -7788,29 +7797,29 @@ body.dark .tbtn.active {{
 <div id="new-om-modal" class="overlay hidden" onclick="if(event.target===this)closeM('new-om-modal')">
   <div class="modal" style="max-width:480px">
     <div class="mhdr">
-      <span>{f'➕ Register New O&M Contract / Facility' if is_om else f'➕ Register New Project / Register ({ws_name})'}</span>
+      <span>{t("om.modal_new_om", norm) if is_om else t("om.modal_new_ws", norm, ws_name=ws_name)}</span>
       <button class="xbtn" onclick="closeM('new-om-modal')">✕</button>
     </div>
     <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Contract / Facility ID (Internal ID):' if is_om else 'Project / Register ID (Internal ID):'}</label>
-        <input type="text" id="om-new-id" placeholder="{f'e.g. OM-CFC-01' if is_om else f'e.g. {ws_code}-01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("om.lbl_id_om", norm) if is_om else t("om.lbl_id_ws", norm)}</label>
+        <input type="text" id="om-new-id" class="bidi-ltr" placeholder="{f'e.g. OM-CFC-01' if is_om else f'e.g. {ws_code}-01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Facility / Contract Name:' if is_om else 'Project / Register Name:'}</label>
-        <input type="text" id="om-new-name" placeholder="{f'e.g. CFC District Cooling Maintenance' if is_om else f'e.g. Annual Procurement Plan / Vendor Register'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("om.lbl_name_om", norm) if is_om else t("om.lbl_name_ws", norm)}</label>
+        <input type="text" id="om-new-name" placeholder="{f'e.g. CFC District Cooling Maintenance' if is_om else t('om.ph_name_ws', norm)}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Contract Short Code:' if is_om else 'Short Code / Identifier:'}</label>
-        <input type="text" id="om-new-code" placeholder="{f'e.g. OM01' if is_om else f'e.g. {ws_code}01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("om.lbl_code_om", norm) if is_om else t("om.lbl_code_ws", norm)}</label>
+        <input type="text" id="om-new-code" class="bidi-ltr" placeholder="{f'e.g. OM01' if is_om else f'e.g. {ws_code}01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Client Name:' if is_om else 'Client / Entity / Department:'}</label>
-        <input type="text" id="om-new-client" placeholder="{f'e.g. Al-Futtaim' if is_om else 'e.g. Internal / GasChill'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("om.lbl_client_om", norm) if is_om else t("om.lbl_client_ws", norm)}</label>
+        <input type="text" id="om-new-client" placeholder="{t('om.ph_client_om', norm) if is_om else t('om.ph_client_ws', norm)}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
-        <button class="tb-btn" onclick="closeM('new-om-modal')">Cancel</button>
-        <button class="tb-btn glow" onclick="submitNewOmContract()" style="background:var(--brand-teal);color:#fff;font-weight:700">{f'Save Contract' if is_om else 'Save Project'}</button>
+        <button class="tb-btn" onclick="closeM('new-om-modal')">{t("common.cancel", norm)}</button>
+        <button class="tb-btn glow" onclick="submitNewOmContract()" style="background:var(--brand-teal);color:#fff;font-weight:700">{t("om.btn_save_contract", norm) if is_om else t("om.btn_save_project", norm)}</button>
       </div>
     </div>
   </div>
@@ -7821,6 +7830,23 @@ body.dark .tbtn.active {{
 {_spotlight_modal_html(norm)}
 {_ai_drawer_html(norm)}
 <script>
+const _omT = (k, v, fb) => (typeof window.t === 'function' ? window.t(k, v) : (fb || k));
+function _omStatusLbl(val) {{
+  const s = String(val || '').trim();
+  if (!s) return _omT('status.pending', null, 'Pending');
+  const map = {{
+    'approved': 'status.approved', 'approved with comments': 'status.approved_with_comments',
+    'pending': 'status.pending', 'under review': 'status.under_review',
+    'open': 'status.open', 'in progress': 'status.in_progress', 'in-progress': 'status.in_progress',
+    'closed': 'status.closed', 'completed': 'status.completed',
+    'rejected': 'status.rejected', 'revise & resubmit': 'status.revise_resubmit',
+    'overdue': 'status.overdue', 'expired': 'status.expired',
+    'valid': 'status.valid', 'expiring': 'status.expiring', 'active': 'status.active'
+  }};
+  const key = map[s.toLowerCase()];
+  return key ? _omT(key, null, s) : s;
+}}
+
 function showOmTab(tabName, btn) {{
   document.querySelectorAll('.psel-bar .tbtn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
@@ -7843,84 +7869,84 @@ async function loadOmDailyDigest() {{
   if (!container) return;
   const dateInput = document.getElementById('om-digest-date');
   const dVal = dateInput ? dateInput.value : '';
-  container.innerHTML = '<div style="color:var(--mu);font-size:14px;padding:20px;">Loading Daily Digest...</div>';
+  container.innerHTML = `<div style="color:var(--mu);font-size:14px;padding:20px;">${{escHtml(_omT('om.digest_loading', null, 'Loading Daily Digest...'))}}</div>`;
   try {{
     const ws = document.body.getAttribute('data-workspace') || 'OM';
     const qs = '?workspace_id=' + encodeURIComponent(ws) + (dVal ? '&date=' + encodeURIComponent(dVal) : '');
     const r = await apiFetch('/api/daily_digest/all' + qs);
-    if (!r) {{ container.innerHTML = '<div style="color:red;padding:20px;">Failed to load digest.</div>'; return; }}
+    if (!r) {{ container.innerHTML = `<div style="color:red;padding:20px;">${{escHtml(_omT('om.digest_failed', null, 'Failed to load digest.'))}}</div>`; return; }}
     
     let html = '';
-    html += '<div class="panel" style="border-top:4px solid #3b82f6;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#1e40af;font-size:15px;font-weight:700;margin-bottom:8px;">📥 Received (' + (r.received||[]).length + ')</div>';
-    if ((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:12px;font-style:italic;">No records received.</div>';
+    html += `<div class="panel" style="border-top:4px solid #3b82f6;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#1e40af;font-size:15px;font-weight:700;margin-bottom:8px;">${{escHtml(_omT('om.digest_received', {{count: (r.received||[]).length}}, '📥 Received (' + (r.received||[]).length + ')'))}}</div>`;
+    if ((r.received||[]).length === 0) html += `<div style="color:var(--mu);font-size:12px;font-style:italic;">${{escHtml(_omT('om.digest_no_received', null, 'No records received.'))}}</div>`;
     (r.received||[]).forEach(doc => {{
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong class="bidi-ltr">' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
     }});
     html += '</div>';
 
-    html += '<div class="panel" style="border-top:4px solid #22c55e;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#166534;font-size:15px;font-weight:700;margin-bottom:8px;">✅ Closed / Completed (' + (r.replied||[]).length + ')</div>';
-    if ((r.replied||[]).length === 0) html += '<div style="color:var(--mu);font-size:12px;font-style:italic;">No records completed.</div>';
+    html += `<div class="panel" style="border-top:4px solid #22c55e;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#166534;font-size:15px;font-weight:700;margin-bottom:8px;">${{escHtml(_omT('om.digest_closed', {{count: (r.replied||[]).length}}, '✅ Closed / Completed (' + (r.replied||[]).length + ')'))}}</div>`;
+    if ((r.replied||[]).length === 0) html += `<div style="color:var(--mu);font-size:12px;font-style:italic;">${{escHtml(_omT('om.digest_no_closed', null, 'No records completed.'))}}</div>`;
     (r.replied||[]).forEach(doc => {{
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong class="bidi-ltr">' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
     }});
     html += '</div>';
     container.innerHTML = html;
   }} catch(e) {{
-    container.innerHTML = '<div style="color:red;padding:20px;">Error: ' + escHtml(e.message) + '</div>';
+    container.innerHTML = '<div style="color:red;padding:20px;">' + escHtml(_omT('common.error', null, 'Error')) + ': ' + escHtml(e.message) + '</div>';
   }}
 }}
 
 async function loadOmExecutiveReport() {{
   const container = document.getElementById('om-exec-content');
   if (!container) return;
-  container.innerHTML = '<div style="color:var(--mu);font-size:14px;padding:20px;">Loading Executive Report...</div>';
+  container.innerHTML = `<div style="color:var(--mu);font-size:14px;padding:20px;">${{escHtml(_omT('om.exec_loading', null, 'Loading Executive Report...'))}}</div>`;
   try {{
     const ws = document.body.getAttribute('data-workspace') || 'OM';
     const r = await apiFetch('/api/executive_summary?workspace_id=' + encodeURIComponent(ws));
     if (!r || !r.summary) {{
-      container.innerHTML = '<div style="color:var(--mu);padding:20px;">No executive data available.</div>';
+      container.innerHTML = `<div style="color:var(--mu);padding:20px;">${{escHtml(_omT('om.exec_no_data', null, 'No executive data available.'))}}</div>`;
       return;
     }}
     const s = r.summary;
     let html = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--tx);">${{s.total}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Total Records</div></div>
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#16a34a;">${{s.approved}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Completed / Closed</div></div>
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#d97706;">${{s.pending}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">In-Progress / Open</div></div>
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#ef4444;">${{s.overdue}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Overdue</div></div>
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--brand-teal);">${{s.completion_pct}}%</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Completion Rate</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:var(--tx);">${{s.total}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('om.kpi_records', null, 'Total Records'))}}</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:#16a34a;">${{s.approved}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('om.kpi_completed', null, 'Completed / Closed'))}}</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:#d97706;">${{s.pending}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('om.kpi_in_progress', null, 'In-Progress / Open'))}}</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:#ef4444;">${{s.overdue}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('dash.kpi_overdue', null, 'Overdue'))}}</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:var(--brand-teal);">${{s.completion_pct}}%</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('om.exec_completion_rate', null, 'Completion Rate'))}}</div></div>
       </div>
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--tx);">Facility / Contract Status Breakdown</div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--tx);">${{escHtml(_omT('om.exec_breakdown_title', null, 'Facility / Contract Status Breakdown'))}}</div>
       <table class="user-tbl" style="width:100%;border:1px solid var(--bd);border-radius:6px;">
-        <thead><tr><th style="padding:8px 12px;">Code</th><th style="padding:8px 12px;">Contract / Project</th><th style="padding:8px 12px;">Total Records</th><th style="padding:8px 12px;">Completed</th><th style="padding:8px 12px;">% Done</th><th style="padding:8px 12px;">Overdue</th></tr></thead>
+        <thead><tr><th style="padding:8px 12px;">${{escHtml(_omT('dash.th_code', null, 'Code'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('om.exec_th_contract', null, 'Contract / Project'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('om.kpi_records', null, 'Total Records'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('status.completed', null, 'Completed'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('om.exec_th_pct_done', null, '% Done'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('dash.th_overdue', null, 'Overdue'))}}</th></tr></thead>
         <tbody>
     `;
     (r.projects || []).forEach(p => {{
       html += `<tr>
-        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${{escHtml(p.code||'')}}</td>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);"><span class="bidi-ltr">${{escHtml(p.code||'')}}</span></td>
         <td style="padding:8px 12px;font-weight:600;">${{escHtml(p.name||'')}}</td>
-        <td style="padding:8px 12px;">${{p.total}}</td>
-        <td style="padding:8px 12px;color:#16a34a;font-weight:600;">${{p.approved}}</td>
-        <td style="padding:8px 12px;"><div style="display:flex;align-items:center;gap:6px;"><div style="flex:1;height:6px;background:var(--bd);border-radius:3px;overflow:hidden;"><div style="width:${{p.pct}}%;height:100%;background:#16a34a;"></div></div><span style="font-size:10.5px;font-weight:700;">${{p.pct}}%</span></div></td>
-        <td style="padding:8px 12px;color:${{p.overdue>0?'#ef4444':'var(--mu)'}};font-weight:${{p.overdue>0?700:400}};">${{p.overdue}}</td>
+        <td class="bidi-ltr" style="padding:8px 12px;">${{p.total}}</td>
+        <td class="bidi-ltr" style="padding:8px 12px;color:#16a34a;font-weight:600;">${{p.approved}}</td>
+        <td style="padding:8px 12px;"><div style="display:flex;align-items:center;gap:6px;"><div style="flex:1;height:6px;background:var(--bd);border-radius:3px;overflow:hidden;"><div style="width:${{p.pct}}%;height:100%;background:#16a34a;"></div></div><span class="bidi-ltr" style="font-size:10.5px;font-weight:700;">${{p.pct}}%</span></div></td>
+        <td class="bidi-ltr" style="padding:8px 12px;color:${{p.overdue>0?'#ef4444':'var(--mu)'}};font-weight:${{p.overdue>0?700:400}};">${{p.overdue}}</td>
       </tr>`;
     }});
     html += '</tbody></table>';
     container.innerHTML = html;
   }} catch(e) {{
-    container.innerHTML = '<div style="color:red;padding:20px;">Error: ' + escHtml(e.message) + '</div>';
+    container.innerHTML = '<div style="color:red;padding:20px;">' + escHtml(_omT('common.error', null, 'Error')) + ': ' + escHtml(e.message) + '</div>';
   }}
 }}
 
 async function loadOmOverdue() {{
   const tbody = document.getElementById('om-overdue-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--mu);">Loading overdue records...</td></tr>';
+  tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--mu);">${{escHtml(_omT('om.ov_loading', null, 'Loading overdue records...'))}}</td></tr>`;
   try {{
     const ws = document.body.getAttribute('data-workspace') || 'OM';
     const list = await apiFetch('/api/analytics/overdue?workspace_id=' + encodeURIComponent(ws)) || [];
     if (!list.length) {{
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#16a34a;font-weight:600;">🎉 No overdue records found across contracts!</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:#16a34a;font-weight:600;">${{escHtml(_omT('om.ov_none', null, '🎉 No overdue records found across contracts!'))}}</td></tr>`;
       return;
     }}
     let html = '';
@@ -7928,17 +7954,17 @@ async function loadOmOverdue() {{
       html += `
         <tr>
           <td style="padding:8px 12px;font-weight:600;">${{escHtml(r.project_name || r.project_id || '—')}}</td>
-          <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${{escHtml(r.doc_no || r.id || '—')}}</td>
+          <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);"><span class="bidi-ltr">${{escHtml(r.doc_no || r.id || '—')}}</span></td>
           <td style="padding:8px 12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${{escHtml(r.title || r.subject || '—')}}</td>
-          <td style="padding:8px 12px;color:var(--mu);">${{escHtml(r.target_date || '—')}}</td>
-          <td style="padding:8px 12px;"><span class="badge" style="background:#fee2e2;color:#991b1b;font-weight:600;">${{escHtml(r.status || 'Pending')}}</span></td>
-          <td style="padding:8px 12px;color:#ef4444;font-weight:700;">+${{r.days_overdue || 0}}d</td>
+          <td style="padding:8px 12px;color:var(--mu);"><span class="bidi-ltr">${{escHtml(r.target_date || '—')}}</span></td>
+          <td style="padding:8px 12px;"><span class="badge" style="background:#fee2e2;color:#991b1b;font-weight:600;">${{escHtml(_omStatusLbl(r.status || 'Pending'))}}</span></td>
+          <td class="bidi-ltr" style="padding:8px 12px;color:#ef4444;font-weight:700;">+${{r.days_overdue || 0}}d</td>
         </tr>
       `;
     }});
     tbody.innerHTML = html;
   }} catch(e) {{
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:red;">Error: ' + escHtml(e.message) + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:red;">' + escHtml(_omT('common.error', null, 'Error')) + ': ' + escHtml(e.message) + '</td></tr>';
   }}
 }}
 
@@ -7958,8 +7984,8 @@ async function loadOmAnalytics() {{
       agingHtml += `
         <div>
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
-            <span>${{escHtml(b.bucket || b.label || '')}}</span>
-            <strong>${{b.count || 0}} items</strong>
+            <span class="bidi-ltr">${{escHtml(b.bucket || b.label || '')}}</span>
+            <strong>${{escHtml(_omT('om.ana_items_unit', {{count: b.count || 0}}, (b.count || 0) + ' items'))}}</strong>
           </div>
           <div style="height:8px;background:var(--bd);border-radius:4px;overflow:hidden;">
             <div style="width:${{Math.min(100, (b.pct || (b.count*10)))}}%;height:100%;background:var(--pr);"></div>
@@ -7968,21 +7994,21 @@ async function loadOmAnalytics() {{
       `;
     }});
     agingHtml += '</div>';
-    agingEl.innerHTML = (aging && aging.length) ? agingHtml : '<div style="color:var(--mu);font-size:12px;">No aging data available.</div>';
+    agingEl.innerHTML = (aging && aging.length) ? agingHtml : `<div style="color:var(--mu);font-size:12px;">${{escHtml(_omT('om.ana_no_aging', null, 'No aging data available.'))}}</div>`;
 
     let trendHtml = '<div style="display:flex;flex-direction:column;gap:8px;">';
     (trend || []).slice(-6).forEach(t => {{
       trendHtml += `
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd);font-size:11px;">
-          <span>${{escHtml(t.month || t.period || '')}}</span>
-          <span style="font-weight:700;">${{t.total || t.count || 0}} records</span>
+          <span class="bidi-ltr">${{escHtml(t.month || t.period || '')}}</span>
+          <span style="font-weight:700;">${{escHtml(_omT('om.ana_records_unit', {{count: t.total || t.count || 0}}, (t.total || t.count || 0) + ' records'))}}</span>
         </div>
       `;
     }});
     trendHtml += '</div>';
-    trendEl.innerHTML = (trend && trend.length) ? trendHtml : '<div style="color:var(--mu);font-size:12px;">No trend data available.</div>';
+    trendEl.innerHTML = (trend && trend.length) ? trendHtml : `<div style="color:var(--mu);font-size:12px;">${{escHtml(_omT('om.ana_no_trend', null, 'No trend data available.'))}}</div>`;
   }} catch(e) {{
-    agingEl.innerHTML = '<div style="color:red;">Error loading analytics</div>';
+    agingEl.innerHTML = `<div style="color:red;">${{escHtml(_omT('om.ana_err', null, 'Error loading analytics'))}}</div>`;
   }}
 }}
 
@@ -8002,7 +8028,7 @@ async function submitNewOmContract() {{
   const client = document.getElementById('om-new-client').value.trim();
   
   if (!id || !name || !code) {{
-    alert('Please enter Contract ID, Name, and Code.');
+    alert(_omT('om.err_req_fields', null, 'Please enter Contract ID, Name, and Code.'));
     return;
   }}
   
@@ -8015,19 +8041,19 @@ async function submitNewOmContract() {{
     if (res && res.ok) {{
       window.location = '/?ws=' + encodeURIComponent(currentWs);
     }} else {{
-      alert((res && res.error) || 'Failed to create contract');
+      alert((res && res.error) || _omT('om.err_create', null, 'Failed to create contract'));
     }}
   }} catch(e) {{
-    alert('Error creating contract: ' + e.message);
+    alert(_omT('om.err_create_msg', {{error: e.message}}, 'Error creating contract: ' + e.message));
   }}
 }}
 
 async function delProject(pid, pname) {{
-  if (!confirm('Are you sure you want to delete contract: ' + pname + '? All work orders and documents inside will be deleted.')) return;
+  if (!confirm(_omT('om.confirm_del', {{name: pname}}, 'Are you sure you want to delete contract: ' + pname + '? All work orders and documents inside will be deleted.'))) return;
   try {{
     const r = await apiFetch('/api/projects/delete/' + encodeURIComponent(pid), {{ method: 'POST' }});
     if (r && r.ok) window.location.reload();
-    else alert((r && r.error) || 'Delete failed');
+    else alert((r && r.error) || _omT('om.err_del', null, 'Delete failed'));
   }} catch(e) {{
     alert(e.message);
   }}
@@ -8054,7 +8080,7 @@ async function loadOmAudit(reset=false) {{
   params.set('workspace_id', ws);
   
   if (tbody && (reset || _omAuditOffset === 0)) {{
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">Loading logs...</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">${{escHtml(_omT('om.aud_loading', null, 'Loading logs...'))}}</td></tr>`;
   }}
 
   try {{
@@ -8069,21 +8095,21 @@ async function loadOmAudit(reset=false) {{
       const pSel = document.getElementById('om-aud-pid');
       if (pSel) {{
         const curPid = pSel.value;
-        pSel.innerHTML = '<option value="">All Contracts / Facilities</option>' +
+        pSel.innerHTML = `<option value="">${{escHtml(_omT('om.aud_all_contracts', null, 'All Contracts / Facilities'))}}</option>` +
           (data.projects || []).map(p => `<option value="${{p.id}}"${{p.id === curPid ? ' selected' : ''}}>${{p.code ? p.code + ' — ' : ''}}${{p.name}}</option>`).join('');
       }}
 
       const uSel = document.getElementById('om-aud-user');
       if (uSel) {{
         const curU = uSel.value;
-        uSel.innerHTML = '<option value="">All Users</option>' +
+        uSel.innerHTML = `<option value="">${{escHtml(_omT('dash.aud_all_users', null, 'All Users'))}}</option>` +
           (data.users || []).map(u => `<option value="${{u}}"${{u === curU ? ' selected' : ''}}>${{u}}</option>`).join('');
       }}
 
       const aSel = document.getElementById('om-aud-action');
       if (aSel) {{
         const curA = aSel.value;
-        aSel.innerHTML = '<option value="">All Actions</option>' +
+        aSel.innerHTML = `<option value="">${{escHtml(_omT('dash.aud_all_actions', null, 'All Actions'))}}</option>` +
           (data.actions || []).map(a => `<option value="${{a}}"${{a === curA ? ' selected' : ''}}>${{a}}</option>`).join('');
       }}
     }} else if (data.projects) {{
@@ -8094,7 +8120,7 @@ async function loadOmAudit(reset=false) {{
     _omAuditHasMore = rows.length === 100;
 
     if (!rows.length) {{
-      if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
+      if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">${{escHtml(_omT('dash.aud_no_activity', null, 'No activity found'))}}</td></tr>`;
     }} else {{
       const _dash = '<span style="color:var(--mu);opacity:0.4">—</span>';
       const _val = (v) => {{
@@ -8127,16 +8153,16 @@ async function loadOmAudit(reset=false) {{
 
         const projRaw = _omAuditProjMap[r.project_id] || r.project_id || '';
         const projDisplay = _val(projRaw);
-        const docDisplay = (r.doc_no || r.document_id) ? `<span style="color:var(--pr);font-weight:600">${{escHtml(r.doc_no || r.document_id)}}</span>` : _dash;
+        const docDisplay = (r.doc_no || r.document_id) ? `<span class="bidi-ltr" style="color:var(--pr);font-weight:600">${{escHtml(r.doc_no || r.document_id)}}</span>` : _dash;
         const oldDisplay = r.old_value ? `<span style="color:#dc2626">${{escHtml(r.old_value)}}</span>` : _dash;
         const newDisplay = r.new_value ? `<span style="color:#166534">${{escHtml(r.new_value)}}</span>` : _dash;
-        const ipDisplay = r.ip_address ? `<span style="font-family:monospace;color:var(--mu);font-size:9.5px">${{escHtml(r.ip_address)}}</span>` : _dash;
-        const devDisplay = (r.device || r.user_agent) ? `<span style="color:var(--tx);font-size:9.5px">${{escHtml(r.device || r.user_agent)}}</span>` : _dash;
+        const ipDisplay = r.ip_address ? `<span class="bidi-ltr" style="font-family:monospace;color:var(--mu);font-size:9.5px">${{escHtml(r.ip_address)}}</span>` : _dash;
+        const devDisplay = (r.device || r.user_agent) ? `<span class="bidi-ltr" style="color:var(--tx);font-size:9.5px">${{escHtml(r.device || r.user_agent)}}</span>` : _dash;
 
         html += `<tr class="${{i % 2 === 0 ? '' : 'alt'}}">
-          <td style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
-          <td style="font-weight:600;font-size:11px">${{escHtml(r.username || '')}}</td>
-          <td><span style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{escHtml(r.action || '')}}</span></td>
+          <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap"><span class="bidi-ltr">${{tsStr}}</span></td>
+          <td style="font-weight:600;font-size:11px"><span class="bidi-ltr">${{escHtml(r.username || '')}}</span></td>
+          <td><span class="bidi-ltr" style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{escHtml(r.action || '')}}</span></td>
           <td style="font-size:10px;color:var(--mu)" title="${{escHtml(r.project_id || '')}}">${{projDisplay}}</td>
           <td style="font-size:11px" title="${{escHtml(r.doc_no || r.document_id || '')}}">${{docDisplay}}</td>
           <td style="font-size:10px;color:var(--mu)" title="${{escHtml(r.field_name || '')}}">${{_val(r.field_name)}}</td>
@@ -8151,15 +8177,15 @@ async function loadOmAudit(reset=false) {{
     }}
 
     const page = Math.floor(_omAuditOffset / 100) + 1;
-    if (countEl) countEl.textContent = `Showing ${{rows.length}} entries`;
+    if (countEl) countEl.textContent = _omT('dash.aud_showing', {{count: rows.length}}, `Showing ${{rows.length}} entries`);
     const pEl = document.getElementById('om-aud-page');
-    if (pEl) pEl.textContent = `Page ${{page}}`;
+    if (pEl) pEl.textContent = _omT('dash.aud_page', {{page}}, `Page ${{page}}`);
     const prevBtn = document.getElementById('om-aud-prev');
     if (prevBtn) prevBtn.disabled = _omAuditOffset === 0;
     const nextBtn = document.getElementById('om-aud-next');
     if (nextBtn) nextBtn.disabled = !_omAuditHasMore;
   }} catch(e) {{
-    if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:#ef4444;">Error loading audit log: ' + escHtml(e.message) + '</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:#ef4444;">' + escHtml(_omT('om.aud_err', {{error: e.message}}, 'Error loading audit log: ' + e.message)) + '</td></tr>';
   }}
 }}
 
@@ -8297,6 +8323,24 @@ body.dark .hse-pill.warn { background:rgba(146,64,14,0.35); color:#fde68a; borde
 body.dark .hse-pill.ok { background:rgba(22,101,52,0.35); color:#bbf7d0; border-color:#14532d; }
 body.dark .hse-alert-item { background:#0f172a; border-color:#334155; }
 body.dark .hse-alert-item.danger { background:rgba(127,29,29,0.28); }
+html[dir="rtl"] .hse-header-bar {
+  border-left:1px solid var(--bd); border-right:4px solid #10b981;
+}
+html[dir="rtl"] .hse-alert-item {
+  border-left:1px solid var(--bd); border-right:4px solid #f59e0b;
+}
+html[dir="rtl"] .hse-alert-item.danger {
+  border-left-color:var(--bd); border-right-color:#ef4444;
+}
+html[dir="rtl"] .hse-kpi-card, html[dir="rtl"] .om-kpi-card, html[dir="rtl"] .hse-panel, html[dir="rtl"] .om-card {
+  text-align:right;
+}
+html[dir="rtl"] .hse-kpi-lbl, html[dir="rtl"] .om-kpi-lbl {
+  letter-spacing:0; text-transform:none;
+}
+html[dir="rtl"] .user-tbl th, html[dir="rtl"] .user-tbl td, html[dir="rtl"] .dt-tbl th, html[dir="rtl"] .dt-tbl td {
+  text-align:right;
+}
 """
 
 
@@ -8308,6 +8352,8 @@ let _hseAlertType = '';
 let _hseAuditOffset = 0;
 let _hseAuditHasMore = false;
 let _hseAuditProjMap = {};
+const _hseT = (k, v, fb) => (typeof window.t === 'function' ? window.t(k, v) : (fb || k));
+const _hseIsRtl = () => (window.DCR_DIR === 'rtl' || document.documentElement.dir === 'rtl');
 
 function showHseTab(tabName, btn) {
   document.querySelectorAll('.psel-bar .tbtn').forEach(b => b.classList.remove('active'));
@@ -8379,7 +8425,7 @@ async function refreshHseDashboard() {
     };
     renderHseState();
   } catch (e) {
-    toast('Failed to load HSE metrics: ' + e.message, 'er');
+    toast(_hseT('hse.err_load_metrics', {error: e.message}, 'Failed to load HSE metrics: ' + e.message), 'er');
   }
 }
 
@@ -8400,7 +8446,7 @@ function renderHseState() {
   const ySel = document.getElementById('hse-filter-year');
   if (ySel && Array.isArray(_hseState.available_years)) {
     const curY = ySel.value;
-    ySel.innerHTML = '<option value="">All Years</option>' +
+    ySel.innerHTML = `<option value="">${escHtml(_hseT('hse.all_years', null, 'All Years'))}</option>` +
       _hseState.available_years.map(y => `<option value="${y}"${String(y) === String(curY) ? ' selected' : ''}>${y}</option>`).join('');
   }
 
@@ -8409,13 +8455,17 @@ function renderHseState() {
   if (ltiDaysEl) ltiDaysEl.textContent = ltiSt.days !== null && ltiSt.days !== undefined ? fmtHseNum(ltiSt.days) : '—';
   setCardTone('hse-card-lti', 'hse-kpi-lti-days', streakTone(ltiSt));
   const ltiSub = document.getElementById('hse-sub-lti');
-  if (ltiSub) ltiSub.textContent = ltiSt.ref_date ? `Best: ${fmtHseNum(ltiSt.best_days)}d • Ref: ${ltiSt.ref_date}` : 'No dated HSE records yet';
+  if (ltiSub) ltiSub.textContent = ltiSt.ref_date
+    ? _hseT('hse.sub_lti_best', {best: fmtHseNum(ltiSt.best_days), ref: ltiSt.ref_date}, `Best: ${fmtHseNum(ltiSt.best_days)}d • Ref: ${ltiSt.ref_date}`)
+    : _hseT('hse.sub_lti_empty', null, 'No dated HSE records yet');
 
   const anyDaysEl = document.getElementById('hse-kpi-any-days');
   if (anyDaysEl) anyDaysEl.textContent = anySt.days !== null && anySt.days !== undefined ? fmtHseNum(anySt.days) : '—';
   setCardTone('hse-card-any', 'hse-kpi-any-days', streakTone(anySt));
   const anySub = document.getElementById('hse-sub-any');
-  if (anySub) anySub.textContent = anySt.ref_date ? `FAC/MTC/LTI • Ref: ${anySt.ref_date}` : 'No injury baseline recorded';
+  if (anySub) anySub.textContent = anySt.ref_date
+    ? _hseT('hse.sub_any_ref', {ref: anySt.ref_date}, `FAC/MTC/LTI • Ref: ${anySt.ref_date}`)
+    : _hseT('hse.sub_any_empty', null, 'No injury baseline recorded');
 
   // Rates
   const hasHrs = !!rates.has_hours;
@@ -8423,45 +8473,49 @@ function renderHseState() {
   if (ltifEl) ltifEl.textContent = hasHrs ? fmtHseNum(rates.ltif, 2) : '—';
   setCardTone('hse-card-ltif', 'hse-kpi-ltif', !hasHrs ? 'info' : ((rates.ltif || 0) > 0 ? 'bad' : 'good'));
   const ltifSub = document.getElementById('hse-sub-ltif');
-  if (ltifSub) ltifSub.textContent = hasHrs ? `LTI: ${inc.lti || 0} | Fatalities: ${inc.fatalities || 0}` : 'Log MHR hours to compute';
+  if (ltifSub) ltifSub.textContent = hasHrs
+    ? _hseT('hse.sub_ltif_val', {lti: inc.lti || 0, fat: inc.fatalities || 0}, `LTI: ${inc.lti || 0} | Fatalities: ${inc.fatalities || 0}`)
+    : _hseT('hse.sub_ltif_empty', null, 'Log MHR hours to compute');
 
   const trirEl = document.getElementById('hse-kpi-trir');
   if (trirEl) trirEl.textContent = hasHrs ? fmtHseNum(rates.trir, 2) : '—';
   setCardTone('hse-card-trir', 'hse-kpi-trir', !hasHrs ? 'info' : ((rates.trir || 0) > 0 ? 'warn' : 'good'));
   const trirSub = document.getElementById('hse-sub-trir');
-  if (trirSub) trirSub.textContent = hasHrs ? `Recordable: ${inc.recordable || 0} | FAC: ${inc.fac || 0}` : 'LTI + MTC per 1M hrs';
+  if (trirSub) trirSub.textContent = hasHrs
+    ? _hseT('hse.sub_trir_val', {rec: inc.recordable || 0, fac: inc.fac || 0}, `Recordable: ${inc.recordable || 0} | FAC: ${inc.fac || 0}`)
+    : _hseT('hse.sub_trir_empty', null, 'LTI + MTC per 1M hrs');
 
   const sevEl = document.getElementById('hse-kpi-sev');
   if (sevEl) sevEl.textContent = hasHrs ? fmtHseNum(rates.severity_rate, 2) : '—';
   setCardTone('hse-card-sev', 'hse-kpi-sev', !hasHrs ? 'info' : ((rates.severity_rate || 0) > 0 ? 'bad' : 'good'));
   const sevSub = document.getElementById('hse-sub-sev');
-  if (sevSub) sevSub.textContent = `Lost Days: ${fmtHseNum(inc.lost_days || 0)}`;
+  if (sevSub) sevSub.textContent = _hseT('hse.kpi_sev_sub', {days: fmtHseNum(inc.lost_days || 0)}, `Lost Days: ${fmtHseNum(inc.lost_days || 0)}`);
 
   const hrsEl = document.getElementById('hse-kpi-hours');
   if (hrsEl) hrsEl.textContent = fmtHseNum(k.man_hours || 0);
   const hrsSub = document.getElementById('hse-sub-hours');
-  if (hrsSub) hrsSub.textContent = `${(_hseState.projects || []).length} active HSE project(s)`;
+  if (hrsSub) hrsSub.textContent = _hseT('hse.kpi_hours_sub', {count: (_hseState.projects || []).length}, `${(_hseState.projects || []).length} active HSE project(s)`);
 
   // Leading & summary KPIs
   const obsOpenEl = document.getElementById('hse-sum-obs-open');
   if (obsOpenEl) obsOpenEl.textContent = `${obs.open || 0} / ${obs.total || 0}`;
   const obsSubEl = document.getElementById('hse-sum-obs-sub');
-  if (obsSubEl) obsSubEl.textContent = `Closed: ${obs.closed || 0} • Stale (>30d): ${obs.stale || 0}`;
+  if (obsSubEl) obsSubEl.textContent = _hseT('hse.kpi_obs_sub', {closed: obs.closed || 0, stale: obs.stale || 0}, `Closed: ${obs.closed || 0} • Stale (>30d): ${obs.stale || 0}`);
 
   const ptwOpenEl = document.getElementById('hse-sum-ptw-open');
   if (ptwOpenEl) ptwOpenEl.textContent = fmtHseNum(ptw.open || 0);
   const ptwSubEl = document.getElementById('hse-sum-ptw-sub');
-  if (ptwSubEl) ptwSubEl.textContent = `Expiring: ${ptw.expiring || 0} • Overdue: ${ptw.overdue || 0}`;
+  if (ptwSubEl) ptwSubEl.textContent = _hseT('hse.kpi_ptw_sub', {expiring: ptw.expiring || 0, overdue: ptw.overdue || 0}, `Expiring: ${ptw.expiring || 0} • Overdue: ${ptw.overdue || 0}`);
 
   const feiExpEl = document.getElementById('hse-sum-fei-exp');
   if (feiExpEl) feiExpEl.textContent = fmtHseNum(fei.actionable || 0);
   const feiSubEl = document.getElementById('hse-sum-fei-sub');
-  if (feiSubEl) feiSubEl.textContent = `Expired: ${fei.expired || 0} • Due ≤${k.warn_days || 30}d: ${fei.expiring || 0}`;
+  if (feiSubEl) feiSubEl.textContent = _hseT('hse.kpi_fei_sub', {expired: fei.expired || 0, days: k.warn_days || 30, expiring: fei.expiring || 0}, `Expired: ${fei.expired || 0} • Due ≤${k.warn_days || 30}d: ${fei.expiring || 0}`);
 
   const compEl = document.querySelector('#hse-card-sum-completed .om-kpi-val');
   if (compEl) compEl.textContent = fmtHseNum(sum.completed_records || 0);
   const totSubEl = document.getElementById('hse-sum-tot-sub');
-  if (totSubEl) totSubEl.textContent = `${fmtHseNum(sum.total_records || 0)} total across ${(_hseState.projects || []).length} site(s)`;
+  if (totSubEl) totSubEl.textContent = _hseT('hse.kpi_completed_sub', {total: fmtHseNum(sum.total_records || 0), sites: (_hseState.projects || []).length}, `${fmtHseNum(sum.total_records || 0)} total across ${(_hseState.projects || []).length} site(s)`);
 
   const alertBadge = document.getElementById('hse-tab-alert-badge');
   if (alertBadge) {
@@ -8479,21 +8533,21 @@ function renderHseState() {
 function _hseAlertItemHtml(a) {
   const isDanger = a.severity === 'danger';
   const cls = isDanger ? 'danger' : '';
-  const tag = isDanger ? 'CRITICAL' : 'WARNING';
+  const tag = isDanger ? _hseT('hse.alert_critical', null, 'CRITICAL') : _hseT('hse.alert_warning', null, 'WARNING');
   const tagStyle = isDanger ? 'background:#fee2e2;color:#991b1b;' : 'background:#fef3c7;color:#92400e;';
   const linkUrl = `/app?p=${encodeURIComponent(a.project_id)}&tab=${encodeURIComponent(a.dt_id)}&highlight=${encodeURIComponent(a.id)}`;
   return `
     <div class="hse-alert-item ${cls}">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span class="badge" style="${tagStyle}font-weight:700;font-size:10px;">${tag}</span>
-        <span class="badge" style="background:rgba(16,185,129,0.14);color:#047857;font-family:monospace;font-weight:700;">${escHtml(a.dt_code)}</span>
-        <strong style="font-family:monospace;">${escHtml(a.doc_no)}</strong>
+        <span class="badge" style="${tagStyle}font-weight:700;font-size:10px;">${escHtml(tag)}</span>
+        <span class="badge bidi-ltr" style="background:rgba(16,185,129,0.14);color:#047857;font-family:monospace;font-weight:700;">${escHtml(a.dt_code)}</span>
+        <strong class="bidi-ltr" style="font-family:monospace;">${escHtml(a.doc_no)}</strong>
         <span>${escHtml(a.title)}</span>
-        <span style="color:var(--mu);font-size:11px;">• ${escHtml(a.project_code || a.project_id)}</span>
+        <span class="bidi-ltr" style="color:var(--mu);font-size:11px;">• ${escHtml(a.project_code || a.project_id)}</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
         <span style="font-size:11px;font-weight:700;color:${isDanger ? '#dc2626' : '#d97706'};">${escHtml(a.detail)}</span>
-        <a href="${linkUrl}" class="tbtn" style="text-decoration:none;">Open ➔</a>
+        <a href="${linkUrl}" class="tbtn" style="text-decoration:none;">${escHtml(_hseT('hse.alert_open', null, 'Open'))} <span class="rtl-flip">➔</span></a>
       </div>
     </div>
   `;
@@ -8504,13 +8558,13 @@ function renderHseAlertsPreview() {
   if (!wrap) return;
   const list = (_hseState && _hseState.alerts) || [];
   if (!list.length) {
-    wrap.innerHTML = '<div style="padding:18px;text-align:center;color:#16a34a;font-weight:700;font-size:12.5px;">✅ No expired PTWs, expiring equipment, or stale observations (>30d).</div>';
+    wrap.innerHTML = `<div style="padding:18px;text-align:center;color:#16a34a;font-weight:700;font-size:12.5px;">${escHtml(_hseT('hse.alerts_none', null, '✅ No expired PTWs, expiring equipment, or stale observations (>30d).'))}</div>`;
     return;
   }
   const top = list.slice(0, 6);
   let html = top.map(_hseAlertItemHtml).join('');
   if (list.length > top.length) {
-    html += `<div style="text-align:right;margin-top:6px;"><button class="tbtn" onclick="showHseTab('alerts', document.getElementById('hse-btn-alerts'))">View all ${list.length} alerts ➔</button></div>`;
+    html += `<div style="text-align:end;margin-top:6px;"><button class="tbtn" onclick="showHseTab('alerts', document.getElementById('hse-btn-alerts'))">${escHtml(_hseT('hse.alerts_view_all', {count: list.length}, 'View all ' + list.length + ' alerts'))} <span class="rtl-flip">➔</span></button></div>`;
   }
   wrap.innerHTML = html;
 }
@@ -8531,21 +8585,22 @@ function renderHseAlertsTab() {
     return String(a.dt_code || '').toLowerCase() === _hseAlertType;
   });
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#16a34a;font-weight:700;">✅ No alerts matching this filter.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:#16a34a;font-weight:700;">${escHtml(_hseT('hse.alerts_none_filter', null, '✅ No alerts matching this filter.'))}</td></tr>`;
     return;
   }
   tbody.innerHTML = list.map(a => {
     const isDanger = a.severity === 'danger';
+    const tag = isDanger ? _hseT('hse.alert_critical', null, 'CRITICAL') : _hseT('hse.alert_warning', null, 'WARNING');
     const linkUrl = `/app?p=${encodeURIComponent(a.project_id)}&tab=${encodeURIComponent(a.dt_id)}&highlight=${encodeURIComponent(a.id)}`;
     return `
       <tr>
-        <td style="padding:8px 12px;"><span class="badge" style="${isDanger ? 'background:#fee2e2;color:#991b1b;' : 'background:#fef3c7;color:#92400e;'}font-weight:700;">${isDanger ? 'CRITICAL' : 'WARNING'}</span></td>
-        <td style="padding:8px 12px;font-family:monospace;font-weight:700;">${escHtml(a.dt_code)}</td>
-        <td style="padding:8px 12px;font-weight:600;">${escHtml(a.project_code || a.project_id)}</td>
-        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${escHtml(a.doc_no)}</td>
+        <td style="padding:8px 12px;"><span class="badge" style="${isDanger ? 'background:#fee2e2;color:#991b1b;' : 'background:#fef3c7;color:#92400e;'}font-weight:700;">${escHtml(tag)}</span></td>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;"><span class="bidi-ltr">${escHtml(a.dt_code)}</span></td>
+        <td style="padding:8px 12px;font-weight:600;"><span class="bidi-ltr">${escHtml(a.project_code || a.project_id)}</span></td>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);"><span class="bidi-ltr">${escHtml(a.doc_no)}</span></td>
         <td style="padding:8px 12px;">${escHtml(a.title)}${a.location ? ` <span style="color:var(--mu);font-size:11px;">(${escHtml(a.location)})</span>` : ''}</td>
         <td style="padding:8px 12px;color:${isDanger ? '#dc2626' : '#d97706'};font-weight:700;">${escHtml(a.detail)}</td>
-        <td style="padding:8px 12px;text-align:right;"><a href="${linkUrl}" class="tbtn" style="text-decoration:none;">Open ➔</a></td>
+        <td style="padding:8px 12px;text-align:end;"><a href="${linkUrl}" class="tbtn" style="text-decoration:none;">${escHtml(_hseT('hse.alert_open', null, 'Open'))} <span class="rtl-flip">➔</span></a></td>
       </tr>
     `;
   }).join('');
@@ -8559,18 +8614,22 @@ function renderHseRegisterCards() {
     wrap.innerHTML = '';
     return;
   }
-  wrap.innerHTML = regs.map(r => `
+  wrap.innerHTML = regs.map(r => {
+    const dtName = _hseT('dt_name.' + String(r.code || '').toUpperCase(), null, r.name);
+    const sub = r.subtitle || _hseT('hse.reg_open_closed', {open: r.open, closed: r.closed}, 'Open: ' + r.open + ' • Closed: ' + r.closed);
+    return `
     <div class="hse-reg-card">
       <div>
         <div style="display:flex;align-items:center;gap:6px;">
-          <span class="badge" style="background:rgba(16,185,129,0.14);color:#047857;font-weight:700;font-family:monospace;font-size:11px;">${escHtml(r.code)}</span>
-          <span style="font-weight:700;font-size:12px;">${escHtml(r.name)}</span>
+          <span class="badge bidi-ltr" style="background:rgba(16,185,129,0.14);color:#047857;font-weight:700;font-family:monospace;font-size:11px;">${escHtml(r.code)}</span>
+          <span style="font-weight:700;font-size:12px;">${escHtml(dtName)}</span>
         </div>
-        <div style="font-size:10.5px;color:var(--mu);margin-top:3px;">${escHtml(r.subtitle || ('Open: ' + r.open + ' • Closed: ' + r.closed))}</div>
+        <div style="font-size:10.5px;color:var(--mu);margin-top:3px;">${escHtml(sub)}</div>
       </div>
-      <div style="font-size:18px;font-weight:800;font-family:monospace;">${r.total}</div>
+      <div class="bidi-ltr" style="font-size:18px;font-weight:800;font-family:monospace;">${r.total}</div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function _drawHseCanvasChart(canvas, labels, datasets, dark) {
@@ -8670,6 +8729,7 @@ function _drawHseCanvasChart(canvas, labels, datasets, dark) {
 
 function renderHseCharts() {
   const dark = document.body.classList.contains('dark');
+  const isRtl = _hseIsRtl();
   const gridColor = dark ? 'rgba(159,176,198,.16)' : 'rgba(0,0,0,.06)';
   const tickColor = dark ? '#cbd5e1' : '#54657d';
   const legendColor = dark ? '#dbe7f3' : '#334155';
@@ -8679,8 +8739,8 @@ function renderHseCharts() {
   const trends = (_hseState && _hseState.monthly_trends) || [];
   const trendLabels = trends.map(t => t.label);
   const trendDatasets = [
-    { label: 'OBS Open', data: trends.map(t => t.observations_open), backgroundColor: '#f59e0b', borderRadius: 4, stack: 'obs' },
-    { label: 'OBS Closed', data: trends.map(t => t.observations_closed), backgroundColor: '#10b981', borderRadius: 4, stack: 'obs' },
+    { label: _hseT('hse.chart_obs_open', null, 'OBS Open'), data: trends.map(t => t.observations_open), backgroundColor: '#f59e0b', borderRadius: 4, stack: 'obs' },
+    { label: _hseT('hse.chart_obs_closed', null, 'OBS Closed'), data: trends.map(t => t.observations_closed), backgroundColor: '#10b981', borderRadius: 4, stack: 'obs' },
     { label: 'FAC', data: trends.map(t => t.incidents_fac), backgroundColor: '#38bdf8', borderRadius: 4, stack: 'inc' },
     { label: 'MTC', data: trends.map(t => t.incidents_mtc), backgroundColor: '#fb923c', borderRadius: 4, stack: 'inc' },
     { label: 'LTI', data: trends.map(t => t.incidents_lti), backgroundColor: '#ef4444', borderRadius: 4, stack: 'inc' }
@@ -8697,9 +8757,12 @@ function renderHseCharts() {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } } },
+          plugins: {
+            legend: { position: 'bottom', rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } },
+            tooltip: { rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr' }
+          },
           scales: {
-            y: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
+            y: { beginAtZero: true, stacked: true, position: isRtl ? 'right' : 'left', grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
             x: { stacked: true, grid: { display: false }, ticks: { color: tickColor } }
           }
         }
@@ -8729,9 +8792,9 @@ function renderHseCharts() {
     return r.other || 0;
   });
   const statusDatasets = [
-    { label: 'Closed / Valid', data: safeGreen, backgroundColor: '#16a34a', borderRadius: 4, stack: 'st' },
-    { label: 'Open / Expiring', data: warnAmber, backgroundColor: '#f59e0b', borderRadius: 4, stack: 'st' },
-    { label: 'LTI / Expired / Other', data: critOther, backgroundColor: '#ef4444', borderRadius: 4, stack: 'st' }
+    { label: _hseT('hse.chart_closed_valid', null, 'Closed / Valid'), data: safeGreen, backgroundColor: '#16a34a', borderRadius: 4, stack: 'st' },
+    { label: _hseT('hse.chart_open_expiring', null, 'Open / Expiring'), data: warnAmber, backgroundColor: '#f59e0b', borderRadius: 4, stack: 'st' },
+    { label: _hseT('hse.chart_crit_other', null, 'LTI / Expired / Other'), data: critOther, backgroundColor: '#ef4444', borderRadius: 4, stack: 'st' }
   ];
   if (statusEl) {
     if (_hseStatusChart && typeof _hseStatusChart.destroy === 'function') {
@@ -8745,9 +8808,12 @@ function renderHseCharts() {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } } },
+          plugins: {
+            legend: { position: 'bottom', rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } },
+            tooltip: { rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr' }
+          },
           scales: {
-            y: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
+            y: { beginAtZero: true, stacked: true, position: isRtl ? 'right' : 'left', grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
             x: { stacked: true, grid: { display: false }, ticks: { color: tickColor } }
           }
         }
@@ -8761,10 +8827,10 @@ function renderHseCharts() {
   const pillRow = document.getElementById('hse-ptw-pills');
   if (pillRow) {
     pillRow.innerHTML = `
-      <span class="hse-pill ok">Valid Open PTWs: ${ptwS.valid_active || 0}</span>
-      <span class="hse-pill warn">Expiring PTWs: ${ptwS.expiring || 0}</span>
-      <span class="hse-pill danger">Overdue PTWs: ${ptwS.overdue || 0}</span>
-      <span class="hse-pill">Closed PTWs: ${ptwS.closed || 0}</span>
+      <span class="hse-pill ok">${escHtml(_hseT('hse.pill_valid_ptw', {count: ptwS.valid_active || 0}, 'Valid Open PTWs: ' + (ptwS.valid_active || 0)))}</span>
+      <span class="hse-pill warn">${escHtml(_hseT('hse.pill_expiring_ptw', {count: ptwS.expiring || 0}, 'Expiring PTWs: ' + (ptwS.expiring || 0)))}</span>
+      <span class="hse-pill danger">${escHtml(_hseT('hse.pill_overdue_ptw', {count: ptwS.overdue || 0}, 'Overdue PTWs: ' + (ptwS.overdue || 0)))}</span>
+      <span class="hse-pill">${escHtml(_hseT('hse.pill_closed_ptw', {count: ptwS.closed || 0}, 'Closed PTWs: ' + (ptwS.closed || 0)))}</span>
     `;
   }
 }
@@ -8782,7 +8848,7 @@ async function submitNewHseSite() {
   const code = document.getElementById('om-new-code').value.trim().toUpperCase();
   const client = document.getElementById('om-new-client').value.trim();
   if (!id || !name || !code) {
-    alert('Please enter Project ID, Name, and Code.');
+    alert(_hseT('hse.err_req_fields', null, 'Please enter Project ID, Name, and Code.'));
     return;
   }
   try {
@@ -8791,18 +8857,18 @@ async function submitNewHseSite() {
       body: JSON.stringify({ id, name, code, workspace_id: 'HSE', client })
     });
     if (res && res.ok) window.location = '/?ws=HSE';
-    else alert((res && res.error) || 'Failed to create HSE site');
+    else alert((res && res.error) || _hseT('hse.err_create', null, 'Failed to create HSE site'));
   } catch (e) {
-    alert('Error creating HSE site: ' + e.message);
+    alert(_hseT('hse.err_create_msg', {error: e.message}, 'Error creating HSE site: ' + e.message));
   }
 }
 
 async function delProject(pid, pname) {
-  if (!confirm('Delete HSE site: ' + pname + '? All records inside will be permanently deleted.')) return;
+  if (!confirm(_hseT('hse.confirm_del', {name: pname}, 'Delete HSE site: ' + pname + '? All records inside will be permanently deleted.'))) return;
   try {
     const r = await apiFetch('/api/projects/delete/' + encodeURIComponent(pid), { method: 'POST' });
     if (r && r.ok) window.location.reload();
-    else alert((r && r.error) || 'Delete failed');
+    else alert((r && r.error) || _hseT('om.err_del', null, 'Delete failed'));
   } catch (e) {
     alert(e.message);
   }
@@ -8812,25 +8878,25 @@ async function loadHseDailyDigest() {
   const container = document.getElementById('hse-daily-digest-content');
   if (!container) return;
   const dVal = document.getElementById('hse-digest-date')?.value || '';
-  container.innerHTML = '<div style="color:var(--mu);font-size:13px;padding:16px;">Loading Daily Digest...</div>';
+  container.innerHTML = `<div style="color:var(--mu);font-size:13px;padding:16px;">${escHtml(_hseT('om.digest_loading', null, 'Loading Daily Digest...'))}</div>`;
   try {
     const qs = '?workspace_id=HSE' + (dVal ? '&date=' + encodeURIComponent(dVal) : '');
     const r = await apiFetch('/api/daily_digest/all' + qs);
-    if (!r) { container.innerHTML = '<div style="color:red;padding:16px;">Failed to load digest.</div>'; return; }
-    let html = '<div class="hse-panel" style="border-top:4px solid #3b82f6;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">📥 Logged / Updated (' + (r.received || []).length + ')</div>';
-    if (!(r.received || []).length) html += '<div style="color:var(--mu);font-size:12px;">No records logged.</div>';
+    if (!r) { container.innerHTML = `<div style="color:red;padding:16px;">${escHtml(_hseT('om.digest_failed', null, 'Failed to load digest.'))}</div>`; return; }
+    let html = `<div class="hse-panel" style="border-top:4px solid #3b82f6;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">${escHtml(_hseT('hse.digest_logged', {count: (r.received || []).length}, '📥 Logged / Updated (' + (r.received || []).length + ')'))}</div>`;
+    if (!(r.received || []).length) html += `<div style="color:var(--mu);font-size:12px;">${escHtml(_hseT('hse.digest_no_logged', null, 'No records logged.'))}</div>`;
     (r.received || []).forEach(doc => {
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong class="bidi-ltr">' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
     });
-    html += '</div><div class="hse-panel" style="border-top:4px solid #22c55e;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">✅ Closed (' + (r.replied || []).length + ')</div>';
-    if (!(r.replied || []).length) html += '<div style="color:var(--mu);font-size:12px;">No records closed.</div>';
+    html += `</div><div class="hse-panel" style="border-top:4px solid #22c55e;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">${escHtml(_hseT('hse.digest_closed', {count: (r.replied || []).length}, '✅ Closed (' + (r.replied || []).length + ')'))}</div>`;
+    if (!(r.replied || []).length) html += `<div style="color:var(--mu);font-size:12px;">${escHtml(_hseT('hse.digest_no_closed', null, 'No records closed.'))}</div>`;
     (r.replied || []).forEach(doc => {
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong class="bidi-ltr">' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
     });
     html += '</div>';
     container.innerHTML = html;
   } catch (e) {
-    container.innerHTML = '<div style="color:red;padding:16px;">Error: ' + escHtml(e.message) + '</div>';
+    container.innerHTML = '<div style="color:red;padding:16px;">' + escHtml(_hseT('common.error', null, 'Error')) + ': ' + escHtml(e.message) + '</div>';
   }
 }
 
@@ -8852,11 +8918,11 @@ async function loadHseAudit(reset = false) {
       _hseAuditProjMap = {};
       (data.projects || []).forEach(p => { _hseAuditProjMap[p.id] = p.name || p.code || p.id; });
       const pSel = document.getElementById('hse-aud-pid');
-      if (pSel) pSel.innerHTML = '<option value="">All HSE Sites</option>' + (data.projects || []).map(p => `<option value="${escHtml(p.id)}"${p.id === pid ? ' selected' : ''}>${escHtml(p.name || p.id)}</option>`).join('');
+      if (pSel) pSel.innerHTML = `<option value="">${escHtml(_hseT('hse.aud_all_sites', null, 'All HSE Sites'))}</option>` + (data.projects || []).map(p => `<option value="${escHtml(p.id)}"${p.id === pid ? ' selected' : ''}>${escHtml(p.name || p.id)}</option>`).join('');
       const uSel = document.getElementById('hse-aud-user');
-      if (uSel) uSel.innerHTML = '<option value="">All Users</option>' + (data.users || []).map(u => `<option value="${escHtml(u)}"${u === user ? ' selected' : ''}>${escHtml(u)}</option>`).join('');
+      if (uSel) uSel.innerHTML = `<option value="">${escHtml(_hseT('dash.aud_all_users', null, 'All Users'))}</option>` + (data.users || []).map(u => `<option value="${escHtml(u)}"${u === user ? ' selected' : ''}>${escHtml(u)}</option>`).join('');
       const aSel = document.getElementById('hse-aud-action');
-      if (aSel) aSel.innerHTML = '<option value="">All Actions</option>' + (data.actions || []).map(a => `<option value="${escHtml(a)}"${a === action ? ' selected' : ''}>${escHtml(a)}</option>`).join('');
+      if (aSel) aSel.innerHTML = `<option value="">${escHtml(_hseT('dash.aud_all_actions', null, 'All Actions'))}</option>` + (data.actions || []).map(a => `<option value="${escHtml(a)}"${a === action ? ' selected' : ''}>${escHtml(a)}</option>`).join('');
     }
     const rows = data.rows || [];
     _hseAuditHasMore = rows.length === 100;
@@ -8865,20 +8931,20 @@ async function loadHseAudit(reset = false) {
       const ts = new Date(rawTs);
       const tsStr = (!rawTs || isNaN(ts.getTime())) ? '—' : (ts.toLocaleDateString('en-GB') + ' ' + ts.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }));
       return `<tr>
-        <td style="font-size:10px;color:var(--mu);white-space:nowrap">${tsStr}</td>
-        <td style="font-weight:600;font-size:11px">${escHtml(r.username || '')}</td>
-        <td><span class="badge" style="font-size:9px;">${escHtml(r.action || '')}</span></td>
+        <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap"><span class="bidi-ltr">${tsStr}</span></td>
+        <td style="font-weight:600;font-size:11px"><span class="bidi-ltr">${escHtml(r.username || '')}</span></td>
+        <td><span class="badge bidi-ltr" style="font-size:9px;">${escHtml(r.action || '')}</span></td>
         <td style="font-size:10px;color:var(--mu)">${escHtml(_hseAuditProjMap[r.project_id] || r.project_id || '—')}</td>
-        <td style="font-size:11px">${escHtml(r.doc_no || r.document_id || '—')}</td>
+        <td style="font-size:11px"><span class="bidi-ltr">${escHtml(r.doc_no || r.document_id || '—')}</span></td>
         <td style="font-size:10px;color:var(--mu)">${escHtml(r.detail || '—')}</td>
       </tr>`;
-    }).join('') : '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu)">No HSE activity found</td></tr>';
+    }).join('') : `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu)">${escHtml(_hseT('hse.aud_no_activity', null, 'No HSE activity found'))}</td></tr>`;
     const prevBtn = document.getElementById('hse-aud-prev');
     if (prevBtn) prevBtn.disabled = _hseAuditOffset === 0;
     const nextBtn = document.getElementById('hse-aud-next');
     if (nextBtn) nextBtn.disabled = !_hseAuditHasMore;
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#ef4444;">Error loading audit log</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:#ef4444;">${escHtml(_hseT('hse.aud_err', null, 'Error loading audit log'))}</td></tr>`;
   }
 }
 
@@ -8917,9 +8983,10 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     except Exception:
         ws_obj = None
     ws_obj = ws_obj or {"id": "HSE", "code": "HSE", "name": "Health, Safety & Environment", "icon": "🛡️", "description": "Permits, Safety Observations, Incidents, Man-Hours & Fire Equipment"}
-    ws_name = _h_esc(str(ws_obj.get("name") or "Health, Safety & Environment"))
+    ws_meta = translate_workspace_meta(ws_obj, norm)
+    ws_name = _h_esc(str(ws_meta["name"] or ws_obj.get("name") or "Health, Safety & Environment"))
     ws_icon = _h_esc(str(ws_obj.get("icon") or "🛡️"))
-    ws_desc = _h_esc(str(ws_obj.get("description") or "").strip())
+    ws_desc = _h_esc(str(ws_meta["desc"] or "").strip())
 
     payload = None
     if u:
@@ -8952,9 +9019,9 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     header_add_btn = (
         '<button class="tb-btn glow" onclick="openM(\'new-om-modal\')" '
         'style="background:var(--brand-teal);color:#fff;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;border:none;">'
-        '➕ New HSE Project / Site</button>'
+        f'{t("hse.add_site_btn", norm)}</button>'
     ) if can_manage else ""
-    audit_btn = '<button class="tbtn" onclick="showHseTab(\'audit\', this)">📜 Audit Log</button>' if can_manage else ""
+    audit_btn = f'<button class="tbtn" onclick="showHseTab(\'audit\', this)">{t("hse.tab_audit", norm)}</button>' if can_manage else ""
 
     cards_html = ""
     for p in (accessible_projs or []):
@@ -8971,19 +9038,19 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
         js_pid = p_id.replace("\\", "\\\\").replace("'", "\\'")
         js_pname = str(p.get("name") or p_id).replace("\\", "\\\\").replace("'", "\\'")
         del_btn = (
-            f'<button type="button" class="pcard-btn pcard-del" title="Delete Site" '
+            f'<button type="button" class="pcard-btn pcard-del" title="{_h_esc(t("hse.del_site_title", norm))}" '
             f'onclick="event.preventDefault();event.stopPropagation();delProject(\'{_h_esc(js_pid)}\',\'{_h_esc(js_pname)}\')">🗑️</button>'
         ) if can_manage else ""
         cards_html += f"""
-        <div class="om-card" onclick="window.location='/app?p={_h_esc(p_id)}'" title="Open {p_name}">
+        <div class="om-card" onclick="window.location='/app?p={_h_esc(p_id)}'" title="{_h_esc(t("om.open_title", norm, name=p_name))}">
           <div class="om-card-header">
-            <span class="om-code-badge">{p_code}</span>
-            <span class="om-status-badge">Active HSE</span>
+            <span class="om-code-badge bidi-ltr">{p_code}</span>
+            <span class="om-status-badge">{t("hse.status_active", norm)}</span>
           </div>
           <div class="om-card-title">{p_name}</div>
-          <div class="om-card-client">🏢 Client / Site: <strong>{client}</strong></div>
+          <div class="om-card-client">🏢 {t("hse.lbl_client_site", norm)} <strong>{client}</strong></div>
           <div class="om-card-footer">
-            <span class="om-card-action">Open HSE Registers ➔</span>
+            <span class="om-card-action">{t("hse.open_registers", norm)} <span class="rtl-flip">➔</span></span>
             {del_btn}
           </div>
         </div>
@@ -8992,13 +9059,13 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     if not cards_html:
         empty_add = (
             '<button class="tb-btn glow" style="margin-top:14px;padding:8px 18px;font-size:13px;" '
-            'onclick="openM(\'new-om-modal\')">➕ Register First HSE Project / Site</button>'
+            f'onclick="openM(\'new-om-modal\')">{t("hse.empty_add_btn", norm)}</button>'
         ) if can_manage else ""
         cards_html = f"""
         <div class="om-empty-state">
           <div style="font-size:38px;margin-bottom:8px;">🛡️</div>
-          <div style="font-size:16px;font-weight:700;margin-bottom:4px;">No HSE Sites or Projects Assigned Yet</div>
-          <div style="font-size:12px;color:var(--mu);max-width:480px;margin:0 auto;">Register or request assignment to an HSE project to start tracking permits, observations, incidents, and man-hours.</div>
+          <div style="font-size:16px;font-weight:700;margin-bottom:4px;">{t("hse.empty_title", norm)}</div>
+          <div style="font-size:12px;color:var(--mu);max-width:480px;margin:0 auto;">{t("hse.empty_sub", norm)}</div>
           {empty_add}
         </div>
         """
@@ -9008,7 +9075,7 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 
     return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR — {ws_name} Command Dashboard</title>
+<title>{t("hse.page_title", norm, ws_name=ws_name)}</title>
 {_head_icon_tags()}
 {BASE_CSS}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -9028,7 +9095,7 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
+  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
@@ -9036,7 +9103,7 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 <div class="wrap">
   <div class="hse-header-bar">
     <div>
-      <div class="hse-header-title">{ws_icon} {ws_name} — Executive Command Center</div>
+      <div class="hse-header-title">{ws_icon} {ws_name} — {t("hse.header_suffix", norm)}</div>
       {f'<div class="hse-header-sub">{ws_desc}</div>' if ws_desc else ''}
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
@@ -9046,26 +9113,26 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 
   <div class="psel-bar">
     <select id="hse-filter-pid" onchange="refreshHseDashboard()" aria-label="Filter by HSE project">
-      <option value="">All HSE Sites & Projects</option>
+      <option value="">{t("hse.all_sites", norm)}</option>
       {proj_opts_html}
     </select>
     <select id="hse-filter-year" onchange="refreshHseDashboard()" aria-label="Filter by year">
-      <option value="">All Years</option>
+      <option value="">{t("hse.all_years", norm)}</option>
       {year_opts_html}
     </select>
     <select id="hse-filter-warn" onchange="refreshHseDashboard()" aria-label="Alert warning window">
-      <option value="14">Warn: 14 Days</option>
-      <option value="30" selected>Warn: 30 Days</option>
-      <option value="60">Warn: 60 Days</option>
-      <option value="90">Warn: 90 Days</option>
+      <option value="14">{t("hse.warn_days", norm, days=14)}</option>
+      <option value="30" selected>{t("hse.warn_days", norm, days=30)}</option>
+      <option value="60">{t("hse.warn_days", norm, days=60)}</option>
+      <option value="90">{t("hse.warn_days", norm, days=90)}</option>
     </select>
-    <input type="text" id="hse-site-search" placeholder="🔍 Filter HSE sites..." oninput="filterHseCards(this.value)" style="min-width:170px;">
-    <button class="tbtn" onclick="refreshHseDashboard()" title="Refresh live KPIs">🔄 Refresh</button>
+    <input type="text" id="hse-site-search" placeholder="{_h_esc(t("hse.search_ph", norm))}" oninput="filterHseCards(this.value)" style="min-width:170px;">
+    <button class="tbtn" onclick="refreshHseDashboard()" title="{_h_esc(t("hse.refresh_title", norm))}">{t("hse.refresh_btn", norm)}</button>
     <div class="sp" style="flex:1"></div>
     <div style="display:flex;gap:4px;flex-wrap:wrap;">
-      <button class="tbtn active" onclick="showHseTab('overview', this)">🛡️ Command Center</button>
-      <button class="tbtn" id="hse-btn-alerts" onclick="showHseTab('alerts', this)">⚠️ Expiry & Alerts <span id="hse-tab-alert-badge" class="badge" style="background:#ef4444;color:#fff;font-size:9.5px;display:none;">0</span></button>
-      <button class="tbtn" onclick="showHseTab('daily-digest', this)">🌟 Daily Digest</button>
+      <button class="tbtn active" onclick="showHseTab('overview', this)">{t("hse.tab_command_center", norm)}</button>
+      <button class="tbtn" id="hse-btn-alerts" onclick="showHseTab('alerts', this)">{t("hse.tab_alerts", norm)} <span id="hse-tab-alert-badge" class="badge bidi-ltr" style="background:#ef4444;color:#fff;font-size:9.5px;display:none;">0</span></button>
+      <button class="tbtn" onclick="showHseTab('daily-digest', this)">{t("hse.tab_daily_digest", norm)}</button>
       {audit_btn}
     </div>
   </div>
@@ -9073,64 +9140,64 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   <div id="tab-hse-overview" class="tab-pane active">
     <div class="hse-hero-grid">
       <div class="hse-kpi-card tone-info" id="hse-card-lti">
-        <span class="hse-kpi-lbl">LTI-Free Days Streak</span>
-        <span class="hse-kpi-val info" id="hse-kpi-lti-days">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-lti">No dated HSE records yet</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_lti_streak", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-lti-days">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-lti">{t("hse.sub_lti_empty", norm)}</span>
       </div>
       <div class="hse-kpi-card tone-info" id="hse-card-any">
-        <span class="hse-kpi-lbl">Any-Injury-Free Days</span>
-        <span class="hse-kpi-val info" id="hse-kpi-any-days">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-any">FAC / MTC / LTI streak</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_any_streak", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-any-days">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-any">{t("hse.kpi_any_sub_default", norm)}</span>
       </div>
       <div class="hse-kpi-card tone-info" id="hse-card-ltif">
-        <span class="hse-kpi-lbl">LTIF (per 1M Man-Hours)</span>
-        <span class="hse-kpi-val info" id="hse-kpi-ltif">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-ltif">Lost Time Injury Frequency</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_ltif", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-ltif">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-ltif">{t("hse.kpi_ltif_sub_default", norm)}</span>
       </div>
       <div class="hse-kpi-card tone-info" id="hse-card-trir">
-        <span class="hse-kpi-lbl">TRIR (per 1M Man-Hours)</span>
-        <span class="hse-kpi-val info" id="hse-kpi-trir">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-trir">Total Recordable Incident Rate</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_trir", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-trir">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-trir">{t("hse.kpi_trir_sub_default", norm)}</span>
       </div>
       <div class="hse-kpi-card tone-info" id="hse-card-sev">
-        <span class="hse-kpi-lbl">Severity Rate (per 1M hrs)</span>
-        <span class="hse-kpi-val info" id="hse-kpi-sev">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-sev">Lost Days: 0</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_sev", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-sev">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-sev">{t("hse.kpi_sev_sub", norm, days=0)}</span>
       </div>
       <div class="hse-kpi-card tone-good" id="hse-card-hours">
-        <span class="hse-kpi-lbl">Total Worked Man-Hours</span>
-        <span class="hse-kpi-val" id="hse-kpi-hours">0</span>
-        <span class="hse-kpi-sub" id="hse-sub-hours">{total_sites} active HSE project(s)</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_hours", norm)}</span>
+        <span class="hse-kpi-val bidi-ltr" id="hse-kpi-hours">0</span>
+        <span class="hse-kpi-sub" id="hse-sub-hours">{t("hse.kpi_hours_sub", norm, count=total_sites)}</span>
       </div>
     </div>
 
     <div class="om-kpi-grid" style="grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));">
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Open Safety Observations (OBS)</span>
-        <span class="om-kpi-val warning" id="hse-sum-obs-open">0 / 0</span>
-        <span class="hse-kpi-sub" id="hse-sum-obs-sub">Closed: 0 • Stale (&gt;30d): 0</span>
+        <span class="om-kpi-lbl">{t("hse.kpi_obs_open", norm)}</span>
+        <span class="om-kpi-val warning bidi-ltr" id="hse-sum-obs-open">0 / 0</span>
+        <span class="hse-kpi-sub" id="hse-sum-obs-sub">{t("hse.kpi_obs_sub", norm, closed=0, stale=0)}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Open / Expiring Permits (PTW)</span>
-        <span class="om-kpi-val warning" id="hse-sum-ptw-open">0</span>
-        <span class="hse-kpi-sub" id="hse-sum-ptw-sub">Expiring: 0 • Overdue: 0</span>
+        <span class="om-kpi-lbl">{t("hse.kpi_ptw_open", norm)}</span>
+        <span class="om-kpi-val warning bidi-ltr" id="hse-sum-ptw-open">0</span>
+        <span class="hse-kpi-sub" id="hse-sum-ptw-sub">{t("hse.kpi_ptw_sub", norm, expiring=0, overdue=0)}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Expiring / Expired FEI</span>
-        <span class="om-kpi-val" id="hse-sum-fei-exp" style="color:#ef4444;">0</span>
-        <span class="hse-kpi-sub" id="hse-sum-fei-sub">Expired: 0 • Due ≤30d: 0</span>
+        <span class="om-kpi-lbl">{t("hse.kpi_fei_exp", norm)}</span>
+        <span class="om-kpi-val bidi-ltr" id="hse-sum-fei-exp" style="color:#ef4444;">0</span>
+        <span class="hse-kpi-sub" id="hse-sum-fei-sub">{t("hse.kpi_fei_sub", norm, expired=0, days=30, expiring=0)}</span>
       </div>
       <div class="om-kpi-card" id="hse-card-sum-completed">
-        <span class="om-kpi-lbl">Completed / Closed</span>
-        <span class="om-kpi-val success">{completed_records}</span>
-        <span class="hse-kpi-sub" id="hse-sum-tot-sub">{total_records} total across {total_sites} site(s)</span>
+        <span class="om-kpi-lbl">{t("hse.kpi_completed", norm)}</span>
+        <span class="om-kpi-val success bidi-ltr">{completed_records}</span>
+        <span class="hse-kpi-sub" id="hse-sum-tot-sub">{t("hse.kpi_completed_sub", norm, total=total_records, sites=total_sites)}</span>
       </div>
     </div>
 
     <div class="hse-panel" style="margin-bottom:16px;" id="hse-alerts-panel">
       <div class="hse-panel-hdr">
-        <div class="hse-panel-title">🚨 Actionable Expiry &amp; Overdue Alerts</div>
-        <span style="font-size:11px;color:var(--mu);">Overdue/Expiring PTWs, FEI inspections &amp; Stale Observations (&gt;30d)</span>
+        <div class="hse-panel-title">{t("hse.sec_alerts_title", norm)}</div>
+        <span style="font-size:11px;color:var(--mu);">{_h_esc(t("hse.sec_alerts_sub", norm))}</span>
       </div>
       <div id="hse-alerts-preview"></div>
     </div>
@@ -9138,15 +9205,15 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     <div class="hse-charts-grid">
       <div class="hse-panel">
         <div class="hse-panel-hdr">
-          <div class="hse-panel-title">📈 Monthly Incidents &amp; Observations Trend</div>
-          <span style="font-size:11px;color:var(--mu);">FAC / MTC / LTI vs Open/Closed OBS</span>
+          <div class="hse-panel-title">{t("hse.sec_trend_title", norm)}</div>
+          <span style="font-size:11px;color:var(--mu);">{t("hse.sec_trend_sub", norm)}</span>
         </div>
         <div class="hse-chart-box"><canvas id="hseTrendChart" height="260"></canvas></div>
       </div>
       <div class="hse-panel">
         <div class="hse-panel-hdr">
-          <div class="hse-panel-title">🔥 PTW &amp; Register Status Breakdown</div>
-          <span style="font-size:11px;color:var(--mu);">PTW, OBS, INC, SVP, FEI &amp; JSA</span>
+          <div class="hse-panel-title">{t("hse.sec_status_title", norm)}</div>
+          <span style="font-size:11px;color:var(--mu);">{t("hse.sec_status_sub", norm)}</span>
         </div>
         <div class="hse-chart-box"><canvas id="hseStatusChart" height="260"></canvas></div>
         <div class="hse-pill-row" id="hse-ptw-pills"></div>
@@ -9154,11 +9221,11 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     </div>
 
     <div style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:8px;">📄 11 Configured HSE Registers</div>
+      <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:8px;">{t("hse.sec_registers", norm)}</div>
       <div class="hse-reg-grid" id="hse-reg-grid"></div>
     </div>
 
-    <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:10px;">🏗️ HSE Projects &amp; Sites</div>
+    <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:10px;">{t("hse.sec_sites", norm)}</div>
     <div class="om-grid" id="hse-sites-grid">
       {cards_html}
     </div>
@@ -9167,12 +9234,12 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   <div id="tab-hse-alerts" class="tab-pane" style="display:none;">
     <div class="hse-panel" style="margin-bottom:12px;">
       <div class="hse-panel-hdr" style="margin-bottom:0;">
-        <div class="hse-panel-title">⚠️ Expiry, Overdue &amp; Stale Observation Queue</div>
+        <div class="hse-panel-title">{t("hse.alerts_queue_title", norm)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="tbtn hse-alert-flt active" onclick="setHseAlertFilter('', this)">All Alerts</button>
-          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('ptw', this)">Permits (PTW)</button>
-          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('fei', this)">Fire &amp; Equipment (FEI)</button>
-          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('obs', this)">Stale OBS (&gt;30d)</button>
+          <button class="tbtn hse-alert-flt active" onclick="setHseAlertFilter('', this)">{t("hse.flt_all", norm)}</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('ptw', this)">{t("hse.flt_ptw", norm)}</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('fei', this)">{t("hse.flt_fei", norm)}</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('obs', this)">{t("hse.flt_obs", norm)}</button>
         </div>
       </div>
     </div>
@@ -9180,13 +9247,13 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
       <table class="user-tbl" style="width:100%;">
         <thead>
           <tr>
-            <th style="padding:10px 12px;">Severity</th>
-            <th style="padding:10px 12px;">Register</th>
-            <th style="padding:10px 12px;">Site</th>
-            <th style="padding:10px 12px;">Ref No.</th>
-            <th style="padding:10px 12px;">Title / Subject</th>
-            <th style="padding:10px 12px;">Status / Due</th>
-            <th style="padding:10px 12px;text-align:right;">Action</th>
+            <th style="padding:10px 12px;">{t("hse.th_severity", norm)}</th>
+            <th style="padding:10px 12px;">{t("hse.th_register", norm)}</th>
+            <th style="padding:10px 12px;">{t("hse.th_site", norm)}</th>
+            <th style="padding:10px 12px;">{t("hse.th_ref_no", norm)}</th>
+            <th style="padding:10px 12px;">{t("om.ov_th_title", norm)}</th>
+            <th style="padding:10px 12px;">{t("hse.th_status_due", norm)}</th>
+            <th style="padding:10px 12px;text-align:end;">{t("hse.th_action", norm)}</th>
           </tr>
         </thead>
         <tbody id="hse-alerts-tbody"></tbody>
@@ -9197,8 +9264,8 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   <div id="tab-hse-daily-digest" class="tab-pane" style="display:none;">
     <div class="hse-panel" style="margin-bottom:14px;">
       <div class="hse-panel-hdr" style="margin-bottom:0;">
-        <div class="hse-panel-title">🌟 HSE Daily Digest</div>
-        <input type="date" id="hse-digest-date" onchange="loadHseDailyDigest()" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;">
+        <div class="hse-panel-title">{t("hse.digest_title", norm)}</div>
+        <input type="date" id="hse-digest-date" class="bidi-ltr" onchange="loadHseDailyDigest()" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;">
       </div>
     </div>
     <div id="hse-daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;"></div>
@@ -9207,23 +9274,23 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   <div id="tab-hse-audit" class="tab-pane" style="display:none;">
     <div class="hse-panel">
       <div class="hse-panel-hdr">
-        <div class="hse-panel-title">📜 HSE Audit &amp; Activity Log</div>
-        <button class="tbtn" onclick="loadHseAudit(true)">🔄 Refresh</button>
+        <div class="hse-panel-title">{t("hse.aud_title", norm)}</div>
+        <button class="tbtn" onclick="loadHseAudit(true)">{t("hse.refresh_btn", norm)}</button>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-        <select id="hse-aud-pid" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All HSE Sites</option></select>
-        <select id="hse-aud-user" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All Users</option></select>
-        <select id="hse-aud-action" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All Actions</option></select>
+        <select id="hse-aud-pid" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">{t("hse.aud_all_sites", norm)}</option></select>
+        <select id="hse-aud-user" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">{t("dash.aud_all_users", norm)}</option></select>
+        <select id="hse-aud-action" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">{t("dash.aud_all_actions", norm)}</option></select>
       </div>
       <div style="overflow:auto;max-height:calc(100vh - 280px);border:1px solid var(--bd);border-radius:var(--rd);">
         <table class="dt-tbl" style="width:100%;">
-          <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Site</th><th>Document</th><th>Detail</th></tr></thead>
+          <thead><tr><th>{t("dash.aud_th_time", norm)}</th><th>{t("dash.aud_th_user", norm)}</th><th>{t("dash.aud_th_action", norm)}</th><th>{t("hse.th_site", norm)}</th><th>{t("dash.aud_th_document", norm)}</th><th>{t("dash.aud_th_detail", norm)}</th></tr></thead>
           <tbody id="hse-aud-tbody"></tbody>
         </table>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
-        <button id="hse-aud-prev" class="tbtn" onclick="hseAuditPage(-1)" disabled>← Prev</button>
-        <button id="hse-aud-next" class="tbtn" onclick="hseAuditPage(1)">Next →</button>
+        <button id="hse-aud-prev" class="tbtn" onclick="hseAuditPage(-1)" disabled>{t("dash.aud_prev", norm)}</button>
+        <button id="hse-aud-next" class="tbtn" onclick="hseAuditPage(1)">{t("dash.aud_next", norm)}</button>
       </div>
     </div>
   </div>
@@ -9232,17 +9299,17 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 <div id="new-om-modal" class="overlay hidden" onclick="if(event.target===this)closeM('new-om-modal')">
   <div class="modal" style="max-width:480px">
     <div class="mhdr">
-      <span>➕ Register New HSE Project / Site</span>
+      <span>{t("hse.modal_new_site", norm)}</span>
       <button class="xbtn" onclick="closeM('new-om-modal')">✕</button>
     </div>
     <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
-      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">HSE Project ID:</label><input type="text" id="om-new-id" placeholder="e.g. HSE-SITE-02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
-      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Site / Project Name:</label><input type="text" id="om-new-name" placeholder="e.g. Main Plant Turnaround HSE" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
-      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Short Code:</label><input type="text" id="om-new-code" placeholder="e.g. HSE02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
-      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Client / Site Location:</label><input type="text" id="om-new-client" placeholder="e.g. GasChill" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("hse.lbl_site_id", norm)}</label><input type="text" id="om-new-id" class="bidi-ltr" placeholder="e.g. HSE-SITE-02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("hse.lbl_site_name", norm)}</label><input type="text" id="om-new-name" placeholder="e.g. Main Plant Turnaround HSE" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("hse.lbl_short_code", norm)}</label><input type="text" id="om-new-code" class="bidi-ltr" placeholder="e.g. HSE02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("hse.lbl_client_loc", norm)}</label><input type="text" id="om-new-client" placeholder="e.g. GasChill" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
-        <button class="tb-btn" onclick="closeM('new-om-modal')">Cancel</button>
-        <button class="tb-btn glow" onclick="submitNewHseSite()" style="background:var(--brand-teal);color:#fff;font-weight:700">Save HSE Site</button>
+        <button class="tb-btn" onclick="closeM('new-om-modal')">{t("common.cancel", norm)}</button>
+        <button class="tb-btn glow" onclick="submitNewHseSite()" style="background:var(--brand-teal);color:#fff;font-weight:700">{t("hse.btn_save_site", norm)}</button>
       </div>
     </div>
   </div>
@@ -10798,7 +10865,7 @@ def render_dashboard(u, active_ws_id=None, lang=None):
     dir_attr = html_dir(norm)
     btns, uname, rlbl, rbg = _user_info_html(u, lang=norm)
     role = u["role"] if u else "guest"
-    audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;, this)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
+    audit_btn = f'<button class="tbtn" onclick="showTab(&#39;audit&#39;, this)">{t("dash.tab_audit", norm)}</button>' if role in ('superadmin','admin') else ''
     user_ws = db.get_user_workspaces(u["username"]) if u else []
     ws_ids = [w["id"] for w in user_ws]
     if not active_ws_id:
@@ -10827,7 +10894,7 @@ def render_dashboard(u, active_ws_id=None, lang=None):
 
     return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR — Dashboard</title>
+<title>{t("dash.page_title", norm)}</title>
 {_head_icon_tags()}
 {BASE_CSS}
 <style>
@@ -11283,13 +11350,76 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 .del-pbtn{{background:none;border:none;cursor:pointer;color:#ef4444;
   font-size:11px;padding:2px 5px;border-radius:3px}}
 .del-pbtn:hover{{background:#fef2f2}}
+
+/* ── RTL Dashboard Overrides ── */
+html[dir="rtl"] .kpi,
+html[dir="rtl"] .ccard,
+html[dir="rtl"] .pcard,
+html[dir="rtl"] .panel,
+html[dir="rtl"] .pr-block,
+html[dir="rtl"] .ltr-summary-card,
+html[dir="rtl"] .ltr-party-card {{
+  text-align:right;
+}}
+html[dir="rtl"] .klbl,
+html[dir="rtl"] .clbl,
+html[dir="rtl"] .panel-title {{
+  letter-spacing:0;
+  text-transform:none;
+}}
+html[dir="rtl"] .dt-tbl th {{
+  text-align:right;
+}}
+html[dir="rtl"] .dt-tbl th:first-child,
+html[dir="rtl"] .dt-tbl td:first-child {{
+  left:auto;
+  right:0;
+}}
+html[dir="rtl"] .disc-child-label {{
+  padding-left:14px!important;
+  padding-right:18px!important;
+}}
+html[dir="rtl"] .disc-child-label::before {{
+  left:auto;
+  right:8px;
+}}
+html[dir="rtl"] .stitle {{
+  border-left:none;
+  border-right:4px solid var(--pr);
+  padding-left:0;
+  padding-right:10px;
+}}
+html[dir="rtl"] .pr-total {{
+  border-left:1px solid #e3eaf2 !important;
+  border-right:4px solid #2563eb !important;
+}}
+html[dir="rtl"] body.dark .pr-total {{
+  border-left-color:#304257 !important;
+  border-right-color:#2563eb !important;
+}}
+html[dir="rtl"] .ltr-summary-card {{
+  border-left:1px solid #e3eaf2 !important;
+  border-right:4px solid var(--ltr-accent, #2F4F64) !important;
+}}
+html[dir="rtl"] body.dark .ltr-summary-card {{
+  border-left-color:#304257 !important;
+  border-right-color:var(--ltr-accent, #2F4F64) !important;
+}}
+html[dir="rtl"] #aud-tbl th .aud-rz {{
+  right:auto;
+  left:0;
+}}
+html[dir="rtl"] #aud-tbl th,
+html[dir="rtl"] #aud-tbl td {{
+  text-align:right;
+}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head><body data-workspace="{active_ws}">
 
 <div id="ld">
   <div class="spin"></div>
-  <div style="color:rgba(255,255,255,.7);font-size:13px;font-weight:600">Loading dashboard...</div>
+  <div style="color:rgba(255,255,255,.7);font-size:13px;font-weight:600">{t("dash.loading_dashboard", norm)}</div>
 </div>
 
 <div id="topbar">
@@ -11305,7 +11435,7 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
+  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 <span class="bidi-ltr">{uname}</span>
     <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
@@ -11314,21 +11444,21 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
   <!-- Toolbar / Navigation Bar FIRST -->
   <div class="psel-bar">
-    <label>🔍 Project:</label>
+    <label>{t("dash.lbl_project", norm)}</label>
     <select id="proj-sel" onchange="filterProject(this.value)">
-      <option value="">All Projects</option>
+      <option value="">{t("dash.all_projects", norm)}</option>
     </select>
-    <label>🏗 Discipline:</label>
+    <label>{t("dash.lbl_discipline", norm)}</label>
     <select id="disc-sel" onchange="filterDisc(this.value)">
-      <option value="">All Disciplines</option>
+      <option value="">{t("dash.all_disciplines", norm)}</option>
     </select>
     <div class="sp" style="flex:1"></div>
     <div style="display:flex; gap:4px; flex-wrap:nowrap; justify-content:flex-end">
-      <button class="tbtn active" onclick="showTab('overview', this)">📊 Overview</button>
-      <button class="tbtn" onclick="showTab('analytics', this)">📈 Analytics</button>
-      <button class="tbtn" onclick="showTab('overdue', this)">⚠️ Overdue</button>
-      <button class="tbtn" onclick="showTab('executive', this)">📋 Executive</button>
-      <button class="tbtn" onclick="showTab('daily-digest', this)">🌟 Daily Digest</button>
+      <button class="tbtn active" onclick="showTab('overview', this)">{t("dash.tab_overview", norm)}</button>
+      <button class="tbtn" onclick="showTab('analytics', this)">{t("dash.tab_analytics", norm)}</button>
+      <button class="tbtn" onclick="showTab('overdue', this)">{t("dash.tab_overdue", norm)}</button>
+      <button class="tbtn" onclick="showTab('executive', this)">{t("dash.tab_executive", norm)}</button>
+      <button class="tbtn" onclick="showTab('daily-digest', this)">{t("dash.tab_daily_digest", norm)}</button>
       {audit_btn}
     </div>
   </div>
@@ -11337,13 +11467,13 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
     <!-- TAB: DAILY DIGEST -->
     <div id="tab-daily-digest" class="tab-pane">
       <div class="stitle" style="display:flex; justify-content:space-between; align-items:center;">
-        <div>🌟 Daily Digest</div>
+        <div>{t("dash.digest_title", norm)}</div>
         <div>
-          <input type="date" id="digest-date" style="padding:4px 8px; border:1px solid var(--bd); border-radius:4px; font-size:12px; background:var(--bg); color:var(--tx); letter-spacing:normal; text-transform:none; font-weight:normal;" onchange="loadDailyDigest()">
+          <input type="date" id="digest-date" class="bidi-ltr" style="padding:4px 8px; border:1px solid var(--bd); border-radius:4px; font-size:12px; background:var(--bg); color:var(--tx); letter-spacing:normal; text-transform:none; font-weight:normal;" onchange="loadDailyDigest()">
         </div>
       </div>
       <div id="daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
-        <div style="color:var(--mu);font-size:14px;">Loading Daily Digest...</div>
+        <div style="color:var(--mu);font-size:14px;">{t("dash.digest_loading", norm)}</div>
       </div>
     </div>
 
@@ -11352,56 +11482,56 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <div class="overview-stack">
         <!-- 1. PROJECTS Grid -->
         <div class="panel overview-projects-panel">
-          <div class="panel-title">Projects</div>
+          <div class="panel-title">{t("dash.sec_projects", norm)}</div>
           <div class="pgrid" id="pgrid"></div>
         </div>
 
         <!-- 2. Submittals KPI Summary -->
         <div class="panel" style="padding:11px 12px;margin-bottom:0;min-width:0">
-          <div class="panel-title" style="margin-bottom:8px">Submittals KPI Summary</div>
+          <div class="panel-title" style="margin-bottom:8px">{t("dash.sec_submittals_kpi", norm)}</div>
           <div class="kpi-grid" style="margin-bottom:0">
-            <div class="kpi"><div class="kval" id="kpi-total">—</div><div class="klbl">Total Submittals</div></div>
-            <div class="kpi ok"><div class="kval" id="kpi-approved">—</div><div class="klbl">Approved</div></div>
+            <div class="kpi"><div class="kval bidi-ltr" id="kpi-total">—</div><div class="klbl">{t("dash.kpi_total_submittals", norm)}</div></div>
+            <div class="kpi ok"><div class="kval bidi-ltr" id="kpi-approved">—</div><div class="klbl">{t("dash.kpi_approved", norm)}</div></div>
             <div class="kpi wa">
-              <div class="kval" id="kpi-pending">—</div>
-              <div class="klbl">Under Review</div>
-              <div id="kpi-pending-sub" style="font-size:9.5px;color:var(--mu);margin-top:3px;font-weight:600">Active Queue</div>
+              <div class="kval bidi-ltr" id="kpi-pending">—</div>
+              <div class="klbl">{t("dash.kpi_under_review", norm)}</div>
+              <div id="kpi-pending-sub" style="font-size:9.5px;color:var(--mu);margin-top:3px;font-weight:600">{t("dash.kpi_active_queue", norm)}</div>
             </div>
             <div class="kpi er">
-              <div class="kval" id="kpi-overdue">—</div>
-              <div class="klbl">Overdue</div>
-              <div id="kpi-overdue-sub" style="font-size:9.5px;color:#ef4444;margin-top:3px;font-weight:700;background:#fef2f2;padding:1px 6px;border-radius:4px;border:1px solid #fecaca;display:inline-block">FROM PENDING</div>
+              <div class="kval bidi-ltr" id="kpi-overdue">—</div>
+              <div class="klbl">{t("dash.kpi_overdue", norm)}</div>
+              <div id="kpi-overdue-sub" style="font-size:9.5px;color:#ef4444;margin-top:3px;font-weight:700;background:#fef2f2;padding:1px 6px;border-radius:4px;border:1px solid #fecaca;display:inline-block">{t("dash.kpi_from_pending", norm)}</div>
             </div>
-            <div class="kpi pu"><div class="kval" id="kpi-rejected">—</div><div class="klbl">Rejected/Revise</div></div>
-            <div class="kpi"><div class="kval" id="kpi-pct">—</div><div class="klbl">Completion %</div></div>
-            <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
+            <div class="kpi pu"><div class="kval bidi-ltr" id="kpi-rejected">—</div><div class="klbl">{t("dash.kpi_rejected_revise", norm)}</div></div>
+            <div class="kpi"><div class="kval bidi-ltr" id="kpi-pct">—</div><div class="klbl">{t("dash.kpi_completion_pct", norm)}</div></div>
+            <div class="kpi"><div class="kval bidi-ltr" id="kpi-projs">—</div><div class="klbl">{t("dash.kpi_projects", norm)}</div></div>
           </div>
         </div>
       </div>
 
       <!-- 3. Operational Breakdown -->
       <div class="panel overview-wide-panel">
-        <div class="panel-title">Operational Breakdown</div>
+        <div class="panel-title">{t("dash.sec_operational_breakdown", norm)}</div>
         <div class="overview-table-switch">
-          <button type="button" id="ovtab-doc-types" class="overview-table-btn active" onclick="setOverviewTableTab('docTypes')">Document Types Summary</button>
-          <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">Discipline Breakdown</button>
+          <button type="button" id="ovtab-doc-types" class="overview-table-btn active" onclick="setOverviewTableTab('docTypes')">{t("dash.tab_doc_types_summary", norm)}</button>
+          <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">{t("dash.tab_discipline_breakdown", norm)}</button>
         </div>
         <div class="overview-table-shell">
           <div id="overview-pane-docTypes" class="overview-table-pane active">
             <div class="tbl-wrap">
               <table class="dt-tbl">
                 <thead><tr>
-                  <th>Project</th><th>Code</th><th>Type</th>
-                  <th style="text-align:center">Total</th>
-                  <th style="text-align:center">Approved</th>
-                  <th style="text-align:center">Pending</th>
-                  <th style="text-align:center">Rejected</th>
-                  <th style="text-align:center">Info / Closed</th>
-                  <th style="text-align:center">Overdue</th>
+                  <th>{t("dash.th_project", norm)}</th><th>{t("dash.th_code", norm)}</th><th>{t("dash.th_type", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_total", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_approved", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_pending", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_rejected", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_info_closed", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_overdue", norm)}</th>
                 </tr></thead>
                 <tbody id="dt-tbody"></tbody>
               </table>
-              <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+              <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">{t("dash.no_data", norm)}</div>
             </div>
           </div>
           <div id="overview-pane-discipline" class="overview-table-pane">
@@ -11420,18 +11550,18 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
                   <col style="width:52px">
                 </colgroup>
                 <thead><tr>
-                  <th>Project</th><th>Doc Type</th><th>Disciplines</th>
-                  <th style="text-align:center">Total</th>
-                  <th style="text-align:center">Approved</th>
-                  <th style="text-align:center">Pending</th>
-                  <th style="text-align:center">Rejected</th>
-                  <th style="text-align:center">Info / Closed</th>
-                  <th style="text-align:center">Overdue</th>
-                  <th style="text-align:center;width:42px">View</th>
+                  <th>{t("dash.th_project", norm)}</th><th>{t("dash.th_doc_type", norm)}</th><th>{t("dash.th_disciplines", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_total", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_approved", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_pending", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_rejected", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_info_closed", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_overdue", norm)}</th>
+                  <th style="text-align:center;width:42px">{t("dash.th_view", norm)}</th>
                 </tr></thead>
                 <tbody id="disc-tbody"></tbody>
               </table>
-              <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+              <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">{t("dash.no_data", norm)}</div>
             </div>
             <div id="disc-mobile-list" class="disc-mobile-list"></div>
           </div>
@@ -11440,17 +11570,17 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
       <!-- 4. PR Analytics -->
       <div class="panel overview-pr-panel" style="margin-bottom:10px">
-        <div class="panel-title">PR Analytics</div>
+        <div class="panel-title">{t("dash.sec_pr_analytics", norm)}</div>
         <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
-          <div style="font-size:11px;color:var(--mu)">Loading...</div>
+          <div style="font-size:11px;color:var(--mu)">{t("common.loading", norm)}</div>
         </div>
       </div>
 
       <!-- 5. Letters Overview -->
       <div class="panel overview-wide-panel">
-        <div class="panel-title">Letters Overview</div>
+        <div class="panel-title">{t("dash.sec_letters_overview", norm)}</div>
         <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
-          <div style="font-size:11px;color:var(--mu)">Loading...</div>
+          <div style="font-size:11px;color:var(--mu)">{t("common.loading", norm)}</div>
         </div>
       </div>
     </div>
@@ -11459,26 +11589,26 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   <div id="tab-analytics" class="tab-pane">
     <!-- Documents by Project & Status Distribution Charts -->
     <div class="charts-grid">
-      <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
-      <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
+      <div class="ccard"><div class="clbl">{t("dash.chart_docs_by_project", norm)}</div><canvas id="cProj"></canvas></div>
+      <div class="ccard"><div class="clbl">{t("dash.chart_status_dist", norm)}</div><canvas id="cStatus"></canvas></div>
     </div>
     <div class="charts-grid">
       <div class="ccard">
-        <div class="clbl">📅 Monthly Trend (last 6 months)</div>
+        <div class="clbl">{t("dash.chart_monthly_trend", norm)}</div>
         <div style="position:relative;height:200px"><canvas id="cTrend"></canvas></div>
       </div>
       <div class="ccard">
-        <div class="clbl">⏳ Aging — Pending Docs (Days Lapsed)</div>
+        <div class="clbl">{t("dash.chart_aging", norm)}</div>
         <div style="position:relative;height:200px"><canvas id="cAging"></canvas></div>
       </div>
     </div>
     <div class="charts-grid">
       <div class="ccard">
-        <div class="clbl">🔄 Document Quality (Revisions Needed)</div>
+        <div class="clbl">{t("dash.chart_quality", norm)}</div>
         <div style="position:relative;height:200px"><canvas id="cQuality"></canvas></div>
       </div>
       <div class="ccard">
-        <div class="clbl">✅ Approval Rate by Doc Type</div>
+        <div class="clbl">{t("dash.chart_approval_rate", norm)}</div>
         <div style="position:relative;height:200px"><canvas id="cApprRate"></canvas></div>
       </div>
     </div>
@@ -11487,52 +11617,52 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   <!-- TAB: OVERDUE -->
   <div id="tab-overdue" class="tab-pane">
     <div class="panel">
-      <div class="panel-title">⚠️ Overdue Documents — Awaiting Reply</div>
+      <div class="panel-title">{t("dash.ov_title", norm)}</div>
       <div id="ov-filter" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mu);cursor:pointer;">
-          <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> Latest Revisions Only
+          <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> {t("dash.ov_latest_revs", norm)}
         </label>
-        <input id="ov-search" placeholder="🔍 Search..." oninput="filterOverdue()"
+        <input id="ov-search" placeholder="{t("dash.ov_search_ph", norm)}" oninput="filterOverdue()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;flex:1;min-width:160px">
         <select id="ov-sort" onchange="filterOverdue()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
-          <option value="days">Sort: Most Overdue</option>
-          <option value="doc">Sort: Doc No.</option>
-          <option value="disc">Sort: Discipline</option>
+          <option value="days">{t("dash.ov_sort_days", norm)}</option>
+          <option value="doc">{t("dash.ov_sort_doc", norm)}</option>
+          <option value="disc">{t("dash.ov_sort_disc", norm)}</option>
         </select>
       </div>
       <div id="ov-list" style="max-height:450px;overflow-y:auto"></div>
-      <div id="ov-count" style="font-size:11px;color:var(--mu);margin-top:8px;text-align:right"></div>
+      <div id="ov-count" style="font-size:11px;color:var(--mu);margin-top:8px;text-align:end"></div>
     </div>
   </div>
 
   <!-- TAB: EXECUTIVE SUMMARY -->
   <div id="tab-executive" class="tab-pane">
     <div id="exec-content">
-      <div style="text-align:center;padding:40px;color:var(--mu)">Loading...</div>
+      <div style="text-align:center;padding:40px;color:var(--mu)">{t("common.loading", norm)}</div>
     </div>
   </div>
 
   <!-- TAB: AUDIT LOG -->
   <div id="tab-audit" class="tab-pane">
     <div class="panel">
-      <div class="panel-title">📜 Activity Log — All Changes</div>
+      <div class="panel-title">{t("dash.aud_title", norm)}</div>
       <!-- Filters -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <select id="aud-pid" onchange="loadAudit()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;min-width:160px">
-          <option value="">All Projects</option>
+          <option value="">{t("dash.aud_all_projects", norm)}</option>
         </select>
         <select id="aud-user" onchange="loadAudit()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
-          <option value="">All Users</option>
+          <option value="">{t("dash.aud_all_users", norm)}</option>
         </select>
         <select id="aud-action" onchange="loadAudit()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
-          <option value="">All Actions</option>
+          <option value="">{t("dash.aud_all_actions", norm)}</option>
         </select>
-        <button class="tbtn" onclick="resetAuditColWidths()" title="Reset column widths to default" style="font-size:11px;margin-left:auto">↺ Reset Column Widths</button>
-        <button class="tbtn" onclick="loadAudit(true)">🔄 Refresh</button>
+        <button class="tbtn" onclick="resetAuditColWidths()" title="{t("dash.aud_reset_widths_title", norm)}" style="font-size:11px;margin-inline-start:auto">{t("dash.aud_reset_widths", norm)}</button>
+        <button class="tbtn" onclick="loadAudit(true)">{t("dash.aud_refresh", norm)}</button>
       </div>
       <!-- Table -->
       <style>
@@ -11545,17 +11675,17 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <div style="overflow:auto;max-height:calc(100vh - 270px);border:1px solid var(--bd);border-radius:var(--rd)">
         <table class="dt-tbl" id="aud-tbl" style="min-width:1050px;table-layout:fixed">
           <thead><tr>
-            <th style="width:130px">Time</th>
-            <th style="width:90px">User</th>
-            <th style="width:95px">Action</th>
-            <th style="width:110px">Project</th>
-            <th style="width:110px">Document</th>
-            <th style="width:90px">Field</th>
-            <th style="width:120px">Old Value</th>
-            <th style="width:120px">New Value</th>
-            <th style="width:160px">Detail</th>
-            <th style="width:105px">IP Address</th>
-            <th style="width:125px">Device</th>
+            <th style="width:130px">{t("dash.aud_th_time", norm)}</th>
+            <th style="width:90px">{t("dash.aud_th_user", norm)}</th>
+            <th style="width:95px">{t("dash.aud_th_action", norm)}</th>
+            <th style="width:110px">{t("dash.aud_th_project", norm)}</th>
+            <th style="width:110px">{t("dash.aud_th_document", norm)}</th>
+            <th style="width:90px">{t("dash.aud_th_field", norm)}</th>
+            <th style="width:120px">{t("dash.aud_th_old", norm)}</th>
+            <th style="width:120px">{t("dash.aud_th_new", norm)}</th>
+            <th style="width:160px">{t("dash.aud_th_detail", norm)}</th>
+            <th style="width:105px">{t("dash.aud_th_ip", norm)}</th>
+            <th style="width:125px">{t("dash.aud_th_device", norm)}</th>
           </tr></thead>
           <tbody id="aud-tbody"></tbody>
         </table>
@@ -11563,9 +11693,9 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <div id="aud-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--mu)">
         <span id="aud-count"></span>
         <div style="display:flex;gap:8px">
-          <button id="aud-prev" class="tbtn" onclick="auditPage(-1)" disabled>← Prev</button>
-          <span id="aud-page" style="padding:5px 10px;font-size:11px">Page 1</span>
-          <button id="aud-next" class="tbtn" onclick="auditPage(1)">Next →</button>
+          <button id="aud-prev" class="tbtn" onclick="auditPage(-1)" disabled>{t("dash.aud_prev", norm)}</button>
+          <span id="aud-page" style="padding:5px 10px;font-size:11px">{t("dash.aud_page", norm, page=1)}</span>
+          <button id="aud-next" class="tbtn" onclick="auditPage(1)">{t("dash.aud_next", norm)}</button>
         </div>
       </div>
     </div>
@@ -11576,17 +11706,17 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 <!-- Modals -->
 <div class="overlay hidden" id="newproj-modal">
   <div class="modal" style="max-width:420px">
-    <div class="mhdr"><span>➕ New Project</span><button class="xbtn" onclick="closeM('newproj-modal')">✕</button></div>
+    <div class="mhdr"><span>{t("dash.modal_new_project", norm)}</span><button class="xbtn" onclick="closeM('newproj-modal')">✕</button></div>
     <div class="mbody">
       <div class="fgrid">
-        <div class="fg"><label>Project ID</label><input id="np-id" placeholder="e.g. 24CP01"></div>
-        <div class="fg"><label>Short Code</label><input id="np-code" placeholder="e.g. CP01"></div>
-        <div class="fg full"><label>Project Name</label><input id="np-name" placeholder="Full project name"></div>
+        <div class="fg"><label>{t("dash.lbl_project_id", norm)}</label><input id="np-id" class="bidi-ltr" placeholder="{t("dash.ph_project_id", norm)}"></div>
+        <div class="fg"><label>{t("dash.lbl_short_code", norm)}</label><input id="np-code" class="bidi-ltr" placeholder="{t("dash.ph_short_code", norm)}"></div>
+        <div class="fg full"><label>{t("dash.lbl_project_name", norm)}</label><input id="np-name" placeholder="{t("dash.ph_project_name", norm)}"></div>
       </div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('newproj-modal')">Cancel</button>
-      <button class="btn btn-pr" id="cpbtn" onclick="createProject()">Create</button>
+      <button class="btn btn-sc" onclick="closeM('newproj-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" id="cpbtn" onclick="createProject()">{t("common.create", norm)}</button>
     </div>
   </div>
 </div>
@@ -11597,6 +11727,29 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 <script>
 const ROLE='{role}';
 window._ACCESSIBLE_PROJECTS = {projs_json};
+const _dT = (k, v, fb) => (typeof window.t === 'function' ? window.t(k, v) : (fb || k));
+const _dIsRtl = () => (window.DCR_DIR === 'rtl' || document.documentElement.dir === 'rtl');
+function _dDtName(code, defName) {{
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return defName || '';
+  const key = 'dt_name.' + c;
+  const tr = _dT(key, null, '');
+  return (tr && tr !== key) ? tr : (defName || c);
+}}
+function _dStatusLbl(val) {{
+  const s = String(val || '').trim();
+  if (!s) return '';
+  const map = {{
+    'approved': 'status.approved', 'approved with comments': 'status.approved_with_comments',
+    'pending': 'status.pending', 'under review': 'status.under_review',
+    'open': 'status.open', 'in progress': 'status.in_progress', 'in-progress': 'status.in_progress',
+    'closed': 'status.closed', 'completed': 'status.completed',
+    'rejected': 'status.rejected', 'revise & resubmit': 'status.revise_resubmit',
+    'overdue': 'status.overdue', 'info / closed': 'status.info_closed', 'not closed': 'status.not_closed'
+  }};
+  const k = map[s.toLowerCase()];
+  return k ? _dT(k, null, s) : s;
+}}
 let STATS=[],OVERDUE_DATA=[],EXEC_DATA=null;
 let PR_ANALYTICS=null;
 let pChart,sChart,tChart,aChart,qChart,arChart,prTradeChart;
@@ -11637,14 +11790,14 @@ function showTab(name, btn){{
       if(!STATS)return;
       // Populate project filter
       document.getElementById('proj-sel').innerHTML=
-        '<option value="">All Projects</option>'+
+        `<option value="">${{escHtml(_dT('dash.all_projects',null,'All Projects'))}}</option>`+
       STATS.map(p=>`<option value="${{p.id}}">${{p.name}} (${{p.code}})</option>`).join('');
     // Populate discipline filter
     const discs=new Set();
     STATS.forEach(p=>(p.dt_stats||[]).forEach(dt=>
       (dt.disc_breakdown||[]).forEach(d=>discs.add(d.disc))));
         document.getElementById('disc-sel').innerHTML=
-          '<option value="">All Disciplines</option>'+
+          `<option value="">${{escHtml(_dT('dash.all_disciplines',null,'All Disciplines'))}}</option>`+
           [...discs].sort().map(d=>`<option value="${{d}}">${{d}}</option>`).join('');
         await refreshOverviewPanels('');
         renderAll('','');
@@ -11706,14 +11859,14 @@ function renderPrAnalytics(data){{
   const el=document.getElementById('pr-panel');
   if(!el)return;
   if(!data){{
-    el.innerHTML='<div style="font-size:11px;color:var(--mu)">Unavailable</div>';
+    el.innerHTML=`<div style="font-size:11px;color:var(--mu)">${{escHtml(_dT('dash.pr_unavailable',null,'Unavailable'))}}</div>`;
     if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
     return;
   }}
   const totalPRs=Number(data.total_pr_records||0);
   const prProjects=Array.isArray(data.top_projects)?data.top_projects:[];
   const topProj=prProjects.length?prProjects[0]:null;
-  const topProjName=topProj?(topProj.project_name||topProj.project_code||'Top Project'):'None';
+  const topProjName=topProj?(topProj.project_name||topProj.project_code||_dT('dash.pr_top_project',null,'Top Project')):_dT('dash.pr_none',null,'None');
   const topProjCode=topProj?(topProj.project_code||topProj.project_name||'Top'):'—';
   const topProjCount=topProj?Number(topProj.pr_count||0):0;
   const topProjShare=(totalPRs>0&&topProjCount>0)?Math.round((topProjCount/totalPRs)*100):0;
@@ -11724,45 +11877,46 @@ function renderPrAnalytics(data){{
   const rawTrades=Array.isArray(data.top_trades)?data.top_trades:[];
   const tradeMap=new Map();
   rawTrades.forEach(t=>{{
-    let name=(t.trade==='Unspecified'||!t.trade)?'General / Multi-Discipline':String(t.trade).trim();
+    let name=(t.trade==='Unspecified'||!t.trade)?_dT('dash.pr_general_trade',null,'General / Multi-Discipline'):String(t.trade).trim();
     if(name.toLowerCase()==='other'||name.toLowerCase()==='others'){{
-      name='Others';
+      name=_dT('dash.pr_others',null,'Others');
     }}
     tradeMap.set(name,(tradeMap.get(name)||0)+(Number(t.pr_count)||0));
   }});
   const trades=Array.from(tradeMap.entries()).map(([trade,pr_count])=>({{trade,pr_count}}));
   trades.sort((a,b)=>b.pr_count-a.pr_count);
 
-  const topTradeHeadline=(trades.length>0&&trades[0].trade)?trades[0].trade:((data.top_trade_name==='Unspecified'||!data.top_trade_name)?'General / Multi-Discipline':data.top_trade_name);
+  const topTradeHeadline=(trades.length>0&&trades[0].trade)?trades[0].trade:((data.top_trade_name==='Unspecified'||!data.top_trade_name)?_dT('dash.pr_general_trade',null,'General / Multi-Discipline'):data.top_trade_name);
   const topTradeCount=(trades.length>0)?trades[0].pr_count:(data.top_trade_count||0);
 
   const topProjects=prProjects.length
     ? prProjects.map((p,idx)=>{{
         const pCode=(p.project_code||'').trim();
         const pName=(p.project_name||'').trim();
-        let displayTitle=pName||pCode||'Project';
+        let displayTitle=pName||pCode||_dT('dash.th_project',null,'Project');
         if(pCode && pName && !pName.toLowerCase().startsWith(pCode.toLowerCase())){{
           displayTitle=`${{pCode}} — ${{pName}}`;
         }}
         return `<div style="display:flex;justify-content:space-between;gap:10px;padding:${{idx===0?'6px 0 7px':'5px 0'}};border-bottom:1px solid var(--bd);align-items:center">
         <div style="min-width:0;flex:1">
           <div style="font-size:${{idx===0?'11.5px':'11px'}};font-weight:${{idx===0?'800':'600'}};color:${{idx===0?'var(--pr)':'var(--tx)'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{displayTitle}}">${{displayTitle}}</div>
-          ${{idx===0?'<div style="font-size:9px;color:var(--mu);margin-top:1px;text-transform:uppercase;letter-spacing:.28px">Most active project</div>':''}}
+          ${{idx===0?`<div style="font-size:9px;color:var(--mu);margin-top:1px;text-transform:uppercase;letter-spacing:.28px">${{escHtml(_dT('dash.pr_most_active_project',null,'Most active project'))}}</div>`:''}}
         </div>
-        <span style="font-size:${{idx===0?'12px':'11px'}};font-weight:800;color:var(--pr);white-space:nowrap;margin-left:8px">${{p.pr_count}}</span>
+        <span class="bidi-ltr" style="font-size:${{idx===0?'12px':'11px'}};font-weight:800;color:var(--pr);white-space:nowrap;margin-inline-start:8px">${{p.pr_count}}</span>
       </div>`;
     }}).join('')
-    : `<div style="font-size:11px;color:var(--mu);padding:12px 0;text-align:center">No project data</div>`;
+    : `<div style="font-size:11px;color:var(--mu);padding:12px 0;text-align:center">${{escHtml(_dT('dash.pr_no_project_data',null,'No project data'))}}</div>`;
 
   const otherProjectsCount=Math.max(0,prProjects.length-1);
-  const otherProjectsLabel=otherProjectsCount>0?`${{otherProjectsCount}} Other Projects`:'Remaining Projects';
+  const otherProjectsLabel=otherProjectsCount>0?_dT('dash.pr_other_projects',{{count:otherProjectsCount}},`${{otherProjectsCount}} Other Projects`):_dT('dash.pr_remaining_projects',null,'Remaining Projects');
+  const prsUnit=_dT('dash.pr_prs_unit',null,'PRs');
 
   el.innerHTML=`<div class="pr-analytics-grid">
     <div class="pr-block pr-total" style="background:var(--bg);border-radius:8px;padding:12px 14px;border:1px solid #e3eaf2;border-left:4px solid #2563eb !important;box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between;min-height:165px">
       <div>
-        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Total PRs</div>
-        <div style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
-        <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Total Purchase Requisitions</div>
+        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{escHtml(_dT('dash.pr_total_prs',null,'Total PRs'))}}</div>
+        <div class="bidi-ltr" style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
+        <div style="font-size:9.5px;color:var(--mu);margin-top:2px">${{escHtml(_dT('dash.pr_total_subtitle',null,'Total Purchase Requisitions'))}}</div>
       </div>
       <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;margin-top:auto;background:rgba(37,99,235,.04);border:1px solid rgba(37,99,235,.12);border-radius:8px">
         <div style="position:relative;width:58px;height:58px;flex-shrink:0">
@@ -11772,47 +11926,47 @@ function renderPrAnalytics(data){{
             <path stroke="#94a3b8" stroke-dasharray="${{remainingShare}}, 100" stroke-dashoffset="-${{topProjShare}}" stroke-width="4.2" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
           </svg>
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1">
-            <span style="font-size:12.5px;font-weight:800;color:#2563eb">${{topProjShare}}%</span>
-            <span style="font-size:7px;font-weight:700;color:var(--mu);text-transform:uppercase;margin-top:2px">Share</span>
+            <span class="bidi-ltr" style="font-size:12.5px;font-weight:800;color:#2563eb">${{topProjShare}}%</span>
+            <span style="font-size:7px;font-weight:700;color:var(--mu);text-transform:uppercase;margin-top:2px">${{escHtml(_dT('dash.pr_share',null,'Share'))}}</span>
           </div>
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px">
           <div>
             <div style="display:flex;align-items:center;gap:6px">
               <span style="width:7px;height:7px;border-radius:2px;background:#2563eb;flex-shrink:0"></span>
-              <span style="font-size:11px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{topProjCode}} — ${{topProjName}}">${{topProjCode}}</span>
+              <span class="bidi-ltr" style="font-size:11px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{topProjCode}} — ${{topProjName}}">${{topProjCode}}</span>
             </div>
-            <div style="font-size:11px;font-weight:700;color:#2563eb;margin-left:13px">${{topProjCount}} PRs <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{topProjShare}}%)</span></div>
+            <div class="bidi-ltr" style="font-size:11px;font-weight:700;color:#2563eb;margin-inline-start:13px">${{topProjCount}} ${{escHtml(prsUnit)}} <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{topProjShare}}%)</span></div>
           </div>
           <div style="border-top:1px dashed var(--bd);padding-top:6px">
             <div style="display:flex;align-items:center;gap:6px">
               <span style="width:7px;height:7px;border-radius:2px;background:#94a3b8;flex-shrink:0"></span>
-              <span style="font-size:10.5px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{otherProjectsLabel}}</span>
+              <span style="font-size:10.5px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{escHtml(otherProjectsLabel)}}</span>
             </div>
-            <div style="font-size:11px;font-weight:700;color:var(--tx,#475569);margin-left:13px">${{remainingCount}} PRs <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{remainingShare}}%)</span></div>
+            <div class="bidi-ltr" style="font-size:11px;font-weight:700;color:var(--tx,#475569);margin-inline-start:13px">${{remainingCount}} ${{escHtml(prsUnit)}} <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{remainingShare}}%)</span></div>
           </div>
         </div>
       </div>
     </div>
     <div class="pr-block pr-projects" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:165px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
-        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Projects</div>
-        <div style="font-size:10px;color:var(--mu);white-space:nowrap">${{prProjects.length}} projects</div>
+        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">${{escHtml(_dT('dash.pr_most_active_projects',null,'Most Active Projects'))}}</div>
+        <div class="bidi-ltr" style="font-size:10px;color:var(--mu);white-space:nowrap">${{escHtml(_dT('dash.pr_projects_count',{{count:prProjects.length}},`${{prProjects.length}} projects`))}}</div>
       </div>
-      <div style="flex:1;overflow-y:auto;max-height:160px;padding-right:2px">
+      <div style="flex:1;overflow-y:auto;max-height:160px;padding-inline-end:2px">
         ${{topProjects}}
       </div>
     </div>
     <div class="pr-block pr-trades" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:165px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Disciplines / Trades</div>
-          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{topTradeHeadline}}</div>
-          <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active discipline / trade</div>
+          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">${{escHtml(_dT('dash.pr_most_active_trades',null,'Most Active Disciplines / Trades'))}}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{escHtml(topTradeHeadline)}}</div>
+          <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">${{escHtml(_dT('dash.pr_most_active_trade_sub',null,'Most active discipline / trade'))}}</div>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{topTradeCount}} <span style="font-size:10.5px;font-weight:600;color:var(--mu)">PRs</span></div>
-          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{data.trade_count_total||trades.length||0}} disciplines / trades</div>
+        <div style="text-align:end">
+          <div class="bidi-ltr" style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{topTradeCount}} <span style="font-size:10.5px;font-weight:600;color:var(--mu)">${{escHtml(prsUnit)}}</span></div>
+          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{escHtml(_dT('dash.pr_trades_count',{{count:data.trade_count_total||trades.length||0}},`${{data.trade_count_total||trades.length||0}} disciplines / trades`))}}</div>
         </div>
       </div>
       <div style="flex:1;min-height:150px;max-height:160px"><canvas id="pr-trades-chart"></canvas></div>
@@ -11822,6 +11976,7 @@ function renderPrAnalytics(data){{
   if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
   if(!tradeCanvas)return;
   const dark=document.body.classList.contains('dark');
+  const isRtl=_dIsRtl();
   const prTradeMax=(trades.length>0)?Number(trades[0].pr_count||0):10;
   const prScaleMax=Math.ceil(prTradeMax*1.12);
   prTradeChart=new Chart(tradeCanvas,{{
@@ -11829,7 +11984,7 @@ function renderPrAnalytics(data){{
     data:{{
       labels:trades.map(t=>t.trade),
       datasets:[{{
-        label:'PR Count',
+        label:_dT('dash.pr_chart_label',null,'PR Count'),
         data:trades.map(t=>t.pr_count),
         backgroundColor:'#2563a8',
         borderRadius:4
@@ -11840,8 +11995,10 @@ function renderPrAnalytics(data){{
       maintainAspectRatio:false,
       indexAxis:'y',
       plugins:{{
-        legend:{{display:false}},
+        legend:{{display:false,rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}},
         tooltip:{{
+          rtl:isRtl,
+          textDirection:isRtl?'rtl':'ltr',
           backgroundColor:'#0f172a',
           titleColor:'#ffffff',
           bodyColor:'#e2e8f0',
@@ -11850,7 +12007,7 @@ function renderPrAnalytics(data){{
           padding:10,
           displayColors:false,
           callbacks:{{
-            label:ctx=>` ${{ctx.parsed.x != null ? ctx.parsed.x : ctx.raw}} Purchase Requisitions`
+            label:ctx=>` ${{ctx.parsed.x != null ? ctx.parsed.x : ctx.raw}} ${{_dT('dash.pr_tooltip_unit',null,'Purchase Requisitions')}}`
           }}
         }}
       }},
@@ -11861,13 +12018,16 @@ function renderPrAnalytics(data){{
           grid:{{color:dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.06)'}},
           ticks:{{precision:0,font:{{size:10}},color:dark?'#cbd5e1':'#54657d'}}
         }},
-        y:{{grid:{{display:false}},ticks:{{font:{{size:10}},color:dark?'#dbe7f3':'#334155'}}}}
+        y:{{position:isRtl?'right':'left',grid:{{display:false}},ticks:{{font:{{size:10}},color:dark?'#dbe7f3':'#334155'}}}}
       }}
     }},
     plugins:[{{
       id:'prValueLabels',
       afterDatasetsDraw(chart){{
         const ctx=chart.ctx;
+        const isRev=!!(chart.scales&&chart.scales.x&&chart.scales.x.options&&chart.scales.x.options.reverse);
+        const chartRight=(chart.chartArea?chart.chartArea.right:300);
+        const chartLeft=(chart.chartArea?chart.chartArea.left:0);
         chart.data.datasets.forEach((dataset,i)=>{{
           const meta=chart.getDatasetMeta(i);
           if(!meta||!meta.data)return;
@@ -11877,16 +12037,26 @@ function renderPrAnalytics(data){{
               ctx.save();
               ctx.font='700 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
               ctx.fillStyle=dark?'#93c5fd':'#1e40af';
-              ctx.textAlign='left';
               ctx.textBaseline='middle';
-              const chartRight=(chart.chartArea?chart.chartArea.right:300);
               const textWidth=ctx.measureText(String(val)).width;
-              if(bar.x + 6 + textWidth > chartRight){{
-                ctx.textAlign='right';
-                ctx.fillStyle='#ffffff';
-                ctx.fillText(String(val), bar.x - 5, bar.y);
+              if(!isRev){{
+                if(bar.x + 6 + textWidth > chartRight){{
+                  ctx.textAlign='right';
+                  ctx.fillStyle='#ffffff';
+                  ctx.fillText(String(val), bar.x - 5, bar.y);
+                }}else{{
+                  ctx.textAlign='left';
+                  ctx.fillText(String(val), bar.x + 5, bar.y);
+                }}
               }}else{{
-                ctx.fillText(String(val), bar.x + 5, bar.y);
+                if(bar.x - 6 - textWidth < chartLeft){{
+                  ctx.textAlign='left';
+                  ctx.fillStyle='#ffffff';
+                  ctx.fillText(String(val), bar.x + 5, bar.y);
+                }}else{{
+                  ctx.textAlign='right';
+                  ctx.fillText(String(val), bar.x - 5, bar.y);
+                }}
               }}
               ctx.restore();
             }}
@@ -11915,13 +12085,13 @@ function updateKPIs(d){{
   const peSub=document.getElementById('kpi-pending-sub');
   if(peSub){{
     const onTime=Math.max(0,pe-ov);
-    peSub.textContent=`${{onTime}} on time · ${{ov}} overdue`;
+    peSub.textContent=_dT('dash.kpi_on_time_overdue',{{on_time:onTime,ov}},`${{onTime}} on time · ${{ov}} overdue`);
   }}
   const ovSub=document.getElementById('kpi-overdue-sub');
   if(ovSub){{
     const pct=pe>0?Math.round(ov/pe*100):0;
-    ovSub.textContent=`FROM PENDING: ${{ov}} of ${{pe}} (${{pct}}%)`;
-    ovSub.title=`${{ov}} out of ${{pe}} documents under review are overdue (${{pct}}%)`;
+    ovSub.textContent=_dT('dash.kpi_from_pending_detail',{{ov,pe,pct}},`FROM PENDING: ${{ov}} of ${{pe}} (${{pct}}%)`);
+    ovSub.title=_dT('dash.kpi_from_pending_title',{{ov,pe,pct}},`${{ov}} out of ${{pe}} documents under review are overdue (${{pct}}%)`);
   }}
 }}
 
@@ -11943,29 +12113,29 @@ function renderCards(d,pid){{
     const clientTitle=p.client?` title="${{safe(p.client)}}"`:'';
     a.innerHTML=`<div class="pchdr">
       <div>
-        <div class="pcode">${{safe(p.code)}}</div>
+        <div class="pcode bidi-ltr">${{safe(p.code)}}</div>
         <div class="pname">${{safe(p.name)}}</div>
       </div>
-      ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:10.5px;font-weight:800;white-space:nowrap" title="${{p.overdue}} Overdue Submittals">⚠ ${{p.overdue}}</span>`:''}}
+      ${{p.overdue>0?`<span class="bidi-ltr" style="background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:10.5px;font-weight:800;white-space:nowrap" title="${{safe(_dT('dash.card_overdue_title',{{count:p.overdue}},`${{p.overdue}} Overdue Submittals`))}}">⚠ ${{p.overdue}}</span>`:''}}
     </div>
     <div class="pcbody">
       ${{p.client?`<div class="pclient"${{clientTitle}}>👤 ${{safe(p.client)}}</div>`:''}}
-      <div class="prow"><span>Total</span><b>${{p.total}}</b></div>
-      <div class="prow"><span>Approved</span><b style="color:#16a34a">${{p.approved}}</b></div>
-      <div class="prow"><span>Pending</span><b style="color:#f59e0b">${{p.pending}}</b></div>
-      <div class="prow"><span>Rejected</span><b style="color:#7c3aed">${{p.rejected||0}}</b></div>
+      <div class="prow"><span>${{safe(_dT('dash.card_total',null,'Total'))}}</span><b class="bidi-ltr">${{p.total}}</b></div>
+      <div class="prow"><span>${{safe(_dT('dash.card_approved',null,'Approved'))}}</span><b class="bidi-ltr" style="color:#16a34a">${{p.approved}}</b></div>
+      <div class="prow"><span>${{safe(_dT('dash.card_pending',null,'Pending'))}}</span><b class="bidi-ltr" style="color:#f59e0b">${{p.pending}}</b></div>
+      <div class="prow"><span>${{safe(_dT('dash.card_rejected',null,'Rejected'))}}</span><b class="bidi-ltr" style="color:#7c3aed">${{p.rejected||0}}</b></div>
       <div class="prog"><div class="progf" style="width:${{p.pct}}%;background:${{col}}"></div></div>
       <div class="pcard-footer">
         <div style="font-size:11.5px;color:${{col}};font-weight:800;display:flex;align-items:center;gap:3px">
-          <span>${{p.pct}}%</span><span style="font-size:9.5px;color:var(--mu);font-weight:600">done</span>
+          <span class="bidi-ltr">${{p.pct}}%</span><span style="font-size:9.5px;color:var(--mu);font-weight:600">${{safe(_dT('dash.card_done',null,'done'))}}</span>
         </div>
         <div style="display:flex;gap:4px;align-items:center">
           ${{p.can_admin&&!pid?`
-            <button type="button" class="pcard-btn pcard-move" title="Move project up" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">▲</button>
-            <button type="button" class="pcard-btn pcard-move" title="Move project down" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">▼</button>
+            <button type="button" class="pcard-btn pcard-move" title="${{safe(_dT('dash.card_move_up',null,'Move project up'))}}" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">▲</button>
+            <button type="button" class="pcard-btn pcard-move" title="${{safe(_dT('dash.card_move_down',null,'Move project down'))}}" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">▼</button>
           `:''}}
           ${{ROLE==='superadmin'?`
-            <button type="button" class="pcard-btn pcard-del" title="Delete project" onclick="event.preventDefault();event.stopPropagation();delProject('${{p.id}}','${{safe(p.name)}}')">🗑</button>
+            <button type="button" class="pcard-btn pcard-del" title="${{safe(_dT('dash.card_delete',null,'Delete project'))}}" onclick="event.preventDefault();event.stopPropagation();delProject('${{p.id}}','${{safe(p.name)}}')">🗑</button>
           `:''}}
         </div>
       </div>
@@ -11974,7 +12144,7 @@ function renderCards(d,pid){{
   }});
   if(ROLE==='superadmin'&&!pid){{
     const add=document.createElement('div');add.className='addcard';
-    add.innerHTML='<span style="font-size:32px">➕</span><span>New Project</span>';
+    add.innerHTML=`<span style="font-size:32px">➕</span><span>${{safe(_dT('dash.card_new_project',null,'New Project'))}}</span>`;
     add.onclick=()=>openM('newproj-modal');g.appendChild(add);
   }}
 }}
@@ -12001,7 +12171,7 @@ async function moveProject(id,delta){{
   moveProject._busy=true;
   try{{
     const res=await apiFetch('/api/projects/reorder',{{method:'POST',body:JSON.stringify({{order,workspace_id:wsScope}})}});
-    if(!res||res.ok===false||res.error)throw new Error((res&&res.error)||'Failed to save project order');
+    if(!res||res.ok===false||res.error)throw new Error((res&&res.error)||_dT('dash.err_reorder',null,'Failed to save project order'));
     let finalStats=nextStats;
     if(Array.isArray(res.order)&&res.order.length){{
       const rank=new Map(res.order.map((pid,i)=>[pid,i]));
@@ -12014,20 +12184,20 @@ async function moveProject(id,delta){{
     STATS=finalStats;
     const sel=document.getElementById('proj-sel');
     if(sel){{
-      sel.innerHTML='<option value="">All Projects</option>'+
+      sel.innerHTML=`<option value="">${{escHtml(_dT('dash.all_projects',null,'All Projects'))}}</option>`+
         STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
     }}
     renderAll(_currentPid,_currentDisc);
-    toast('Project order updated','ok');
+    toast(_dT('dash.toast_order_updated',null,'Project order updated'),'ok');
   }}catch(err){{
     STATS=prevStats;
     const sel=document.getElementById('proj-sel');
     if(sel){{
-      sel.innerHTML='<option value="">All Projects</option>'+
+      sel.innerHTML=`<option value="">${{escHtml(_dT('dash.all_projects',null,'All Projects'))}}</option>`+
         STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
     }}
     renderAll(_currentPid,_currentDisc);
-    toast(err&&err.message?err.message:'Failed to reorder projects','err');
+    toast(err&&err.message?err.message:_dT('dash.err_reorder',null,'Failed to reorder projects'),'err');
   }}finally{{
     moveProject._busy=false;
   }}
@@ -12043,17 +12213,18 @@ function renderCharts(d){{
     if(typeof Chart === 'undefined') return;
 
     const dark=document.body.classList.contains('dark');
+    const isRtl=_dIsRtl();
     const gridColor=dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.05)';
     const tickColor=dark?'#cbd5e1':'#54657d';
     const legendColor=dark?'#dbe7f3':'#334155';
     if(pChart)pChart.destroy();
     pChart=new Chart(cProjEl,{{type:'bar',
       data:{{labels:d.map(s=>s.code),datasets:[
-        {{label:'Approved',data:d.map(s=>s.approved),backgroundColor:'#16a34a',borderRadius:4}},
-        {{label:'Pending', data:d.map(s=>s.pending), backgroundColor:'#f59e0b',borderRadius:4}},
-        {{label:'Overdue', data:d.map(s=>s.overdue), backgroundColor:'#ef4444',borderRadius:4}}]}},
-      options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}}}},
-        scales:{{y:{{beginAtZero:true,grid:{{color:gridColor}},ticks:{{color:tickColor}}}},
+        {{label:_dT('dash.th_approved',null,'Approved'),data:d.map(s=>s.approved),backgroundColor:'#16a34a',borderRadius:4}},
+        {{label:_dT('dash.th_pending',null,'Pending'), data:d.map(s=>s.pending), backgroundColor:'#f59e0b',borderRadius:4}},
+        {{label:_dT('dash.th_overdue',null,'Overdue'), data:d.map(s=>s.overdue), backgroundColor:'#ef4444',borderRadius:4}}]}},
+      options:{{responsive:true,plugins:{{legend:{{position:'bottom',rtl:isRtl,textDirection:isRtl?'rtl':'ltr',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}},tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}}}},
+        scales:{{y:{{beginAtZero:true,position:isRtl?'right':'left',grid:{{color:gridColor}},ticks:{{color:tickColor}}}},
           x:{{grid:{{display:false}},ticks:{{color:tickColor}}}}}}}}}});
     const ap=d.reduce((s,p)=>s+p.approved,0),
       pe=d.reduce((s,p)=>s+p.pending,0),
@@ -12063,12 +12234,17 @@ function renderCharts(d){{
     const peOnTime=Math.max(0, pe - ov);
     const t = ap + pe + rj + (ic > 0 ? ic : 0);
 
-    const statusLabels=['Approved', 'Pending (On Time)', 'Overdue', 'Rejected'];
+    const statusLabels=[
+      _dT('dash.th_approved',null,'Approved'),
+      _dT('dash.chart_pending_on_time',null,'Pending (On Time)'),
+      _dT('dash.th_overdue',null,'Overdue'),
+      _dT('dash.th_rejected',null,'Rejected')
+    ];
     const statusData=[ap, peOnTime, ov, rj];
     const statusColors=['#16a34a', '#f59e0b', '#ef4444', '#7c3aed'];
 
     if(ic > 0){{
-      statusLabels.push('Info / Closed');
+      statusLabels.push(_dT('dash.th_info_closed',null,'Info / Closed'));
       statusData.push(ic);
       statusColors.push('#60A5FA');
     }}
@@ -12092,9 +12268,13 @@ function renderCharts(d){{
         plugins:{{
           legend:{{
             position:'bottom',
+            rtl:isRtl,
+            textDirection:isRtl?'rtl':'ltr',
             labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}
           }},
           tooltip:{{
+            rtl:isRtl,
+            textDirection:isRtl?'rtl':'ltr',
             callbacks:{{
               label:ctx=>` ${{ctx.label}}: ${{ctx.raw}} (${{t?Math.round(ctx.raw/t*100):0}}%)`
             }}
@@ -12135,7 +12315,7 @@ function renderLettersOverview(d){{
       return acc;
     }},{{total:0,sent:0,received:0,project_count:0}});
     if(!stats.total){{
-      el.innerHTML='<div style="font-size:11px;color:var(--mu)">No letter records in the current project scope.</div>';
+      el.innerHTML=`<div style="font-size:11px;color:var(--mu)">${{safeHtml(_dT('dash.ltr_no_records',null,'No letter records in the current project scope.'))}}</div>`;
       return;
     }}
     const topParties=Object.values(partyMap)
@@ -12147,29 +12327,31 @@ function renderLettersOverview(d){{
 
     const cards=[
       {{
-        label:'Total Letters',
+        label:_dT('dash.ltr_total',null,'Total Letters'),
         val:stats.total,
         color:'#2F4F64',
-        hint:'Across '+stats.project_count+' project'+(stats.project_count===1?'':'s'),
+        hint:stats.project_count===1
+          ?_dT('dash.ltr_across_projects_1',null,'Across 1 project')
+          :_dT('dash.ltr_across_projects_n',{{count:stats.project_count}},`Across ${{stats.project_count}} projects`),
         bar:`<div style="height:5px;width:100%;background:rgba(148,163,184,.2);border-radius:3px;overflow:hidden;display:flex;margin-top:8px">
-          <div style="width:${{sentPct}}%;background:#2563a8" title="Sent: ${{stats.sent}} (${{sentPct}}%)"></div>
-          <div style="width:${{rcvPct}}%;background:#16a34a" title="Received: ${{stats.received}} (${{rcvPct}}%)"></div>
+          <div style="width:${{sentPct}}%;background:#2563a8" title="${{safeHtml(_dT('dash.ltr_sent_colon',{{count:stats.sent}},`Sent: ${{stats.sent}}`))}} (${{sentPct}}%)"></div>
+          <div style="width:${{rcvPct}}%;background:#16a34a" title="${{safeHtml(_dT('dash.ltr_received_colon',{{count:stats.received}},`Received: ${{stats.received}}`))}} (${{rcvPct}}%)"></div>
         </div>`
       }},
       {{
-        label:'Sent',
+        label:_dT('dash.ltr_sent',null,'Sent'),
         val:stats.sent,
         color:'#2563a8',
-        hint:`Outgoing (${{sentPct}}% of total)`,
+        hint:_dT('dash.ltr_outgoing_pct',{{pct:sentPct}},`Outgoing (${{sentPct}}% of total)`),
         bar:`<div style="height:5px;width:100%;background:rgba(37,99,168,.15);border-radius:3px;overflow:hidden;margin-top:8px">
           <div style="width:${{sentPct}}%;height:100%;background:#2563a8"></div>
         </div>`
       }},
       {{
-        label:'Received',
+        label:_dT('dash.ltr_received',null,'Received'),
         val:stats.received,
         color:'#16a34a',
-        hint:`Incoming (${{rcvPct}}% of total)`,
+        hint:_dT('dash.ltr_incoming_pct',{{pct:rcvPct}},`Incoming (${{rcvPct}}% of total)`),
         bar:`<div style="height:5px;width:100%;background:rgba(22,163,74,.15);border-radius:3px;overflow:hidden;margin-top:8px">
           <div style="width:${{rcvPct}}%;height:100%;background:#16a34a"></div>
         </div>`
@@ -12177,11 +12359,11 @@ function renderLettersOverview(d){{
     ];
 
     const summaryHtml=`<div class="ltr-summary-grid">
-      ${{cards.map(c=>`<div class="ltr-summary-card" style="background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{c.color}};box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between">
+      ${{cards.map(c=>`<div class="ltr-summary-card" style="--ltr-accent:${{c.color}};background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{c.color}};box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between">
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{c.label}}</div>
-          <div style="font-size:26px;font-weight:800;color:${{c.color}};line-height:1.08;margin-top:4px">${{c.val}}</div>
-          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{c.hint}}</div>
+          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{safeHtml(c.label)}}</div>
+          <div class="bidi-ltr" style="font-size:26px;font-weight:800;color:${{c.color}};line-height:1.08;margin-top:4px">${{c.val}}</div>
+          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{safeHtml(c.hint)}}</div>
         </div>
         ${{c.bar}}
       </div>`).join('')}}
@@ -12190,8 +12372,8 @@ function renderLettersOverview(d){{
     const partiesHtml=topParties.length
       ? `<div class="ltr-parties-wrap" style="background:var(--bg);border-radius:8px;padding:8px 10px;border:1px solid #e3eaf2">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px">
-            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active External Parties</div>
-            <div style="font-size:9.5px;color:var(--mu);font-weight:700;background:rgba(47,79,100,.08);padding:2px 7px;border-radius:10px">Top ${{topParties.length}} External Parties</div>
+            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{safeHtml(_dT('dash.ltr_most_active_parties',null,'Most Active External Parties'))}}</div>
+            <div style="font-size:9.5px;color:var(--mu);font-weight:700;background:rgba(47,79,100,.08);padding:2px 7px;border-radius:10px">${{safeHtml(_dT('dash.ltr_top_parties',{{count:topParties.length}},`Top ${{topParties.length}} External Parties`))}}</div>
           </div>
           <div class="ltr-parties-grid">
             ${{topParties.map((row, idx)=>{{
@@ -12205,34 +12387,34 @@ function renderLettersOverview(d){{
                 <div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start">
                   <div style="min-width:0;flex:1">
                     <div style="font-size:11.5px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{safeHtml(row.party)}}">${{safeHtml(row.party)}}</div>
-                    <div style="font-size:8.5px;color:var(--mu);margin-top:1px">${{pct}}% of all (${{row.total}}/${{stats.total}})</div>
+                    <div style="font-size:8.5px;color:var(--mu);margin-top:1px">${{safeHtml(_dT('dash.ltr_pct_of_all',{{pct,count:row.total,total:stats.total}},`${{pct}}% of all (${{row.total}}/${{stats.total}})`))}}</div>
                   </div>
-                  <div style="text-align:right;flex-shrink:0;margin-left:4px">
-                    <div style="font-size:13.5px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
+                  <div style="text-align:end;flex-shrink:0;margin-inline-start:4px">
+                    <div class="bidi-ltr" style="font-size:13.5px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
                   </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px">
-                  <div class="ltr-box-sent" title="Sent (Outgoing): ${{row.sent}}" style="background:#eef4fb;border-radius:5px;padding:4px 3px;border:1px solid #dbe8f7;text-align:center">
-                    <div class="val" style="font-size:9.5px;font-weight:800;color:#2563a8;line-height:1.15">Sent: ${{row.sent}}</div>
-                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#2563a8;margin-top:1px;letter-spacing:.15px">Outgoing</div>
+                  <div class="ltr-box-sent" title="${{safeHtml(_dT('dash.ltr_sent_colon',{{count:row.sent}},`Sent: ${{row.sent}}`))}}" style="background:#eef4fb;border-radius:5px;padding:4px 3px;border:1px solid #dbe8f7;text-align:center">
+                    <div class="val" style="font-size:9.5px;font-weight:800;color:#2563a8;line-height:1.15">${{safeHtml(_dT('dash.ltr_sent_colon',{{count:row.sent}},`Sent: ${{row.sent}}`))}}</div>
+                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#2563a8;margin-top:1px;letter-spacing:.15px">${{safeHtml(_dT('dash.ltr_outgoing',null,'Outgoing'))}}</div>
                   </div>
-                  <div class="ltr-box-rcv" title="Received (Incoming): ${{row.received}}" style="background:#edf9f0;border-radius:5px;padding:4px 3px;border:1px solid #d7efdc;text-align:center">
-                    <div class="val" style="font-size:9.5px;font-weight:800;color:#16a34a;line-height:1.15">Received: ${{row.received}}</div>
-                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#16a34a;margin-top:1px;letter-spacing:.15px">Incoming</div>
+                  <div class="ltr-box-rcv" title="${{safeHtml(_dT('dash.ltr_received_colon',{{count:row.received}},`Received: ${{row.received}}`))}}" style="background:#edf9f0;border-radius:5px;padding:4px 3px;border:1px solid #d7efdc;text-align:center">
+                    <div class="val" style="font-size:9.5px;font-weight:800;color:#16a34a;line-height:1.15">${{safeHtml(_dT('dash.ltr_received_colon',{{count:row.received}},`Received: ${{row.received}}`))}}</div>
+                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#16a34a;margin-top:1px;letter-spacing:.15px">${{safeHtml(_dT('dash.ltr_incoming',null,'Incoming'))}}</div>
                   </div>
                 </div>
               </div>`;
             }}).join('')}}
           </div>
         </div>`
-      : '<div style="font-size:11px;color:var(--mu)">No external party activity available in the current project scope.</div>';
+      : `<div style="font-size:11px;color:var(--mu)">${{safeHtml(_dT('dash.ltr_no_parties',null,'No external party activity available in the current project scope.'))}}</div>`;
     el.innerHTML=`<div style="display:grid;gap:10px">
       ${{summaryHtml}}
       ${{partiesHtml}}
     </div>`;
   }}catch(err){{
     console.error('renderLettersOverview failed', err);
-    el.innerHTML='<div style="font-size:11px;color:var(--mu)">Letters overview is temporarily unavailable.</div>';
+    el.innerHTML=`<div style="font-size:11px;color:var(--mu)">${{escHtml(_dT('dash.ltr_unavailable',null,'Letters overview is temporarily unavailable.'))}}</div>`;
   }}
 }}
 
@@ -12282,17 +12464,17 @@ function renderDTTable(d){{
       tr.className=`dt-summary-row${{i%2?' alt':''}}`;
       i++;
       const ovBadge=r.overdue>0
-        ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{r.overdue}}</span>`
-        : `<span style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
+        ? `<span class="badge bidi-ltr" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{r.overdue}}</span>`
+        : `<span class="bidi-ltr" style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
 
-      tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{safe(p.code)}}</td>
-        <td style="font-weight:700;color:var(--pr)">${{safe(r.code)}}</td>
-        <td>${{safe(r.name)}}</td>
-        <td style="text-align:center;font-weight:700">${{r.total}}</td>
-        <td style="text-align:center;color:#16a34a;font-weight:700">${{r.approved}}</td>
-        <td style="text-align:center;color:#f59e0b;font-weight:700">${{r.pending}}</td>
-        <td style="text-align:center;color:#7c3aed;font-weight:700">${{r.rejected||0}}</td>
-        <td style="text-align:center;color:#60A5FA;font-weight:700">${{r.info_closed||0}}</td>
+      tr.innerHTML=`<td style="font-size:10px;color:var(--mu)"><span class="bidi-ltr">${{safe(p.code)}}</span></td>
+        <td style="font-weight:700;color:var(--pr)"><span class="bidi-ltr">${{safe(r.code)}}</span></td>
+        <td>${{safe(_dDtName(r.code, r.name))}}</td>
+        <td class="bidi-ltr" style="text-align:center;font-weight:700">${{r.total}}</td>
+        <td class="bidi-ltr" style="text-align:center;color:#16a34a;font-weight:700">${{r.approved}}</td>
+        <td class="bidi-ltr" style="text-align:center;color:#f59e0b;font-weight:700">${{r.pending}}</td>
+        <td class="bidi-ltr" style="text-align:center;color:#7c3aed;font-weight:700">${{r.rejected||0}}</td>
+        <td class="bidi-ltr" style="text-align:center;color:#60A5FA;font-weight:700">${{r.info_closed||0}}</td>
         <td style="text-align:center">${{ovBadge}}</td>`;
       tbody.appendChild(tr);
     }});
@@ -12334,34 +12516,35 @@ function renderDiscTable(data){{
         const card=document.createElement('div');
         card.className=`disc-mobile-card${{warn?' warn':''}}`;
         card.dataset.group=groupId;
+        const discCountLbl=disc.length===1?_dT('dash.discipline_1',null,'1 discipline'):_dT('dash.discipline_n',{{count:disc.length}},`${{disc.length}} disciplines`);
         card.innerHTML=`<div class="disc-mobile-head">
           <div>
-            <div class="disc-mobile-title">${{safe(p.code)}} | ${{safe(dt.code)}}</div>
-            <div class="disc-mobile-sub">${{disc.length}} ${{disc.length===1?'discipline':'disciplines'}}</div>
+            <div class="disc-mobile-title bidi-ltr">${{safe(p.code)}} | ${{safe(dt.code)}}</div>
+            <div class="disc-mobile-sub">${{safe(discCountLbl)}}</div>
           </div>
           <button type="button" class="disc-expander" aria-expanded="false" onclick="toggleDiscMobileGroup('${{groupId}}', this)">&#9660;</button>
         </div>
         <div class="disc-mobile-grid">
-          ${{metric('Project',safe(p.code),'var(--pr)')}}
-          ${{metric('Doc Type',safe(dt.code),'var(--pr)')}}
-          ${{metric('Disciplines',disc.length,'#2f4f64')}}
-          ${{metric('Total',dt.total,'var(--pr)')}}
-          ${{metric('Approved',dt.approved,'#16a34a')}}
-          ${{metric('Pending',dt.pending,'#f59e0b')}}
-          ${{metric('Rejected',dt.rejected||0,'#7c3aed')}}
-          ${{metric('Info / Closed',dt.info_closed||0,'#60A5FA')}}
-          ${{metric('Overdue',dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
+          ${{metric(_dT('dash.th_project',null,'Project'),safe(p.code),'var(--pr)')}}
+          ${{metric(_dT('dash.th_doc_type',null,'Doc Type'),safe(dt.code),'var(--pr)')}}
+          ${{metric(_dT('dash.th_disciplines',null,'Disciplines'),disc.length,'#2f4f64')}}
+          ${{metric(_dT('dash.th_total',null,'Total'),dt.total,'var(--pr)')}}
+          ${{metric(_dT('dash.th_approved',null,'Approved'),dt.approved,'#16a34a')}}
+          ${{metric(_dT('dash.th_pending',null,'Pending'),dt.pending,'#f59e0b')}}
+          ${{metric(_dT('dash.th_rejected',null,'Rejected'),dt.rejected||0,'#7c3aed')}}
+          ${{metric(_dT('dash.th_info_closed',null,'Info / Closed'),dt.info_closed||0,'#60A5FA')}}
+          ${{metric(_dT('dash.th_overdue',null,'Overdue'),dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
         </div>
         <div class="disc-mobile-children">
           ${{disc.map(ds=>`<div class="disc-mobile-child">
             <div class="disc-mobile-title">${{safe(ds.disc)}}</div>
             <div class="disc-mobile-grid">
-              ${{metric('Total',ds.total,'var(--pr)')}}
-              ${{metric('Approved',ds.approved,'#16a34a')}}
-              ${{metric('Pending',ds.pending,'#f59e0b')}}
-              ${{metric('Rejected',ds.rejected||0,'#7c3aed')}}
-                ${{metric('Info / Closed',ds.info_closed||0,'#60A5FA')}}
-                ${{metric('Overdue',ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
+              ${{metric(_dT('dash.th_total',null,'Total'),ds.total,'var(--pr)')}}
+              ${{metric(_dT('dash.th_approved',null,'Approved'),ds.approved,'#16a34a')}}
+              ${{metric(_dT('dash.th_pending',null,'Pending'),ds.pending,'#f59e0b')}}
+              ${{metric(_dT('dash.th_rejected',null,'Rejected'),ds.rejected||0,'#7c3aed')}}
+                ${{metric(_dT('dash.th_info_closed',null,'Info / Closed'),ds.info_closed||0,'#60A5FA')}}
+                ${{metric(_dT('dash.th_overdue',null,'Overdue'),ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
             </div>
           </div>`).join('')}}
         </div>`;
@@ -12370,12 +12553,13 @@ function renderDiscTable(data){{
       const tr=document.createElement('tr');
       tr.className=`disc-group-row${{rows%2===0?' alt':''}}`;
       const ovBadge=Number(dt.overdue||0)>0
-        ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{dt.overdue}}</span>`
-        : `<span style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
+        ? `<span class="badge bidi-ltr" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{dt.overdue}}</span>`
+        : `<span class="bidi-ltr" style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
+      const discCountLblTbl=disc.length===1?_dT('dash.discipline_1',null,'1 discipline'):_dT('dash.discipline_n',{{count:disc.length}},`${{disc.length}} disciplines`);
 
-      tr.innerHTML=`<td data-label="Project" style="font-size:10px;color:var(--mu)">${{p.code}}</td>
-        <td data-label="Doc Type" style="font-weight:700;color:var(--pr)">${{dt.code}}</td>
-        <td data-label="Disciplines"><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge">${{disc.length}}</span><span class="disc-meta">${{disc.length===1?'1 discipline':`${{disc.length}} disciplines`}}</span></div></td>
+      tr.innerHTML=`<td data-label="Project" style="font-size:10px;color:var(--mu)"><span class="bidi-ltr">${{p.code}}</span></td>
+        <td data-label="Doc Type" style="font-weight:700;color:var(--pr)"><span class="bidi-ltr">${{dt.code}}</span></td>
+        <td data-label="Disciplines"><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge bidi-ltr">${{disc.length}}</span><span class="disc-meta">${{safe(discCountLblTbl)}}</span></div></td>
         ${{mk('Total',dt.total,'var(--pr)')}}
         ${{mk('Approved',dt.approved,'#16a34a')}}
         ${{mk('Pending',dt.pending,'#f59e0b')}}
@@ -12389,11 +12573,11 @@ function renderDiscTable(data){{
         child.className='disc-child-row';
         child.dataset.group=groupId;
         const childOvBadge=Number(ds.overdue||0)>0
-          ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:1px 6px;border-radius:5px;font-weight:800;font-size:10.5px;display:inline-block">${{ds.overdue}}</span>`
-          : `<span style="color:#94a3b8;font-weight:500;font-size:10.5px">0</span>`;
+          ? `<span class="badge bidi-ltr" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:1px 6px;border-radius:5px;font-weight:800;font-size:10.5px;display:inline-block">${{ds.overdue}}</span>`
+          : `<span class="bidi-ltr" style="color:#94a3b8;font-weight:500;font-size:10.5px">0</span>`;
 
         child.innerHTML=`<td class="disc-child-spacer"></td>
-          <td style="font-size:10px;color:var(--mu)">${{dt.code}}</td>
+          <td style="font-size:10px;color:var(--mu)"><span class="bidi-ltr">${{dt.code}}</span></td>
           <td class="disc-child-label">${{ds.disc}}</td>
           ${{mk('Total',ds.total,'var(--pr)')}}
           ${{mk('Approved',ds.approved,'#16a34a')}}
@@ -12454,36 +12638,38 @@ async function loadAnalytics(forceReload=false){{
     apiFetch('/api/analytics/quality'+(pid?`?pid=${{pid}}`:'') ),
   ]);
 
+  const isRtl=_dIsRtl();
+
   // Monthly Trend
   if(tChart)tChart.destroy();
   tChart=new Chart(document.getElementById('cTrend'),{{type:'bar',
     data:{{labels:trend.map(t=>t.month),datasets:[
-      {{label:'Submitted',data:trend.map(t=>t.submitted),backgroundColor:'rgba(37,99,168,.25)',
+      {{label:_dT('dash.chart_submitted',null,'Submitted'),data:trend.map(t=>t.submitted),backgroundColor:'rgba(37,99,168,.25)',
         borderColor:'#2563a8',borderWidth:2,borderRadius:4,type:'bar'}},
-      {{label:'Approved',data:trend.map(t=>t.approved),backgroundColor:'#16a34a',
+      {{label:_dT('dash.th_approved',null,'Approved'),data:trend.map(t=>t.approved),backgroundColor:'#16a34a',
         borderColor:'#16a34a',borderWidth:2,borderRadius:4,type:'bar'}}]}},
-    options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}}}},
-      scales:{{y:{{beginAtZero:true}},x:{{grid:{{display:false}}}}}}}}}});
+    options:{{responsive:true,plugins:{{legend:{{position:'bottom',rtl:isRtl,textDirection:isRtl?'rtl':'ltr',labels:{{boxWidth:10,font:{{size:10}}}}}},tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}}}},
+      scales:{{y:{{beginAtZero:true,position:isRtl?'right':'left'}},x:{{grid:{{display:false}}}}}}}}}});
 
   // Aging
   if(aChart)aChart.destroy();
   aChart=new Chart(document.getElementById('cAging'),{{type:'bar',
-    data:{{labels:aging.map(a=>a.range+' Days'),
-      datasets:[{{label:'Pending Docs',data:aging.map(a=>a.count),
+    data:{{labels:aging.map(a=>_dT('dash.chart_days_unit',{{range:a.range}},a.range+' Days')),
+      datasets:[{{label:_dT('dash.chart_pending_docs',null,'Pending Docs'),data:aging.map(a=>a.count),
         backgroundColor:['#16a34a','#f59e0b','#f97316','#ef4444'],borderRadius:6}}]}},
-    options:{{responsive:true,plugins:{{legend:{{display:false}},
-      tooltip:{{callbacks:{{label:ctx=>`${{ctx.raw}} documents`}}}}}},
-      scales:{{y:{{beginAtZero:true}},x:{{grid:{{display:false}}}}}}}}}});
+    options:{{responsive:true,plugins:{{legend:{{display:false,rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}},
+      tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr',callbacks:{{label:ctx=>_dT('dash.chart_documents_unit',{{count:ctx.raw}},`${{ctx.raw}} documents`)}}}}}},
+      scales:{{y:{{beginAtZero:true,position:isRtl?'right':'left'}},x:{{grid:{{display:false}}}}}}}}}});
 
   // Quality
   if(qChart)qChart.destroy();
   qChart=new Chart(document.getElementById('cQuality'),{{type:'doughnut',
-    data:{{labels:quality.map(q=>'Rev '+q.revisions),
+    data:{{labels:quality.map(q=>_dT('dash.chart_rev_prefix',{{rev:q.revisions}},'Rev '+q.revisions)),
       datasets:[{{data:quality.map(q=>q.count),
         backgroundColor:['#16a34a','#f59e0b','#f97316','#ef4444'],
         borderWidth:3,borderColor:'#fff',hoverOffset:6}}]}},
     options:{{responsive:true,cutout:'60%',
-      plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}}}}}}}});
+      plugins:{{legend:{{position:'bottom',rtl:isRtl,textDirection:isRtl?'rtl':'ltr',labels:{{boxWidth:10,font:{{size:10}}}}}},tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}}}}}}}});
 
   // Approval Rate per Doc Type
   const d=getFiltered(_currentPid,_currentDisc);
@@ -12493,12 +12679,12 @@ async function loadAnalytics(forceReload=false){{
   }}));
   if(arChart)arChart.destroy();
   arChart=new Chart(document.getElementById('cApprRate'),{{type:'bar',
-    data:{{labels:dtLabels,datasets:[{{label:'Approval %',data:dtRates,
+    data:{{labels:dtLabels,datasets:[{{label:_dT('dash.chart_approval_pct',null,'Approval %'),data:dtRates,
       backgroundColor:dtRates.map(r=>r>=80?'#16a34a':r>=50?'#f59e0b':'#ef4444'),
       borderRadius:4}}]}},
     options:{{responsive:true,indexAxis:'y',
-      plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>`${{ctx.raw}}%`}}}}}},
-      scales:{{x:{{beginAtZero:true,max:100,ticks:{{callback:v=>v+'%'}}}},y:{{grid:{{display:false}}}}}}}}}});
+      plugins:{{legend:{{display:false,rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}},tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr',callbacks:{{label:ctx=>`${{ctx.raw}}%`}}}}}},
+      scales:{{x:{{beginAtZero:true,max:100,ticks:{{callback:v=>v+'%'}}}},y:{{position:isRtl?'right':'left',grid:{{display:false}}}}}}}}}});
 }}
 
 // ── Overdue Tab ───────────────────────────────────────────
@@ -12524,7 +12710,7 @@ function filterOverdue(){{
     sort==='doc'?(a.docNo||'').localeCompare(b.docNo||''):
     (a.discipline||'').localeCompare(b.discipline||''));
   const list=document.getElementById('ov-list');
-  if(!data.length){{list.innerHTML='<div style="text-align:center;padding:32px;color:var(--mu)">✅ No overdue documents</div>';return;}}
+  if(!data.length){{list.innerHTML=`<div style="text-align:center;padding:32px;color:var(--mu)">${{escHtml(_dT('dash.ov_none',null,'✅ No overdue documents'))}}</div>`;return;}}
   const isDark = document.body.classList.contains('dark');
   list.innerHTML=data.map(r=>{{
     const bg=r.days_overdue>21?'er':r.days_overdue>14?'warn':'warn';
@@ -12532,17 +12718,19 @@ function filterOverdue(){{
       ? 'font-size:10px;background:#1e293b;color:#93c5fd;border:1px solid #334155;padding:2px 7px;border-radius:4px;white-space:nowrap'
       : 'font-size:10px;background:#f0f4f8;color:#475569;border:1px solid #cbd5e1;padding:2px 7px;border-radius:4px;white-space:nowrap';
     return `<div class="ov-row">
-      <span class="ov-badge ${{bg}}">${{r.days_overdue}}d</span>
+      <span class="ov-badge ${{bg}} bidi-ltr">${{escHtml(_dT('dash.ov_days_suffix',{{days:r.days_overdue}},`${{r.days_overdue}}d`))}}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.docNo}}</div>
-        <div class="ov-sub" style="color:var(--mu);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.title||'—'}}</div>
+        <div class="docno bidi-ltr" style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{escHtml(r.docNo)}}</div>
+        <div class="ov-sub" style="color:var(--mu);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{escHtml(r.title||'—')}}</div>
       </div>
-      <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{r.discipline||'—'}}</span>
-      <span class="ov-dt-code" style="${{dtStyle}}">${{r.dt_code}}</span>
-      <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{(r.issuedDate||'').slice(0,10)}}</span>
+      <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{escHtml(r.discipline||'—')}}</span>
+      <span class="ov-dt-code bidi-ltr" style="${{dtStyle}}">${{escHtml(r.dt_code)}}</span>
+      <span class="bidi-ltr" style="font-size:10px;color:var(--mu);white-space:nowrap">${{escHtml((r.issuedDate||'').slice(0,10))}}</span>
     </div>`;
   }}).join('');
-  document.getElementById('ov-count').textContent=`Showing ${{data.length}} overdue document${{data.length!==1?'s':''}}`;
+  document.getElementById('ov-count').textContent=data.length===1
+    ?_dT('dash.ov_showing_1',null,'Showing 1 overdue document')
+    :_dT('dash.ov_showing_n',{{count:data.length}},`Showing ${{data.length}} overdue documents`);
 }}
 
 // ── Executive Summary ─────────────────────────────────────
@@ -12556,16 +12744,16 @@ async function loadDailyDigest() {{
     dateInput.value = today.toISOString().split('T')[0];
   }}
   const selectedDate = dateInput ? dateInput.value : '';
-  container.innerHTML = '<div style="color:var(--mu);font-size:14px;">Loading...</div>';
+  container.innerHTML = `<div style="color:var(--mu);font-size:14px;">${{escHtml(_dT('common.loading',null,'Loading...'))}}</div>`;
   try {{
     let targetPid = typeof window.PID !== 'undefined' ? window.PID : (typeof _currentPid !== 'undefined' && _currentPid ? _currentPid : 'all');
     const qs = selectedDate ? '?date=' + selectedDate : '';
     const r = await apiFetch('/api/daily_digest/' + targetPid + qs);
-    if(!r) {{ container.innerHTML = '<div style="color:red">Failed to load digest (Null response).</div>'; return; }}
+    if(!r) {{ container.innerHTML = `<div style="color:red">${{escHtml(_dT('dash.digest_failed',null,'Failed to load digest (Null response).'))}}</div>`; return; }}
     if(r.error) {{
       console.error("Daily Digest Error:", r.error, r.trace);
       container.innerHTML = '<div style="color:red;white-space:pre-wrap;font-size:12px;font-family:monospace;background:#fee2e2;padding:10px;border-radius:6px;">' + 
-        '<b>Error:</b> ' + r.error + '<br><br><b>Trace:</b><br>' + (r.trace || 'No trace available') + '</div>';
+        '<b>' + escHtml(_dT('common.error',null,'Error')) + ':</b> ' + r.error + '<br><br><b>Trace:</b><br>' + (r.trace || 'No trace available') + '</div>';
       return;
     }}
     
@@ -12573,54 +12761,54 @@ async function loadDailyDigest() {{
     
     const isDark = document.body.classList.contains('dark');
     // Received Card
-    html += '<div class="panel digest-card-rcv" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:' + (isDark ? '#60a5fa' : '#1e40af') + ';font-size:16px;">📥 Received (' + (r.received||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents received.</div>';
+    html += '<div class="panel digest-card-rcv" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:' + (isDark ? '#60a5fa' : '#1e40af') + ';font-size:16px;">' + escHtml(_dT('dash.digest_received',{{count:(r.received||[]).length}},'📥 Received (' + (r.received||[]).length + ')')) + '</div><div style="margin-top:12px;">';
+    if((r.received||[]).length === 0) html += `<div style="color:var(--mu);font-size:13px;font-style:italic;">${{escHtml(_dT('dash.digest_no_received',null,'No documents received.'))}}</div>`;
     (r.received||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
-      html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
+      html += '<div class="docno bidi-ltr" style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+escHtml(doc.docNo)+'</div>';
       if((doc.project_name || doc.project_id)) {{
         const bStyle = isDark
           ? 'font-size:8px;background:rgba(59,130,246,0.18);color:#93c5fd;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(59,130,246,0.35);flex-shrink:0;'
           : 'font-size:8px;background:#f1f5f9;color:#475569;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #cbd5e1;flex-shrink:0;';
         html += '<div class="digest-badge-rcv" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
       }}
-      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escHtml(doc.title)+'</div></div>';
     }});
     html += '</div></div>';
 
     // Issued Card
-    html += '<div class="panel digest-card-iss" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:' + (isDark ? '#fb923c' : '#c2410c') + ';font-size:16px;">📤 Issued (' + (r.issued||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.issued||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents issued.</div>';
+    html += '<div class="panel digest-card-iss" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:' + (isDark ? '#fb923c' : '#c2410c') + ';font-size:16px;">' + escHtml(_dT('dash.digest_issued',{{count:(r.issued||[]).length}},'📤 Issued (' + (r.issued||[]).length + ')')) + '</div><div style="margin-top:12px;">';
+    if((r.issued||[]).length === 0) html += `<div style="color:var(--mu);font-size:13px;font-style:italic;">${{escHtml(_dT('dash.digest_no_issued',null,'No documents issued.'))}}</div>`;
     (r.issued||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
-      html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
+      html += '<div class="docno bidi-ltr" style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+escHtml(doc.docNo)+'</div>';
       if((doc.project_name || doc.project_id)) {{
         const bStyle = isDark
           ? 'font-size:8px;background:rgba(249,115,22,0.18);color:#fdba74;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(249,115,22,0.35);flex-shrink:0;'
           : 'font-size:8px;background:#fef3c7;color:#b45309;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #fde68a;flex-shrink:0;';
         html += '<div class="digest-badge-iss" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
       }}
-      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escHtml(doc.title)+'</div></div>';
     }});
     html += '</div></div>';
 
     // Replied Card
-    html += '<div class="panel digest-card-rep" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:' + (isDark ? '#4ade80' : '#166534') + ';font-size:16px;">✅ Replied (' + (r.replied||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.replied||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents replied.</div>';
+    html += '<div class="panel digest-card-rep" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:' + (isDark ? '#4ade80' : '#166534') + ';font-size:16px;">' + escHtml(_dT('dash.digest_replied',{{count:(r.replied||[]).length}},'✅ Replied (' + (r.replied||[]).length + ')')) + '</div><div style="margin-top:12px;">';
+    if((r.replied||[]).length === 0) html += `<div style="color:var(--mu);font-size:13px;font-style:italic;">${{escHtml(_dT('dash.digest_no_replied',null,'No documents replied.'))}}</div>`;
     (r.replied||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
-      html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
+      html += '<div class="docno bidi-ltr" style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+escHtml(doc.docNo)+'</div>';
       if((doc.project_name || doc.project_id)) {{
         const bStyle = isDark
           ? 'font-size:8px;background:rgba(34,197,94,0.18);color:#86efac;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(34,197,94,0.35);flex-shrink:0;'
           : 'font-size:8px;background:#dcfce7;color:#15803d;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #bbf7d0;flex-shrink:0;';
         html += '<div class="digest-badge-rep" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
       }}
-      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div>';
-      if(doc.status) html += '<div style="font-size:9px;font-weight:700;color:var(--tx2);">Status: ' + doc.status + '</div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escHtml(doc.title)+'</div>';
+      if(doc.status) html += '<div style="font-size:9px;font-weight:700;color:var(--tx2);">' + escHtml(_dT('dash.digest_status_prefix',{{status:_dStatusLbl(doc.status)}},'Status: ' + doc.status)) + '</div>';
       html += '</div>';
     }});
     html += '</div></div>';
@@ -12640,53 +12828,53 @@ async function loadExecutive(){{
   const col=s.completion_pct>=80?'#16a34a':s.completion_pct>=50?'#f59e0b':'#ef4444';
   document.getElementById('exec-content').innerHTML=`
     <div class="panel">
-      <div class="panel-title">📋 Executive Summary — Generated ${{EXEC_DATA.generated_at}}</div>
+      <div class="panel-title">${{escHtml(_dT('dash.exec_title',{{ts:EXEC_DATA.generated_at}},`📋 Executive Summary — Generated ${{EXEC_DATA.generated_at}}`))}}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:16px">
-        ${{[['Total Submittals',s.total,'var(--pr)'],['Approved',s.approved,'#16a34a'],
-           ['Pending',s.pending,'#f59e0b'],['Rejected',s.rejected,'#7c3aed'],
-           ['Overdue',s.overdue,'#ef4444'],['Completion',s.completion_pct+'%',col]]
+        ${{[[_dT('dash.kpi_total_submittals',null,'Total Submittals'),s.total,'var(--pr)'],[_dT('dash.kpi_approved',null,'Approved'),s.approved,'#16a34a'],
+           [_dT('dash.th_pending',null,'Pending'),s.pending,'#f59e0b'],[_dT('dash.th_rejected',null,'Rejected'),s.rejected,'#7c3aed'],
+           [_dT('dash.th_overdue',null,'Overdue'),s.overdue,'#ef4444'],[_dT('dash.kpi_completion_pct',null,'Completion'),s.completion_pct+'%',col]]
           .map(([l,v,c])=>`<div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center">
-            <div style="font-size:22px;font-weight:800;color:${{c}}">${{v}}</div>
-            <div style="font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase">${{l}}</div>
+            <div class="bidi-ltr" style="font-size:22px;font-weight:800;color:${{c}}">${{v}}</div>
+            <div style="font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase">${{escHtml(l)}}</div>
           </div>`).join('')}}
       </div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:16px"><table class="dt-tbl" style="margin-bottom:0;min-width:500px">
-        <thead><tr><th>Project</th><th>Code</th>
-          <th style="text-align:center">Total</th>
-          <th style="text-align:center">Approved</th>
-          <th style="text-align:center">%</th>
-          <th style="text-align:center">Overdue</th></tr></thead>
+        <thead><tr><th>${{escHtml(_dT('dash.th_project',null,'Project'))}}</th><th>${{escHtml(_dT('dash.th_code',null,'Code'))}}</th>
+          <th style="text-align:center">${{escHtml(_dT('dash.th_total',null,'Total'))}}</th>
+          <th style="text-align:center">${{escHtml(_dT('dash.th_approved',null,'Approved'))}}</th>
+          <th style="text-align:center">${{escHtml(_dT('dash.exec_pct_col',null,'%'))}}</th>
+          <th style="text-align:center">${{escHtml(_dT('dash.th_overdue',null,'Overdue'))}}</th></tr></thead>
         <tbody>
           ${{EXEC_DATA.projects.map((p,i)=>{{
             const col2=p.pct>=80?'#16a34a':p.pct>=50?'#f59e0b':'#ef4444';
             return `<tr class="${{i%2?'alt':''}}">
-              <td style="font-weight:600">${{p.name}}</td>
-              <td style="color:var(--pr);font-weight:700">${{p.code}}</td>
-              <td style="text-align:center;font-weight:700">${{p.total}}</td>
-              <td style="text-align:center;color:#16a34a;font-weight:700">${{p.approved}}</td>
-              <td style="text-align:center;font-weight:700;color:${{col2}}">${{p.pct}}%</td>
-              <td style="text-align:center;color:#ef4444;font-weight:700">${{p.overdue||0}}</td>
+              <td style="font-weight:600">${{escHtml(p.name)}}</td>
+              <td style="color:var(--pr);font-weight:700"><span class="bidi-ltr">${{escHtml(p.code)}}</span></td>
+              <td class="bidi-ltr" style="text-align:center;font-weight:700">${{p.total}}</td>
+              <td class="bidi-ltr" style="text-align:center;color:#16a34a;font-weight:700">${{p.approved}}</td>
+              <td class="bidi-ltr" style="text-align:center;font-weight:700;color:${{col2}}">${{p.pct}}%</td>
+              <td class="bidi-ltr" style="text-align:center;color:#ef4444;font-weight:700">${{p.overdue||0}}</td>
             </tr>`;
           }}).join('')}}
         </tbody>
       </table></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
         <div>
-          <div class="panel-title" style="margin-top:0">⏳ Aging Summary</div>
+          <div class="panel-title" style="margin-top:0">${{escHtml(_dT('dash.exec_aging_title',null,'⏳ Aging Summary'))}}</div>
           ${{EXEC_DATA.aging.map(a=>`
             <div style="display:flex;justify-content:space-between;align-items:center;
               padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px">
-              <span>${{a.range}} Days</span>
-              <span style="font-weight:700;color:${{a.range==='>21'?'#ef4444':'#f59e0b'}}">${{a.count}} docs</span>
+              <span class="bidi-ltr">${{escHtml(_dT('dash.chart_days_unit',{{range:a.range}},`${{a.range}} Days`))}}</span>
+              <span style="font-weight:700;color:${{a.range==='>21'?'#ef4444':'#f59e0b'}}">${{escHtml(_dT('dash.exec_docs_unit',{{count:a.count}},`${{a.count}} docs`))}}</span>
             </div>`).join('')}}
         </div>
         <div>
-          <div class="panel-title" style="margin-top:0">⚠️ Top Overdue</div>
+          <div class="panel-title" style="margin-top:0">${{escHtml(_dT('dash.exec_top_overdue_title',null,'⚠️ Top Overdue'))}}</div>
           ${{EXEC_DATA.top_overdue.slice(0,5).map(r=>`
             <div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11px">
-              <div style="font-weight:700">${{r.docNo}}</div>
-              <div style="color:var(--mu)">${{r.discipline||'—'}} · <span style="color:#ef4444;font-weight:700">${{r.days_overdue}}d overdue</span></div>
-            </div>`).join('')||'<div style="color:var(--mu);padding:10px 0">No overdue documents ✅</div>'}}
+              <div class="docno bidi-ltr" style="font-weight:700">${{escHtml(r.docNo)}}</div>
+              <div style="color:var(--mu)">${{escHtml(r.discipline||'—')}} · <span style="color:#ef4444;font-weight:700">${{escHtml(_dT('dash.exec_days_overdue',{{days:r.days_overdue}},`${{r.days_overdue}}d overdue`))}}</span></div>
+            </div>`).join('')||`<div style="color:var(--mu);padding:10px 0">${{escHtml(_dT('dash.exec_no_overdue',null,'No overdue documents ✅'))}}</div>`}}
         </div>
       </div>
     </div>`;
@@ -12697,26 +12885,26 @@ async function createProject(){{
   const id=document.getElementById('np-id')?.value.trim();
   const code=document.getElementById('np-code')?.value.trim();
   const name=document.getElementById('np-name')?.value.trim();
-  if(!id||!name){{toast('Fill in Project ID and Name','er');return;}}
+  if(!id||!name){{toast(_dT('dash.err_fill_id_name',null,'Fill in Project ID and Name'),'er');return;}}
   const btn=document.getElementById('cpbtn');
-  btn.disabled=true;btn.textContent='Creating...';
+  btn.disabled=true;btn.textContent=_dT('dash.btn_creating',null,'Creating...');
   try{{
     const r=await fetch('/api/projects/create',{{method:'POST',credentials:'include',
       headers:{{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}},
       body:JSON.stringify({{id,code:code||id,name}})}});
     const d=await r.json();
-    if(d.ok){{toast('✔ Project created','ok');closeM('newproj-modal');
+    if(d.ok){{toast(_dT('dash.toast_project_created',null,'✔ Project created'),'ok');closeM('newproj-modal');
       setTimeout(()=>location.reload(),800);}}
-    else toast(d.error||'Error','er');
-  }}catch(e){{toast('Network error','er');}}
-  finally{{btn.disabled=false;btn.textContent='Create';}}
+    else toast(d.error||_dT('common.error',null,'Error'),'er');
+  }}catch(e){{toast(_dT('dash.err_network',null,'Network error'),'er');}}
+  finally{{btn.disabled=false;btn.textContent=_dT('common.create',null,'Create');}}
 }}
 
 async function delProject(pid,name){{
-  if(!confirm(`Delete project "${{name}}"?\nThis will delete ALL records, documents and settings. This cannot be undone.`))return;
+  if(!confirm(_dT('dash.confirm_del_project',{{name}},`Delete project "${{name}}"?\nThis will delete ALL records, documents and settings. This cannot be undone.`)))return;
   const r=await apiFetch('/api/projects/delete/'+pid,{{method:'POST'}});
-  if(r&&r.ok){{toast('Project deleted','ok');setTimeout(()=>location.reload(),800);}}
-  else toast((r&&r.error)||'Error','er');
+  if(r&&r.ok){{toast(_dT('dash.toast_project_deleted',null,'Project deleted'),'ok');setTimeout(()=>location.reload(),800);}}
+  else toast((r&&r.error)||_dT('common.error',null,'Error'),'er');
 }}
 
 // Admin functions loaded from SHARED_JS
@@ -12770,7 +12958,7 @@ function applyAuditColWidths(widths){{
 function resetAuditColWidths(){{
   try{{localStorage.removeItem(AUD_COL_KEY);}}catch(e){{}}
   applyAuditColWidths(AUD_DEFAULT_WIDTHS);
-  if(typeof toast==='function')toast('Audit column widths reset','ok');
+  if(typeof toast==='function')toast(_dT('dash.aud_widths_reset_toast',null,'Audit column widths reset'),'ok');
 }}
 
 let _audRzInit=false;
@@ -12801,7 +12989,9 @@ function initAuditColResize(){{
   document.addEventListener('mousemove',e=>{{
     if(!_audRzDrag)return;
     const minW=AUD_MIN_WIDTHS[_audRzDrag.idx]||60;
-    const newW=Math.max(minW,_audRzDrag.startW+(e.clientX-_audRzDrag.startX));
+    const isRtl=(document.documentElement.dir==='rtl');
+    const delta=isRtl?(_audRzDrag.startX-e.clientX):(e.clientX-_audRzDrag.startX);
+    const newW=Math.max(minW,_audRzDrag.startW+delta);
     _audRzDrag.th.style.width=newW+'px';
     const curThs=document.querySelectorAll('#aud-tbl thead th');
     let totalW=0;
@@ -12845,17 +13035,17 @@ async function loadAudit(reset=false){{
 
     const pSel=document.getElementById('aud-pid');
     const curPid=pSel.value;
-    pSel.innerHTML='<option value="">All Projects</option>'+
+    pSel.innerHTML=`<option value="">${{escHtml(_dT('dash.aud_all_projects',null,'All Projects'))}}</option>`+
       (data.projects||[]).map(p=>`<option value="${{p.id}}"${{p.id===curPid?' selected':''}}>${{p.code}} — ${{p.name}}</option>`).join('');
 
     const uSel=document.getElementById('aud-user');
     const curU=uSel.value;
-    uSel.innerHTML='<option value="">All Users</option>'+
+    uSel.innerHTML=`<option value="">${{escHtml(_dT('dash.aud_all_users',null,'All Users'))}}</option>`+
       (data.users||[]).map(u=>`<option value="${{u}}"${{u===curU?' selected':''}}>${{u}}</option>`).join('');
 
     const aSel=document.getElementById('aud-action');
     const curA=aSel.value;
-    aSel.innerHTML='<option value="">All Actions</option>'+
+    aSel.innerHTML=`<option value="">${{escHtml(_dT('dash.aud_all_actions',null,'All Actions'))}}</option>`+
       (data.actions||[]).map(a=>`<option value="${{a}}"${{a===curA?' selected':''}}>${{a}}</option>`).join('');
   }}else if(data.projects){{
     (data.projects||[]).forEach(p=>{{ _auditProjMap[p.id]=p.name||p.code||p.id; }});
@@ -12867,7 +13057,7 @@ async function loadAudit(reset=false){{
   _auditHasMore=rows.length===100;
 
   if(!rows.length){{
-    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
+    tbody.innerHTML=`<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">${{escHtml(_dT('dash.aud_no_activity',null,'No activity found'))}}</td></tr>`;
   }}else{{
     const _dash='<span style="color:var(--mu);opacity:0.4">—</span>';
     const _val=(v)=>{{
@@ -12913,18 +13103,18 @@ async function loadAudit(reset=false){{
 
       const projRaw=_auditProjMap[r.project_id]||r.project_id||'';
       const projDisplay=_val(projRaw);
-      const docDisplay=r.doc_no?`<span style="color:var(--pr);font-weight:600">${{r.doc_no}}</span>`:_dash;
+      const docDisplay=r.doc_no?`<span class="docno bidi-ltr" style="color:var(--pr);font-weight:600">${{r.doc_no}}</span>`:_dash;
       const oldColor = isDark ? '#f87171' : '#dc2626';
       const newColor = isDark ? '#4ade80' : '#166534';
       const oldDisplay=r.old_value?`<span class="aud-old-val" style="color:${{oldColor}};font-weight:600;">${{r.old_value}}</span>`:_dash;
       const newDisplay=r.new_value?`<span class="aud-new-val" style="color:${{newColor}};font-weight:600;">${{r.new_value}}</span>`:_dash;
-      const ipDisplay=r.ip_address?`<span style="font-family:monospace;color:var(--mu);font-size:9.5px">${{r.ip_address}}</span>`:_dash;
-      const devDisplay=r.device?`<span style="color:var(--tx);font-size:9.5px">${{r.device}}</span>`:_dash;
+      const ipDisplay=r.ip_address?`<span class="bidi-ltr" style="font-family:monospace;color:var(--mu);font-size:9.5px">${{r.ip_address}}</span>`:_dash;
+      const devDisplay=r.device?`<span class="bidi-ltr" style="color:var(--tx);font-size:9.5px">${{r.device}}</span>`:_dash;
 
       tr.innerHTML=`
-        <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
-        <td style="font-weight:600;font-size:11px">${{r.username||''}}</td>
-        <td><span style="background:${{actionBg}};color:${{actionColor}};border:1px solid ${{isDark?actionColor+'40':'transparent'}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
+        <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap"><span class="bidi-ltr">${{tsStr}}</span></td>
+        <td style="font-weight:600;font-size:11px"><span class="bidi-ltr">${{r.username||''}}</span></td>
+        <td><span class="bidi-ltr" style="background:${{actionBg}};color:${{actionColor}};border:1px solid ${{isDark?actionColor+'40':'transparent'}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
         <td style="font-size:10px;color:var(--mu)" title="${{r.project_id||''}}">${{projDisplay}}</td>
         <td style="font-size:11px" title="${{r.doc_no||''}}">${{docDisplay}}</td>
         <td style="font-size:10px;color:var(--mu)" title="${{r.field_name||''}}">${{_val(r.field_name)}}</td>
@@ -12938,8 +13128,8 @@ async function loadAudit(reset=false){{
   }}
 
   const page=Math.floor(_auditOffset/100)+1;
-  document.getElementById('aud-count').textContent=`Showing ${{rows.length}} entries`;
-  document.getElementById('aud-page').textContent=`Page ${{page}}`;
+  document.getElementById('aud-count').textContent=_dT('dash.aud_showing',{{count:rows.length}},`Showing ${{rows.length}} entries`);
+  document.getElementById('aud-page').textContent=_dT('dash.aud_page',{{page}},`Page ${{page}}`);
   document.getElementById('aud-prev').disabled=_auditOffset===0;
   document.getElementById('aud-next').disabled=!_auditHasMore;
 }}
