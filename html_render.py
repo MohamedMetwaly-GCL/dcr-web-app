@@ -13743,6 +13743,15 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 .tool-btn:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 .tool-btn.purple:hover{{background:#7c3aed;border-color:#7c3aed}}
 .tool-btn.teal:hover{{background:#0891b2;border-color:#0891b2}}
+.ltr-date-filter{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-inline-start:6px;padding-inline-start:10px;border-inline-start:1px solid var(--bd)}}
+.ltr-df-lbl{{font-size:10.5px;font-weight:700;color:var(--mu);white-space:nowrap}}
+.ltr-df-select,.ltr-df-input{{height:25px;padding:2px 6px;border:1px solid var(--bd);border-radius:var(--rd);background:#fff;color:var(--tx);font-family:inherit;font-size:11px;outline:none}}
+.ltr-df-select:focus,.ltr-df-input:focus{{border-color:var(--pr)}}
+.ltr-df-input{{min-width:118px;direction:ltr;unicode-bidi:isolate}}
+.ltr-df-clear{{padding:2px 8px;min-height:25px;font-size:10.5px;flex:0 0 auto!important}}
+body.dark .ltr-date-filter{{border-inline-start-color:#304257}}
+body.dark .ltr-df-select,body.dark .ltr-df-input{{background:#0f1a29;border-color:#314558;color:#e2e8f0;color-scheme:dark}}
+body.dark .ltr-df-lbl{{color:#94a3b8}}
 .tool-dd{{position:relative}}
 .tool-dd-menu{{position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1.5px solid var(--bd);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:300;min-width:210px;overflow:hidden}}
 .tool-dd-menu button{{display:block;width:100%;text-align:left;padding:9px 14px;border:none;background:none;cursor:pointer;font-size:12px;font-family:inherit;color:#1e2a3a;white-space:nowrap}}
@@ -14013,6 +14022,10 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
   #sbar{{padding:2px 8px;font-size:9px;gap:9px;line-height:1.2;justify-content:space-between}}
   #ltr-quickbar{{padding:4px 8px!important;gap:4px!important;flex-direction:row!important}}
   #ltr-quickbar .tool-btn{{min-height:22px!important;font-size:8.5px!important;padding:2px 6px!important;flex:1 1 0!important}}
+  #ltr-quickbar .ltr-date-filter{{flex:1 1 100%;margin-inline-start:0;padding-inline-start:0;border-inline-start:none;padding-top:4px;border-top:1px solid var(--bd)}}
+  body.dark #ltr-quickbar .ltr-date-filter{{border-top-color:#304257}}
+  #ltr-quickbar .ltr-df-select,#ltr-quickbar .ltr-df-input{{height:22px;font-size:9.5px;min-width:0}}
+  #ltr-quickbar .ltr-df-clear{{flex:0 0 auto!important;min-height:22px!important;font-size:9px!important;padding:1px 6px!important}}
 }}
 @media(max-width:640px){{
   #topbar{{height:32px;padding:0 5px;gap:3px}}
@@ -14217,6 +14230,18 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
     <button class="tool-btn" type="button" data-ltr-view="" onclick="setLTRQuickView('')">{t("reg.ltr_all", norm)}</button>
     <button class="tool-btn" type="button" data-ltr-view="sent" onclick="setLTRQuickView('sent')">{t("reg.ltr_sent", norm)}</button>
     <button class="tool-btn" type="button" data-ltr-view="received" onclick="setLTRQuickView('received')">{t("reg.ltr_received", norm)}</button>
+    <div id="ltr-date-filter" class="ltr-date-filter">
+      <span class="ltr-df-lbl">{t("reg.ltr_date_label", norm)}</span>
+      <select id="ltr-date-field" class="ltr-df-select" onchange="setLTRDateFilter()" aria-label="{t('reg.ltr_date_label', norm)}">
+        <option value="issuedDate">{t("reg.ltr_date_issued", norm)}</option>
+        <option value="receivedDate">{t("reg.ltr_date_received", norm)}</option>
+      </select>
+      <label class="ltr-df-lbl" for="ltr-date-from">{t("reg.ltr_date_from", norm)}</label>
+      <input type="date" id="ltr-date-from" class="ltr-df-input bidi-ltr" onchange="setLTRDateFilter()" oninput="setLTRDateFilter()">
+      <label class="ltr-df-lbl" for="ltr-date-to">{t("reg.ltr_date_to", norm)}</label>
+      <input type="date" id="ltr-date-to" class="ltr-df-input bidi-ltr" onchange="setLTRDateFilter()" oninput="setLTRDateFilter()">
+      <button type="button" id="ltr-date-clear" class="tool-btn ltr-df-clear" style="display:none" onclick="clearLTRDateFilter()" title="{t('reg.ltr_date_clear', norm)}">&times; {t("reg.ltr_date_clear", norm)}</button>
+    </div>
   </div>
   
   <div id="bulkbar">
@@ -15164,22 +15189,79 @@ function getLTRFormColsFallback(cols, roles){{
   return picked.length?picked:(cols||[]).filter(c=>!isLTRInternalField(c)&&!isLTRExcludedField(c));
 }}
 
+function parseLTRDateKey(val){{
+  if(val===undefined||val===null)return '';
+  const s=String(val).trim();
+  if(!s)return '';
+  let y=0,m=0,d=0;
+  let match=s.match(/^(\\d{{4}})[-/.](\\d{{1,2}})[-/.](\\d{{1,2}})(?:$|T|\\s)/);
+  if(match){{
+    y=parseInt(match[1],10);m=parseInt(match[2],10);d=parseInt(match[3],10);
+  }}else{{
+    match=s.match(/^(\\d{{1,2}})[-/.](\\d{{1,2}})[-/.](\\d{{4}})(?:$|\\s)/);
+    if(!match)return '';
+    d=parseInt(match[1],10);m=parseInt(match[2],10);y=parseInt(match[3],10);
+  }}
+  if(y<1900||y>2100||m<1||m>12||d<1||d>31)return '';
+  const dt=new Date(Date.UTC(y,m-1,d));
+  if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==m-1||dt.getUTCDate()!==d)return '';
+  return String(y).padStart(4,'0')+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+}}
+
 function updateLTRQuickBar(){{
   const bar=document.getElementById('ltr-quickbar');
   if(!bar)return;
   const on=isLTRTab();
   bar.style.display=on?'flex':'none';
-  if(!on)delete state.filters._ltrQuick;
+  if(!on){{
+    delete state.filters._ltrQuick;
+    delete state.filters._ltrDateField;
+    delete state.filters._ltrDateFrom;
+    delete state.filters._ltrDateTo;
+    const fSel=document.getElementById('ltr-date-field');
+    const fFrom=document.getElementById('ltr-date-from');
+    const fTo=document.getElementById('ltr-date-to');
+    if(fSel)fSel.value='issuedDate';
+    if(fFrom)fFrom.value='';
+    if(fTo)fTo.value='';
+  }}
   bar.querySelectorAll('[data-ltr-view]').forEach(btn=>{{
     const active=(state.filters._ltrQuick||'')===btn.dataset.ltrView;
     btn.style.background=active?'var(--pr)':'';
     btn.style.color=active?'#fff':'';
     btn.style.borderColor=active?'var(--pr)':'';
   }});
+  const clr=document.getElementById('ltr-date-clear');
+  if(clr){{
+    const hasDates=!!(state.filters._ltrDateFrom||state.filters._ltrDateTo);
+    clr.style.display=hasDates?'inline-flex':'none';
+  }}
 }}
 
 function setLTRQuickView(view){{
   state.filters._ltrQuick=view||'';
+  updateLTRQuickBar();
+  renderRows();
+}}
+
+function setLTRDateFilter(){{
+  const fSel=document.getElementById('ltr-date-field');
+  const fFrom=document.getElementById('ltr-date-from');
+  const fTo=document.getElementById('ltr-date-to');
+  state.filters._ltrDateField=(fSel&&fSel.value==='receivedDate')?'receivedDate':'issuedDate';
+  state.filters._ltrDateFrom=(fFrom&&fFrom.value)?String(fFrom.value).trim():'';
+  state.filters._ltrDateTo=(fTo&&fTo.value)?String(fTo.value).trim():'';
+  updateLTRQuickBar();
+  renderRows();
+}}
+
+function clearLTRDateFilter(){{
+  const fFrom=document.getElementById('ltr-date-from');
+  const fTo=document.getElementById('ltr-date-to');
+  if(fFrom)fFrom.value='';
+  if(fTo)fTo.value='';
+  delete state.filters._ltrDateFrom;
+  delete state.filters._ltrDateTo;
   updateLTRQuickBar();
   renderRows();
 }}
@@ -15740,6 +15822,16 @@ function renderRows(){{
       const direction=String(getLTRValue(r,state.allTabCols,'direction')||'').toLowerCase();
       if(quick==='sent'&&direction!=='sent')return false;
       if(quick==='received'&&direction!=='received')return false;
+      const dfFrom=String(state.filters._ltrDateFrom||'').trim();
+      const dfTo=String(state.filters._ltrDateTo||'').trim();
+      if(dfFrom||dfTo){{
+        const dfField=state.filters._ltrDateField==='receivedDate'?'receivedDate':'issuedDate';
+        const rawDate=getLTRValue(r,state.allTabCols,dfField)||r[dfField]||'';
+        const rowDate=parseLTRDateKey(rawDate);
+        if(!rowDate)return false;
+        if(dfFrom&&rowDate<dfFrom)return false;
+        if(dfTo&&rowDate>dfTo)return false;
+      }}
     }}
     return true;
   }});
