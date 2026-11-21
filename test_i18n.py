@@ -441,5 +441,112 @@ class TestPhase2AWorkspaceDashboards(unittest.TestCase):
             self.assertIn('<span class="rtl-flip">➔</span>', html_ar)
 
 
+class TestPhase2B1RegisterGridAndSettings(unittest.TestCase):
+    """Verify I18N-02B-1: t_col(), reg.*/col.* parity, render_register() EN/AR, RTL sticky cols/resizer, and BiDi isolation."""
+
+    def test_t_col_built_in_and_custom_fallback(self):
+        # Built-in system columns translate in Arabic, preserve default_label in English
+        self.assertEqual(i18n.t_col("docNo", "Document No.", "en"), "Document No.")
+        self.assertEqual(i18n.t_col("docNo", "Document No.", "ar"), "رقم المستند")
+        self.assertEqual(i18n.t_col("partBStatus", "Part B Status", "ar"), "حالة Part B")
+        self.assertEqual(i18n.t_col("parentLetterRef", "Response Ref", "ar"), "مرجع الرد")
+        self.assertEqual(i18n.t_col("facility", "Facility / Location", "ar"), "المنشأة / الموقع")
+        self.assertEqual(i18n.t_col("extinguisherStatus", "Extinguisher Status", "ar"), "حالة الطفاية")
+        self.assertEqual(i18n.t_col("hours", "Worked Hours", "ar"), "ساعات العمل")
+
+        # Custom user-created columns fall back to default_label
+        self.assertEqual(i18n.t_col("col_custom_999", "Site Engineer Note", "en"), "Site Engineer Note")
+        self.assertEqual(i18n.t_col("col_custom_999", "Site Engineer Note", "ar"), "Site Engineer Note")
+
+        # Client dictionary exposes reg.*, col.*, status.*, dt_name.* and preserves excludes
+        client_ar = i18n.get_client_dict("ar")
+        for key in ("reg.btn_add", "reg.th_sr", "reg.proj_modal_title", "col.docNo", "col.partBStatus", "status.a_approved", "dt_name.NOC"):
+            self.assertIn(key, client_ar)
+        for excl in i18n._SERVER_ONLY_CLIENT_EXCLUDES:
+            self.assertNotIn(excl, client_ar)
+
+    def test_register_en_and_ar_localization_and_rtl_hooks(self):
+        user = {"username": "super_admin", "role": "superadmin"}
+        proj = {
+            "id": "24CP01",
+            "code": "CP01",
+            "name": "Alpha Plant",
+            "workspace_id": "ENG",
+            "client": "GasChill",
+            "status_colors": {},
+        }
+        dts = [
+            {"id": "SD", "code": "SD", "name": "Shop Drawing Submittal"},
+            {"id": "NOC", "code": "NOC", "name": "Notice of Change"},
+            {"id": "LTR", "code": "LTR", "name": "Letters"},
+        ]
+        with patch("html_render.can_edit", return_value=True), \
+             patch("html_render.is_project_admin", return_value=True), \
+             patch("html_render.get_allowed_doc_type_filter", return_value=None), \
+             patch("db.can_user_download", return_value=True), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.get_doc_types", return_value=dts), \
+             patch("db.get_logo", return_value=None), \
+             patch("db.get_user_workspaces", return_value=[{"id": "ENG", "code": "ENG", "name": "Engineering & Projects", "name_ar": "المشروعات الهندسية", "icon": "🏗️"}]):
+            html_en = html_render.render_register(user, proj, active_ws_id="ENG", lang="en")
+            self.assertIn('<html lang="en" dir="ltr">', html_en)
+            self.assertIn("➕ Add", html_en)
+            self.assertIn("Latest Revisions Only", html_en)
+            self.assertIn("⚙ Manage Columns", html_en)
+            self.assertIn("📋 Dropdown Lists", html_en)
+            self.assertIn("🎨 Status Colors", html_en)
+
+            html_ar = html_render.render_register(user, proj, active_ws_id="ENG", lang="ar")
+            self.assertIn('<html lang="ar" dir="rtl">', html_ar)
+            # Toolbar, search, quickbar, bulk bar, status bar
+            self.assertIn("➕ إضافة", html_ar)
+            self.assertIn("⚙ الأعمدة", html_ar)
+            self.assertIn("🗓 الإجازات", html_ar)
+            self.assertIn("📋 القوائم", html_ar)
+            self.assertIn("🎨 ألوان الحالات", html_ar)
+            self.assertIn("🏗 المشروع", html_ar)
+            self.assertIn("📥 تصدير ▾", html_ar)
+            self.assertIn("🖨 طباعة", html_ar)
+            self.assertIn("📤 استيراد", html_ar)
+            self.assertIn("أحدث المراجعات فقط", html_ar)
+            self.assertIn('placeholder="بحث..."', html_ar)
+            self.assertIn("عرض الخطابات", html_ar)
+            self.assertIn("0 محدد", html_ar)
+            self.assertIn("الإجمالي: 0", html_ar)
+            self.assertIn("المعروض: 0", html_ar)
+            self.assertIn("المتأخر: 0", html_ar)
+
+            # Register settings modals
+            self.assertIn("🏗 بيانات المشروع", html_ar)
+            self.assertIn("📇 مصفوفة التوزيع", html_ar)
+            self.assertIn("📊 مركز التصدير", html_ar)
+            self.assertIn("📋 القوائم المنسدلة", html_ar)
+            self.assertIn("إضافة نوع مستند", html_ar)
+            self.assertIn("⚙ إدارة الأعمدة", html_ar)
+            self.assertIn("إضافة عمود", html_ar)
+            self.assertIn("📤 استيراد Excel / CSV", html_ar)
+            self.assertIn("⚙ إعدادات المشروع", html_ar)
+
+            # Mandatory RTL CSS & JS fixes
+            self.assertIn('html[dir="rtl"] #regtbl th:nth-child(1)', html_ar)
+            self.assertIn('right: 0 !important;', html_ar)
+            self.assertIn('right: 32px !important;', html_ar)
+            self.assertIn('right: 66px !important;', html_ar)
+            self.assertIn('box-shadow: -2px 0 5px -2px rgba(0,0,0,0.1) !important;', html_ar)
+            self.assertIn('html[dir="rtl"] #regtbl tbody tr.row-selected td:first-child', html_ar)
+            self.assertIn('html[dir="rtl"] .rz{right:auto;left:0}', html_ar)
+            self.assertIn("const isRtl=document.documentElement.dir==='rtl';", html_ar)
+            self.assertIn('html[dir="rtl"] #srchbox{padding:4px 28px 4px 10px;background-position:calc(100% - 7px) center}', html_ar)
+
+            # Mandatory BiDi isolation & client i18n helpers
+            self.assertIn("td.classList.add('docno-cell');td.classList.add('bidi-ltr')", html_ar)
+            self.assertIn("rBadge.className='bidi-ltr'", html_ar)
+            self.assertIn('<span id="s-clock" class="bidi-ltr"></span>', html_ar)
+            self.assertIn("tsr.className='sr bidi-ltr'", html_ar)
+            self.assertIn("window.tCol", html_ar)
+            self.assertIn("window.tStatus", html_ar)
+            self.assertIn("window.tDt", html_ar)
+
+
 if __name__ == "__main__":
     unittest.main()

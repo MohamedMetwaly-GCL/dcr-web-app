@@ -35,6 +35,7 @@ from i18n import (
     t,
     t_status,
     t_dt,
+    t_col,
     get_client_i18n_json,
     translate_workspace_meta,
 )
@@ -3828,6 +3829,15 @@ body.dark #regtbl tbody tr.ov:hover { background-color: #4a2a24 !important; }
 #regtbl th:nth-child(1), #regtbl th:nth-child(2), #regtbl th:nth-child(3), #regtbl th.docno-cell { z-index: 10 !important; background-color: var(--brand-navy) !important; }
 body.dark #regtbl th:nth-child(1), body.dark #regtbl th:nth-child(2), body.dark #regtbl th:nth-child(3), body.dark #regtbl th.docno-cell { background-color: #0b131e !important; }
 
+/* RTL Frozen Columns (mirror left -> right) */
+html[dir="rtl"] #regtbl th:nth-child(1), html[dir="rtl"] #regtbl td:nth-child(1) { left: auto !important; right: 0 !important; }
+html[dir="rtl"] #regtbl th:nth-child(2), html[dir="rtl"] #regtbl td:nth-child(2) { left: auto !important; right: 32px !important; }
+html[dir="rtl"] #regtbl th.docno-cell, html[dir="rtl"] #regtbl td.docno-cell, html[dir="rtl"] #regtbl th:nth-child(3), html[dir="rtl"] #regtbl td:nth-child(3) {
+    left: auto !important; right: 66px !important;
+    box-shadow: -2px 0 5px -2px rgba(0,0,0,0.1) !important;
+}
+html[dir="rtl"] .sbadge { text-align: right !important; }
+
 /* 3. Status Pill Badges & Resizing (Allow Wrapping) */
 .sbadge { 
     border-radius: 9999px !important; 
@@ -4687,6 +4697,63 @@ window.t = function(key, vars) {{
     }});
   }}
   return val;
+}};
+window.tCol = function(colKey, defaultLabel) {{
+  if (window.DCR_LANG !== 'ar') return defaultLabel || colKey || '';
+  const k = 'col.' + String(colKey || '').trim();
+  const dict = window.DCR_I18N || {{}};
+  return Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : (defaultLabel || colKey || '');
+}};
+window.tDt = function(code, defaultName) {{
+  const fallback = defaultName || code || '';
+  if (window.DCR_LANG !== 'ar') return fallback;
+  const k = 'dt_name.' + String(code || '').trim().toUpperCase();
+  const dict = window.DCR_I18N || {{}};
+  return Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : fallback;
+}};
+window.tStatus = function(val) {{
+  if (!val || window.DCR_LANG !== 'ar') return val || '';
+  const raw = String(val).trim();
+  const low = raw.toLowerCase();
+  const map = {{
+    'approved': 'status.approved',
+    'approved with comments': 'status.approved_with_comments',
+    'pending': 'status.pending',
+    'under review': 'status.under_review',
+    'open': 'status.open',
+    'in progress': 'status.in_progress',
+    'in-progress': 'status.in_progress',
+    'closed': 'status.closed',
+    'completed': 'status.completed',
+    'rejected': 'status.rejected',
+    'revise & resubmit': 'status.revise_resubmit',
+    'revise and resubmit': 'status.revise_resubmit',
+    'overdue': 'status.overdue',
+    'expired': 'status.expired',
+    'valid': 'status.valid',
+    'expiring': 'status.expiring',
+    'active': 'status.active',
+    'info / closed': 'status.info_closed',
+    'info/closed': 'status.info_closed',
+    'not closed': 'status.not_closed',
+    'cancelled': 'status.cancelled',
+    'canceled': 'status.cancelled',
+    'a - approved': 'status.a_approved',
+    'b - approved as noted': 'status.b_approved_noted',
+    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'c - revise & resubmit': 'status.c_revise_resubmit',
+    'd - review not required': 'status.d_review_not_required',
+    'replied': 'status.replied',
+    'accepted & to proceed with part c': 'status.noc_accepted_part_c',
+    'information required': 'status.info_required',
+    'needs maintenance': 'status.needs_maintenance',
+    'under refill': 'status.under_refill',
+    'out of service': 'status.out_of_service',
+    'draft': 'status.draft',
+    'revised': 'status.revised'
+  }};
+  const k = map[low];
+  return k ? window.t(k) : raw;
 }};
 window.setLanguage = function(nextLang) {{
   const lang = (String(nextLang || '').trim().toLowerCase() === 'ar') ? 'ar' : 'en';
@@ -7056,6 +7123,63 @@ window.t = function(key, vars) {{
     }});
   }}
   return val;
+}};
+window.tCol = function(colKey, defaultLabel) {{
+  if (window.DCR_LANG !== 'ar') return defaultLabel || colKey || '';
+  const k = 'col.' + String(colKey || '').trim();
+  const dict = window.DCR_I18N || {{}};
+  return Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : (defaultLabel || colKey || '');
+}};
+window.tDt = function(code, defaultName) {{
+  const fallback = defaultName || code || '';
+  if (window.DCR_LANG !== 'ar') return fallback;
+  const k = 'dt_name.' + String(code || '').trim().toUpperCase();
+  const dict = window.DCR_I18N || {{}};
+  return Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : fallback;
+}};
+window.tStatus = function(val) {{
+  if (!val || window.DCR_LANG !== 'ar') return val || '';
+  const raw = String(val).trim();
+  const low = raw.toLowerCase();
+  const map = {{
+    'approved': 'status.approved',
+    'approved with comments': 'status.approved_with_comments',
+    'pending': 'status.pending',
+    'under review': 'status.under_review',
+    'open': 'status.open',
+    'in progress': 'status.in_progress',
+    'in-progress': 'status.in_progress',
+    'closed': 'status.closed',
+    'completed': 'status.completed',
+    'rejected': 'status.rejected',
+    'revise & resubmit': 'status.revise_resubmit',
+    'revise and resubmit': 'status.revise_resubmit',
+    'overdue': 'status.overdue',
+    'expired': 'status.expired',
+    'valid': 'status.valid',
+    'expiring': 'status.expiring',
+    'active': 'status.active',
+    'info / closed': 'status.info_closed',
+    'info/closed': 'status.info_closed',
+    'not closed': 'status.not_closed',
+    'cancelled': 'status.cancelled',
+    'canceled': 'status.cancelled',
+    'a - approved': 'status.a_approved',
+    'b - approved as noted': 'status.b_approved_noted',
+    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'c - revise & resubmit': 'status.c_revise_resubmit',
+    'd - review not required': 'status.d_review_not_required',
+    'replied': 'status.replied',
+    'accepted & to proceed with part c': 'status.noc_accepted_part_c',
+    'information required': 'status.info_required',
+    'needs maintenance': 'status.needs_maintenance',
+    'under refill': 'status.under_refill',
+    'out of service': 'status.out_of_service',
+    'draft': 'status.draft',
+    'revised': 'status.revised'
+  }};
+  const k = map[low];
+  return k ? window.t(k) : raw;
 }};
 window.setLanguage = function(nextLang) {{
   const lang = (String(nextLang || '').trim().toLowerCase() === 'ar') ? 'ar' : 'en';
@@ -13186,52 +13310,54 @@ def render_register(u, proj, active_ws_id=None, lang=None):
     if logo_l: logo_html += f'<img src="/api/logo/{pid}/logo_left" style="height:48px;object-fit:contain;flex-shrink:0">'
     if logo_r: logo_html += f'<img src="/api/logo/{pid}/logo_right" style="height:48px;object-fit:contain;flex-shrink:0;margin-left:8px">'
 
-    DEFAULT_PROJ_FIELDS = [("code","Code"),("name","Project Name"),("startDate","Start"),("endDate","End"),
-                   ("client","Client"),("landlord","Landlord"),("pmo","PMO"),
-                   ("mainConsultant","Consultant"),("mepConsultant","MEP"),("contractor","Contractor")]
+    DEFAULT_PROJ_FIELDS = [("code", t("reg.pf_code", norm)), ("name", t("reg.pf_name", norm)),
+                           ("startDate", t("reg.pf_startDate", norm)), ("endDate", t("reg.pf_endDate", norm)),
+                           ("client", t("reg.pf_client", norm)), ("landlord", t("reg.pf_landlord", norm)),
+                           ("pmo", t("reg.pf_pmo", norm)), ("mainConsultant", t("reg.pf_mainConsultant", norm)),
+                           ("mepConsultant", t("reg.pf_mepConsultant", norm)), ("contractor", t("reg.pf_contractor", norm))]
     custom_labels = proj.get("_labels") or {}
     PROJ_FIELDS = [(k, custom_labels.get(k, lbl)) for k, lbl in DEFAULT_PROJ_FIELDS]
 
     primary_keys = {"code", "name"}
     projbar_primary = "".join(
         f'<div class="pf primary"><span class="pf-lbl">{lbl}</span>'
-        f'<span class="pf-val" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
+        f'<span class="pf-val{" bidi-ltr" if key == "code" else ""}" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
         for key,lbl in PROJ_FIELDS
         if key in primary_keys and proj.get(key,"").strip())
     projbar_secondary = "".join(
         f'<div class="pf secondary"><span class="pf-lbl">{lbl}</span>'
-        f'<span class="pf-val" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
+        f'<span class="pf-val{" bidi-ltr" if key in ("startDate", "endDate") else ""}" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
         for key,lbl in PROJ_FIELDS
         if key not in primary_keys and proj.get(key,"").strip())
     projbar_toggle = ('<button id="projbar-toggle" class="tool-btn" type="button" '
-                      'onclick="toggleProjectInfo()">Project Info</button>') if projbar_secondary else ''
+                      f'onclick="toggleProjectInfo()">{t("reg.project_info_btn", norm)}</button>') if projbar_secondary else ''
 
     tabs_html = "".join(
-        f'<button class="tab-btn" data-id="{dt["id"]}" onclick="switchTab(\'{dt["id"]}\')">'
-        f'<span>{dt["code"]}</span><span class="tcnt" id="cnt-{dt["id"]}">0</span></button>'
+        f'<button class="tab-btn" data-id="{dt["id"]}" title="{t_dt(dt["code"], dt.get("name", ""), norm)}" onclick="switchTab(\'{dt["id"]}\')">'
+        f'<span class="bidi-ltr">{dt["code"]}</span><span class="tcnt bidi-ltr" id="cnt-{dt["id"]}">0</span></button>'
         for dt in dts)
 
     try:
         _can_manage_proj = bool(u and is_project_admin(pid, u))
     except Exception:
         _can_manage_proj = bool(u and u.get("role") in ("superadmin", "admin"))
-    _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _can_manage_proj else ''
-    _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _can_manage_proj else ''
-    _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _can_manage_proj else ''
-    _color_btn = "<button class='tool-btn purple' onclick='openProjectSettings()'>🎨 Status Colors</button>" if _can_manage_proj else ''
-    edit_btns = (f'<button class="tool-btn" onclick="addRecord()">➕ Add</button>'
+    _hol_btn = f" <button class='tool-btn purple' onclick='openSettings()'>{t('reg.btn_holidays', norm)}</button>" if _can_manage_proj else ''
+    _col_btn = f"<button class='tool-btn purple' onclick='manageColumns()'>{t('reg.btn_columns', norm)}</button>" if _can_manage_proj else ''
+    _lst_btn = f"<button class='tool-btn' onclick='openLists()'>{t('reg.btn_lists', norm)}</button>" if _can_manage_proj else ''
+    _color_btn = f"<button class='tool-btn purple' onclick='openProjectSettings()'>{t('reg.btn_status_colors', norm)}</button>" if _can_manage_proj else ''
+    edit_btns = (f'<button class="tool-btn" onclick="addRecord()">{t("reg.btn_add", norm)}</button>'
                  f'{_col_btn}'
                  f'{_hol_btn}'
                  f'{_lst_btn}'
                  f'{_color_btn}'
-                 f'<button class="tool-btn" onclick="editProject()">🏗 Project</button>'
+                 f'<button class="tool-btn" onclick="editProject()">{t("reg.btn_project", norm)}</button>'
                  if editable else
-                 '<span style="font-size:11px;color:rgba(255,255,255,.5);padding:4px 8px">'
-                 '👁 Read-only — <a href="/login" style="color:#f0a500">login to edit</a></span>')
+                 f'<span style="font-size:11px;color:rgba(255,255,255,.5);padding:4px 8px">'
+                 f'{t("reg.readonly_notice", norm)} <a href="/login" style="color:#f0a500">{t("reg.login_to_edit", norm)}</a></span>')
 
     return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR — {proj.get("name","Register")}</title>
+<title>{t("reg.page_title", norm, name=proj.get("name", t("reg.page_title_default", norm)))}</title>
 {_head_icon_tags()}
 {BASE_CSS}
 <style>
@@ -13703,6 +13829,18 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
   #sbar {{ padding: 1px 8px !important; font-size: 8px !important; line-height: 1.1 !important; }}
   #sbar-center {{ display: none !important; }}
 }}
+html[dir="rtl"] .pf{{border-right:none;border-left:1px solid var(--bd)}}
+html[dir="rtl"] .pf:last-of-type{{border-left:none}}
+html[dir="rtl"] .tab-add{{margin-left:0;margin-right:6px}}
+html[dir="rtl"] .tool-dd-menu{{left:auto;right:0}}
+html[dir="rtl"] .tool-dd-menu button{{text-align:right}}
+html[dir="rtl"] #srchbox{{padding:4px 28px 4px 10px;background-position:calc(100% - 7px) center}}
+@media(max-width:768px){{html[dir="rtl"] #srchbox{{padding:3px 27px 3px 8px}}}}
+html[dir="rtl"] #regtbl th{{text-align:right;border-right:none;border-left:1px solid rgba(255,255,255,.1)}}
+html[dir="rtl"] #regtbl td{{border-right:none;border-left:1px solid #f3f4f6}}
+html[dir="rtl"] .rz{{right:auto;left:0}}
+html[dir="rtl"] #regtbl tbody tr.row-selected td:first-child{{box-shadow:inset -4px 0 0 #2563a8,inset 0 1px 0 rgba(37,99,168,.18),inset 0 -1px 0 rgba(37,99,168,.18)}}
+html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shadow:inset -4px 0 0 #93c5fd,inset 0 1px 0 rgba(147,197,253,.2),inset 0 -1px 0 rgba(147,197,253,.2)}}
 </style></head><body data-workspace="{active_ws}">
 
 <div id="topbar">
@@ -13714,7 +13852,7 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 
   <div style="flex:1"></div>
   
-  <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:24px;cursor:pointer;padding:4px 16px;border-radius:8px;transition:all 0.2s" title="Edit Project Information">
+  <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:24px;cursor:pointer;padding:4px 16px;border-radius:8px;transition:all 0.2s" title="{t("reg.edit_project_info_title", norm)}">
     {projbar_primary}
   </div>
 
@@ -13738,46 +13876,46 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
     {projbar_toggle}
     <div id="projbar-extra" style="display:flex;gap:20px;flex:1 1 auto;overflow-x:auto">{projbar_secondary}</div>
   </div>
-  {'<button class="proj-edit-btn" onclick="editProject()" style="margin-left:auto;background:var(--pr);color:#fff;border:none;padding:5px 12px;border-radius:var(--rd);cursor:pointer;font-size:11px;font-family:inherit;flex-shrink:0">✏ Edit</button>' if editable else ''}
+  {'<button class="proj-edit-btn" onclick="editProject()" style="margin-left:auto;background:var(--pr);color:#fff;border:none;padding:5px 12px;border-radius:var(--rd);cursor:pointer;font-size:11px;font-family:inherit;flex-shrink:0">' + t("reg.btn_edit_project", norm) + '</button>' if editable else ''}
 </div>
 
 <div id="tabsbar">
   {tabs_html}
-  {'<button class="tab-add" onclick="addDocType()" title="Add Type">＋</button>' if editable else ''}
+  {'<button class="tab-add" onclick="addDocType()" title="' + t("reg.add_type_title", norm) + '">＋</button>' if editable else ''}
 </div>
 
   <div id="toolbar">
     <div id="toolbar-actions">
       {edit_btns}
-      <button id="btn-bulk-dl" class="tool-btn" style="display:none;background:#2563eb;border-color:#1d4ed8;color:#fff" onclick="bulkDownload()">⬇️ Download Selected</button>
-      <button id="btn-batch-inspect" class="tool-btn" style="display:none;background:#0f766e;border-color:#0d9488;color:#fff" disabled onclick="openFeiBatchInspectModal()">🧯 Batch Inspect (<span id="fei-batch-cnt">0</span>)</button>
-      <button class="tool-btn teal" onclick="openExportCenter()">📥 Export ▾</button>
-    <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
-      {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
-      {'<button class="tool-btn teal" onclick="openBatchDriveUpload()">☁ Upload Files</button>' if editable else ''}
+      <button id="btn-bulk-dl" class="tool-btn" style="display:none;background:#2563eb;border-color:#1d4ed8;color:#fff" onclick="bulkDownload()">{t("reg.btn_bulk_dl", norm)}</button>
+      <button id="btn-batch-inspect" class="tool-btn" style="display:none;background:#0f766e;border-color:#0d9488;color:#fff" disabled onclick="openFeiBatchInspectModal()">{t("reg.btn_batch_inspect", norm)} (<span id="fei-batch-cnt">0</span>)</button>
+      <button class="tool-btn teal" onclick="openExportCenter()">{t("reg.btn_export", norm)}</button>
+    <button class="tool-btn teal" onclick="doPrint()">{t("reg.btn_print", norm)}</button>
+      {'<button class="tool-btn teal" onclick="openImport()">' + t("reg.btn_import", norm) + '</button>' if editable else ''}
+      {'<button class="tool-btn teal" onclick="openBatchDriveUpload()">' + t("reg.btn_upload_files", norm) + '</button>' if editable else ''}
     </div>
     <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text);cursor:pointer;margin-right:12px;font-weight:500;">
-      <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> Latest Revisions Only
+      <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> {t("reg.latest_revs_only", norm)}
     </label>
-    <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
+    <input type="text" id="srchbox" placeholder="{t("reg.search_placeholder", norm)}" oninput="doSearch()">
   </div>
   <div id="ltr-quickbar" style="display:none;padding:8px 10px;border-bottom:1px solid var(--bd);background:#f8fafc;gap:6px;align-items:center;flex-wrap:wrap">
-    <span style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Letter Views</span>
-    <button class="tool-btn" type="button" data-ltr-view="" onclick="setLTRQuickView('')">All</button>
-    <button class="tool-btn" type="button" data-ltr-view="sent" onclick="setLTRQuickView('sent')">Sent Letters</button>
-    <button class="tool-btn" type="button" data-ltr-view="received" onclick="setLTRQuickView('received')">Received Letters</button>
+    <span style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">{t("reg.ltr_views", norm)}</span>
+    <button class="tool-btn" type="button" data-ltr-view="" onclick="setLTRQuickView('')">{t("reg.ltr_all", norm)}</button>
+    <button class="tool-btn" type="button" data-ltr-view="sent" onclick="setLTRQuickView('sent')">{t("reg.ltr_sent", norm)}</button>
+    <button class="tool-btn" type="button" data-ltr-view="received" onclick="setLTRQuickView('received')">{t("reg.ltr_received", norm)}</button>
   </div>
   
   <div id="bulkbar">
-  <span id="bulkcnt">0 selected</span>
-  <button class="btn btn-er btn-sm" onclick="bulkDel()">🗑 Delete</button>
-  <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="clearSel()">✕ Cancel</button>
+  <span id="bulkcnt">{t("reg.bulk_selected", norm, count=0)}</span>
+  <button class="btn btn-er btn-sm" onclick="bulkDel()">{t("reg.bulk_delete", norm)}</button>
+  <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="clearSel()">{t("reg.bulk_cancel", norm)}</button>
 </div>
 
 <div id="main">
   <div id="tblwrap">
     <table id="regtbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
-    <div class="empty hidden" id="empty" style="display:none"><div style="font-size:48px;margin-bottom:10px">📁</div><p style="color:var(--mu)">No records yet — click ➕ Add to create one</p></div>
+    <div class="empty hidden" id="empty" style="display:none"><div style="font-size:48px;margin-bottom:10px">📁</div><p style="color:var(--mu)">{t("reg.empty_initial", norm)}</p></div>
   </div>
   <div id="noc-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);">
     <div id="noc-summary-inner" style="display:flex;flex-wrap:wrap;gap:10px"></div>
@@ -13786,15 +13924,15 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 
 <div id="sbar">
   <div id="sbar-left">
-    <span id="s-total">Total: 0</span>
-    <span id="s-show">Showing: 0</span>
-    <span id="s-ov">Overdue: 0</span>
+    <span id="s-total">{t("reg.sbar_total", norm, count=0)}</span>
+    <span id="s-show">{t("reg.sbar_showing", norm, count=0)}</span>
+    <span id="s-ov">{t("reg.sbar_overdue", norm, count=0)}</span>
   </div>
   <div id="sbar-center">
-    Designed &amp; Developed by <strong style="color:#f8fafc;">Mohamed Metwaly</strong> &mdash; Document Control Department
+    {t("footer.designed_by", norm)} <strong style="color:#f8fafc;">{t("footer.developer_name", norm)}</strong> &mdash; {t("footer.department", norm)}
   </div>
   <div id="sbar-right">
-    <span id="s-clock"></span>
+    <span id="s-clock" class="bidi-ltr"></span>
   </div>
 </div>
 
@@ -13838,12 +13976,12 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- PROJECT MODAL -->
 <div class="overlay hidden" id="proj-modal">
   <div class="modal" style="max-width:820px">
-    <div class="mhdr"><span>🏗 Project Information</span>
+    <div class="mhdr"><span>{t("reg.proj_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('proj-modal')">✕</button></div>
     <div class="mbody" id="proj-body"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('proj-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="saveProject()">💾 Save Project</button>
+      <button class="btn btn-sc" onclick="closeM('proj-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" onclick="saveProject()">{t("reg.proj_save_btn", norm)}</button>
     </div>
   </div>
 </div>
@@ -13851,11 +13989,11 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- DISTRIBUTION MATRIX MODAL -->
 <div class="overlay hidden" id="dist-modal">
   <div class="modal" style="max-width:900px;max-height:90vh">
-    <div class="mhdr"><span>📇 Distribution Matrix</span>
+    <div class="mhdr"><span>{t("reg.dist_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('dist-modal')">✕</button></div>
     <div class="mbody" id="dist-body" style="overflow-y:auto;max-height:calc(90vh - 130px)"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('dist-modal')">Close</button>
+      <button class="btn btn-sc" onclick="closeM('dist-modal')">{t("common.close", norm)}</button>
     </div>
   </div>
 </div>
@@ -13863,48 +14001,48 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- EXPORT MODAL -->
 <div class="overlay hidden" id="export-modal">
   <div class="modal" style="max-width:500px;">
-    <div class="mhdr"><span>📊 Export Center</span>
+    <div class="mhdr"><span>{t("reg.exp_title", norm)}</span>
       <button class="xbtn" onclick="closeM('export-modal')">✕</button></div>
     <div class="mbody" style="padding:20px;">
       <div style="margin-bottom:15px;">
-        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Format</label>
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">{t("reg.exp_format", norm)}</label>
         <select id="export-format" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
-          <option value="excel">Excel (.xlsx)</option>
-          <option value="pdf">PDF Document (.pdf)</option>
+          <option value="excel">{t("reg.exp_excel", norm)}</option>
+          <option value="pdf">{t("reg.exp_pdf", norm)}</option>
         </select>
       </div>
       <div id="export-scope-wrap" style="margin-bottom:15px;">
-        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Scope</label>
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">{t("reg.exp_scope", norm)}</label>
         <select id="export-scope" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
-          <option value="all">All Documents (All Tabs)</option>
-          <option value="current">Current Tab</option>
+          <option value="all">{t("reg.exp_scope_all", norm)}</option>
+          <option value="current">{t("reg.exp_scope_cur", norm)}</option>
         </select>
       </div>
       <div style="margin-bottom:15px;">
-        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Time Range</label>
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">{t("reg.exp_time", norm)}</label>
         <select id="export-time" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
-          <option value="all">All Time</option>
-          <option value="30">Last 30 Days</option>
-          <option value="7">Last 7 Days</option>
+          <option value="all">{t("reg.exp_time_all", norm)}</option>
+          <option value="30">{t("reg.exp_time_30", norm)}</option>
+          <option value="7">{t("reg.exp_time_7", norm)}</option>
         </select>
       </div>
       <div style="margin-bottom:15px;">
-        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Status</label>
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">{t("reg.exp_status", norm)}</label>
         <select id="export-status" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
-          <option value="all">All Statuses</option>
-          <option value="approved">Approved / Accepted Only</option>
-          <option value="rejected">Rejected / Revise Only</option>
-          <option value="overdue">Overdue Only</option>
+          <option value="all">{t("reg.exp_status_all", norm)}</option>
+          <option value="approved">{t("reg.exp_status_appr", norm)}</option>
+          <option value="rejected">{t("reg.exp_status_rej", norm)}</option>
+          <option value="overdue">{t("reg.exp_status_ov", norm)}</option>
         </select>
       </div>
       <div id="export-preview-count" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg);border-radius:var(--rd);border:1px solid var(--bd);margin-top:5px;">
-        <span style="font-size:12px;color:var(--mu);font-weight:500;">Ready to export:</span>
-        <span style="font-size:13px;font-weight:700;color:var(--brand-teal);"><span id="exp-cnt">...</span> records</span>
+        <span style="font-size:12px;color:var(--mu);font-weight:500;">{t("reg.exp_ready", norm)}</span>
+        <span style="font-size:13px;font-weight:700;color:var(--brand-teal);"><span id="exp-cnt" class="bidi-ltr">...</span> {t("reg.exp_records", norm)}</span>
       </div>
     </div>
     <div class="mfoot" style="justify-content:space-between;">
-      <button class="btn btn-sc" onclick="closeM('export-modal')">Cancel</button>
-      <button class="btn btn-pr" id="export-submit-btn" style="background:#2563eb;" onclick="executeAdvancedExport()">📥 Generate Export</button>
+      <button class="btn btn-sc" onclick="closeM('export-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" id="export-submit-btn" style="background:#2563eb;" onclick="executeAdvancedExport()">{t("reg.exp_submit", norm)}</button>
     </div>
   </div>
 </div>
@@ -13912,40 +14050,40 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- LISTS -->
 <div class="overlay hidden" id="lists-modal">
   <div class="modal">
-    <div class="mhdr"><span>📋 Dropdown Lists</span>
+    <div class="mhdr"><span>{t("reg.lists_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('lists-modal')">✕</button></div>
     <div class="mbody" id="lists-body"></div>
-    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('lists-modal')">Close</button></div>
+    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('lists-modal')">{t("common.close", norm)}</button></div>
   </div>
 </div>
 
 <!-- ADD DOC TYPE -->
 <div class="overlay hidden" id="dt-modal">
   <div class="modal" style="max-width:420px">
-    <div class="mhdr"><span id="dt-modal-title">Add Document Type</span>
+    <div class="mhdr"><span id="dt-modal-title">{t("reg.dt_modal_add_title", norm)}</span>
       <button class="xbtn" onclick="closeM('dt-modal')">✕</button></div>
     <div class="mbody">
       <input type="hidden" id="dt-edit-id">
       <div class="fgrid">
-        <div class="fg"><label>Code</label><input id="dt-code" placeholder="e.g. MS"></div>
-        <div class="fg"><label>Name</label><input id="dt-name" placeholder="e.g. Method Statement"></div>
+        <div class="fg"><label>{t("reg.dt_code", norm)}</label><input id="dt-code" placeholder="{t("reg.dt_code_ph", norm)}"></div>
+        <div class="fg"><label>{t("reg.dt_name", norm)}</label><input id="dt-name" placeholder="{t("reg.dt_name_ph", norm)}"></div>
       </div>
-      <div class="stitle" style="margin-top:12px">Expected Reply Override</div>
+      <div class="stitle" style="margin-top:12px">{t("reg.dt_er_override", norm)}</div>
       <div style="font-size:10px;color:var(--mu);margin:-4px 0 8px;padding:6px 8px;background:var(--bg);border-radius:4px">
-        Optional day-count override for this document type only. Calculation mode, weekend rule, and holidays still inherit from the project.
+        {t("reg.dt_er_note", norm)}
       </div>
       <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;margin-bottom:8px">
         <input type="checkbox" id="dt-er-use" onchange="toggleDocTypeReplyOverride()">
-        Use Custom Reply Days For This Document Type
+        {t("reg.dt_er_use", norm)}
       </label>
       <div class="fgrid" id="dt-er-fields" style="display:none">
-        <div class="fg"><label>REV00 Reply Days</label><input id="dt-er-rev0" type="number" min="0" step="1" value="14"></div>
-        <div class="fg"><label>REV&gt;00 Reply Days</label><input id="dt-er-rev" type="number" min="0" step="1" value="7"></div>
+        <div class="fg"><label>{t("reg.dt_er_rev0", norm)}</label><input id="dt-er-rev0" type="number" min="0" step="1" value="14"></div>
+        <div class="fg"><label>{t("reg.dt_er_rev", norm)}</label><input id="dt-er-rev" type="number" min="0" step="1" value="7"></div>
       </div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('dt-modal')">Cancel</button>
-      <button class="btn btn-pr" id="dt-save-btn" onclick="saveDocType()">Add</button>
+      <button class="btn btn-sc" onclick="closeM('dt-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" id="dt-save-btn" onclick="saveDocType()">{t("common.add", norm)}</button>
     </div>
   </div>
 </div>
@@ -13953,12 +14091,12 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- COLUMNS -->
 <div class="overlay hidden" id="col-modal">
   <div class="modal">
-    <div class="mhdr"><span>⚙ Manage Columns</span>
+    <div class="mhdr"><span>{t("reg.col_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('col-modal')">✕</button></div>
     <div class="mbody" id="col-body"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="openAddCol()">+ Add Column</button>
-      <button class="btn btn-pr" onclick="closeM('col-modal');loadRecords()">Done</button>
+      <button class="btn btn-sc" onclick="openAddCol()">{t("reg.col_add_btn", norm)}</button>
+      <button class="btn btn-pr" onclick="closeM('col-modal');loadRecords()">{t("common.done", norm)}</button>
     </div>
   </div>
 </div>
@@ -13966,37 +14104,37 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- ADD COLUMN -->
 <div class="overlay hidden" id="addcol-modal">
   <div class="modal" style="max-width:460px">
-    <div class="mhdr"><span>Add Column</span>
+    <div class="mhdr"><span>{t("reg.addcol_title", norm)}</span>
       <button class="xbtn" onclick="closeM('addcol-modal')">✕</button></div>
     <div class="mbody">
       <div class="fgrid">
-        <div class="fg full"><label>Column Name</label><input id="col-name" placeholder="e.g. Review Duration"></div>
-        <div class="fg full"><label>Type</label>
+        <div class="fg full"><label>{t("reg.addcol_name", norm)}</label><input id="col-name" placeholder="{t("reg.addcol_name_ph", norm)}"></div>
+        <div class="fg full"><label>{t("reg.addcol_type", norm)}</label>
           <select id="col-type" onchange="onColType(this.value)">
-            <option value="text">📝 Text</option>
-            <option value="number">🔢 Number</option>
-            <option value="date">📅 Date</option>
-            <option value="dropdown">📋 Dropdown</option>
-            <option value="link">🔗 Hyperlink</option>
-            <option value="duration_calc">⏱ Duration (working days)</option>
+            <option value="text">{t("reg.addcol_type_text", norm)}</option>
+            <option value="number">{t("reg.addcol_type_number", norm)}</option>
+            <option value="date">{t("reg.addcol_type_date", norm)}</option>
+            <option value="dropdown">{t("reg.addcol_type_dropdown", norm)}</option>
+            <option value="link">{t("reg.addcol_type_link", norm)}</option>
+            <option value="duration_calc">{t("reg.addcol_type_duration", norm)}</option>
           </select>
         </div>
         <div class="fg full" id="cg-list" style="display:none">
-          <label>Dropdown Source</label><select id="col-list"></select></div>
+          <label>{t("reg.addcol_list_src", norm)}</label><select id="col-list"></select></div>
         <div class="fg full" id="cg-ds" style="display:none">
-          <label>Start Date Column</label><select id="col-ds"></select></div>
+          <label>{t("reg.addcol_start_date", norm)}</label><select id="col-ds"></select></div>
         <div class="fg full" id="cg-de" style="display:none">
-          <label>End Date Column</label><select id="col-de"></select></div>
+          <label>{t("reg.addcol_end_date", norm)}</label><select id="col-de"></select></div>
         <div class="fg full" id="cg-info" style="display:none">
           <div style="background:#f0f4fa;border-radius:6px;padding:9px 12px;font-size:11px;color:#1a3a5c">
-            ⏱ Working days between two date columns — excludes Fridays + Egyptian holidays
+            {t("reg.addcol_dur_info", norm)}
           </div>
         </div>
       </div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('addcol-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="saveAddCol()">Add</button>
+      <button class="btn btn-sc" onclick="closeM('addcol-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" onclick="saveAddCol()">{t("common.add", norm)}</button>
     </div>
   </div>
 </div>
@@ -14004,16 +14142,16 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- IMPORT -->
 <div class="overlay hidden" id="import-modal">
   <div class="modal" style="max-width:480px">
-    <div class="mhdr"><span>📤 Import Excel / CSV</span>
+    <div class="mhdr"><span>{t("reg.imp_title", norm)}</span>
       <button class="xbtn" onclick="closeM('import-modal')">✕</button></div>
     <div class="mbody">
-      <p style="font-size:12px;color:var(--mu);margin-bottom:12px">Select .xlsx or .csv file. Headers must match register columns. For full-workbook import, Excel sheets will be matched to document types automatically.</p>
+      <p style="font-size:12px;color:var(--mu);margin-bottom:12px">{t("reg.imp_desc", norm)}</p>
       <input type="file" id="imp-file" accept=".csv,.xlsx,.xls" style="font-size:12px">
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('import-modal')">Cancel</button>
-      <button class="btn btn-sc" id="imp-project-btn" onclick="doImportProject()">Import Full Workbook</button>
-      <button class="btn btn-pr" onclick="doImport()">Import</button>
+      <button class="btn btn-sc" onclick="closeM('import-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-sc" id="imp-project-btn" onclick="doImportProject()">{t("reg.imp_full_btn", norm)}</button>
+      <button class="btn btn-pr" onclick="doImport()">{t("reg.imp_btn", norm)}</button>
     </div>
   </div>
 </div>
@@ -14413,15 +14551,15 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- PROJECT SETTINGS MODAL -->
 <div class="overlay hidden" id="project-settings-modal">
   <div class="modal" style="max-width:600px">
-    <div class="mhdr"><span>⚙ Project Settings</span><button class="xbtn" onclick="closeM('project-settings-modal')">✕</button></div>
+    <div class="mhdr"><span>{t("reg.sc_modal_title", norm)}</span><button class="xbtn" onclick="closeM('project-settings-modal')">✕</button></div>
     <div class="mbody">
-      <div class="stitle">🎨 Status Colors</div>
-      <div style="font-size:11px;color:var(--mu);margin-bottom:12px">Configure custom background and text colors for document statuses.</div>
+      <div class="stitle">{t("reg.sc_title", norm)}</div>
+      <div style="font-size:11px;color:var(--mu);margin-bottom:12px">{t("reg.sc_desc", norm)}</div>
       <div id="status-colors-list" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('project-settings-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="saveProjectSettings()">Save Settings</button>
+      <button class="btn btn-sc" onclick="closeM('project-settings-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" onclick="saveProjectSettings()">{t("reg.sc_save", norm)}</button>
     </div>
   </div>
 </div>
@@ -14813,8 +14951,8 @@ function renderTabs(dts){{
   dts.forEach(dt=>{{
     const btn=document.createElement('button');
     btn.className='tab-btn'+(dt.id===state.tab?' active':'');
-    btn.dataset.id=dt.id; btn.title=dt.name;
-    btn.innerHTML=`<span>${{dt.code}}</span><span class="tcnt" id="cnt-${{dt.id}}">0</span>`;
+    btn.dataset.id=dt.id; btn.title=window.tDt(dt.code, dt.name);
+    btn.innerHTML=`<span class="bidi-ltr">${{dt.code}}</span><span class="tcnt bidi-ltr" id="cnt-${{dt.id}}">0</span>`;
     btn.onclick=()=>switchTab(dt.id);
     if(CAN_EDIT) btn.oncontextmenu=e=>{{e.preventDefault();tabMenu(dt.id,e);}};
     bar.insertBefore(btn,addBtn||null);
@@ -14896,13 +15034,13 @@ function tabMenu(id,e){{
   m.innerHTML=`
     <div onclick="renameDT('${{id}}','${{dt.code||id}}','${{(dt.name||'').replace(/'/g,\"\\\\'\")}}')"
       style="padding:8px 14px;cursor:pointer;font-size:12px"
-      onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''">✏ Type Settings</div>
+      onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''">${{escHtml(window.t('reg.tab_type_settings'))}}</div>
     <div onclick="moveDT('${{id}}',-1)" style="padding:8px 14px;cursor:${{idx>0?'pointer':'not-allowed'}};font-size:12px;opacity:${{idx>0?'1':'.45'}}"
-      onmouseover="if(${{idx>0}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">⬅ Move Left</div>
+      onmouseover="if(${{idx>0}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">${{escHtml(window.t('reg.tab_move_left'))}}</div>
     <div onclick="moveDT('${{id}}',1)" style="padding:8px 14px;cursor:${{idx>=0&&idx<(state.dtList||[]).length-1?'pointer':'not-allowed'}};font-size:12px;opacity:${{idx>=0&&idx<(state.dtList||[]).length-1?'1':'.45'}}"
-      onmouseover="if(${{idx>=0&&idx<(state.dtList||[]).length-1}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">➡ Move Right</div>
+      onmouseover="if(${{idx>=0&&idx<(state.dtList||[]).length-1}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">${{escHtml(window.t('reg.tab_move_right'))}}</div>
     <div onclick="delDT('${{id}}')" style="padding:8px 14px;cursor:pointer;font-size:12px;color:#ef4444"
-      onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">🗑 Delete Type</div>`;
+      onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">${{escHtml(window.t('reg.tab_delete_type'))}}</div>`;
   document.body.appendChild(m);
   setTimeout(()=>document.addEventListener('click',()=>m.remove(),{{once:true}}),10);
 }}
@@ -14914,10 +15052,10 @@ function renameDT(id,oldCode,oldName){{
 }}
 
 async function delDT(id){{
-  if(!confirm('Delete type and ALL its records?'))return;
+  if(!confirm(window.t('reg.tab_confirm_delete')))return;
   await apiFetch('/api/doc_types/'+PID+'/'+id,{{method:'DELETE'}});
   if(state.tab===id)state.tab=null;
-  await loadDTs(); toast('Deleted','wa');
+  await loadDTs(); toast(window.t('reg.tab_deleted'),'wa');
 }}
 
 async function moveDT(id,delta){{
@@ -14928,7 +15066,7 @@ async function moveDT(id,delta){{
   [order[idx],order[next]]=[order[next],order[idx]];
   await apiFetch('/api/doc_types/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{order}})}});
   await loadDTs(true);
-  toast('✔ Tab order updated','ok');
+  toast(window.t('reg.tab_order_updated'),'ok');
 }}
 
 async function loadRecords(){{
@@ -14971,13 +15109,14 @@ function buildHead(){{
   const srArrow = srIsActive
     ? (state.sortDir==='asc' ? '<span class="sort-arrow active" style="color:#38bdf8;font-size:9.5px;margin-left:3px;display:inline-block;">▲</span>' : '<span class="sort-arrow active" style="color:#38bdf8;font-size:9.5px;margin-left:3px;display:inline-block;">▼</span>')
     : '<span class="sort-arrow muted" style="opacity:0.35;font-size:9px;margin-left:3px;display:inline-block;">↕</span>';
-  sr.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:center;width:100%;">Sr.'+srArrow+'</span>';
-  sr.title='Click to reverse document order (Oldest / Newest)';
+  sr.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:center;width:100%;">'+escHtml(window.t('reg.th_sr'))+srArrow+'</span>';
+  sr.title=window.t('reg.th_sr_title');
   sr.onclick=()=>sortBy('_sr');
   hr.appendChild(sr);
 
   state.cols.forEach(col=>{{
     const th=document.createElement('th');th.dataset.key=col.col_key;
+    const dispLbl=window.tCol(col.col_key, col.label);
     const w=state.colWidths&&state.colWidths[col.col_key];
     const labelTxt=String(col.label||'').toLowerCase();
     const minW=labelTxt.includes('sub-trade')?150:
@@ -15001,15 +15140,15 @@ function buildHead(){{
         sortArrow = '<span class="sort-arrow muted" style="opacity:0.35;font-size:9.5px;margin-left:5px;display:inline-block;flex-shrink:0;">↕</span>';
       }}
       th.style.cursor='pointer';
-      th.title='Click to sort / reverse order by '+col.label;
+      th.title=window.t('reg.th_sort_title', {{col: dispLbl}});
       th.onclick=()=>sortBy(col.col_key);
     }}else{{
       th.style.cursor='default';
     }}
-    th.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:space-between;width:100%;"><span>'+escHtml(col.label)+'</span>'+sortArrow+'</span>';
+    th.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:space-between;width:100%;"><span>'+escHtml(dispLbl)+'</span>'+sortArrow+'</span>';
     hr.appendChild(th);
   }});
-  const at=document.createElement('th');at.textContent='Actions';at.style.cssText='width:64px;cursor:default';hr.appendChild(at);
+  const at=document.createElement('th');at.textContent=window.t('reg.th_actions');at.style.cssText='width:64px;cursor:default';hr.appendChild(at);
   head.appendChild(hr);
   const fr=document.createElement('tr');fr.className='frow';
   fr.appendChild(document.createElement('th'));fr.appendChild(document.createElement('th'));
@@ -15024,7 +15163,8 @@ function buildHead(){{
       const listName=ltrRole==='fromParty'||ltrRole==='toParty'
         ? 'correspondence_parties'
         : (ltrRole==='direction' ? 'letter_direction' : (ltrRole==='status' ? 'letter_status' : col.list_name));
-      sel.innerHTML='<option value="">All</option>'+(state.lists[listName]||[]).map(o=>`<option ${{state.filters[col.col_key]===o?'selected':''}}>${{o}}</option>`).join('');
+      const isStCol=(col.col_key==='status'||isStatusLikeField(col));
+      sel.innerHTML='<option value="">'+escHtml(window.t('reg.filter_all'))+'</option>'+(state.lists[listName]||[]).map(o=>`<option value="${{escHtml(o)}}" ${{state.filters[col.col_key]===o?'selected':''}}>${{escHtml(isStCol?window.tStatus(o):o)}}</option>`).join('');
       sel.onchange=()=>{{state.filters[col.col_key]=sel.value;renderRows();}};
       th.appendChild(sel);
     }}else{{
@@ -15318,7 +15458,7 @@ function renderRows(){{
     const td=document.createElement('td');
     td.colSpan=state.cols.length+3;
     td.style.cssText='padding:28px 12px;text-align:center;color:var(--mu);font-size:12px';
-    td.textContent=(state.recs&&state.recs.length)?'No records found':'No records found';
+    td.textContent=window.t('reg.empty_filtered');
     tr.appendChild(td);
     body.appendChild(tr);
   }}else{{
@@ -15327,9 +15467,9 @@ function renderRows(){{
   }}
   if(rows.length===0){{
     const ov=state.recs.filter(r=>r._overdue).length;
-    document.getElementById('s-total').textContent='Total: '+state.recs.length;
-    document.getElementById('s-show').textContent='Showing: 0';
-    document.getElementById('s-ov').textContent='Overdue: '+ov;
+    document.getElementById('s-total').textContent=window.t('reg.sbar_total',{{count:state.recs.length}});
+    document.getElementById('s-show').textContent=window.t('reg.sbar_showing',{{count:0}});
+    document.getElementById('s-ov').textContent=window.t('reg.sbar_overdue',{{count:ov}});
     renderNocSummary(rows);
     return;
   }}
@@ -15343,7 +15483,7 @@ function renderRows(){{
     const tc=document.createElement('td');tc.className='chkcell';
     if(CAN_EDIT){{const cb=document.createElement('input');cb.type='checkbox';cb.dataset.id=row._id;cb.onchange=updBulk;tc.appendChild(cb);}}
     tr.appendChild(tc);
-    const tsr=document.createElement('td');tsr.className='sr';
+    const tsr=document.createElement('td');tsr.className='sr bidi-ltr';
     const _srTdW=state.colWidths&&state.colWidths['_sr'];
     if(isMobileRegister())tsr.style.cssText='width:34px;min-width:34px;max-width:34px;white-space:nowrap;';
     else if(_srTdW)tsr.style.cssText='width:'+_srTdW+'px;min-width:'+_srTdW+'px;max-width:'+_srTdW+'px;white-space:nowrap;';
@@ -15384,6 +15524,7 @@ function renderRows(){{
             lbl.textContent=label;
             if(revNum!==null && revNum!==undefined){{
               const rBadge=document.createElement('span');
+              rBadge.className='bidi-ltr';
               rBadge.textContent='R'+revNum;
               rBadge.style.cssText=revNum>0
                 ? 'font-size:8.5px;font-weight:800;padding:0 3px;border-radius:3px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd'
@@ -15463,7 +15604,7 @@ function renderRows(){{
         }}
         else {{
           let eyeOffSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
-          td.innerHTML=`<span title="No File Attached" style="color:#cbd5e1;cursor:not-allowed;opacity:0.5;display:inline-flex;align-items:center;justify-content:center;">${{eyeOffSvg}}</span>`;
+          td.innerHTML=`<span title="${{escHtml(window.t('reg.no_file_attached'))}}" style="color:#cbd5e1;cursor:not-allowed;opacity:0.5;display:inline-flex;align-items:center;justify-content:center;">${{eyeOffSvg}}</span>`;
         }}
         td.style.textAlign='center';
         tr.appendChild(td);return;
@@ -15472,17 +15613,19 @@ function renderRows(){{
       const k=key.toLowerCase();
       const longTextMeta=getLongTextMeta(col);
       if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
-      if(col.col_type==='docno'||key==='docNo')td.classList.add('docno-cell');
-      if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}
-      else if(key==='duration')val=row._duration||'';
+      if(col.col_type==='docno'||key==='docNo'){{td.classList.add('docno-cell');td.classList.add('bidi-ltr');}}
+      if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';td.classList.add('bidi-ltr');if(row._overdue&&val)td.classList.add('ovdate');}}
+      else if(key==='duration'){{val=row._duration||'';td.classList.add('bidi-ltr');}}
       else if(col.col_type==='duration_calc'){{
         const[ds,de]=String(col.list_name||'issuedDate,actualReplyDate').split(',');
         val=calcWD(row[ds.trim()]||'',row[de.trim()]||'');
+        td.classList.add('bidi-ltr');
       }}
-      else if(key==='issuedDate')val=row._issuedFmt||'';
-      else if(key==='actualReplyDate')val=row._replyFmt||'';
+      else if(key==='issuedDate'){{val=row._issuedFmt||'';td.classList.add('bidi-ltr');}}
+      else if(key==='actualReplyDate'){{val=row._replyFmt||'';td.classList.add('bidi-ltr');}}
       else if(col.col_type==='date'||col.col_type==='auto_date'){{
         val=row['_fmt_'+key]||row[key]||'';  // use pre-formatted version
+        td.classList.add('bidi-ltr');
       }}
       else if(key==='status'||isStatusLikeField(col)){{
         val=row[key]||((isLtrTab&&ltrRole)?getLTRValue(row,state.allTabCols,ltrRole):'');
@@ -15500,17 +15643,18 @@ function renderRows(){{
               else if(/^D(-|\\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
               else if(up === 'OPEN' || up.includes('PENDING') || up.includes('UNDER REVIEW')) [bg,fg]=['fed7aa','7c2d12'];
             }}
-            return `<span class="sbadge" style="background:#${{bg}};color:#${{fg}}">${{s}}</span>`;
+            return `<span class="sbadge" style="background:#${{bg}};color:#${{fg}}">${{escHtml(window.tStatus(s))}}</span>`;
           }}).join('');
           tr.appendChild(td);return;
         }}
       }}
       else if(col.col_type==='url' || key==='fileLocation'){{
         const url=row[key]||'';
-        if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">View File</a>`;tr.appendChild(td);return;}}
+        if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">${{escHtml(window.t('reg.view_file'))}}</a>`;tr.appendChild(td);return;}}
       }}
       else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val=getPrSummary(row);
       else val=row[key]!==undefined ? row[key] : '';
+      if(col.col_type==='number'||col.col_type==='currency'||col.col_type==='auto_num'||isCurrencyField(col))td.classList.add('bidi-ltr');
       if(isLtrTab&&ltrRole&&!String(val||'').trim())val=String(getLTRValue(row,state.allTabCols,ltrRole)||'');
       
       const parsedItemRefs = isItemRefField(col) ? parseItemRefItems(val) : null;
@@ -15571,13 +15715,13 @@ function renderRows(){{
       }}
       if ((key === 'docNo' || col.col_type === 'docno') && row._has_newer_revision) {{
           const escapedVal = String(displayVal).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-          td.innerHTML = escapedVal + ' <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px;vertical-align:middle;color:#9ca3af;cursor:help;" title="Superseded"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
+          td.innerHTML = escapedVal + ' <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px;vertical-align:middle;color:#9ca3af;cursor:help;" title="' + escHtml(window.t('reg.superseded')) + '"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
       }} else {{
           td.textContent=displayVal;
       }}
       if (key === 'docNo' || col.col_type === 'docno') {{
           td.style.cursor = 'pointer';
-          td.title = CAN_EDIT ? 'Click to view/edit document' : 'Click to view document';
+          td.title = CAN_EDIT ? window.t('reg.docno_click_edit') : window.t('reg.docno_click_view');
           td.onclick = () => {{ CAN_EDIT ? editRec(row._id) : viewRec(row._id); }};
       }}
       applyDisplayDirection(td,displayVal);
@@ -15585,19 +15729,19 @@ function renderRows(){{
     }});
     const ta=document.createElement('td');ta.className='acts';
     let acts='';
-    if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
-    if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">Thread</button> <button class="pr-toggle" onclick="openLetterTimeline('${{row._id}}')">Timeline</button> `;
-    if(isHseQrTab())acts+=`<button class="act" onclick="openQrBadgeModal('${{row._id}}')" title="QR Badge">📱</button> `;
-    if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')" title="Edit">✏</button> <button class="act del" onclick="delRec('${{row._id}}')" title="Delete">🗑</button>`;
-    else acts+=`<button class="act" onclick="viewRec('${{row._id}}')" title="View details">👁</button>`;
+    if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">${{escHtml(window.t('reg.act_items'))}}</button> `;
+    if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">${{escHtml(window.t('reg.act_thread'))}}</button> <button class="pr-toggle" onclick="openLetterTimeline('${{row._id}}')">${{escHtml(window.t('reg.act_timeline'))}}</button> `;
+    if(isHseQrTab())acts+=`<button class="act" onclick="openQrBadgeModal('${{row._id}}')" title="${{escHtml(window.t('reg.act_qr_title'))}}">📱</button> `;
+    if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')" title="${{escHtml(window.t('reg.act_edit_title'))}}">✏</button> <button class="act del" onclick="delRec('${{row._id}}')" title="${{escHtml(window.t('reg.act_delete_title'))}}">🗑</button>`;
+    else acts+=`<button class="act" onclick="viewRec('${{row._id}}')" title="${{escHtml(window.t('reg.act_view_title'))}}">👁</button>`;
     ta.innerHTML=acts;
     tr.appendChild(ta);body.appendChild(tr);
     if(!row._isRev)sr++;
   }});
   const ov=state.recs.filter(r=>r._overdue).length;
-  document.getElementById('s-total').textContent='Total: '+state.recs.length;
-  document.getElementById('s-show').textContent='Showing: '+rows.length;
-  document.getElementById('s-ov').textContent='Overdue: '+ov;
+  document.getElementById('s-total').textContent=window.t('reg.sbar_total',{{count:state.recs.length}});
+  document.getElementById('s-show').textContent=window.t('reg.sbar_showing',{{count:rows.length}});
+  document.getElementById('s-ov').textContent=window.t('reg.sbar_overdue',{{count:ov}});
   syncFeiBatchInspectBtn();
   renderNocSummary(rows);
   if(isPrTab && rows.length > 0) {{
@@ -15615,7 +15759,7 @@ function renderRows(){{
             const rowTr = document.querySelector(`tr[data-rec-id="${{CSS.escape(r._id)}}"]`);
             if(rowTr) {{
               const btn = rowTr.querySelector('.pr-toggle');
-              if(btn && btn.textContent === 'Items') {{
+              if(btn && btn.textContent === window.t('reg.act_items')) {{
                 btn.click();
               }}
             }}
@@ -15958,10 +16102,10 @@ function renderPrItemsTable(items, legacyText, search){{
       ? `<div class="pr-items-section" style="grid-column: 1 / -1">${{highlightText(it.item_name||'', search)}}</div>`
       : `<div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
          <div class="pr-items-cell unit">${{highlightText(it.unit||'', search)}}</div>
-         <div class="pr-items-cell qty">${{escHtml(it.quantity??'')}}</div>
-         <div class="pr-items-cell po-ref">${{highlightText(it.po_ref||'', search)}}</div>
-         <div class="pr-items-cell po-qty">${{escHtml(it.po_qty??'')}}</div>
-         <div class="pr-items-cell del-qty">${{escHtml(it.delivered_qty??'')}}</div>
+         <div class="pr-items-cell qty bidi-ltr">${{escHtml(it.quantity??'')}}</div>
+         <div class="pr-items-cell po-ref bidi-ltr">${{highlightText(it.po_ref||'', search)}}</div>
+         <div class="pr-items-cell po-qty bidi-ltr">${{escHtml(it.po_qty??'')}}</div>
+         <div class="pr-items-cell del-qty bidi-ltr">${{escHtml(it.delivered_qty??'')}}</div>
          <div class="pr-items-cell status">${{getPrVarianceBadge(it.quantity, it.po_qty, it.delivered_qty)}}</div>
          <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`).join('');
     return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div>
@@ -16028,18 +16172,19 @@ async function togglePrItems(recordId, btn){{
     }}
     nxt.style.display='table-row';
     nxt.classList.add('open');
-    btn.textContent='Hide';
+    btn.textContent=window.t('reg.act_hide');
   }}else{{
     nxt.classList.remove('open');
     nxt.style.display='none';
-    btn.textContent='Items';
+    btn.textContent=window.t('reg.act_items');
   }}
 }}
 
 let _rzDrag=null;
 document.addEventListener('mousemove',e=>{{
   if(!_rzDrag)return;
-  const w=Math.max(40,_rzDrag.sw+e.clientX-_rzDrag.sx);
+  const isRtl=document.documentElement.dir==='rtl';
+  const w=Math.max(40,isRtl?_rzDrag.sw-(e.clientX-_rzDrag.sx):_rzDrag.sw+(e.clientX-_rzDrag.sx));
   _rzDrag.th.style.width=w+'px';_rzDrag.th.style.minWidth=w+'px';
 }});
 document.addEventListener('mouseup',()=>{{
@@ -16064,7 +16209,8 @@ function initRz(){{
 }}
 document.addEventListener('mousemove',e=>{{
   if(!_rzActive)return;
-  const w=Math.max(40,_rzActive.sw+(e.clientX-_rzActive.sx));
+  const isRtl=document.documentElement.dir==='rtl';
+  const w=Math.max(40,isRtl?_rzActive.sw-(e.clientX-_rzActive.sx):_rzActive.sw+(e.clientX-_rzActive.sx));
   _rzActive.th.style.width=w+'px';
   _rzActive.th.style.minWidth=w+'px';
   _rzActive.th.style.maxWidth=w+'px';
@@ -17020,31 +17166,31 @@ function renderNocSummary(rows){{
   
   const h=[];
   const mkCard=(lbl,val,sub)=>`<div style="flex:1;min-width:140px;background:var(--wh,#fff);border:1px solid var(--bd);border-radius:8px;padding:10px 12px" class="noc-kpi-card">
-    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{lbl}}</div>
-    <div style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${{val}}</div>
-    <div style="font-size:10px;color:var(--mu);margin-top:3px">${{sub}}</div>
+    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{escHtml(lbl)}}</div>
+    <div class="bidi-ltr" style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${{escHtml(val)}}</div>
+    <div style="font-size:10px;color:var(--mu);margin-top:3px">${{escHtml(sub)}}</div>
   </div>`;
   
-  h.push(mkCard('Visible NOCs', String((rows||[]).length), 'Filtered rows'));
-  h.push(mkCard('Submitted Cost', formatCurrencyValue(totals.submittedCost), 'Visible total'));
+  h.push(mkCard(window.t('reg.noc_visible'), String((rows||[]).length), window.t('reg.noc_filtered_rows')));
+  h.push(mkCard(window.t('reg.noc_submitted_cost'), formatCurrencyValue(totals.submittedCost), window.t('reg.noc_visible_total')));
   
   h.push(`<div style="flex:2.5;min-width:280px;background:var(--wh,#fff);border:1px solid var(--bd);border-radius:8px;padding:10px 12px" class="noc-kpi-card;display:flex;flex-direction:column;justify-content:center;">
-    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;text-align:center;">Final Approval</div>
+    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;text-align:center;">${{escHtml(window.t('reg.noc_final_approval'))}}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;">
       <div style="flex:1;text-align:center">
-        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Request value</div>
-        <div style="font-size:14px;font-weight:600;color:var(--tx-mu,#64748b);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{escHtml(window.t('reg.noc_request_value'))}}</div>
+        <div class="bidi-ltr" style="font-size:14px;font-weight:600;color:var(--tx-mu,#64748b);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
       </div>
       <div style="width:1px;background:var(--bd);align-self:stretch;margin:0 12px;"></div>
       <div style="flex:1;text-align:center">
-        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Agreed Value</div>
-        <div style="font-size:18px;font-weight:800;color:var(--ok);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedAgreed)}}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{escHtml(window.t('reg.noc_agreed_value'))}}</div>
+        <div class="bidi-ltr" style="font-size:18px;font-weight:800;color:var(--ok);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedAgreed)}}</div>
       </div>
     </div>
   </div>`);
   
-  h.push(mkCard('VO Base Value', formatCurrencyValue(totals.voBaseValue), 'Visible total'));
-  h.push(mkCard('VO Value Incl. SI & VAT', formatCurrencyValue(totals.voValueWithSIAndVAT), 'Visible total'));
+  h.push(mkCard(window.t('reg.noc_vo_base'), formatCurrencyValue(totals.voBaseValue), window.t('reg.noc_visible_total')));
+  h.push(mkCard(window.t('reg.noc_vo_incl'), formatCurrencyValue(totals.voValueWithSIAndVAT), window.t('reg.noc_visible_total')));
   
   inner.innerHTML=h.join('');
   wrap.style.display='';
@@ -19987,7 +20133,7 @@ async function delRec(id){{
 // Bulk
 function updBulk(){{
   const checked=document.querySelectorAll('.chkcell input[data-id]:checked');
-  document.getElementById('bulkcnt').textContent=checked.length+' selected';
+  document.getElementById('bulkcnt').textContent=window.t('reg.bulk_selected',{{count:checked.length}});
   document.getElementById('bulkbar').classList.toggle('show',checked.length>0);
   const dlBtn = document.getElementById('btn-bulk-dl');
   if(dlBtn) dlBtn.style.display = checked.length>0 ? 'inline-block' : 'none';
@@ -20000,10 +20146,10 @@ function selAll(v){{document.querySelectorAll('.chkcell input[data-id]').forEach
 function clearSel(){{document.querySelectorAll('.chkcell input').forEach(cb=>cb.checked=false);updBulk();}}
 async function bulkDel(){{
   const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
-  if(!ids.length||!confirm('Delete '+ids.length+' records?'))return;
+  if(!ids.length||!confirm(window.t('reg.bulk_confirm_del',{{count:ids.length}})))return;
   const r=await apiFetch('/api/records/bulk_delete',{{method:'POST',body:JSON.stringify({{ids}})}});
   if(r&&r.ok){{
-    clearSel();await loadRecords();await refreshCounts();toast('✔ Deleted '+(r.deleted||0),'ok');
+    clearSel();await loadRecords();await refreshCounts();toast(window.t('reg.bulk_deleted',{{count:r.deleted||0}}),'ok');
   }}
 }}
 
@@ -20012,7 +20158,7 @@ async function bulkDownload(){{
   if(!ids.length)return;
   
   const drvCol = state.cols.find(c => c.col_type === 'url' || c.col_key === 'fileLocation');
-  if(!drvCol) return toast('Drive Link column not found', 'er');
+  if(!drvCol) return toast(window.t('reg.bulk_dl_no_col'), 'er');
   const key = drvCol.col_key;
   
   const links = [];
@@ -20042,11 +20188,11 @@ async function bulkDownload(){{
     }}
   }});
   
-  if(!links.length) return toast('No valid documents found in selected rows', 'wa');
+  if(!links.length) return toast(window.t('reg.bulk_dl_none'), 'wa');
   
   const folders = links.filter(l => l.type === 'folder');
-  if(folders.length) toast(`Opening ${{folders.length}} folder(s) in new tabs...`, 'wa');
-  else toast(`Starting download of ${{links.length}} file(s)...`, 'ok');
+  if(folders.length) toast(window.t('reg.bulk_dl_folders', {{count: folders.length}}), 'wa');
+  else toast(window.t('reg.bulk_dl_files', {{count: links.length}}), 'ok');
   
   links.forEach((linkObj, idx) => {{
     setTimeout(() => {{
@@ -20077,36 +20223,37 @@ async function editProject(){{
   // Field visibility toggles
   const visNote=document.createElement('div');
   visNote.style.cssText='font-size:10px;color:var(--mu);margin-bottom:8px;padding:6px 8px;background:var(--bg);border-radius:4px';
-  visNote.textContent='💡 Leave any field empty to hide it from the project bar';
+  visNote.textContent=window.t('reg.proj_vis_note');
   body.appendChild(visNote);
   const grid=document.createElement('div');grid.className='fgrid';
   PROJ_FIELDS.forEach(([key,defaultLbl])=>{{
-    const curLbl=customLabels[key]||defaultLbl;
+    const locDefault = (key==='startDate'||key==='endDate') ? window.t('reg.pf_'+key+'_full') : window.t('reg.pf_'+key);
+    const curLbl=customLabels[key]||locDefault||defaultLbl;
     const grp=document.createElement('div');grp.className='fg';
     // Label row: custom label input + value input
     const lblRow=document.createElement('div');lblRow.style.cssText='display:flex;gap:4px;margin-bottom:3px;align-items:center';
     const lblInp=document.createElement('input');
     lblInp.id='lbl-'+key;lblInp.value=curLbl;
-    lblInp.placeholder='Field label';
-    lblInp.title='Edit field label';
+    lblInp.placeholder=window.t('reg.proj_field_lbl_ph');
+    lblInp.title=window.t('reg.proj_field_lbl_title');
     lblInp.style.cssText='font-size:9px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px;border:1px dashed var(--bd);border-radius:3px;padding:2px 5px;width:100%;background:transparent;outline:none';
     lblRow.appendChild(lblInp);
     const valInp=document.createElement('input');valInp.id='pf-'+key;valInp.value=proj[key]||'';
-    valInp.placeholder='(leave empty to hide)';
+    valInp.placeholder=window.t('reg.proj_field_val_ph');
     grp.appendChild(lblRow);grp.appendChild(valInp);
     grid.appendChild(grp);
   }});
   body.appendChild(grid);
   
   // Google Drive
-  const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent='Google Drive Integration';body.appendChild(drvTitle);
+  const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent=window.t('reg.proj_drv_title');body.appendChild(drvTitle);
   const drvGrid=document.createElement('div');drvGrid.className='fgrid';
   drvGrid.innerHTML=`
-    <div class="fg"><label>Drive Root Folder ID</label><input id="proj-drive-id" placeholder="ID from URL" value="${{proj.drive_folder_id||''}}"></div>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_drv_root_id'))}}</label><input id="proj-drive-id" class="bidi-ltr" placeholder="${{escHtml(window.t('reg.proj_drv_root_ph'))}}" value="${{proj.drive_folder_id||''}}"></div>
     <div class="fg" style="display:flex;align-items:flex-end">
       <button class="btn btn-sc" type="button" onclick="syncDriveLinks(this)" style="width:100%;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;background:var(--bg)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
-        Sync Drive Links
+        ${{escHtml(window.t('reg.proj_sync_btn'))}}
       </button>
     </div>
   `;
@@ -20118,77 +20265,77 @@ async function editProject(){{
     const isDCOrAdmin = _WHOAMI && (_WHOAMI.role==='superadmin'||_WHOAMI.role==='admin'||(_WHOAMI.dc_projects||[]).includes(PID));
     if(isDCOrAdmin) {{
       const distTitle=document.createElement('div');distTitle.className='stitle';distTitle.style.marginTop='18px';
-      distTitle.innerHTML='📇 Distribution Matrix & Master Link';body.appendChild(distTitle);
+      distTitle.innerHTML=escHtml(window.t('reg.proj_dist_title'));body.appendChild(distTitle);
       const distNote=document.createElement('div');
       distNote.style.cssText='font-size:10px;color:var(--mu);margin:-4px 0 10px;padding:6px 8px;background:var(--bg);border-radius:4px';
-      distNote.textContent='Map Disciplines to internal team members to drive the Smart Project Digest.';
+      distNote.textContent=window.t('reg.proj_dist_note');
       body.appendChild(distNote);
       const distBtn=document.createElement('button');
       distBtn.className='btn btn-sc';
       distBtn.style.cssText='width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;margin-bottom:8px';
-      distBtn.innerHTML='📇 Open Distribution Matrix';
+      distBtn.innerHTML=escHtml(window.t('reg.proj_dist_open'));
       distBtn.onclick=()=>openDistributionMatrix(PID);
       body.appendChild(distBtn);
 
       const masterLinkBtn=document.createElement('button');
       masterLinkBtn.className='btn btn-ok';
       masterLinkBtn.style.cssText='width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px';
-      masterLinkBtn.innerHTML='🔗 Generate Master Magic Link';
+      masterLinkBtn.innerHTML=escHtml(window.t('reg.proj_master_link'));
       masterLinkBtn.onclick=async ()=>{{
         masterLinkBtn.disabled = true;
-        masterLinkBtn.innerHTML = 'Generating...';
+        masterLinkBtn.innerHTML = escHtml(window.t('reg.proj_master_gen'));
         try {{
           const r = await apiFetch(`/api/magic/generate_master/${{PID}}`, {{method:'POST'}});
           if(r && r.ok) {{
             navigator.clipboard.writeText(r.link);
-            toast('Master Link copied to clipboard!','ok');
-          }} else toast('Failed to generate link', 'er');
-        }} catch(e){{ toast('Error generating link','er'); }}
+            toast(window.t('reg.proj_master_copied'),'ok');
+          }} else toast(window.t('reg.proj_master_fail'), 'er');
+        }} catch(e){{ toast(window.t('reg.proj_master_err'),'er'); }}
         masterLinkBtn.disabled = false;
-        masterLinkBtn.innerHTML = '🔗 Generate Master Magic Link';
+        masterLinkBtn.innerHTML = escHtml(window.t('reg.proj_master_link'));
       }};
       body.appendChild(masterLinkBtn);
     }}
   }} catch(e){{ console.error('[DistMatrix UI]',e); }}
 
   const er={{...DEFAULT_EXPECTED_REPLY_RULE,...(proj.expected_reply_rule||{{}})}};
-  const erTitle=document.createElement('div');erTitle.className='stitle';erTitle.textContent='Expected Reply Rule';body.appendChild(erTitle);
+  const erTitle=document.createElement('div');erTitle.className='stitle';erTitle.textContent=window.t('reg.proj_er_title');body.appendChild(erTitle);
   const erNote=document.createElement('div');
   erNote.style.cssText='font-size:10px;color:var(--mu);margin:-4px 0 8px;padding:6px 8px;background:var(--bg);border-radius:4px';
-  erNote.textContent='Project-specific rule for calculated Expected Reply dates. Existing saved records are not modified.';
+  erNote.textContent=window.t('reg.proj_er_note');
   body.appendChild(erNote);
   const erGrid=document.createElement('div');erGrid.className='fgrid';
   erGrid.innerHTML=`
-    <div class="fg"><label>REV00 Reply Days</label><input id="er-rev0-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev0_reply_days))?Number(er.rev0_reply_days):14}}"></div>
-    <div class="fg"><label>REV&gt;00 Reply Days</label><input id="er-rev-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev_reply_days))?Number(er.rev_reply_days):7}}"></div>
-    <div class="fg"><label>Calculation Mode</label><select id="er-calc-mode">
-      <option value="calendar_days" ${{er.calculation_mode==='calendar_days'?'selected':''}}>Calendar Days</option>
-      <option value="working_days" ${{er.calculation_mode!=='calendar_days'?'selected':''}}>Working Days</option>
+    <div class="fg"><label>${{escHtml(window.t('reg.dt_er_rev0'))}}</label><input id="er-rev0-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev0_reply_days))?Number(er.rev0_reply_days):14}}"></div>
+    <div class="fg"><label>${{escHtml(window.t('reg.dt_er_rev'))}}</label><input id="er-rev-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev_reply_days))?Number(er.rev_reply_days):7}}"></div>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_er_calc_mode'))}}</label><select id="er-calc-mode">
+      <option value="calendar_days" ${{er.calculation_mode==='calendar_days'?'selected':''}}>${{escHtml(window.t('reg.proj_er_cal_days'))}}</option>
+      <option value="working_days" ${{er.calculation_mode!=='calendar_days'?'selected':''}}>${{escHtml(window.t('reg.proj_er_work_days'))}}</option>
     </select></div>
-    <div class="fg"><label>Weekend Rule</label><select id="er-weekend-mode">
-      <option value="friday_only" ${{er.weekend_mode==='friday_only'?'selected':''}}>Friday Only</option>
-      <option value="friday_saturday" ${{er.weekend_mode==='friday_saturday'?'selected':''}}>Friday + Saturday</option>
-      <option value="none" ${{er.weekend_mode==='none'?'selected':''}}>None</option>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_er_weekend'))}}</label><select id="er-weekend-mode">
+      <option value="friday_only" ${{er.weekend_mode==='friday_only'?'selected':''}}>${{escHtml(window.t('reg.proj_er_fri'))}}</option>
+      <option value="friday_saturday" ${{er.weekend_mode==='friday_saturday'?'selected':''}}>${{escHtml(window.t('reg.proj_er_fri_sat'))}}</option>
+      <option value="none" ${{er.weekend_mode==='none'?'selected':''}}>${{escHtml(window.t('reg.proj_er_none'))}}</option>
     </select></div>
-    <div class="fg"><label>Exclude Official Holidays</label><select id="er-exclude-holidays">
-      <option value="yes" ${{er.exclude_official_holidays!==false?'selected':''}}>Yes</option>
-      <option value="no" ${{er.exclude_official_holidays===false?'selected':''}}>No</option>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_er_excl_hol'))}}</label><select id="er-exclude-holidays">
+      <option value="yes" ${{er.exclude_official_holidays!==false?'selected':''}}>${{escHtml(window.t('common.yes'))}}</option>
+      <option value="no" ${{er.exclude_official_holidays===false?'selected':''}}>${{escHtml(window.t('common.no'))}}</option>
     </select></div>
   `;
   body.appendChild(erGrid);
   // Logo section
-  const lt=document.createElement('div');lt.className='stitle';lt.textContent='Company Logos';body.appendChild(lt);
+  const lt=document.createElement('div');lt.className='stitle';lt.textContent=window.t('reg.proj_logos_title');body.appendChild(lt);
   const lg=document.createElement('div');lg.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:12px';
-  for(const[k,lbl]of[['logo_left','Left Logo'],['logo_right','Right Logo']]){{
+  for(const[k,lbl]of[['logo_left',window.t('reg.proj_logo_left')],['logo_right',window.t('reg.proj_logo_right')]]){{
     const d=document.createElement('div');d.style.cssText='border:1px solid var(--bd);border-radius:6px;padding:10px;text-align:center;background:var(--bg)';
     const lbel=document.createElement('div');lbel.style.cssText='font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;margin-bottom:6px';lbel.textContent=lbl;d.appendChild(lbel);
     const img=document.createElement('img');img.id='lp-'+k;img.style.cssText='max-height:52px;max-width:100%;object-fit:contain;display:block;margin:0 auto 6px';d.appendChild(img);
     fetch('/api/logo/'+PID+'/'+k).then(r=>r.ok?r.blob():null).then(b=>{{if(b)img.src=URL.createObjectURL(b);}});
     const fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.style.cssText='width:100%;font-size:10px;margin-bottom:4px';
-    fi.onchange=async e=>{{const f=e.target.files[0];if(!f)return;const b64=await new Promise(res=>{{const fr=new FileReader();fr.onload=e2=>res(e2.target.result);fr.readAsDataURL(f);}});img.src=b64;await apiFetch('/api/logo/'+PID+'/'+k,{{method:'POST',body:JSON.stringify({{data:b64.split(',')[1]}})}});toast('Logo saved','ok');}};
+    fi.onchange=async e=>{{const f=e.target.files[0];if(!f)return;const b64=await new Promise(res=>{{const fr=new FileReader();fr.onload=e2=>res(e2.target.result);fr.readAsDataURL(f);}});img.src=b64;await apiFetch('/api/logo/'+PID+'/'+k,{{method:'POST',body:JSON.stringify({{data:b64.split(',')[1]}})}});toast(window.t('reg.proj_logo_saved'),'ok');}};
     d.appendChild(fi);
-    const clr=document.createElement('button');clr.className='btn btn-sc btn-sm';clr.textContent='Remove';clr.style.fontSize='9px';
-    clr.onclick=async()=>{{await apiFetch('/api/logo/'+PID+'/'+k,{{method:'POST',body:JSON.stringify({{data:''}})}});img.src='';toast('Removed','wa');}};
+    const clr=document.createElement('button');clr.className='btn btn-sc btn-sm';clr.textContent=window.t('reg.proj_logo_remove');clr.style.fontSize='9px';
+    clr.onclick=async()=>{{await apiFetch('/api/logo/'+PID+'/'+k,{{method:'POST',body:JSON.stringify({{data:''}})}});img.src='';toast(window.t('reg.proj_logo_removed'),'wa');}};
     d.appendChild(clr);lg.appendChild(d);
   }}
   body.appendChild(lg);
@@ -20202,8 +20349,10 @@ async function saveProject(){{
     const el=document.getElementById('pf-'+key);
     if(el)data[key]=el.value.trim();
     const lblEl=document.getElementById('lbl-'+key);
-    if(lblEl&&lblEl.value.trim()&&lblEl.value.trim()!==defaultLbl)
-      labels[key]=lblEl.value.trim();
+    const locDefault = (key==='startDate'||key==='endDate') ? window.t('reg.pf_'+key+'_full') : window.t('reg.pf_'+key);
+    const val = lblEl ? lblEl.value.trim() : '';
+    if(val && val!==defaultLbl && val!==locDefault)
+      labels[key]=val;
   }});
   data._labels=labels;
   const rev0Days=parseInt(document.getElementById('er-rev0-days')?.value||'14',10);
@@ -20224,14 +20373,14 @@ async function saveProject(){{
   const r=await apiFetch('/api/project/'+PID,{{method:'POST',body:JSON.stringify(data)}});
   if(r===null)return;
   if(r.ok){{
-    closeM('proj-modal');toast('✔ Project saved!','ok');
+    closeM('proj-modal');toast(window.t('reg.proj_saved'),'ok');
     setTimeout(()=>location.reload(),400);
-  }}else toast('Save failed','er');
+  }}else toast(window.t('reg.proj_save_fail'),'er');
 }}
 
 // ── Distribution Matrix ──────────────────────────────────────
 async function openDistributionMatrix(pid) {{
-  if(!pid){{ toast('No project selected','er'); return; }}
+  if(!pid){{ toast(window.t('reg.dist_no_proj'),'er'); return; }}
 
   try {{
     const [projects, projUsers] = await Promise.all([
@@ -20251,7 +20400,7 @@ async function openDistributionMatrix(pid) {{
     
     const note = document.createElement('div');
     note.style.cssText = 'padding: 10px; background: #eff6ff; color: #1e3a8a; font-size: 12px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #bfdbfe;';
-    note.innerHTML = 'Define Role-Based distribution here. Add Disciplines and assign users. Users assigned to <b>Project Management</b> will bypass filters and see all documents.';
+    note.innerHTML = window.t('reg.dist_note');
     body.appendChild(note);
 
     function makeUserSelector(discipline, initialUsers) {{
@@ -20271,7 +20420,7 @@ async function openDistributionMatrix(pid) {{
         
         const sel=document.createElement('select');
         sel.style.cssText='border:none;outline:none;background:transparent;font-size:12px;min-width:180px;flex:1;color:var(--tx)';
-        sel.innerHTML = '<option value="">+ Add User...</option>';
+        sel.innerHTML = '<option value="">'+escHtml(window.t('reg.dist_add_user'))+'</option>';
         projUsers.forEach(u => {{
           if(!users.includes(u.username)) {{
             sel.innerHTML += `<option value="${{u.username}}">${{u.username}} (${{u.role}})</option>`;
@@ -20311,7 +20460,7 @@ async function openDistributionMatrix(pid) {{
         const title = document.createElement('div');
         title.style.cssText = 'font-weight: bold; font-size: 14px; color: #0f172a;';
         title.textContent = discipline;
-        if (discipline === "Project Management") title.innerHTML += ' <span style="font-size:10px; background:#fef08a; padding:2px 6px; border-radius:4px; margin-left:4px;">BYPASS FILTER</span>';
+        if (discipline === "Project Management") title.innerHTML += ' <span style="font-size:10px; background:#fef08a; padding:2px 6px; border-radius:4px; margin-left:4px;">'+escHtml(window.t('reg.dist_bypass_badge'))+'</span>';
         
         const delBtn = document.createElement('button');
         delBtn.innerHTML = '🗑️';
@@ -20338,13 +20487,13 @@ async function openDistributionMatrix(pid) {{
     const addWrap = document.createElement('div');
     addWrap.style.cssText = 'display: flex; gap: 8px; margin-top: 15px;';
     const discInput = document.createElement('input');
-    discInput.placeholder = 'New Discipline Name...';
+    discInput.placeholder = window.t('reg.dist_new_disc_ph');
     discInput.className = 'inp';
     discInput.style.flex = '1';
     
     const addBtn = document.createElement('button');
     addBtn.className = 'btn btn-ok';
-    addBtn.textContent = 'Add Discipline';
+    addBtn.textContent = window.t('reg.dist_add_disc');
     addBtn.onclick = () => {{
       const v = discInput.value.trim();
       if(v && !matrix[v]) {{
@@ -20362,10 +20511,10 @@ async function openDistributionMatrix(pid) {{
     saveWrap.style.cssText = 'margin-top: 20px; text-align: right; border-top: 1px solid var(--bd); padding-top: 15px;';
     const finalSaveBtn = document.createElement('button');
     finalSaveBtn.className = 'btn btn-pr';
-    finalSaveBtn.textContent = '💾 Save Matrix';
+    finalSaveBtn.textContent = window.t('reg.dist_save_btn');
     finalSaveBtn.onclick = async () => {{
       finalSaveBtn.disabled = true;
-      finalSaveBtn.textContent = 'Saving...';
+      finalSaveBtn.textContent = window.t('reg.dist_saving');
       try {{
         const r = await apiFetch(`/api/project/${{pid}}/settings`, {{
           method: 'POST',
@@ -20373,16 +20522,16 @@ async function openDistributionMatrix(pid) {{
           body: JSON.stringify({{ distribution_matrix: matrix }})
         }});
         if(r && r.ok) {{
-          toast('Matrix saved successfully', 'ok');
+          toast(window.t('reg.dist_saved'), 'ok');
           closeM('dist-modal');
         }} else {{
-          toast((r && r.error) || 'Failed to save', 'er');
+          toast((r && r.error) || window.t('reg.dist_save_fail'), 'er');
         }}
       }} catch(e) {{
-        toast('Network Error', 'er');
+        toast(window.t('reg.dist_net_err'), 'er');
       }}
       finalSaveBtn.disabled = false;
-      finalSaveBtn.textContent = '💾 Save Matrix';
+      finalSaveBtn.textContent = window.t('reg.dist_save_btn');
     }};
     saveWrap.appendChild(finalSaveBtn);
     body.appendChild(saveWrap);
@@ -20390,16 +20539,16 @@ async function openDistributionMatrix(pid) {{
     openM('dist-modal');
   }} catch(e){{
     console.error('[DistMatrix]', e);
-    toast('Error loading distribution matrix','er');
+    toast(window.t('reg.dist_err'),'er');
   }}
 }}
 
 async function syncDriveLinks(btn) {{
   const folderId = document.getElementById('proj-drive-id')?.value.trim();
-  if (!folderId) {{ toast('Please enter a Drive Folder ID first.', 'er'); return; }}
+  if (!folderId) {{ toast(window.t('reg.proj_sync_need_id'), 'er'); return; }}
   
   const originalHtml = btn.innerHTML;
-  btn.innerHTML = '⏳ Syncing in background...';
+  btn.innerHTML = escHtml(window.t('reg.proj_sync_ing'));
   btn.disabled = true;
   
   const r = await apiFetch('/api/drive/sync/'+PID, {{
@@ -20411,9 +20560,9 @@ async function syncDriveLinks(btn) {{
   btn.disabled = false;
   
   if (r && r.ok) {{
-    toast('✔ Drive Sync completed in background', 'ok');
+    toast(window.t('reg.proj_sync_ok'), 'ok');
   }} else {{
-    toast('Sync request failed', 'er');
+    toast(window.t('reg.proj_sync_err'), 'er');
   }}
 }}
 
@@ -20433,8 +20582,8 @@ function toggleDocTypeReplyOverride(){{
 }}
 function setDocTypeModalMode(dt=null){{
   const edit=!!dt;
-  document.getElementById('dt-modal-title').textContent=edit?'Document Type Settings':'Add Document Type';
-  document.getElementById('dt-save-btn').textContent=edit?'Save':'Add';
+  document.getElementById('dt-modal-title').textContent=edit?window.t('reg.dt_modal_edit_title'):window.t('reg.dt_modal_add_title');
+  document.getElementById('dt-save-btn').textContent=edit?window.t('common.save'):window.t('common.add');
   document.getElementById('dt-edit-id').value=edit?dt.id:'';
   document.getElementById('dt-code').value=edit?(dt.code||dt.id||''):'';
   document.getElementById('dt-name').value=edit?(dt.name||''):'';
@@ -20459,14 +20608,14 @@ async function saveDocType(){{
   const editId=document.getElementById('dt-edit-id').value.trim();
   const code=document.getElementById('dt-code').value.trim().toUpperCase();
   const name=document.getElementById('dt-name').value.trim();
-  if(!code||!name){{toast('Code and name required','er');return;}}
+  if(!code||!name){{toast(window.t('reg.dt_req'),'er');return;}}
   const payload={{code,name,expected_reply_override:collectDocTypeReplyOverride()}};
   if(editId){{
     await apiFetch('/api/doc_types/'+PID+'/'+editId,{{method:'PATCH',body:JSON.stringify(payload)}});
-    closeM('dt-modal');await loadDTs(true);toast('Type settings saved','ok');
+    closeM('dt-modal');await loadDTs(true);toast(window.t('reg.dt_saved'),'ok');
   }}else{{
     await apiFetch('/api/doc_types/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
-    closeM('dt-modal');await loadDTs();switchTab(code);toast('Type added','ok');
+    closeM('dt-modal');await loadDTs();switchTab(code);toast(window.t('reg.dt_added'),'ok');
   }}
 }}
 
@@ -20475,7 +20624,7 @@ async function openLists(){{
   await loadLists(true);
   ensureLTRProjectLists();
   const metaData=await apiFetch('/api/lists_meta/'+PID)||{{}};
-  const META_LABELS={{approved:{{lbl:'Approved',bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:'Rejected',bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:'Pending',bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:'Cancelled',bg:'#f1f5f9',fg:'#94a3b8'}},info_closed:{{lbl:'Info / Closed',bg:'#e0e7ff',fg:'#3730a3'}}}};
+  const META_LABELS={{approved:{{lbl:window.t('reg.lists_meta_approved'),bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:window.t('reg.lists_meta_rejected'),bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:window.t('reg.lists_meta_pending'),bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:window.t('reg.lists_meta_cancelled'),bg:'#f1f5f9',fg:'#94a3b8'}},info_closed:{{lbl:window.t('reg.lists_meta_info_closed'),bg:'#e0e7ff',fg:'#3730a3'}}}};
   const body=document.getElementById('lists-body');body.innerHTML='';
   for(const[ln,items]of Object.entries(state.lists).filter(([ln])=>!isHiddenSystemListName(ln))){{
     const isStatus=ln.toLowerCase().startsWith('status');
@@ -20508,12 +20657,12 @@ async function openLists(){{
           const nm2=META_LABELS[sel.value];
           badge.style.background=nm2.bg;badge.style.color=nm2.fg;badge.textContent=nm2.lbl;
           await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:item,meta:sel.value}})}});
-          toast('✔ Saved','ok');
+          toast(window.t('reg.lists_saved'),'ok');
         }};
         li.appendChild(badge);li.appendChild(sel);
       }}
       const idx=items.indexOf(item);
-      const ren=document.createElement('button');ren.textContent='Rename';
+      const ren=document.createElement('button');ren.textContent=window.t('reg.lists_rename');
       ren.onclick=()=>renameItem(ln,item);li.appendChild(ren);
       const up=document.createElement('button');up.textContent='↑';
       up.disabled=idx===0;
@@ -20523,26 +20672,26 @@ async function openLists(){{
       down.disabled=idx===items.length-1;
       down.style.opacity=idx===items.length-1?'.45':'1';
       down.onclick=()=>moveListItem(ln,item,1);li.appendChild(down);
-      const rb=document.createElement('button');rb.textContent='Remove';
+      const rb=document.createElement('button');rb.textContent=window.t('reg.lists_remove');
       rb.onclick=()=>rmItem(ln,item,rb);li.appendChild(rb);
       ul.appendChild(li);
     }});
     body.appendChild(ul);
     const ar=document.createElement('div');ar.className='addrow';
-    const ni=document.createElement('input');ni.id='new-'+ln;ni.placeholder='New item...';
-    const ab=document.createElement('button');ab.className='btn btn-ok btn-sm';ab.textContent='Add';ab.onclick=()=>addItem(ln);
+    const ni=document.createElement('input');ni.id='new-'+ln;ni.placeholder=window.t('reg.lists_new_item_ph');
+    const ab=document.createElement('button');ab.className='btn btn-ok btn-sm';ab.textContent=window.t('common.add');ab.onclick=()=>addItem(ln);
     ar.appendChild(ni);ar.appendChild(ab);
     if(isStatus){{
       const hint=document.createElement('div');
       hint.style.cssText='font-size:10px;color:#94a3b8;margin-top:4px';
-      hint.textContent='🏷 Set category for each status — affects Dashboard counts';
+      hint.textContent=window.t('reg.lists_status_hint');
       ar.appendChild(hint);
     }}
     body.appendChild(ar);
   }}
-  const nl=document.createElement('div');nl.className='stitle';nl.textContent='New List';
+  const nl=document.createElement('div');nl.className='stitle';nl.textContent=window.t('reg.lists_new_list');
   const nar=document.createElement('div');nar.className='addrow';
-  nar.innerHTML=`<input id="new-list" placeholder="List name"><button class="btn btn-pr btn-sm" onclick="mkList()">Create</button>`;
+  nar.innerHTML=`<input id="new-list" placeholder="${{escHtml(window.t('reg.lists_new_list_ph'))}}"><button class="btn btn-pr btn-sm" onclick="mkList()">${{escHtml(window.t('reg.lists_create'))}}</button>`;
   body.appendChild(nl);body.appendChild(nar);
   openM('lists-modal');
 }}
@@ -20557,12 +20706,12 @@ async function addItem(ln){{
   await loadLists(true);openLists();
 }}
 async function renameItem(ln,item){{
-  const next=prompt('Rename list item:',item);
+  const next=prompt(window.t('reg.lists_rename_prompt'),item);
   if(next===null)return;
   const new_item=next.trim();
   if(!new_item||new_item===item)return;
   await apiFetch('/api/lists/'+PID,{{method:'PATCH',body:JSON.stringify({{list_name:ln,old_item:item,new_item}})}});
-  await loadLists(true);openLists();toast('✔ Item renamed','ok');
+  await loadLists(true);openLists();toast(window.t('reg.lists_item_renamed'),'ok');
 }}
 async function moveListItem(ln,item,delta){{
   const items=[...(state.lists[ln]||[])];
@@ -20570,7 +20719,7 @@ async function moveListItem(ln,item,delta){{
   if(idx<0||next<0||next>=items.length)return;
   [items[idx],items[next]]=[items[next],items[idx]];
   await apiFetch('/api/lists/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{list_name:ln,order:items}})}});
-  await loadLists(true);openLists();toast('✔ List order updated','ok');
+  await loadLists(true);openLists();toast(window.t('reg.lists_order_updated'),'ok');
 }}
 async function rmItem(ln,item,btn){{
   await apiFetch('/api/lists/'+PID,{{method:'DELETE',body:JSON.stringify({{list_name:ln,item}})}});
@@ -20602,7 +20751,7 @@ function initColDrag(ul){{
 async function saveColOrder(){{
   const ids=[...document.querySelectorAll('#col-sortable li')].map(li=>parseInt(li.dataset.id));
   await apiFetch('/api/columns/reorder/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify({{order:ids}})}});
-  toast('✔ Order saved','ok');
+  toast(window.t('reg.col_order_saved'),'ok');
 }}
 
 // Columns
@@ -20616,24 +20765,24 @@ async function manageColumns(){{
     li.style.cssText='cursor:default;align-items:center;gap:7px';
     const grip=document.createElement('span');grip.textContent='⠿';
     grip.style.cssText='cursor:grab;color:var(--mu);font-size:16px;flex-shrink:0';
-    grip.title='Drag to reorder';
+    grip.title=window.t('reg.col_drag_title');
     const chk=document.createElement('input');chk.type='checkbox';chk.checked=col.visible;
     chk.onchange=()=>toggleCol(col.id,chk.checked);
-    const nm=document.createElement('span');nm.textContent=col.label;nm.style.cssText='flex:1;font-size:12px';
+    const nm=document.createElement('span');nm.textContent=window.tCol(col.col_key, col.label);nm.style.cssText='flex:1;font-size:12px';
     const tp=document.createElement('span');tp.textContent=col.col_type;
     tp.style.cssText='font-size:9px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:3px;flex-shrink:0';
     const ren_btn=document.createElement('button');ren_btn.textContent='✏';
-    ren_btn.title='Rename';ren_btn.className='btn btn-sc btn-sm';
+    ren_btn.title=window.t('reg.col_rename_title');ren_btn.className='btn btn-sc btn-sm';
     ren_btn.style.cssText='flex-shrink:0;padding:2px 6px;font-size:11px';
     ren_btn.onclick=async()=>{{
-      const newLbl=prompt('New label for column:',col.label);
+      const newLbl=prompt(window.t('reg.col_rename_prompt'),col.label);
       if(!newLbl||!newLbl.trim())return;
       const r=await apiFetch('/api/columns/rename/'+col.id,{{method:'POST',body:JSON.stringify({{label:newLbl.trim()}})}});
-      if(r&&r.ok){{nm.textContent=newLbl.trim();toast('✔ Renamed','ok');}}
-      else toast('Error','er');
+      if(r&&r.ok){{nm.textContent=newLbl.trim();toast(window.t('reg.col_renamed'),'ok');}}
+      else toast(window.t('common.error'),'er');
     }};
     const db_btn=document.createElement('button');db_btn.textContent='🗑';
-    db_btn.title='Delete';db_btn.className='btn btn-er btn-sm';
+    db_btn.title=window.t('reg.col_delete_title');db_btn.className='btn btn-er btn-sm';
     db_btn.style.cssText='flex-shrink:0;padding:2px 6px;font-size:11px';
     db_btn.onclick=()=>deleteCol(col.id,col.col_key,db_btn);
     li.appendChild(grip);li.appendChild(chk);li.appendChild(nm);li.appendChild(tp);li.appendChild(ren_btn);li.appendChild(db_btn);
@@ -20643,7 +20792,7 @@ async function manageColumns(){{
   body.appendChild(ul);openM('col-modal');
 }}
 async function toggleCol(id,v){{await apiFetch('/api/columns/visibility/'+id,{{method:'POST',body:JSON.stringify({{visible:v}})}});}}
-async function deleteCol(id,key,btn){{const warn=key==='docNo'?'⚠ WARNING: Deleting Document No. column will break the register! Are you sure?':'Delete this column?';if(!confirm(warn))return;await apiFetch('/api/columns/'+id,{{method:'DELETE'}});btn.closest('li').remove();}}
+async function deleteCol(id,key,btn){{const warn=key==='docNo'?window.t('reg.col_del_docno_warn'):window.t('reg.col_del_confirm');if(!confirm(warn))return;await apiFetch('/api/columns/'+id,{{method:'DELETE'}});btn.closest('li').remove();}}
 
 function onColType(v){{
   document.getElementById('cg-list').style.display=v==='dropdown'?'flex':'none';
@@ -20658,7 +20807,7 @@ async function openAddCol(){{
   ls.innerHTML=Object.keys(state.lists).filter(k=>!isHiddenSystemListName(k)).map(k=>`<option value="${{k}}">${{k}}</option>`).join('');
   const all=await apiFetch('/api/columns/'+PID+'/'+state.tab);
   const dates=(all||[]).filter(c=>['date','auto_date'].includes(c.col_type));
-  const dopts=dates.map(c=>`<option value="${{c.col_key}}">${{c.label}}</option>`).join('')||'<option value="issuedDate">Issued Date</option>';
+  const dopts=dates.map(c=>`<option value="${{c.col_key}}">${{escHtml(window.tCol(c.col_key, c.label))}}</option>`).join('')||`<option value="issuedDate">${{escHtml(window.tCol('issuedDate','Issued Date'))}}</option>`;
   document.getElementById('col-ds').innerHTML=dopts;
   document.getElementById('col-de').innerHTML=dopts;
   document.getElementById('col-name').value='';document.getElementById('col-type').value='text';onColType('text');
@@ -20670,10 +20819,10 @@ async function saveAddCol(){{
   const list=type==='dropdown'?document.getElementById('col-list').value:null;
   const ds=type==='duration_calc'?document.getElementById('col-ds').value:null;
   const de=type==='duration_calc'?document.getElementById('col-de').value:null;
-  if(!name){{toast('Name required','er');return;}}
-  if(type==='duration_calc'&&ds===de){{toast('Start and end must differ','er');return;}}
+  if(!name){{toast(window.t('reg.addcol_name_req'),'er');return;}}
+  if(type==='duration_calc'&&ds===de){{toast(window.t('reg.addcol_dates_diff'),'er');return;}}
   await apiFetch('/api/columns/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify({{label:name,col_type:type,list_name:type==='duration_calc'?(ds+','+de):list}})}});
-  closeM('addcol-modal');closeM('col-modal');await loadRecords();toast('✔ Column added','ok');
+  closeM('addcol-modal');closeM('col-modal');await loadRecords();toast(window.t('reg.addcol_added'),'ok');
 }}
 
 // Admin functions loaded from SHARED_JS
@@ -20681,12 +20830,12 @@ function populateExportScope(){{
   const sel=document.getElementById('export-scope');
   if(!sel)return;
   const curVal=sel.value||'all';
-  let html='<option value="all">All Documents (All Tabs)</option>';
-  html+=`<option value="current">Current Tab (${{state.tab||'None'}})</option>`;
+  let html=`<option value="all">${{escHtml(window.t('reg.exp_scope_all'))}}</option>`;
+  html+=`<option value="current">${{escHtml(window.t('reg.exp_scope_cur_name', {{tab: state.tab||'-'}}))}}</option>`;
   if(state.dtList&&state.dtList.length){{
-    html+='<optgroup label="Specific Document Type">';
+    html+=`<optgroup label="${{escHtml(window.t('reg.exp_scope_specific'))}}">`;
     state.dtList.forEach(d=>{{
-      html+=`<option value="${{d.id}}">${{d.name||d.id}} (${{d.code||d.id}})</option>`;
+      html+=`<option value="${{d.id}}">${{escHtml(window.tDt(d.code||d.id, d.name||d.id))}} (${{d.code||d.id}})</option>`;
     }});
     html+='</optgroup>';
   }}
@@ -20725,10 +20874,10 @@ function openExportCenter(){{
 
 async function executeAdvancedExport(){{
   const btn=document.getElementById('export-submit-btn');
-  const origText=btn?btn.innerHTML:'📥 Generate Export';
+  const origText=btn?btn.innerHTML:escHtml(window.t('reg.exp_submit'));
   if(btn){{
     btn.disabled=true;
-    btn.innerHTML='<span style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px">⏳</span> Generating...';
+    btn.innerHTML=`<span style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px">⏳</span> ${{escHtml(window.t('reg.exp_generating'))}}`;
   }}
   try{{
     const format=document.getElementById('export-format')?.value||'excel';
@@ -20770,7 +20919,7 @@ async function executeAdvancedExport(){{
     }},1200);
   }}catch(e){{
     if(btn){{btn.disabled=false;btn.innerHTML=origText;}}
-    toast('Export failed: '+e.message,'er');
+    toast(window.t('reg.exp_failed',{{error:e.message}}),'er');
   }}
 }}
 function doPrint(){{
@@ -20788,39 +20937,39 @@ async function openSettings(){{
   function buildUI(){{
     ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:520px;width:95%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:800;color:#1a3a5c">🗓 Public Holidays</div>
+        <div style="font-size:16px;font-weight:800;color:#1a3a5c">${{escHtml(window.t('reg.hol_title'))}}</div>
         <button id="hol-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748b">✕</button>
       </div>
-      <p style="font-size:12px;color:#64748b;margin-bottom:12px">These dates are excluded from Duration and Expected Reply calculations (along with Fridays).</p>
+      <p style="font-size:12px;color:#64748b;margin-bottom:12px">${{escHtml(window.t('reg.hol_desc'))}}</p>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <input type="date" id="hol-inp" style="flex:1;padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:12px">
-        <button id="hol-add-btn" style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">+ Add</button>
+        <button id="hol-add-btn" style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">${{escHtml(window.t('reg.hol_add'))}}</button>
       </div>
       <div id="hol-list" style="flex:1;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:8px;min-height:180px;max-height:340px"></div>
-      <div style="margin-top:12px;font-size:11px;color:#94a3b8">${{hols.length}} holidays total</div>
+      <div style="margin-top:12px;font-size:11px;color:#94a3b8">${{escHtml(window.t('reg.hol_total',{{count:hols.length}}))}}</div>
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
-        <button id="hol-cancel" style="padding:7px 16px;border:1.5px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px">Cancel</button>
-        <button id="hol-save" style="padding:7px 16px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">💾 Save Holidays</button>
+        <button id="hol-cancel" style="padding:7px 16px;border:1.5px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px">${{escHtml(window.t('common.cancel'))}}</button>
+        <button id="hol-save" style="padding:7px 16px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">${{escHtml(window.t('reg.hol_save'))}}</button>
       </div></div>`;
     renderHL();
     ov.querySelector('#hol-close').onclick=()=>ov.remove();
     ov.querySelector('#hol-cancel').onclick=()=>ov.remove();
     ov.querySelector('#hol-add-btn').onclick=()=>{{
       const v=ov.querySelector('#hol-inp').value;
-      if(!v)return;if(hols.includes(v)){{toast('Already added','wa');return;}}
+      if(!v)return;if(hols.includes(v)){{toast(window.t('reg.hol_dup'),'wa');return;}}
       hols.push(v);renderHL();ov.querySelector('#hol-inp').value='';
     }};
     ov.querySelector('#hol-save').onclick=async()=>{{
-      const btn=ov.querySelector('#hol-save');btn.disabled=true;btn.textContent='Saving...';
+      const btn=ov.querySelector('#hol-save');btn.disabled=true;btn.textContent=window.t('reg.hol_saving');
       const res=await apiFetch('/api/settings/holidays',{{method:'POST',body:JSON.stringify({{holidays:hols}})}});
-      btn.disabled=false;btn.textContent='💾 Save Holidays';
-      if(res&&res.ok){{toast('✔ '+res.count+' holidays saved','ok');ov.remove();}}
-      else toast('Error','er');
+      btn.disabled=false;btn.textContent=window.t('reg.hol_save');
+      if(res&&res.ok){{toast(window.t('reg.hol_saved',{{count:res.count}}),'ok');ov.remove();}}
+      else toast(window.t('common.error'),'er');
     }};
   }}
   function renderHL(){{
     const ul=ov.querySelector('#hol-list');if(!ul)return;ul.innerHTML='';
-    if(!hols.length){{ul.innerHTML='<div style="color:#94a3b8;text-align:center;padding:30px;font-size:12px">No holidays — click + Add to add dates</div>';return;}}
+    if(!hols.length){{ul.innerHTML=`<div style="color:#94a3b8;text-align:center;padding:30px;font-size:12px">${{escHtml(window.t('reg.hol_empty'))}}</div>`;return;}}
     [...hols].sort().forEach(d=>{{
       const row=document.createElement('div');
       row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;margin-bottom:3px;background:#f8fafc;font-size:12px';
@@ -20828,7 +20977,7 @@ async function openSettings(){{
       const fmt=dt.getDate().toString().padStart(2,'0')+'-'+(dt.getMonth()+1).toString().padStart(2,'0')+'-'+dt.getFullYear();
       const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
       const day=days[dt.getDay()];
-      row.innerHTML=`<span style="color:#1e293b">${{fmt}} <span style="color:#94a3b8;font-size:10px">(${{day}})</span></span>
+      row.innerHTML=`<span style="color:#1e293b"><span class="bidi-ltr">${{fmt}}</span> <span style="color:#94a3b8;font-size:10px">(${{day}})</span></span>
         <button data-d="${{d}}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:15px;line-height:1;padding:2px 6px">✕</button>`;
       row.querySelector('button').onclick=e=>{{const dv=e.currentTarget.dataset.d;hols=hols.filter(h=>h!==dv);renderHL();}};
       ul.appendChild(row);
@@ -20844,33 +20993,33 @@ async function doImport(){{
   const file=document.getElementById('imp-file').files[0];if(!file)return;
   const ext=file.name.split('.').pop().toLowerCase();
   const btn=document.querySelector('#import-modal .btn-pr');
-  btn.disabled=true;btn.textContent='⏳ Importing...';
+  btn.disabled=true;btn.textContent=window.t('reg.imp_ing');
   try{{
     const b64=await new Promise((res,rej)=>{{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(file);}});
     const r=await apiFetch('/api/import/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify({{file_b64:b64,ext}})}});
     if(r===null)return;
-    closeM('import-modal');switchTab(state.tab);await loadDTs();toast('✔ Imported '+r.imported+' records','ok');
-  }}catch(e){{toast('Error: '+e.message,'er');}}
-  finally{{btn.disabled=false;btn.textContent='Import';}}
+    closeM('import-modal');switchTab(state.tab);await loadDTs();toast(window.t('reg.imp_ok',{{count:r.imported}}),'ok');
+  }}catch(e){{toast(window.t('common.error')+': '+e.message,'er');}}
+  finally{{btn.disabled=false;btn.textContent=window.t('reg.imp_btn');}}
 }}
 async function doImportProject(){{
   const file=document.getElementById('imp-file').files[0];if(!file)return;
   const ext=file.name.split('.').pop().toLowerCase();
-  if(!['xlsx','xls'].includes(ext)){{toast('Full workbook import supports Excel only','er');return;}}
+  if(!['xlsx','xls'].includes(ext)){{toast(window.t('reg.imp_excel_only'),'er');return;}}
   const btn=document.getElementById('imp-project-btn');
-  btn.disabled=true;btn.textContent='⏳ Importing...';
+  btn.disabled=true;btn.textContent=window.t('reg.imp_ing');
   try{{
     const b64=await new Promise((res,rej)=>{{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(file);}});
     const r=await apiFetch('/api/import_project/'+PID,{{method:'POST',body:JSON.stringify({{file_b64:b64,ext}})}});
     if(r===null)return;
     closeM('import-modal');switchTab(state.tab);await loadDTs();
-    toast('✔ Imported '+r.imported_total+' records from '+(r.matched_sheets||[]).length+' sheet(s)','ok');
-  }}catch(e){{toast('Error: '+e.message,'er');}}
-  finally{{btn.disabled=false;btn.textContent='Import Full Workbook';}}
+    toast(window.t('reg.imp_full_ok',{{count:r.imported_total,sheets:(r.matched_sheets||[]).length}}),'ok');
+  }}catch(e){{toast(window.t('common.error')+': '+e.message,'er');}}
+  finally{{btn.disabled=false;btn.textContent=window.t('reg.imp_full_btn');}}
 }}
 
 async function openProjectSettings() {{
-  if(!CAN_EDIT || !['admin','superadmin'].includes(ROLE)) return toast('Forbidden', 'er');
+  if(!CAN_EDIT || !['admin','superadmin'].includes(ROLE)) return toast(window.t('common.forbidden'), 'er');
   const lst = document.getElementById('status-colors-list');
   lst.innerHTML = '';
   
@@ -20894,7 +21043,7 @@ async function openProjectSettings() {{
   }}
   
   if(statuses.size === 0) {{
-    lst.innerHTML = '<div style="color:var(--mu);font-size:11px;padding:10px">No statuses found in any records yet.</div>';
+    lst.innerHTML = `<div style="color:var(--mu);font-size:11px;padding:10px">${{escHtml(window.t('reg.sc_none'))}}</div>`;
   }} else {{
     [...statuses].sort().forEach(s => {{
       let [bg, fg] = SC[s] || ['e5e7eb', '374151'];
@@ -20906,30 +21055,30 @@ async function openProjectSettings() {{
       
       const lbl = document.createElement('div');
       lbl.style.cssText = 'flex:1;font-weight:600;font-size:12px;color:var(--tx)';
-      lbl.textContent = s;
+      lbl.textContent = window.tStatus(s);
       
       const bgLbl = document.createElement('div');
       bgLbl.style.cssText = 'font-size:10px;color:var(--mu)';
-      bgLbl.textContent = 'Background:';
+      bgLbl.textContent = window.t('reg.sc_bg');
       
       const bgInp = document.createElement('input');
       bgInp.type = 'color';
       bgInp.value = bg;
       bgInp.dataset.status = s;
       bgInp.dataset.type = 'bg';
-      bgInp.title = 'Background Color';
+      bgInp.title = window.t('reg.sc_bg_title');
       bgInp.style.cssText = 'width:28px;height:24px;padding:0;border:none;cursor:pointer;background:none';
       
       const fgLbl = document.createElement('div');
       fgLbl.style.cssText = 'font-size:10px;color:var(--mu);margin-left:10px';
-      fgLbl.textContent = 'Text:';
+      fgLbl.textContent = window.t('reg.sc_fg');
       
       const fgInp = document.createElement('input');
       fgInp.type = 'color';
       fgInp.value = fg;
       fgInp.dataset.status = s;
       fgInp.dataset.type = 'fg';
-      fgInp.title = 'Text Color';
+      fgInp.title = window.t('reg.sc_fg_title');
       fgInp.style.cssText = 'width:28px;height:24px;padding:0;border:none;cursor:pointer;background:none';
       
       row.appendChild(lbl);
@@ -20945,7 +21094,7 @@ async function openProjectSettings() {{
 
 async function saveProjectSettings() {{
   const btn = document.querySelector('#project-settings-modal .btn-pr');
-  btn.disabled = true; btn.textContent = 'Saving...';
+  btn.disabled = true; btn.textContent = window.t('reg.sc_saving');
   
   try {{
     const lst = document.getElementById('status-colors-list');
@@ -20971,15 +21120,15 @@ async function saveProjectSettings() {{
     
     const r = await apiFetch('/api/project/'+PID+'/settings', {{method:'POST', body:JSON.stringify({{status_colors}})}});
     if(r && r.ok) {{
-      toast('✔ Settings saved successfully','ok');
+      toast(window.t('reg.sc_saved'),'ok');
       setTimeout(() => location.reload(), 600);
     }} else {{
-      toast(r?.error || 'Error saving settings','er');
+      toast(r?.error || window.t('reg.sc_save_err'),'er');
     }}
   }} catch(e) {{
-    toast('Error: ' + e.message, 'er');
+    toast(window.t('common.error') + ': ' + e.message, 'er');
   }} finally {{
-    btn.disabled = false; btn.textContent = 'Save Settings';
+    btn.disabled = false; btn.textContent = window.t('reg.sc_save');
   }}
 }}
 </script>
