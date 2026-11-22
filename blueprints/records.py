@@ -7,6 +7,7 @@ Step 7A of the incremental refactor.
 Logic is identical to the original app.py route — only the decorator
 changed from @app.route to @records_bp.route.
 """
+import base64
 import json
 import logging
 import uuid
@@ -24,6 +25,8 @@ from auth import (
     can_access_doc_type,
     _resolve_project,
 )
+from pr_docx_parser import parse_pr_docx
+from security import scan_and_validate_file
 from utils import compute_expected_reply, compute_duration, is_overdue, format_date, extract_rev
 
 records_bp = Blueprint("records", __name__)
@@ -697,3 +700,63 @@ def api_save_pr_items(record_id):
         })
     saved = db.save_pr_items(record_id, clean)
     return jsonify(ok=True, saved=saved)
+
+
+@records_bp.route("/api/pr_items/parse_docx/<pid>/<dt_id>", methods=["POST"])
+def api_parse_pr_docx(pid, dt_id):
+    if not can_edit(pid):
+        return jsonify(ok=False, error="LOGIN_REQUIRED"), 403
+    u = current_user()
+    if not can_access_doc_type(pid, dt_id, u):
+        return jsonify(ok=False, error="Document type access denied"), 403
+    if not _is_pr_doc_type(pid, dt_id):
+        return jsonify(ok=False, error="Not a PR document"), 400
+
+    raw_bytes = None
+    ext = "docx"
+
+    if "file" in request.files:
+        up = request.files["file"]
+        filename = (up.filename or "").strip()
+        if "." in filename:
+            ext = filename.rsplit(".", 1)[-1].strip().lower()
+        raw_bytes = up.read()
+    else:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify(ok=False, error="No file provided"), 400
+        b64 = data.get("file_b64") or data.get("data") or ""
+        if not isinstance(b64, str) or not b64.strip():
+            return jsonify(ok=False, error="No file provided"), 400
+        if "," in b64:
+            b64 = b64.split(",", 1)[1]
+        if data.get("ext"):
+            ext = str(data.get("ext")).strip().lower().lstrip(".")
+        elif data.get("filename") and "." in str(data.get("filename")):
+            ext = str(data.get("filename")).rsplit(".", 1)[-1].strip().lower()
+        try:
+            raw_bytes = base64.b64decode("".join(b64.split()), validate=True)
+        except Exception:
+            return jsonify(ok=False, error="Invalid base64 encoded file payload"), 400
+
+    if not raw_bytes:
+        return jsonify(ok=False, error="Empty file payload"), 400
+
+    is_safe, error_reason = scan_and_validate_file(
+        raw_bytes, ext, allowed_exts=["docx"], max_size_mb=10
+    )
+    if not is_safe:
+        return jsonify(ok=False, error=f"File security check failed: {error_reason}"), 400
+
+    try:
+        parsed = parse_pr_docx(raw_bytes)
+    except Exception as exc:
+        logger.warning("pr_docx_parse_failed pid=%s dt_id=%s error=%s", pid, dt_id, exc)
+        return jsonify(ok=False, error=f"Failed to parse DOCX: {str(exc)}"), 400
+
+    return jsonify(
+        ok=True,
+        header=parsed["header"],
+        items=parsed["items"],
+        warnings=parsed["warnings"],
+    )

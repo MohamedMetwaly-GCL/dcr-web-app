@@ -238,6 +238,61 @@ def scan_file_for_malware(raw_bytes: bytes) -> Tuple[bool, str]:
     return True, ""
 
 
+def _validate_ooxml_zip(
+    raw_bytes: bytes,
+    label: str,
+    magic_prefixes: Tuple[bytes, ...],
+    max_uncompressed_mb: int,
+    required_members: Tuple[str, ...],
+    reject_bin_ext: bool = False,
+) -> Tuple[bool, str]:
+    """Validate an OpenXML ZIP container (XLSX/DOCX) against corruption, macros, traversal, and zip bombs."""
+    if not any(raw_bytes.startswith(prefix) for prefix in magic_prefixes):
+        return False, f"Invalid {label} format: file is not a valid OpenXML archive."
+
+    max_uncompressed_bytes = max_uncompressed_mb * 1024 * 1024
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as zf:
+            total_uncompressed = 0
+            namelist = set()
+            for info in zf.infolist():
+                member_name = info.filename
+                norm_name = member_name.replace("\\", "/")
+                if (
+                    norm_name.startswith("/")
+                    or ":" in norm_name
+                    or ".." in norm_name.split("/")
+                ):
+                    return False, f"Security violation: unsafe archive member path '{member_name}'."
+
+                total_uncompressed += info.file_size
+                if total_uncompressed > max_uncompressed_bytes:
+                    return False, (
+                        f"Security violation: Decompression bomb protection triggered "
+                        f"(uncompressed data exceeds {max_uncompressed_mb}MB)."
+                    )
+
+                _, item_ext = os.path.splitext(norm_name.lower())
+                if item_ext in DANGEROUS_EXTS_INSIDE_ARCHIVE or (reject_bin_ext and item_ext == ".bin"):
+                    return False, f"Security threat: executable or binary payload '{member_name}' found inside archive."
+
+                if "vbaproject.bin" in norm_name.lower() or "vba" in norm_name.lower():
+                    return False, "Security violation: VBA macros / scripts are not allowed in document imports."
+
+                namelist.add(norm_name)
+
+            for req in required_members:
+                if req not in namelist:
+                    return False, f"Invalid {label} structure: missing {req}."
+
+    except zipfile.BadZipFile:
+        return False, f"Corrupted or invalid {label} archive."
+    except Exception as e:
+        return False, f"Error validating {label} structure: {str(e)}"
+
+    return True, ""
+
+
 def scan_and_validate_file(
     raw_bytes: bytes,
     declared_ext: str,
@@ -254,11 +309,12 @@ def scan_and_validate_file(
     if ext not in allowed:
         return False, f"File extension '.{ext}' is not permitted. Allowed: {', '.join(allowed)}."
 
-    # Size check
+    # Size check (DOCX imports are capped at 10 MB)
+    effective_max_mb = min(max_size_mb, 10) if ext == "docx" else max_size_mb
     size_bytes = len(raw_bytes)
-    max_bytes = max_size_mb * 1024 * 1024
+    max_bytes = effective_max_mb * 1024 * 1024
     if size_bytes > max_bytes:
-        return False, f"File size ({size_bytes / (1024*1024):.1f} MB) exceeds maximum limit of {max_size_mb} MB."
+        return False, f"File size ({size_bytes / (1024*1024):.1f} MB) exceeds maximum limit of {effective_max_mb} MB."
 
     if size_bytes == 0:
         return False, "File is empty."
@@ -270,37 +326,24 @@ def scan_and_validate_file(
 
     # Container and Magic Byte verification
     if ext == "xlsx":
-        # XLSX must be a ZIP container
-        if not (raw_bytes.startswith(MAGIC_ZIP[0]) or raw_bytes.startswith(MAGIC_ZIP[1])):
-            return False, "Invalid XLSX format: file is not a valid OpenXML spreadsheet."
+        return _validate_ooxml_zip(
+            raw_bytes,
+            label="XLSX",
+            magic_prefixes=MAGIC_ZIP,
+            max_uncompressed_mb=100,
+            required_members=("[Content_Types].xml",),
+            reject_bin_ext=False,
+        )
 
-        try:
-            with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as zf:
-                # 1. Zip Bomb check: verify uncompressed size and compression ratio
-                total_uncompressed = 0
-                for info in zf.infolist():
-                    total_uncompressed += info.file_size
-                    # Check individual file dangerous extensions
-                    _, item_ext = os.path.splitext(info.filename.lower())
-                    if item_ext in DANGEROUS_EXTS_INSIDE_ARCHIVE:
-                        return False, f"Security threat: executable payload '{info.filename}' found inside archive."
-
-                    # Check for VBA Macros (.xlsm disguised as .xlsx)
-                    if "vbaproject.bin" in info.filename.lower() or "vba" in info.filename.lower():
-                        return False, "Security violation: VBA macros / scripts are not allowed in document imports."
-
-                if total_uncompressed > 100 * 1024 * 1024:  # 100MB uncompressed limit
-                    return False, "Security violation: Decompression bomb protection triggered (uncompressed data exceeds 100MB)."
-
-                # Must contain [Content_Types].xml
-                namelist = zf.namelist()
-                if not any(name == "[Content_Types].xml" for name in namelist):
-                    return False, "Invalid XLSX structure: missing [Content_Types].xml."
-
-        except zipfile.BadZipFile:
-            return False, "Corrupted or invalid XLSX archive."
-        except Exception as e:
-            return False, f"Error validating XLSX structure: {str(e)}"
+    elif ext == "docx":
+        return _validate_ooxml_zip(
+            raw_bytes,
+            label="DOCX",
+            magic_prefixes=(MAGIC_ZIP[0],),
+            max_uncompressed_mb=50,
+            required_members=("[Content_Types].xml", "word/document.xml"),
+            reject_bin_ext=True,
+        )
 
     elif ext == "xls":
         # Legacy XLS must start with OLE2 header
