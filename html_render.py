@@ -13908,6 +13908,20 @@ function getPrDetailsColKey(){{
   return null;
 }}
 
+function getPrMsRefColKey(){{
+  const cols=state.cols||[];
+  const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  for(const c of cols){{
+    const nk=norm(c.col_key),nl=norm(c.label);
+    if(nk==='msref'||nl==='msref')return c.col_key;
+  }}
+  for(const c of cols){{
+    const nk=norm(c.col_key),nl=norm(c.label);
+    if((nk.includes('ms')&&nk.includes('ref'))||(nl.includes('ms')&&nl.includes('ref'))||nl.includes('materialsubmittal'))return c.col_key;
+  }}
+  return null;
+}}
+
 function getPrManualDetails(row){{
   const detailsKey=getPrDetailsColKey();
   return detailsKey?String(row?.[detailsKey]||'').replace(/\\s+/g,' ').trim():'';
@@ -15718,10 +15732,28 @@ async function buildForm(row,opts={{}}){{
         <thead><tr><th style="width: 30%;">Item Name</th><th style="width: 8%;">Unit</th><th style="width: 9%;">PR Qty</th><th style="width: 12%;">PO Ref</th><th style="width: 9%;">PO Qty</th><th style="width: 9%;">Del. Qty</th><th style="width: 15%;">Remarks</th><th style="width: 90px; text-align: center;"></th></tr></thead>
         <tbody id="pr-items-body"></tbody>
       </table>
-      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-        <button class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Item</button>
-        <button class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Item</button>
+        <button type="button" class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
+        <button type="button" class="btn btn-sc btn-sm" id="pr-import-docx-btn" onclick="triggerPrDocxImport()">&#128196; Import Word (.docx)</button>
+        <input type="file" id="pr-docx-file-input" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="handlePrDocxSelected(this)">
+        <button type="button" class="btn btn-sc btn-sm" id="pr-quick-paste-btn" onclick="togglePrQuickPaste()">&#128203; Quick Paste</button>
         <div id="pr-legacy" style="font-size:11px;color:var(--mu);white-space:pre-line;display:none"></div>
+      </div>
+      <div id="pr-import-banner" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.45;position:relative"></div>
+      <div id="pr-import-confirm" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1);font-size:12px;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-weight:600">Existing PR items found. Replace existing rows or append?</span>
+        <button type="button" class="btn btn-pr btn-sm" id="pr-confirm-replace-btn">Replace Existing</button>
+        <button type="button" class="btn btn-sc btn-sm" id="pr-confirm-append-btn">Append</button>
+        <button type="button" class="btn btn-sc btn-sm" onclick="hidePrImportConfirm()">Cancel</button>
+      </div>
+      <div id="pr-quick-paste-panel" style="display:none;margin-top:8px;padding:10px;border-radius:6px;background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1)">
+        <div style="font-size:11px;font-weight:600;margin-bottom:4px;color:var(--tx)">Paste rows from Word or Excel (Tab-separated)</div>
+        <textarea id="pr-quick-paste-ta" rows="5" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:12px;padding:6px;margin-bottom:6px;border:1px solid var(--bd,#cbd5e1);border-radius:4px" placeholder="Example:&#10;Air Duct &amp; Insulation Accessories&#10;Galvanized Steel Sheet 0.8mm&#9;كيلوجرام&#9;250&#9;Urgent&#10;1&#9;Duct Damper 400x400&#9;12&#9;عدد"></textarea>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="btn btn-pr btn-sm" onclick="applyPrQuickPaste()">Apply / Insert Rows</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="togglePrQuickPaste(false)">Cancel</button>
+        </div>
       </div>`;
     grp.appendChild(wrap);prSection.appendChild(grp);
     const legacyText=prDetailsKey?String(row?.[prDetailsKey]||'').trim():'';
@@ -15815,6 +15847,238 @@ function addPrHeaderRow(item={{}}){{
   tr.querySelector('.pri-header').value=item.item_name||'';
   bindDirectionalInput(tr.querySelector('.pri-header'));
   body.appendChild(tr);
+}}
+
+const PR_ARABIC_UNIT_MAP={{
+  'عدد':'No','قطعة':'No','قطعه':'No','حبة':'No','حبه':'No',
+  'كيلوجرام':'Kg','كيلو جرام':'Kg','كجم':'Kg','كج':'Kg',
+  'متر':'m','متر طولي':'m','م.ط':'m',
+  'متر مربع':'m2','م2':'m2','م²':'m2',
+  'متر مكعب':'m3','م3':'m3','م³':'m3',
+  'لتر':'L',
+  'طقم':'Set','مجموعة':'Set','مجموعه':'Set'
+}};
+
+function normalizePrUnit(u){{
+  const s=String(u||'').replace(/\\s+/g,' ').trim();
+  if(!s)return '';
+  return PR_ARABIC_UNIT_MAP[s]||s;
+}}
+
+function showPrImportBanner(type,htmlMsg){{
+  const el=document.getElementById('pr-import-banner');
+  if(!el)return;
+  const styles={{
+    ok:'background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;',
+    warn:'background:#fffbeb;border:1px solid #fcd34d;color:#92400e;',
+    er:'background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;'
+  }};
+  el.style.cssText='display:block;margin-top:8px;padding:8px 28px 8px 10px;border-radius:6px;font-size:12px;line-height:1.45;position:relative;'+(styles[type]||styles.ok);
+  el.innerHTML=htmlMsg;
+  const closeBtn=document.createElement('button');
+  closeBtn.type='button';
+  closeBtn.innerHTML='&times;';
+  closeBtn.title='Dismiss';
+  closeBtn.style.cssText='position:absolute;top:4px;right:6px;background:none;border:none;font-size:15px;cursor:pointer;color:inherit;line-height:1';
+  closeBtn.onclick=()=>{{el.style.display='none';}};
+  el.appendChild(closeBtn);
+}}
+
+function hidePrImportConfirm(){{
+  const box=document.getElementById('pr-import-confirm');
+  if(box)box.style.display='none';
+}}
+
+function hasNonEmptyPrRows(){{
+  const body=document.getElementById('pr-items-body');
+  if(!body)return false;
+  for(const tr of body.querySelectorAll('tr')){{
+    if(tr.dataset.rowType==='header'){{
+      if((tr.querySelector('.pri-header')?.value||'').trim())return true;
+    }}else{{
+      const vals=['.pri-item','.pri-unit','.pri-qty','.pri-po-ref','.pri-po-qty','.pri-del-qty','.pri-remarks']
+        .map(sel=>(tr.querySelector(sel)?.value||'').trim());
+      if(vals.some(Boolean))return true;
+    }}
+  }}
+  return false;
+}}
+
+function insertPrRowsWithMode(items,mode){{
+  const body=document.getElementById('pr-items-body');
+  if(!body)return;
+  if(mode==='replace'||!hasNonEmptyPrRows()){{
+    body.innerHTML='';
+  }}
+  if(items&&items.length){{
+    items.forEach(it=>{{
+      if(String(it?.row_type||'item').toLowerCase()==='header')addPrHeaderRow(it);
+      else addPrItemRow(it);
+    }});
+  }}else if(!body.children.length){{
+    addPrItemRow();
+  }}
+}}
+
+function runWithPrReplaceOrAppendGuard(items,onDone){{
+  if(!hasNonEmptyPrRows()){{
+    insertPrRowsWithMode(items,'replace');
+    if(onDone)onDone('replace');
+    return;
+  }}
+  const box=document.getElementById('pr-import-confirm');
+  const repBtn=document.getElementById('pr-confirm-replace-btn');
+  const appBtn=document.getElementById('pr-confirm-append-btn');
+  if(!box||!repBtn||!appBtn){{
+    insertPrRowsWithMode(items,'append');
+    if(onDone)onDone('append');
+    return;
+  }}
+  box.style.display='flex';
+  repBtn.onclick=()=>{{
+    hidePrImportConfirm();
+    insertPrRowsWithMode(items,'replace');
+    if(onDone)onDone('replace');
+  }};
+  appBtn.onclick=()=>{{
+    hidePrImportConfirm();
+    insertPrRowsWithMode(items,'append');
+    if(onDone)onDone('append');
+  }};
+}}
+
+function fillPrHeaderIfEmpty(header){{
+  if(!header)return [];
+  const filled=[];
+  const setIfEmpty=(el,val,label)=>{{
+    const v=String(val||'').trim();
+    if(!el||!v)return;
+    if(String(el.value||'').trim()!=='')return;
+    el.value=v;
+    el.dispatchEvent(new Event('input',{{bubbles:true}}));
+    el.dispatchEvent(new Event('change',{{bubbles:true}}));
+    filled.push(label);
+  }};
+  setIfEmpty(document.getElementById('f-docNo'),header.docNo,'PR No');
+  setIfEmpty(document.getElementById('f-title'),header.title,'Title');
+  setIfEmpty(document.getElementById('f-issuedDate'),header.issuedDate,'Issued Date');
+  const msKey=getPrMsRefColKey();
+  if(msKey)setIfEmpty(document.getElementById('f-'+msKey),header.msRef,'MS Ref.');
+  return filled;
+}}
+
+function triggerPrDocxImport(){{
+  const inp=document.getElementById('pr-docx-file-input');
+  if(inp)inp.click();
+}}
+
+async function handlePrDocxSelected(inp){{
+  const file=inp&&inp.files&&inp.files[0];
+  if(!file)return;
+  const btn=document.getElementById('pr-import-docx-btn');
+  const origText=btn?btn.innerHTML:'&#128196; Import Word (.docx)';
+  if(btn){{btn.disabled=true;btn.textContent='Parsing .docx...';}}
+  try{{
+    const b64=await new Promise((res,rej)=>{{
+      const fr=new FileReader();
+      fr.onload=e=>res(e.target.result);
+      fr.onerror=rej;
+      fr.readAsDataURL(file);
+    }});
+    const r=await apiFetch('/api/pr_items/parse_docx/'+encodeURIComponent(PID)+'/'+encodeURIComponent(state.tab),{{
+      method:'POST',
+      body:JSON.stringify({{file_b64:b64,ext:'docx'}})
+    }});
+    if(r===null)return;
+    if(!r.ok)throw new Error(r.error||'Failed to parse .docx file');
+    const items=Array.isArray(r.items)?r.items:[];
+    const warnings=Array.isArray(r.warnings)?r.warnings:[];
+    const filled=fillPrHeaderIfEmpty(r.header||{{}});
+    const itemCount=items.filter(it=>String(it?.row_type||'item').toLowerCase()!=='header').length;
+    const hdrCount=items.filter(it=>String(it?.row_type||'item').toLowerCase()==='header').length;
+    const showSummary=(mode)=>{{
+      let msg='<strong>Imported '+itemCount+' item(s)'+(hdrCount?(', '+hdrCount+' section header(s)'):'')+'</strong> ('+mode+').';
+      if(filled.length)msg+=' Auto-filled: '+escHtml(filled.join(', '))+'.';
+      if(warnings.length)msg+='<div style="margin-top:4px;font-size:11px">Warnings: '+warnings.map(w=>escHtml(w)).join(' | ')+'</div>';
+      msg+='<div style="margin-top:3px;font-size:11px;opacity:0.85">Review the populated fields and click <strong>Save</strong> when ready.</div>';
+      showPrImportBanner(warnings.length?'warn':'ok',msg);
+    }};
+    runWithPrReplaceOrAppendGuard(items,showSummary);
+  }}catch(err){{
+    let errMsg=String(err&&err.message||err||'Unknown error');
+    try{{const parsed=JSON.parse(errMsg);if(parsed&&parsed.error)errMsg=parsed.error;}}catch(_e){{}}
+    showPrImportBanner('er','<strong>Import failed:</strong> '+escHtml(errMsg));
+  }}finally{{
+    if(inp)inp.value='';
+    if(btn){{btn.disabled=false;btn.innerHTML=origText;}}
+  }}
+}}
+
+function togglePrQuickPaste(force){{
+  const panel=document.getElementById('pr-quick-paste-panel');
+  if(!panel)return;
+  const show=typeof force==='boolean'?force:(panel.style.display==='none');
+  panel.style.display=show?'block':'none';
+  if(show){{
+    const ta=document.getElementById('pr-quick-paste-ta');
+    if(ta)ta.focus();
+  }}
+}}
+
+function parsePrQuickPasteText(text){{
+  const isNum=v=>/^[+-]?(\\d[\\d,]*\\.?\\d*|\\.\\d+)$/.test(String(v||'').trim());
+  const isHeaderLine=cols=>{{
+    const joined=cols.join(' ').toLowerCase();
+    const hasDesc=joined.includes('بيان المطلوب')||joined.includes('item name')||joined.includes('description');
+    const hasQtyUnit=joined.includes('الكمية')||joined.includes('الكميه')||joined.includes('qty')||joined.includes('الوحدة')||joined.includes('الوحده')||joined.includes('unit');
+    return hasDesc&&(cols.length===1||hasQtyUnit);
+  }};
+  const out=[];
+  for(const rawLine of String(text||'').split(/\\r?\\n/)){{
+    if(!rawLine.trim())continue;
+    const cols=rawLine.split('\\t').map(c=>c.trim());
+    if(cols.every(c=>!c))continue;
+    if(isHeaderLine(cols))continue;
+    const nonEmpty=cols.filter(Boolean);
+    if(nonEmpty.length===1&&cols.length===1){{
+      out.push({{row_type:'header',item_name:nonEmpty[0]}});
+      continue;
+    }}
+    if(/^\\d+$/.test(cols[0])&&cols.length>=3){{
+      const name=cols[1]||'';
+      if(!name)continue;
+      let qty=cols[2]||'',unit=cols[3]||'';
+      if(!isNum(qty)&&isNum(unit)){{const tmp=qty;qty=unit;unit=tmp;}}
+      out.push({{row_type:'item',item_name:name,unit:normalizePrUnit(unit),quantity:qty.replace(/,/g,''),remarks:cols[4]||''}});
+    }}else{{
+      const name=cols[0]||'';
+      if(!name)continue;
+      let unit=cols[1]||'',qty=cols[2]||'';
+      if(cols.length===2){{
+        if(isNum(unit)){{qty=unit;unit='';}}
+      }}else if(isNum(unit)&&!isNum(qty)){{
+        const tmp=unit;unit=qty;qty=tmp;
+      }}
+      out.push({{row_type:'item',item_name:name,unit:normalizePrUnit(unit),quantity:String(qty||'').replace(/,/g,''),remarks:cols[3]||''}});
+    }}
+  }}
+  return out;
+}}
+
+function applyPrQuickPaste(){{
+  const ta=document.getElementById('pr-quick-paste-ta');
+  const items=parsePrQuickPasteText(ta?ta.value:'');
+  if(!items.length){{
+    showPrImportBanner('warn','No valid PR rows detected in pasted text.');
+    return;
+  }}
+  const itemCount=items.filter(it=>it.row_type!=='header').length;
+  const hdrCount=items.filter(it=>it.row_type==='header').length;
+  togglePrQuickPaste(false);
+  if(ta)ta.value='';
+  runWithPrReplaceOrAppendGuard(items,(mode)=>{{
+    showPrImportBanner('ok','<strong>Inserted '+itemCount+' item(s)'+(hdrCount?(', '+hdrCount+' section header(s)'):'')+'</strong> via Quick Paste ('+mode+').');
+  }});
 }}
 
 function initSdItemsEditor(key, val) {{

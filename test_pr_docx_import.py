@@ -389,3 +389,56 @@ class ParsePrDocxEndpointTests(unittest.TestCase):
         self.assertEqual(resp2.status_code, 400)
         self.assertFalse(resp2.get_json()["ok"])
         self.write.assert_not_called()
+
+
+class PrModalUiWiringTests(unittest.TestCase):
+    def test_render_register_contains_pr_import_ui_and_valid_js(self):
+        import re
+        import shutil
+        import subprocess
+        import tempfile
+        import html_render
+
+        user = {"username": "synthetic-editor", "role": "editor", "primary_workspace": "ENG"}
+        proj = {"id": "ENG-P1", "code": "ENG-P1", "name": "Test Project", "workspace_id": "ENG"}
+        dts = [{"id": "PR", "code": "PR", "name": "Purchase Requisition"}]
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(html_render, "can_edit", return_value=True))
+            stack.enter_context(patch.object(html_render, "is_project_admin", return_value=False))
+            stack.enter_context(patch.object(html_render, "get_allowed_doc_type_filter", return_value=None))
+            stack.enter_context(patch.object(html_render, "_user_info_html", return_value=("", "", "Editor", "#000")))
+            stack.enter_context(patch.object(html_render, "_workspace_switcher_html", return_value=""))
+            stack.enter_context(patch.object(html_render.db, "get_projects_for_user", return_value=[proj]))
+            stack.enter_context(patch.object(html_render.db, "get_doc_types", return_value=dts))
+            stack.enter_context(patch.object(html_render.db, "get_logo", return_value=None))
+            html = html_render.render_register(user, proj, active_ws_id="ENG")
+
+        for marker in (
+            "pr-import-docx-btn",
+            "pr-docx-file-input",
+            "pr-quick-paste-btn",
+            "pr-quick-paste-panel",
+            "pr-import-banner",
+            "pr-import-confirm",
+            "/api/pr_items/parse_docx/",
+            "function getPrMsRefColKey()",
+            "function runWithPrReplaceOrAppendGuard(",
+            "function parsePrQuickPasteText(",
+            "function fillPrHeaderIfEmpty(",
+        ):
+            self.assertIn(marker, html)
+
+        node_bin = shutil.which("node")
+        if node_bin:
+            scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", html, flags=re.DOTALL | re.IGNORECASE)
+            inline_js = "\n;\n".join(s for s in scripts if s.strip())
+            with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as tf:
+                tf.write(inline_js)
+                js_path = tf.name
+            try:
+                proc = subprocess.run([node_bin, "--check", js_path], capture_output=True, text=True)
+                self.assertEqual(proc.returncode, 0, f"JS syntax check failed:\n{proc.stderr}")
+            finally:
+                if os.path.exists(js_path):
+                    os.remove(js_path)
