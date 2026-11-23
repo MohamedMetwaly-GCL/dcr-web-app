@@ -10542,14 +10542,14 @@ body.dark .disc-mobile-val{{color:#e2e8f0}}
 .pr-items-row.open{{display:table-row}}
 .pr-items-row>td{{padding:0!important;border-bottom:1px solid #d9e2ec!important;border-right:none!important;max-width:none!important;background:transparent!important}}
 .pr-items-panel{{display:block;width:100%;box-sizing:border-box;padding:16px;background:#f8fafc;border-top:1px solid #d9e2ec;border-bottom:1px solid #d9e2ec;position:relative;z-index:1}}
-.pr-items-grid-wrap{{display:block;width:100%;max-width:100%;overflow-x:auto;padding-bottom:2px}}
+.pr-items-grid-wrap{{display:block;width:100%;max-width:100%;max-height:360px;overflow:auto;padding-bottom:2px}}
 .pr-items-title{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}}
 .pr-items-title:before{{content:"";width:4px;height:16px;border-radius:999px;background:var(--ac);display:inline-block}}
-.pr-items-grid{{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden;background:#fff;font-size:11px}}
-.pr-items-grid-head{{background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
+.pr-items-grid{{display:grid;grid-template-columns:44px 2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:visible;background:#fff;font-size:11px}}
+.pr-items-grid-head{{position:sticky;top:0;z-index:2;background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
 .pr-items-grid-head:last-child{{border-right:none}}
 .pr-items-cell{{padding:10px 12px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff;color:#10233a;white-space:normal;word-break:normal;line-height:1.35}}
-.pr-items-cell:nth-child(4n){{border-right:none}}
+.pr-items-cell.num{{text-align:center;color:var(--mu);font-weight:700;font-variant-numeric:tabular-nums}}
 .pr-items-cell.qty{{text-align:center;font-variant-numeric:tabular-nums}}
 .pr-items-cell.unit{{white-space:nowrap}}
 .pr-items-section{{grid-column:1/-1;background:#e8eef6;color:var(--pr);font-weight:800;text-transform:uppercase;letter-spacing:.35px;padding:9px 12px;border-top:1px solid #d7dee8}}
@@ -12527,14 +12527,14 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 .pr-items-row.open{{display:table-row}}
 .pr-items-row>td{{padding:0!important;border-bottom:1px solid #d9e2ec!important;border-right:none!important;max-width:none!important;background:transparent!important}}
 .pr-items-panel{{display:block;width:100%;box-sizing:border-box;padding:16px;background:#f8fafc;border-top:1px solid #d9e2ec;border-bottom:1px solid #d9e2ec;position:relative;z-index:1}}
-.pr-items-grid-wrap{{display:block;width:100%;max-width:100%;overflow-x:auto;padding-bottom:2px}}
+.pr-items-grid-wrap{{display:block;width:100%;max-width:100%;max-height:360px;overflow:auto;padding-bottom:2px}}
 .pr-items-title{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}}
 .pr-items-title:before{{content:"";width:4px;height:16px;border-radius:999px;background:var(--ac);display:inline-block}}
-.pr-items-grid{{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden;background:#fff;font-size:11px}}
-.pr-items-grid-head{{background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
+.pr-items-grid{{display:grid;grid-template-columns:44px 2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:visible;background:#fff;font-size:11px}}
+.pr-items-grid-head{{position:sticky;top:0;z-index:2;background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
 .pr-items-grid-head:last-child{{border-right:none}}
 .pr-items-cell{{padding:10px 12px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff;color:#10233a;white-space:normal;word-break:normal;line-height:1.35}}
-.pr-items-cell:nth-child(4n){{border-right:none}}
+.pr-items-cell.num{{text-align:center;color:var(--mu);font-weight:700;font-variant-numeric:tabular-nums}}
 .pr-items-cell.qty{{text-align:center;font-variant-numeric:tabular-nums}}
 .pr-items-cell.unit{{white-space:nowrap}}
 .pr-items-section{{grid-column:1/-1;background:#e8eef6;color:var(--pr);font-weight:800;text-transform:uppercase;letter-spacing:.35px;padding:9px 12px;border-top:1px solid #d7dee8}}
@@ -13908,6 +13908,20 @@ function getPrDetailsColKey(){{
   return null;
 }}
 
+function getPrMsRefColKey(){{
+  const cols=state.cols||[];
+  const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  for(const c of cols){{
+    const nk=norm(c.col_key),nl=norm(c.label);
+    if(nk==='msref'||nl==='msref')return c.col_key;
+  }}
+  for(const c of cols){{
+    const nk=norm(c.col_key),nl=norm(c.label);
+    if((nk.includes('ms')&&nk.includes('ref'))||(nl.includes('ms')&&nl.includes('ref'))||nl.includes('materialsubmittal'))return c.col_key;
+  }}
+  return null;
+}}
+
 function getPrManualDetails(row){{
   const detailsKey=getPrDetailsColKey();
   return detailsKey?String(row?.[detailsKey]||'').replace(/\\s+/g,' ').trim():'';
@@ -15119,24 +15133,40 @@ function highlightText(text, search) {{
     return `<span class="badge" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;">Unknown</span>`;
   }}
 
+function formatPrQty(val){{
+  if(val===null||val===undefined||val==='')return '';
+  const s=String(val).trim();
+  if(!s)return '';
+  const n=Number(s);
+  if(Number.isFinite(n))return String(parseFloat(n.toFixed(6)));
+  return s;
+}}
+
 function renderPrItemsTable(items, legacyText, search){{
     if(!items||!items.length){{
       const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
       return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div><div class="pr-items-empty">No items added</div>${{legacy}}`;
     }}
-    const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
-      ? `<div class="pr-items-section" style="grid-column: 1 / -1">${{highlightText(it.item_name||'', search)}}</div>`
-      : `<div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
+    let itemNum=0;
+    const rows=items.map(it=>{{
+      if(String(it?.row_type||'item').toLowerCase()==='header'){{
+        return `<div class="pr-items-section" style="grid-column: 1 / -1">${{highlightText(it.item_name||'', search)}}</div>`;
+      }}
+      itemNum+=1;
+      return `<div class="pr-items-cell num">${{itemNum}}</div>
+         <div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
          <div class="pr-items-cell unit">${{highlightText(it.unit||'', search)}}</div>
-         <div class="pr-items-cell qty">${{escHtml(it.quantity??'')}}</div>
+         <div class="pr-items-cell qty">${{escHtml(formatPrQty(it.quantity))}}</div>
          <div class="pr-items-cell po-ref">${{highlightText(it.po_ref||'', search)}}</div>
-         <div class="pr-items-cell po-qty">${{escHtml(it.po_qty??'')}}</div>
-         <div class="pr-items-cell del-qty">${{escHtml(it.delivered_qty??'')}}</div>
+         <div class="pr-items-cell po-qty">${{escHtml(formatPrQty(it.po_qty))}}</div>
+         <div class="pr-items-cell del-qty">${{escHtml(formatPrQty(it.delivered_qty))}}</div>
          <div class="pr-items-cell status">${{getPrVarianceBadge(it.quantity, it.po_qty, it.delivered_qty)}}</div>
-         <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`).join('');
+         <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`;
+    }}).join('');
     return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div>
       <div class="pr-items-grid-wrap">
         <div class="pr-items-grid">
+          <div class="pr-items-grid-head" style="text-align:center">#</div>
           <div class="pr-items-grid-head">Item</div>
           <div class="pr-items-grid-head">Unit</div>
           <div class="pr-items-grid-head">PR Qty</div>
@@ -15711,19 +15741,48 @@ async function buildForm(row,opts={{}}){{
     const prSection=getOrCreateFormSection(formRoot,sectionBodies,'PR Items');
     const grp=document.createElement('div');grp.className='fg full pr-items-editor';
     const lbl=document.createElement('label');lbl.textContent='PR Items';grp.appendChild(lbl);
-    const wrap=document.createElement('div');wrap.id='pr-items-editor';
+    const wrap=document.createElement('div');wrap.id='pr-items-editor';wrap.className='pr-po-hidden';
     wrap.innerHTML=`
-      <style>#pr-items-editor table input {{ width: 100%; box-sizing: border-box; }}</style>
-      <table style="width: 100%; border-collapse: collapse;">
-        <thead><tr><th style="width: 30%;">Item Name</th><th style="width: 8%;">Unit</th><th style="width: 9%;">PR Qty</th><th style="width: 12%;">PO Ref</th><th style="width: 9%;">PO Qty</th><th style="width: 9%;">Del. Qty</th><th style="width: 15%;">Remarks</th><th style="width: 90px; text-align: center;"></th></tr></thead>
-        <tbody id="pr-items-body"></tbody>
-      </table>
-      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-        <button class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Item</button>
-        <button class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
+      <style>
+        #pr-items-editor table input {{ width: 100%; box-sizing: border-box; }}
+        #pr-items-editor.pr-po-hidden .pr-po-col {{ display: none; }}
+        #pr-items-editor thead th {{ position: sticky; top: 0; z-index: 2; background: var(--bg, #f8fafc); border-bottom: 1px solid var(--bd, #cbd5e1); padding: 6px 4px; font-size: 11px; text-align: left; }}
+        #pr-items-editor .pr-row-num {{ width: 34px; text-align: center; color: var(--mu); font-size: 11px; font-weight: 600; user-select: none; }}
+      </style>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+        <button type="button" class="btn btn-sc btn-sm" id="pr-toggle-po-btn" onclick="togglePrPoColumns()">Show PO Columns</button>
+      </div>
+      <div id="pr-items-scroll" style="max-height:360px;overflow-y:auto;border:1px solid var(--bd,#e2e8f0);border-radius:6px">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead><tr><th style="width: 34px; text-align: center;">#</th><th style="min-width: 240px;">Item Name</th><th style="width: 72px;">Unit</th><th style="width: 78px;">PR Qty</th><th class="pr-po-col" style="width: 105px;">PO Ref</th><th class="pr-po-col" style="width: 74px;">PO Qty</th><th class="pr-po-col" style="width: 74px;">Del. Qty</th><th style="width: 150px;">Remarks</th><th style="width: 92px; text-align: center;"></th></tr></thead>
+          <tbody id="pr-items-body"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Item</button>
+        <button type="button" class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
+        <button type="button" class="btn btn-sc btn-sm" id="pr-import-docx-btn" onclick="triggerPrDocxImport()">&#128196; Import Word (.docx)</button>
+        <input type="file" id="pr-docx-file-input" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="handlePrDocxSelected(this)">
+        <button type="button" class="btn btn-sc btn-sm" id="pr-quick-paste-btn" onclick="togglePrQuickPaste()">&#128203; Quick Paste</button>
         <div id="pr-legacy" style="font-size:11px;color:var(--mu);white-space:pre-line;display:none"></div>
+      </div>
+      <div id="pr-import-banner" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.45;position:relative"></div>
+      <div id="pr-import-confirm" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1);font-size:12px;align-items:center;gap:8px;flex-wrap:wrap">
+        <span id="pr-import-confirm-msg" style="font-weight:600">Existing PR items found. Replace existing rows or append?</span>
+        <button type="button" class="btn btn-pr btn-sm" id="pr-confirm-replace-btn">Replace Existing</button>
+        <button type="button" class="btn btn-sc btn-sm" id="pr-confirm-append-btn">Append</button>
+        <button type="button" class="btn btn-sc btn-sm" onclick="hidePrImportConfirm()">Cancel</button>
+      </div>
+      <div id="pr-quick-paste-panel" style="display:none;margin-top:8px;padding:10px;border-radius:6px;background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1)">
+        <div style="font-size:11px;font-weight:600;margin-bottom:4px;color:var(--tx)">Paste rows from Word or Excel (Tab-separated)</div>
+        <textarea id="pr-quick-paste-ta" rows="5" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:12px;padding:6px;margin-bottom:6px;border:1px solid var(--bd,#cbd5e1);border-radius:4px" placeholder="Example:&#10;Air Duct &amp; Insulation Accessories&#10;Galvanized Steel Sheet 0.8mm&#9;كيلوجرام&#9;250&#9;Urgent&#10;1&#9;Duct Damper 400x400&#9;12&#9;عدد"></textarea>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="btn btn-pr btn-sm" onclick="applyPrQuickPaste()">Apply / Insert Rows</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="togglePrQuickPaste(false)">Cancel</button>
+        </div>
       </div>`;
     grp.appendChild(wrap);prSection.appendChild(grp);
+    bindPrTableKeyboardNav(document.getElementById('pr-items-body'));
     const legacyText=prDetailsKey?String(row?.[prDetailsKey]||'').trim():'';
     initPrItemsEditor([], legacyText);
     if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
@@ -15758,13 +15817,108 @@ function moveRowUp(btn) {{
   const row = btn.closest('tr');
   if (row.previousElementSibling) {{
     row.parentNode.insertBefore(row, row.previousElementSibling);
+    renumberPrItemRows();
   }}
 }}
 function moveRowDown(btn) {{
   const row = btn.closest('tr');
   if (row.nextElementSibling) {{
     row.parentNode.insertBefore(row.nextElementSibling, row);
+    renumberPrItemRows();
   }}
+}}
+
+function removePrRow(btn){{
+  const row=btn&&btn.closest('tr');
+  if(row)row.remove();
+  renumberPrItemRows();
+}}
+
+function isPrPoColumnsVisible(){{
+  const ed=document.getElementById('pr-items-editor');
+  return !!(ed&&!ed.classList.contains('pr-po-hidden'));
+}}
+
+function setPrPoColumnsVisible(show){{
+  const ed=document.getElementById('pr-items-editor');
+  if(!ed)return;
+  ed.classList.toggle('pr-po-hidden',!show);
+  const btn=document.getElementById('pr-toggle-po-btn');
+  if(btn)btn.textContent=show?'Hide PO Columns':'Show PO Columns';
+  const span=show?7:4;
+  ed.querySelectorAll('td.pr-header-span').forEach(td=>{{td.colSpan=span;}});
+}}
+
+function togglePrPoColumns(){{
+  setPrPoColumnsVisible(!isPrPoColumnsVisible());
+}}
+
+function renumberPrItemRows(){{
+  const body=document.getElementById('pr-items-body');
+  if(!body)return;
+  let n=0;
+  for(const tr of body.querySelectorAll('tr')){{
+    const cell=tr.querySelector('.pr-row-num');
+    if(!cell)continue;
+    if((tr.dataset.rowType||'item').toLowerCase()==='header'){{
+      cell.textContent='—';
+    }}else{{
+      n+=1;
+      cell.textContent=String(n);
+    }}
+  }}
+}}
+
+function bindPrTableKeyboardNav(body){{
+  if(!body||body.dataset.kbNavBound==='1')return;
+  body.dataset.kbNavBound='1';
+  body.addEventListener('keydown',(e)=>{{
+    if(e.isComposing||e.keyCode===229)return;
+    const inp=e.target&&e.target.closest('input');
+    if(!inp||!body.contains(inp))return;
+    const tr=inp.closest('tr');
+    if(!tr)return;
+    const getVis=r=>[...r.querySelectorAll('input')].filter(el=>el.offsetParent!==null);
+    const rows=[...body.querySelectorAll('tr')];
+    const rowIdx=rows.indexOf(tr);
+    const vis=getVis(tr);
+    const colIdx=vis.indexOf(inp);
+    if(colIdx<0)return;
+
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'||e.key==='Enter'){{
+      e.preventDefault();
+      const dir=(e.key==='ArrowUp')?-1:1;
+      const targetRow=rows[rowIdx+dir];
+      if(!targetRow)return;
+      const targetInputs=getVis(targetRow);
+      if(!targetInputs.length)return;
+      const isSrcHdr=(tr.dataset.rowType||'item').toLowerCase()==='header';
+      const isDstHdr=(targetRow.dataset.rowType||'item').toLowerCase()==='header';
+      const target=(isSrcHdr||isDstHdr)?targetInputs[0]:targetInputs[Math.min(colIdx,targetInputs.length-1)];
+      if(target)target.focus();
+      return;
+    }}
+
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'){{
+      const tbl=body.closest('table');
+      const isRtl=tbl&&getComputedStyle(tbl).direction==='rtl';
+      const step=isRtl?(e.key==='ArrowLeft'?1:-1):(e.key==='ArrowRight'?1:-1);
+      let atBoundary=(inp.type==='number');
+      if(!atBoundary){{
+        const val=String(inp.value||'');
+        const ss=inp.selectionStart,se=inp.selectionEnd;
+        if(ss!=null&&se!=null){{
+          atBoundary=(step===-1)?(ss===0&&se===0):(ss===val.length&&se===val.length);
+        }}
+      }}
+      if(!atBoundary)return;
+      const nextInp=vis[colIdx+step];
+      if(nextInp){{
+        e.preventDefault();
+        nextInp.focus();
+      }}
+    }}
+  }});
 }}
 
 function addPrItemRow(item={{}}){{
@@ -15772,29 +15926,34 @@ function addPrItemRow(item={{}}){{
     const tr=document.createElement('tr');
     tr.dataset.rowType='item';
     tr.innerHTML=`
+      <td class="pr-row-num"></td>
       <td><input class="pri-item" placeholder="Item Name"></td>
       <td><input class="pri-unit" placeholder="Unit"></td>
       <td><input class="pri-qty" type="number" min="0" step="any" placeholder="PR Qty"></td>
-      <td><input class="pri-po-ref" placeholder="PO Ref"></td>
-      <td><input class="pri-po-qty" type="number" min="0" step="any" placeholder="PO Qty"></td>
-      <td><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
+      <td class="pr-po-col"><input class="pri-po-ref" placeholder="PO Ref"></td>
+      <td class="pr-po-col"><input class="pri-po-qty" type="number" min="0" step="any" placeholder="PO Qty"></td>
+      <td class="pr-po-col"><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
       <td><input class="pri-remarks" placeholder="Remarks"></td>
       <td style="white-space:nowrap; text-align:right;">
         <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
         <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
-        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">&times;</button>
+        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="removePrRow(this)" title="Delete">&times;</button>
       </td>`;
-    tr.querySelector('.pri-item').value=item.item_name||'';
+    const itemInp=tr.querySelector('.pri-item');
+    itemInp.value=item.item_name||'';
+    itemInp.title=itemInp.value;
+    itemInp.addEventListener('input',()=>{{itemInp.title=itemInp.value;}});
     tr.querySelector('.pri-unit').value=item.unit||'';
     tr.querySelector('.pri-qty').value=item.quantity??'';
     tr.querySelector('.pri-po-ref').value=item.po_ref||'';
     tr.querySelector('.pri-po-qty').value=item.po_qty??'';
     tr.querySelector('.pri-del-qty').value=item.delivered_qty??'';
     tr.querySelector('.pri-remarks').value=item.remarks||'';
-    bindDirectionalInput(tr.querySelector('.pri-item'));
+    bindDirectionalInput(itemInp);
     bindDirectionalInput(tr.querySelector('.pri-unit'));
     bindDirectionalInput(tr.querySelector('.pri-remarks'));
     body.appendChild(tr);
+    renumberPrItemRows();
   }}
 
 function addPrHeaderRow(item={{}}){{
@@ -15802,19 +15961,273 @@ function addPrHeaderRow(item={{}}){{
     const tr=document.createElement('tr');
     tr.className='pr-head-edit';
     tr.dataset.rowType='header';
+    const span=isPrPoColumnsVisible()?7:4;
     tr.innerHTML=`
-      <td colspan="7">
+      <td class="pr-row-num">—</td>
+      <td class="pr-header-span" colspan="${{span}}">
         <div class="pr-head-label">Section Header</div>
       <input class="pri-header" placeholder="Section title / description" style="width:100%; box-sizing:border-box;">
     </td>
-    <td style="white-space:nowrap; text-align:right; width:90px;">
+    <td style="white-space:nowrap; text-align:right; width:92px;">
       <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
       <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
-      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">✕</button>
+      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="removePrRow(this)" title="Delete">✕</button>
     </td>`;
   tr.querySelector('.pri-header').value=item.item_name||'';
   bindDirectionalInput(tr.querySelector('.pri-header'));
   body.appendChild(tr);
+  renumberPrItemRows();
+}}
+
+const PR_ARABIC_UNIT_MAP={{
+  'عدد':'No','قطعة':'No','قطعه':'No','حبة':'No','حبه':'No',
+  'كيلوجرام':'Kg','كيلو جرام':'Kg','كجم':'Kg','كج':'Kg',
+  'متر':'m','متر طولي':'m','م.ط':'m',
+  'متر مربع':'m2','م2':'m2','م²':'m2',
+  'متر مكعب':'m3','م3':'m3','م³':'m3',
+  'لتر':'L',
+  'طقم':'Set','مجموعة':'Set','مجموعه':'Set'
+}};
+
+function normalizePrUnit(u){{
+  const s=String(u||'').replace(/\\s+/g,' ').trim();
+  if(!s)return '';
+  return PR_ARABIC_UNIT_MAP[s]||s;
+}}
+
+function showPrImportBanner(type,htmlMsg){{
+  const el=document.getElementById('pr-import-banner');
+  if(!el)return;
+  const styles={{
+    ok:'background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;',
+    warn:'background:#fffbeb;border:1px solid #fcd34d;color:#92400e;',
+    er:'background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;'
+  }};
+  el.style.cssText='display:block;margin-top:8px;padding:8px 28px 8px 10px;border-radius:6px;font-size:12px;line-height:1.45;position:relative;'+(styles[type]||styles.ok);
+  el.innerHTML=htmlMsg;
+  const closeBtn=document.createElement('button');
+  closeBtn.type='button';
+  closeBtn.innerHTML='&times;';
+  closeBtn.title='Dismiss';
+  closeBtn.style.cssText='position:absolute;top:4px;right:6px;background:none;border:none;font-size:15px;cursor:pointer;color:inherit;line-height:1';
+  closeBtn.onclick=()=>{{el.style.display='none';}};
+  el.appendChild(closeBtn);
+}}
+
+function hidePrImportConfirm(){{
+  const box=document.getElementById('pr-import-confirm');
+  if(box)box.style.display='none';
+}}
+
+function hasNonEmptyPrRows(){{
+  const body=document.getElementById('pr-items-body');
+  if(!body)return false;
+  for(const tr of body.querySelectorAll('tr')){{
+    if(tr.dataset.rowType==='header'){{
+      if((tr.querySelector('.pri-header')?.value||'').trim())return true;
+    }}else{{
+      const vals=['.pri-item','.pri-unit','.pri-qty','.pri-po-ref','.pri-po-qty','.pri-del-qty','.pri-remarks']
+        .map(sel=>(tr.querySelector(sel)?.value||'').trim());
+      if(vals.some(Boolean))return true;
+    }}
+  }}
+  return false;
+}}
+
+function insertPrRowsWithMode(items,mode){{
+  const body=document.getElementById('pr-items-body');
+  if(!body)return;
+  if(mode==='replace'||!hasNonEmptyPrRows()){{
+    body.innerHTML='';
+  }}
+  if(items&&items.length){{
+    items.forEach(it=>{{
+      if(String(it?.row_type||'item').toLowerCase()==='header')addPrHeaderRow(it);
+      else addPrItemRow(it);
+    }});
+  }}else if(!body.children.length){{
+    addPrItemRow();
+  }}
+}}
+
+function hasExistingPrPoValues(){{
+  const body=document.getElementById('pr-items-body');
+  if(!body)return false;
+  for(const tr of body.querySelectorAll('tr')){{
+    if(tr.dataset.rowType==='header')continue;
+    const poRef=(tr.querySelector('.pri-po-ref')?.value||'').trim();
+    const poQty=parseFloat(tr.querySelector('.pri-po-qty')?.value||'');
+    const delQty=parseFloat(tr.querySelector('.pri-del-qty')?.value||'');
+    if(poRef||(Number.isFinite(poQty)&&poQty>0)||(Number.isFinite(delQty)&&delQty>0))return true;
+  }}
+  return false;
+}}
+
+function runWithPrReplaceOrAppendGuard(items,onDone){{
+  if(!hasNonEmptyPrRows()){{
+    insertPrRowsWithMode(items,'replace');
+    if(onDone)onDone('replace');
+    return;
+  }}
+  const box=document.getElementById('pr-import-confirm');
+  const msgEl=document.getElementById('pr-import-confirm-msg');
+  const repBtn=document.getElementById('pr-confirm-replace-btn');
+  const appBtn=document.getElementById('pr-confirm-append-btn');
+  if(!box||!repBtn||!appBtn){{
+    insertPrRowsWithMode(items,'append');
+    if(onDone)onDone('append');
+    return;
+  }}
+  if(msgEl){{
+    msgEl.innerHTML=hasExistingPrPoValues()
+      ?'Existing PR items found. <span style="color:#b45309">Warning: choosing Replace will discard existing PO / delivery values.</span> Replace existing rows or append?'
+      :'Existing PR items found. Replace existing rows or append?';
+  }}
+  box.style.display='flex';
+  repBtn.onclick=()=>{{
+    hidePrImportConfirm();
+    insertPrRowsWithMode(items,'replace');
+    if(onDone)onDone('replace');
+  }};
+  appBtn.onclick=()=>{{
+    hidePrImportConfirm();
+    insertPrRowsWithMode(items,'append');
+    if(onDone)onDone('append');
+  }};
+}}
+
+function fillPrHeaderIfEmpty(header){{
+  if(!header)return [];
+  const filled=[];
+  const setIfEmpty=(el,val,label)=>{{
+    const v=String(val||'').trim();
+    if(!el||!v)return;
+    if(String(el.value||'').trim()!=='')return;
+    el.value=v;
+    el.dispatchEvent(new Event('input',{{bubbles:true}}));
+    el.dispatchEvent(new Event('change',{{bubbles:true}}));
+    filled.push(label);
+  }};
+  setIfEmpty(document.getElementById('f-docNo'),header.docNo,'PR No');
+  setIfEmpty(document.getElementById('f-title'),header.title,'Title');
+  setIfEmpty(document.getElementById('f-issuedDate'),header.issuedDate,'Issued Date');
+  const msKey=getPrMsRefColKey();
+  if(msKey)setIfEmpty(document.getElementById('f-'+msKey),header.msRef,'MS Ref.');
+  return filled;
+}}
+
+function triggerPrDocxImport(){{
+  const inp=document.getElementById('pr-docx-file-input');
+  if(inp)inp.click();
+}}
+
+async function handlePrDocxSelected(inp){{
+  const file=inp&&inp.files&&inp.files[0];
+  if(!file)return;
+  const btn=document.getElementById('pr-import-docx-btn');
+  const origText=btn?btn.innerHTML:'&#128196; Import Word (.docx)';
+  if(btn){{btn.disabled=true;btn.textContent='Parsing .docx...';}}
+  try{{
+    const b64=await new Promise((res,rej)=>{{
+      const fr=new FileReader();
+      fr.onload=e=>res(e.target.result);
+      fr.onerror=rej;
+      fr.readAsDataURL(file);
+    }});
+    const r=await apiFetch('/api/pr_items/parse_docx/'+encodeURIComponent(PID)+'/'+encodeURIComponent(state.tab),{{
+      method:'POST',
+      body:JSON.stringify({{file_b64:b64,ext:'docx'}})
+    }});
+    if(r===null)return;
+    if(!r.ok)throw new Error(r.error||'Failed to parse .docx file');
+    const items=Array.isArray(r.items)?r.items:[];
+    const warnings=Array.isArray(r.warnings)?r.warnings:[];
+    const filled=fillPrHeaderIfEmpty(r.header||{{}});
+    const itemCount=items.filter(it=>String(it?.row_type||'item').toLowerCase()!=='header').length;
+    const hdrCount=items.filter(it=>String(it?.row_type||'item').toLowerCase()==='header').length;
+    const showSummary=(mode)=>{{
+      let msg='<strong>Imported '+itemCount+' item(s)'+(hdrCount?(', '+hdrCount+' section header(s)'):'')+'</strong> ('+mode+').';
+      if(filled.length)msg+=' Auto-filled: '+escHtml(filled.join(', '))+'.';
+      if(warnings.length)msg+='<div style="margin-top:4px;font-size:11px">Warnings: '+warnings.map(w=>escHtml(w)).join(' | ')+'</div>';
+      msg+='<div style="margin-top:3px;font-size:11px;opacity:0.85">Review the populated fields and click <strong>Save</strong> when ready.</div>';
+      showPrImportBanner(warnings.length?'warn':'ok',msg);
+    }};
+    runWithPrReplaceOrAppendGuard(items,showSummary);
+  }}catch(err){{
+    let errMsg=String(err&&err.message||err||'Unknown error');
+    try{{const parsed=JSON.parse(errMsg);if(parsed&&parsed.error)errMsg=parsed.error;}}catch(_e){{}}
+    showPrImportBanner('er','<strong>Import failed:</strong> '+escHtml(errMsg));
+  }}finally{{
+    if(inp)inp.value='';
+    if(btn){{btn.disabled=false;btn.innerHTML=origText;}}
+  }}
+}}
+
+function togglePrQuickPaste(force){{
+  const panel=document.getElementById('pr-quick-paste-panel');
+  if(!panel)return;
+  const show=typeof force==='boolean'?force:(panel.style.display==='none');
+  panel.style.display=show?'block':'none';
+  if(show){{
+    const ta=document.getElementById('pr-quick-paste-ta');
+    if(ta)ta.focus();
+  }}
+}}
+
+function parsePrQuickPasteText(text){{
+  const isNum=v=>/^[+-]?(\\d[\\d,]*\\.?\\d*|\\.\\d+)$/.test(String(v||'').trim());
+  const isHeaderLine=cols=>{{
+    const joined=cols.join(' ').toLowerCase();
+    const hasDesc=joined.includes('بيان المطلوب')||joined.includes('item name')||joined.includes('description');
+    const hasQtyUnit=joined.includes('الكمية')||joined.includes('الكميه')||joined.includes('qty')||joined.includes('الوحدة')||joined.includes('الوحده')||joined.includes('unit');
+    return hasDesc&&(cols.length===1||hasQtyUnit);
+  }};
+  const out=[];
+  for(const rawLine of String(text||'').split(/\\r?\\n/)){{
+    if(!rawLine.trim())continue;
+    const cols=rawLine.split('\\t').map(c=>c.trim());
+    if(cols.every(c=>!c))continue;
+    if(isHeaderLine(cols))continue;
+    const nonEmpty=cols.filter(Boolean);
+    if(nonEmpty.length===1&&cols.length===1){{
+      out.push({{row_type:'header',item_name:nonEmpty[0]}});
+      continue;
+    }}
+    if(/^\\d+$/.test(cols[0])&&cols.length>=3){{
+      const name=cols[1]||'';
+      if(!name)continue;
+      let qty=cols[2]||'',unit=cols[3]||'';
+      if(!isNum(qty)&&isNum(unit)){{const tmp=qty;qty=unit;unit=tmp;}}
+      out.push({{row_type:'item',item_name:name,unit:normalizePrUnit(unit),quantity:qty.replace(/,/g,''),remarks:cols[4]||''}});
+    }}else{{
+      const name=cols[0]||'';
+      if(!name)continue;
+      let unit=cols[1]||'',qty=cols[2]||'';
+      if(cols.length===2){{
+        if(isNum(unit)){{qty=unit;unit='';}}
+      }}else if(isNum(unit)&&!isNum(qty)){{
+        const tmp=unit;unit=qty;qty=tmp;
+      }}
+      out.push({{row_type:'item',item_name:name,unit:normalizePrUnit(unit),quantity:String(qty||'').replace(/,/g,''),remarks:cols[3]||''}});
+    }}
+  }}
+  return out;
+}}
+
+function applyPrQuickPaste(){{
+  const ta=document.getElementById('pr-quick-paste-ta');
+  const items=parsePrQuickPasteText(ta?ta.value:'');
+  if(!items.length){{
+    showPrImportBanner('warn','No valid PR rows detected in pasted text.');
+    return;
+  }}
+  const itemCount=items.filter(it=>it.row_type!=='header').length;
+  const hdrCount=items.filter(it=>it.row_type==='header').length;
+  togglePrQuickPaste(false);
+  if(ta)ta.value='';
+  runWithPrReplaceOrAppendGuard(items,(mode)=>{{
+    showPrImportBanner('ok','<strong>Inserted '+itemCount+' item(s)'+(hdrCount?(', '+hdrCount+' section header(s)'):'')+'</strong> via Quick Paste ('+mode+').');
+  }});
 }}
 
 function initSdItemsEditor(key, val) {{
@@ -15876,9 +16289,12 @@ function syncSdItems(key) {{
 
 function initPrItemsEditor(items, legacyText){{
   const body=document.getElementById('pr-items-body');if(!body)return;
+  const hasPoData=Array.isArray(items)&&items.some(it=>String(it?.row_type||'item').toLowerCase()!=='header'&&(String(it?.po_ref||'').trim()!==''||(parseFloat(it?.po_qty)||0)>0||(parseFloat(it?.delivered_qty)||0)>0));
+  setPrPoColumnsVisible(hasPoData);
   body.innerHTML='';
   if(items&&items.length)items.forEach(it=>String(it?.row_type||'item').toLowerCase()==='header'?addPrHeaderRow(it):addPrItemRow(it));
   else addPrItemRow();
+  renumberPrItemRows();
   const legacy=document.getElementById('pr-legacy');
   if(legacy){{
     legacy.textContent=legacyText?('Legacy Details:\\n'+legacyText):'';

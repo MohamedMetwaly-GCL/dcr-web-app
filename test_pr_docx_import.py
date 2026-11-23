@@ -1,0 +1,567 @@
+"""Offline unit & security tests for PR Word (.docx) Import (Phase 1A).
+
+Run with: python -B -m unittest -v test_pr_docx_import
+"""
+
+import base64
+import io
+import os
+import unittest
+import zipfile
+from contextlib import ExitStack
+from copy import deepcopy
+from unittest.mock import patch
+
+from pr_docx_parser import normalize_unit, parse_date_to_iso, parse_pr_docx
+from security import scan_and_validate_file
+
+
+_CONTENT_TYPES_XML = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>
+"""
+
+
+def _build_docx_bytes(document_xml: str, extra_files=None, include_content_types=True, include_document=True) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        if include_content_types:
+            zf.writestr("[Content_Types].xml", _CONTENT_TYPES_XML)
+        if include_document:
+            zf.writestr("word/document.xml", document_xml)
+        if extra_files:
+            for name, content in extra_files.items():
+                zf.writestr(name, content)
+    return buf.getvalue()
+
+
+def _gas_chill_document_xml() -> str:
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>طلب احتياج مواد - Gas Chill</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>رقم أشعار الاحتياج</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>PEM064-PR-075</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>تاريخ ورود الأشعار</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>15/10/2026</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>رقم التصنيف</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>رقم القطعة</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>م</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>بيان المطلوب</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>الكمية</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>الوحدة</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>ملاحظات</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:gridSpan w:val="8"/></w:tcPr><w:p><w:r><w:t>Air Duct &amp; Insulation Accessories</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>صاج مجلفن - Galvanized Steel Sheet 0.8mm</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>250</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>كيلوجرام</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Urgent</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p/></w:tc>
+        <w:tc><w:p/></w:tc>
+        <w:tc><w:p/></w:tc>
+        <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p/></w:tc>
+        <w:tc><w:p/></w:tc>
+        <w:tc><w:p/></w:tc>
+        <w:tc><w:p/></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>CAT-02</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>PN-99</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>Duct Damper 400x400</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>12</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>عدد</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p/></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:gridSpan w:val="8"/></w:tcPr><w:p><w:r><w:t>Approved Material Submittal: PEM064-MS-016 REV01</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:gridSpan w:val="4"/></w:tcPr><w:p><w:r><w:t>الميزانية تسمح</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:gridSpan w:val="4"/></w:tcPr><w:p><w:r><w:t>سلطات الاعتماد</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:gridSpan w:val="8"/></w:tcPr><w:p><w:r><w:t>يعتمد</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:p><w:r><w:t>Approved Material Submittal: PEM064-MS-017 REV00</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+"""
+
+
+class DocxSecurityValidationTests(unittest.TestCase):
+    def test_valid_docx_passes(self):
+        raw = _build_docx_bytes(_gas_chill_document_xml())
+        ok, err = scan_and_validate_file(raw, "docx", ["docx"], max_size_mb=10)
+        self.assertTrue(ok, err)
+
+    def test_rejects_non_zip_fake_docx(self):
+        ok, err = scan_and_validate_file(b"Not a zip file at all", "docx", ["docx"])
+        self.assertFalse(ok)
+        self.assertIn("OpenXML", err)
+
+    def test_rejects_vba_macro_payload(self):
+        raw = _build_docx_bytes(
+            _gas_chill_document_xml(),
+            extra_files={"word/vbaProject.bin": b"fake-vba-bytes"},
+        )
+        ok, err = scan_and_validate_file(raw, "docx", ["docx"])
+        self.assertFalse(ok)
+        self.assertTrue("binary" in err.lower() or "vba" in err.lower() or "macro" in err.lower(), err)
+
+    def test_allows_media_with_vba_substring_but_rejects_vba_dir(self):
+        ok_raw = _build_docx_bytes(
+            _gas_chill_document_xml(),
+            extra_files={"word/media/vbamboo.png": b"\x89PNG\r\n\x1a\n"},
+        )
+        ok, err = scan_and_validate_file(ok_raw, "docx", ["docx"])
+        self.assertTrue(ok, err)
+
+        bad_raw = _build_docx_bytes(
+            _gas_chill_document_xml(),
+            extra_files={"word/vba/module1.xml": b"<m/>"},
+        )
+        bad_ok, bad_err = scan_and_validate_file(bad_raw, "docx", ["docx"])
+        self.assertFalse(bad_ok)
+        self.assertIn("vba", bad_err.lower())
+
+    def test_rejects_arbitrary_bin_and_exe_members(self):
+        raw_bin = _build_docx_bytes(_gas_chill_document_xml(), extra_files={"word/custom.bin": b"123"})
+        ok_bin, _ = scan_and_validate_file(raw_bin, "docx", ["docx"])
+        self.assertFalse(ok_bin)
+
+        raw_exe = _build_docx_bytes(_gas_chill_document_xml(), extra_files={"word/dropper.exe": b"123"})
+        ok_exe, _ = scan_and_validate_file(raw_exe, "docx", ["docx"])
+        self.assertFalse(ok_exe)
+
+    def test_rejects_path_traversal_member(self):
+        for bad_name in ("../evil.xml", "../../evil.xml"):
+            raw = _build_docx_bytes(_gas_chill_document_xml(), extra_files={bad_name: b"<x/>"})
+            ok, err = scan_and_validate_file(raw, "docx", ["docx"])
+            self.assertFalse(ok)
+            self.assertIn("unsafe archive member path", err)
+
+    def test_rejects_missing_document_xml(self):
+        raw = _build_docx_bytes(_gas_chill_document_xml(), include_document=False)
+        ok, err = scan_and_validate_file(raw, "docx", ["docx"])
+        self.assertFalse(ok)
+        self.assertIn("word/document.xml", err)
+
+    def test_rejects_missing_content_types(self):
+        raw = _build_docx_bytes(_gas_chill_document_xml(), include_content_types=False)
+        ok, err = scan_and_validate_file(raw, "docx", ["docx"])
+        self.assertFalse(ok)
+        self.assertIn("[Content_Types].xml", err)
+
+    def test_rejects_oversized_uncompressed_zip_bomb(self):
+        # 21 MB of zeros exceeds the 20 MB DOCX uncompressed cap
+        huge_xml = b" " * (21 * 1024 * 1024)
+        raw = _build_docx_bytes(_gas_chill_document_xml(), extra_files={"word/huge.xml": huge_xml})
+        ok, err = scan_and_validate_file(raw, "docx", ["docx"])
+        self.assertFalse(ok)
+        self.assertIn("20MB", err)
+
+    def test_rejects_high_compression_ratio_zip_bomb(self):
+        # 3 MB of spaces compresses to ~3 KB (ratio > 100, under 20 MB cap)
+        bomb_xml = b" " * (3 * 1024 * 1024)
+        raw = _build_docx_bytes(_gas_chill_document_xml(), extra_files={"word/bomb.xml": bomb_xml})
+        ok, err = scan_and_validate_file(raw, "docx", ["docx"])
+        self.assertFalse(ok)
+        self.assertIn("compression ratio", err.lower())
+
+
+class DocxParserTests(unittest.TestCase):
+    def test_gas_chill_fixture_parsing(self):
+        raw = _build_docx_bytes(_gas_chill_document_xml())
+        result = parse_pr_docx(raw)
+
+        self.assertEqual(result["header"]["docNo"], "PEM064-PR-075")
+        self.assertEqual(result["header"]["issuedDate"], "2026-10-15")
+        self.assertEqual(
+            result["header"]["msRef"],
+            "PEM064-MS-016 REV01\nPEM064-MS-017 REV00",
+        )
+        self.assertEqual(result["warnings"], [])
+
+        items = result["items"]
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0], {"row_type": "header", "item_name": "Air Duct & Insulation Accessories"})
+        self.assertEqual(items[1], {
+            "row_type": "item",
+            "item_name": "صاج مجلفن - Galvanized Steel Sheet 0.8mm",
+            "unit": "Kg",
+            "quantity": 250,
+            "remarks": "Urgent",
+        })
+        self.assertEqual(items[2], {
+            "row_type": "item",
+            "item_name": "Duct Damper 400x400",
+            "unit": "No",
+            "quantity": 12,
+            "remarks": "",
+        })
+
+    def test_unit_and_date_normalization(self):
+        self.assertEqual(normalize_unit("  عدد "), "No")
+        self.assertEqual(normalize_unit("قطعة"), "No")
+        self.assertEqual(normalize_unit("حبة"), "No")
+        self.assertEqual(normalize_unit("كيلو جرام"), "Kg")
+        self.assertEqual(normalize_unit("كجم"), "Kg")
+        self.assertEqual(normalize_unit("متر طولي"), "m")
+        self.assertEqual(normalize_unit("م.ط"), "m")
+        self.assertEqual(normalize_unit("متر مربع"), "m2")
+        self.assertEqual(normalize_unit("م2"), "m2")
+        self.assertEqual(normalize_unit("متر مكعب"), "m3")
+        self.assertEqual(normalize_unit("لتر"), "L")
+        self.assertEqual(normalize_unit("طقم"), "Set")
+        self.assertEqual(normalize_unit("مجموعة"), "Set")
+        self.assertEqual(normalize_unit("  CustomBox  "), "CustomBox")
+
+        self.assertEqual(parse_date_to_iso("05/11/2026"), "2026-11-05")
+        self.assertEqual(parse_date_to_iso("2026-11-05"), "2026-11-05")
+
+    def test_warnings_and_vmerge(self):
+        xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Sr</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Description</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Qty</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Unit</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>Valve DN50</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>TBD</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>No</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p/></w:tc>
+        <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc>
+        <w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>m</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+"""
+        raw = _build_docx_bytes(xml)
+        result = parse_pr_docx(raw)
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["quantity"], "TBD")
+        self.assertEqual(len(result["warnings"]), 2)
+
+    def test_multi_paragraph_cell_does_not_bleed_into_doc_no(self):
+        xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tr>
+        <w:tc>
+          <w:p><w:r><w:t>رقم أشعار الاحتياج : PEM064-PR-075</w:t></w:r></w:p>
+          <w:p><w:r><w:t>السنة المالية : 2026</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc>
+          <w:p><w:r><w:t>تاريخ ورود الأشعار : 22/11/2026</w:t></w:r></w:p>
+          <w:p><w:r><w:t>رقم المراجعة : 01</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Sr</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Description</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Qty</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Unit</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Pipe DN50</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>10</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>m</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+"""
+        raw = _build_docx_bytes(xml)
+        result = parse_pr_docx(raw)
+        self.assertEqual(result["header"]["docNo"], "PEM064-PR-075")
+        self.assertEqual(result["header"]["issuedDate"], "2026-11-22")
+
+    def test_rejects_doctype_and_entity_before_xml_parse(self):
+        for decl in ("<!DOCTYPE foo [<!ENTITY xxe 'bar'>]>", "<!ENTITY test 'val'>"):
+            xml = f'<?xml version="1.0" encoding="UTF-8"?>\n{decl}\n<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>'
+            raw = _build_docx_bytes(xml)
+            with patch("pr_docx_parser.ET.fromstring", side_effect=AssertionError("ET.fromstring must not be called")):
+                with self.assertRaises(ValueError) as ctx:
+                    parse_pr_docx(raw)
+            self.assertIn("DOCTYPE/ENTITY", str(ctx.exception))
+
+
+class ParsePrDocxEndpointTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        isolation = ExitStack()
+        cls.addClassCleanup(isolation.close)
+        isolation.enter_context(patch.dict(os.environ, {
+            "SECRET_KEY": "synthetic-pr-docx-session-key",
+            "MAGIC_SECRET": "synthetic-pr-docx-digest-key",
+            "DATABASE_URL": "dbname=offline_pr_docx",
+        }, clear=True))
+
+        def blocked(*args, **kwargs):
+            raise AssertionError("External I/O attempted in offline PR DOCX suite")
+
+        for target in ("socket.socket.connect", "socket.socket.connect_ex",
+                       "socket.socket.sendto", "socket.getaddrinfo",
+                       "psycopg2.connect", "psycopg2._connect"):
+            isolation.enter_context(patch(target, side_effect=blocked))
+
+        import db
+        isolation.enter_context(patch.object(db, "get_pool", side_effect=blocked))
+        isolation.enter_context(patch.object(db, "init", side_effect=blocked))
+        from app import app
+
+        cls.db = db
+        cls.app = app
+        isolation.enter_context(patch.dict(app.config, {"TESTING": True}))
+
+    def setUp(self):
+        self.client = self.app.test_client()
+        self.projects = {
+            "ENG-P1": {"id": "ENG-P1", "workspace_id": "ENG", "name": "ENG-P1", "code": "ENG-P1", "data": {}},
+        }
+        self.allowed_dts = ["PR", "DS"]
+        self.login_as("editor", {"ENG": "editor"}, ("ENG-P1",))
+
+        mocks = ExitStack()
+        self.addCleanup(mocks.close)
+        mocks.enter_context(patch.object(self.db, "q", side_effect=self.read_fixture))
+        self.write = mocks.enter_context(patch.object(self.db, "exe"))
+        self.audit = mocks.enter_context(patch.object(self.db, "log_action"))
+
+    def login_as(self, role, workspace_roles, project_ids=()):
+        self.user = {"username": "synthetic-user", "role": role, "primary_workspace": "ENG"}
+        self.workspace_roles = workspace_roles
+        self.project_ids = project_ids
+        self.client.set_cookie("dcr_token", "synthetic-session")
+
+    def read_fixture(self, sql, params=(), one=False):
+        query = " ".join(sql.lower().split())
+        if "from sessions " in query:
+            return deepcopy(self.user) if params == ("synthetic-session",) else None
+        if "from users " in query:
+            return deepcopy(self.user) if params == (self.user["username"],) else None
+        if "from user_workspaces " in query:
+            if one:
+                role = self.workspace_roles.get(params[1])
+                return {"role": role} if role else None
+            return [{"workspace_id": ws, "role": role} for ws, role in self.workspace_roles.items()]
+        if "from user_projects " in query:
+            if query.startswith("select allowed_doc_types from "):
+                return {"allowed_doc_types": self.allowed_dts} if params[1] in self.project_ids else None
+            return [{"project_id": pid} for pid in self.project_ids]
+        if "from projects " in query:
+            if one and params:
+                return deepcopy(self.projects.get(params[0]))
+            return list(deepcopy(self.projects).values())
+        if "from doc_types " in query:
+            dts = [
+                {"id": "PR", "project_id": "ENG-P1", "code": "PR", "name": "Purchase Requisition"},
+                {"id": "DS", "project_id": "ENG-P1", "code": "DS", "name": "Document Submittal"},
+            ]
+            if one:
+                dt_id = params[0] if len(params) == 1 else params[1]
+                return next((d for d in dts if d["id"] == dt_id), None)
+            return dts
+        raise AssertionError(f"Unexpected SQL in fixture: {query}")
+
+    def test_requires_edit_permission_and_rbac(self):
+        raw = _build_docx_bytes(_gas_chill_document_xml())
+        b64 = base64.b64encode(raw).decode("ascii")
+
+        # Viewer cannot edit
+        self.login_as("viewer", {"ENG": "viewer"}, ("ENG-P1",))
+        resp = self.client.post("/api/pr_items/parse_docx/ENG-P1/PR", json={"file_b64": b64})
+        self.assertEqual(resp.status_code, 403)
+
+        # Editor without PR doc-type access
+        self.login_as("editor", {"ENG": "editor"}, ("ENG-P1",))
+        self.allowed_dts = ["DS"]
+        resp = self.client.post("/api/pr_items/parse_docx/ENG-P1/PR", json={"file_b64": b64})
+        self.assertEqual(resp.status_code, 403)
+
+        # Non-PR doc type rejected with 400
+        resp = self.client.post("/api/pr_items/parse_docx/ENG-P1/DS", json={"file_b64": b64})
+        self.assertEqual(resp.status_code, 400)
+        self.write.assert_not_called()
+
+    def test_parse_base64_and_multipart_with_zero_db_writes(self):
+        raw = _build_docx_bytes(_gas_chill_document_xml())
+        b64 = base64.b64encode(raw).decode("ascii")
+
+        # Base64 JSON
+        resp = self.client.post(
+            "/api/pr_items/parse_docx/ENG-P1/PR",
+            json={"file_b64": b64, "ext": "docx"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["header"]["docNo"], "PEM064-PR-075")
+        self.assertEqual(len(body["items"]), 3)
+        self.write.assert_not_called()
+
+        # Multipart upload
+        resp2 = self.client.post(
+            "/api/pr_items/parse_docx/ENG-P1/PR",
+            data={"file": (io.BytesIO(raw), "requisition.docx")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(resp2.status_code, 200)
+        body2 = resp2.get_json()
+        self.assertTrue(body2["ok"])
+        self.assertEqual(len(body2["items"]), 3)
+        self.write.assert_not_called()
+
+    def test_endpoint_rejects_malicious_or_fake_docx(self):
+        fake_b64 = base64.b64encode(b"not-a-docx").decode("ascii")
+        resp = self.client.post("/api/pr_items/parse_docx/ENG-P1/PR", json={"file_b64": fake_b64})
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.get_json()["ok"])
+
+        macro_raw = _build_docx_bytes(
+            _gas_chill_document_xml(),
+            extra_files={"word/vbaProject.bin": b"vba"},
+        )
+        macro_b64 = base64.b64encode(macro_raw).decode("ascii")
+        resp2 = self.client.post("/api/pr_items/parse_docx/ENG-P1/PR", json={"file_b64": macro_b64})
+        self.assertEqual(resp2.status_code, 400)
+        self.assertFalse(resp2.get_json()["ok"])
+        self.write.assert_not_called()
+
+    def test_endpoint_rejects_oversized_base64_and_multipart_before_decode(self):
+        oversized_b64 = "A" * (14 * 1024 * 1024 + 100)
+        with patch("blueprints.records.base64.b64decode", side_effect=AssertionError("b64decode must not be called")):
+            resp = self.client.post(
+                "/api/pr_items/parse_docx/ENG-P1/PR",
+                json={"file_b64": oversized_b64, "ext": "docx"},
+            )
+        self.assertEqual(resp.status_code, 413)
+        self.assertFalse(resp.get_json()["ok"])
+
+        oversized_stream = b"PK\x03\x04" + (b"\x00" * (10 * 1024 * 1024 + 64))
+        resp2 = self.client.post(
+            "/api/pr_items/parse_docx/ENG-P1/PR",
+            data={"file": (io.BytesIO(oversized_stream), "huge.docx")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(resp2.status_code, 413)
+        self.assertFalse(resp2.get_json()["ok"])
+        self.write.assert_not_called()
+
+    def test_endpoint_hides_unexpected_parse_exception_details(self):
+        raw = _build_docx_bytes(_gas_chill_document_xml())
+        b64 = base64.b64encode(raw).decode("ascii")
+        with patch("blueprints.records.parse_pr_docx", side_effect=RuntimeError("internal-secret-trace")):
+            resp = self.client.post("/api/pr_items/parse_docx/ENG-P1/PR", json={"file_b64": b64})
+        self.assertEqual(resp.status_code, 400)
+        body = resp.get_json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"], "Failed to parse Word document.")
+        self.assertNotIn("internal-secret-trace", body["error"])
+
+
+class PrModalUiWiringTests(unittest.TestCase):
+    def test_render_register_contains_pr_import_ui_and_valid_js(self):
+        import re
+        import shutil
+        import subprocess
+        import tempfile
+        import html_render
+
+        user = {"username": "synthetic-editor", "role": "editor", "primary_workspace": "ENG"}
+        proj = {"id": "ENG-P1", "code": "ENG-P1", "name": "Test Project", "workspace_id": "ENG"}
+        dts = [{"id": "PR", "code": "PR", "name": "Purchase Requisition"}]
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(html_render, "can_edit", return_value=True))
+            stack.enter_context(patch.object(html_render, "is_project_admin", return_value=False))
+            stack.enter_context(patch.object(html_render, "get_allowed_doc_type_filter", return_value=None))
+            stack.enter_context(patch.object(html_render, "_user_info_html", return_value=("", "", "Editor", "#000")))
+            stack.enter_context(patch.object(html_render, "_workspace_switcher_html", return_value=""))
+            stack.enter_context(patch.object(html_render.db, "get_projects_for_user", return_value=[proj]))
+            stack.enter_context(patch.object(html_render.db, "get_doc_types", return_value=dts))
+            stack.enter_context(patch.object(html_render.db, "get_logo", return_value=None))
+            html = html_render.render_register(user, proj, active_ws_id="ENG")
+
+        for marker in (
+            "pr-import-docx-btn",
+            "pr-docx-file-input",
+            "pr-quick-paste-btn",
+            "pr-quick-paste-panel",
+            "pr-import-banner",
+            "pr-import-confirm",
+            "/api/pr_items/parse_docx/",
+            "function getPrMsRefColKey()",
+            "function runWithPrReplaceOrAppendGuard(",
+            "function parsePrQuickPasteText(",
+            "function fillPrHeaderIfEmpty(",
+            "pr-toggle-po-btn",
+            "pr-po-hidden",
+            "pr-po-col",
+            "pr-items-scroll",
+            "position: sticky",
+            "pr-row-num",
+            "function togglePrPoColumns()",
+            "function setPrPoColumnsVisible(",
+            "function renumberPrItemRows()",
+            "function bindPrTableKeyboardNav(",
+            "function removePrRow(",
+            "function formatPrQty(",
+            "pr-items-cell num",
+            "max-height:360px;overflow:auto",
+            "position:sticky;top:0;z-index:2",
+            "grid-template-columns:44px 2fr",
+            "e.isComposing",
+            "hasExistingPrPoValues()",
+            "discard existing PO / delivery values",
+        ):
+            self.assertIn(marker, html)
+        self.assertNotIn(".pr-items-cell:nth-child(4n)", html)
+
+        node_bin = shutil.which("node")
+        if node_bin:
+            scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", html, flags=re.DOTALL | re.IGNORECASE)
+            inline_js = "\n;\n".join(s for s in scripts if s.strip())
+            with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as tf:
+                tf.write(inline_js)
+                js_path = tf.name
+            try:
+                proc = subprocess.run([node_bin, "--check", js_path], capture_output=True, text=True)
+                self.assertEqual(proc.returncode, 0, f"JS syntax check failed:\n{proc.stderr}")
+            finally:
+                if os.path.exists(js_path):
+                    os.remove(js_path)
