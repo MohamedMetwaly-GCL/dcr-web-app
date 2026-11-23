@@ -15725,13 +15725,23 @@ async function buildForm(row,opts={{}}){{
     const prSection=getOrCreateFormSection(formRoot,sectionBodies,'PR Items');
     const grp=document.createElement('div');grp.className='fg full pr-items-editor';
     const lbl=document.createElement('label');lbl.textContent='PR Items';grp.appendChild(lbl);
-    const wrap=document.createElement('div');wrap.id='pr-items-editor';
+    const wrap=document.createElement('div');wrap.id='pr-items-editor';wrap.className='pr-po-hidden';
     wrap.innerHTML=`
-      <style>#pr-items-editor table input {{ width: 100%; box-sizing: border-box; }}</style>
-      <table style="width: 100%; border-collapse: collapse;">
-        <thead><tr><th style="width: 30%;">Item Name</th><th style="width: 8%;">Unit</th><th style="width: 9%;">PR Qty</th><th style="width: 12%;">PO Ref</th><th style="width: 9%;">PO Qty</th><th style="width: 9%;">Del. Qty</th><th style="width: 15%;">Remarks</th><th style="width: 90px; text-align: center;"></th></tr></thead>
-        <tbody id="pr-items-body"></tbody>
-      </table>
+      <style>
+        #pr-items-editor table input {{ width: 100%; box-sizing: border-box; }}
+        #pr-items-editor.pr-po-hidden .pr-po-col {{ display: none; }}
+        #pr-items-editor thead th {{ position: sticky; top: 0; z-index: 2; background: var(--bg, #f8fafc); border-bottom: 1px solid var(--bd, #cbd5e1); padding: 6px 4px; font-size: 11px; text-align: left; }}
+        #pr-items-editor .pr-row-num {{ width: 34px; text-align: center; color: var(--mu); font-size: 11px; font-weight: 600; user-select: none; }}
+      </style>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+        <button type="button" class="btn btn-sc btn-sm" id="pr-toggle-po-btn" onclick="togglePrPoColumns()">Show PO Columns</button>
+      </div>
+      <div id="pr-items-scroll" style="max-height:360px;overflow-y:auto;border:1px solid var(--bd,#e2e8f0);border-radius:6px">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead><tr><th style="width: 34px; text-align: center;">#</th><th style="min-width: 240px;">Item Name</th><th style="width: 72px;">Unit</th><th style="width: 78px;">PR Qty</th><th class="pr-po-col" style="width: 105px;">PO Ref</th><th class="pr-po-col" style="width: 74px;">PO Qty</th><th class="pr-po-col" style="width: 74px;">Del. Qty</th><th style="width: 150px;">Remarks</th><th style="width: 92px; text-align: center;"></th></tr></thead>
+          <tbody id="pr-items-body"></tbody>
+        </table>
+      </div>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button type="button" class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Item</button>
         <button type="button" class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
@@ -15756,6 +15766,7 @@ async function buildForm(row,opts={{}}){{
         </div>
       </div>`;
     grp.appendChild(wrap);prSection.appendChild(grp);
+    bindPrTableKeyboardNav(document.getElementById('pr-items-body'));
     const legacyText=prDetailsKey?String(row?.[prDetailsKey]||'').trim():'';
     initPrItemsEditor([], legacyText);
     if(row&&row._id)loadPrItemsForEdit(row._id, legacyText);
@@ -15790,13 +15801,107 @@ function moveRowUp(btn) {{
   const row = btn.closest('tr');
   if (row.previousElementSibling) {{
     row.parentNode.insertBefore(row, row.previousElementSibling);
+    renumberPrItemRows();
   }}
 }}
 function moveRowDown(btn) {{
   const row = btn.closest('tr');
   if (row.nextElementSibling) {{
     row.parentNode.insertBefore(row.nextElementSibling, row);
+    renumberPrItemRows();
   }}
+}}
+
+function removePrRow(btn){{
+  const row=btn&&btn.closest('tr');
+  if(row)row.remove();
+  renumberPrItemRows();
+}}
+
+function isPrPoColumnsVisible(){{
+  const ed=document.getElementById('pr-items-editor');
+  return !!(ed&&!ed.classList.contains('pr-po-hidden'));
+}}
+
+function setPrPoColumnsVisible(show){{
+  const ed=document.getElementById('pr-items-editor');
+  if(!ed)return;
+  ed.classList.toggle('pr-po-hidden',!show);
+  const btn=document.getElementById('pr-toggle-po-btn');
+  if(btn)btn.textContent=show?'Hide PO Columns':'Show PO Columns';
+  const span=show?7:4;
+  ed.querySelectorAll('td.pr-header-span').forEach(td=>{{td.colSpan=span;}});
+}}
+
+function togglePrPoColumns(){{
+  setPrPoColumnsVisible(!isPrPoColumnsVisible());
+}}
+
+function renumberPrItemRows(){{
+  const body=document.getElementById('pr-items-body');
+  if(!body)return;
+  let n=0;
+  for(const tr of body.querySelectorAll('tr')){{
+    const cell=tr.querySelector('.pr-row-num');
+    if(!cell)continue;
+    if((tr.dataset.rowType||'item').toLowerCase()==='header'){{
+      cell.textContent='—';
+    }}else{{
+      n+=1;
+      cell.textContent=String(n);
+    }}
+  }}
+}}
+
+function bindPrTableKeyboardNav(body){{
+  if(!body||body.dataset.kbNavBound==='1')return;
+  body.dataset.kbNavBound='1';
+  body.addEventListener('keydown',(e)=>{{
+    const inp=e.target&&e.target.closest('input');
+    if(!inp||!body.contains(inp))return;
+    const tr=inp.closest('tr');
+    if(!tr)return;
+    const getVis=r=>[...r.querySelectorAll('input')].filter(el=>el.offsetParent!==null);
+    const rows=[...body.querySelectorAll('tr')];
+    const rowIdx=rows.indexOf(tr);
+    const vis=getVis(tr);
+    const colIdx=vis.indexOf(inp);
+    if(colIdx<0)return;
+
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'||e.key==='Enter'){{
+      e.preventDefault();
+      const dir=(e.key==='ArrowUp')?-1:1;
+      const targetRow=rows[rowIdx+dir];
+      if(!targetRow)return;
+      const targetInputs=getVis(targetRow);
+      if(!targetInputs.length)return;
+      const isSrcHdr=(tr.dataset.rowType||'item').toLowerCase()==='header';
+      const isDstHdr=(targetRow.dataset.rowType||'item').toLowerCase()==='header';
+      const target=(isSrcHdr||isDstHdr)?targetInputs[0]:targetInputs[Math.min(colIdx,targetInputs.length-1)];
+      if(target)target.focus();
+      return;
+    }}
+
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'){{
+      const tbl=body.closest('table');
+      const isRtl=tbl&&getComputedStyle(tbl).direction==='rtl';
+      const step=isRtl?(e.key==='ArrowLeft'?1:-1):(e.key==='ArrowRight'?1:-1);
+      let atBoundary=(inp.type==='number');
+      if(!atBoundary){{
+        const val=String(inp.value||'');
+        const ss=inp.selectionStart,se=inp.selectionEnd;
+        if(ss!=null&&se!=null){{
+          atBoundary=(step===-1)?(ss===0&&se===0):(ss===val.length&&se===val.length);
+        }}
+      }}
+      if(!atBoundary)return;
+      const nextInp=vis[colIdx+step];
+      if(nextInp){{
+        e.preventDefault();
+        nextInp.focus();
+      }}
+    }}
+  }});
 }}
 
 function addPrItemRow(item={{}}){{
@@ -15804,29 +15909,34 @@ function addPrItemRow(item={{}}){{
     const tr=document.createElement('tr');
     tr.dataset.rowType='item';
     tr.innerHTML=`
+      <td class="pr-row-num"></td>
       <td><input class="pri-item" placeholder="Item Name"></td>
       <td><input class="pri-unit" placeholder="Unit"></td>
       <td><input class="pri-qty" type="number" min="0" step="any" placeholder="PR Qty"></td>
-      <td><input class="pri-po-ref" placeholder="PO Ref"></td>
-      <td><input class="pri-po-qty" type="number" min="0" step="any" placeholder="PO Qty"></td>
-      <td><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
+      <td class="pr-po-col"><input class="pri-po-ref" placeholder="PO Ref"></td>
+      <td class="pr-po-col"><input class="pri-po-qty" type="number" min="0" step="any" placeholder="PO Qty"></td>
+      <td class="pr-po-col"><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
       <td><input class="pri-remarks" placeholder="Remarks"></td>
       <td style="white-space:nowrap; text-align:right;">
         <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
         <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
-        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">&times;</button>
+        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="removePrRow(this)" title="Delete">&times;</button>
       </td>`;
-    tr.querySelector('.pri-item').value=item.item_name||'';
+    const itemInp=tr.querySelector('.pri-item');
+    itemInp.value=item.item_name||'';
+    itemInp.title=itemInp.value;
+    itemInp.addEventListener('input',()=>{{itemInp.title=itemInp.value;}});
     tr.querySelector('.pri-unit').value=item.unit||'';
     tr.querySelector('.pri-qty').value=item.quantity??'';
     tr.querySelector('.pri-po-ref').value=item.po_ref||'';
     tr.querySelector('.pri-po-qty').value=item.po_qty??'';
     tr.querySelector('.pri-del-qty').value=item.delivered_qty??'';
     tr.querySelector('.pri-remarks').value=item.remarks||'';
-    bindDirectionalInput(tr.querySelector('.pri-item'));
+    bindDirectionalInput(itemInp);
     bindDirectionalInput(tr.querySelector('.pri-unit'));
     bindDirectionalInput(tr.querySelector('.pri-remarks'));
     body.appendChild(tr);
+    renumberPrItemRows();
   }}
 
 function addPrHeaderRow(item={{}}){{
@@ -15834,19 +15944,22 @@ function addPrHeaderRow(item={{}}){{
     const tr=document.createElement('tr');
     tr.className='pr-head-edit';
     tr.dataset.rowType='header';
+    const span=isPrPoColumnsVisible()?7:4;
     tr.innerHTML=`
-      <td colspan="7">
+      <td class="pr-row-num">—</td>
+      <td class="pr-header-span" colspan="${{span}}">
         <div class="pr-head-label">Section Header</div>
       <input class="pri-header" placeholder="Section title / description" style="width:100%; box-sizing:border-box;">
     </td>
-    <td style="white-space:nowrap; text-align:right; width:90px;">
+    <td style="white-space:nowrap; text-align:right; width:92px;">
       <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
       <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
-      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="this.closest('tr').remove()" title="Delete">✕</button>
+      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="removePrRow(this)" title="Delete">✕</button>
     </td>`;
   tr.querySelector('.pri-header').value=item.item_name||'';
   bindDirectionalInput(tr.querySelector('.pri-header'));
   body.appendChild(tr);
+  renumberPrItemRows();
 }}
 
 const PR_ARABIC_UNIT_MAP={{
@@ -16140,9 +16253,12 @@ function syncSdItems(key) {{
 
 function initPrItemsEditor(items, legacyText){{
   const body=document.getElementById('pr-items-body');if(!body)return;
+  const hasPoData=Array.isArray(items)&&items.some(it=>String(it?.row_type||'item').toLowerCase()!=='header'&&(String(it?.po_ref||'').trim()!==''||(parseFloat(it?.po_qty)||0)>0||(parseFloat(it?.delivered_qty)||0)>0));
+  setPrPoColumnsVisible(hasPoData);
   body.innerHTML='';
   if(items&&items.length)items.forEach(it=>String(it?.row_type||'item').toLowerCase()==='header'?addPrHeaderRow(it):addPrItemRow(it));
   else addPrItemRow();
+  renumberPrItemRows();
   const legacy=document.getElementById('pr-legacy');
   if(legacy){{
     legacy.textContent=legacyText?('Legacy Details:\\n'+legacyText):'';

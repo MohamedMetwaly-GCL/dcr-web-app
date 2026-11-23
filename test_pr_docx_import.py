@@ -426,6 +426,17 @@ class PrModalUiWiringTests(unittest.TestCase):
             "function runWithPrReplaceOrAppendGuard(",
             "function parsePrQuickPasteText(",
             "function fillPrHeaderIfEmpty(",
+            "pr-toggle-po-btn",
+            "pr-po-hidden",
+            "pr-po-col",
+            "pr-items-scroll",
+            "position: sticky",
+            "pr-row-num",
+            "function togglePrPoColumns()",
+            "function setPrPoColumnsVisible(",
+            "function renumberPrItemRows()",
+            "function bindPrTableKeyboardNav(",
+            "function removePrRow(",
         ):
             self.assertIn(marker, html)
 
