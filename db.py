@@ -754,6 +754,48 @@ def _global_rename_filelocation():
            )
            ON CONFLICT DO NOTHING""")
 
+def _sync_all_hse_ptw_subtypes():
+    """Ensure active hse_ptw_subtype lists contain the approved permit types and default codes."""
+    from hse_defaults import HSE_LISTS, HSE_SUBTYPES, PTW_SUBTYPE_CODES
+
+    exe("DELETE FROM dropdown_lists WHERE list_name=%s AND item_value=%s",
+        ("hse_ptw_subtype", "Maintenance Work"))
+
+    hse_projects = q("SELECT id FROM projects WHERE UPPER(COALESCE(workspace_id, 'ENG')) = 'HSE'")
+    ptw_subtypes = HSE_SUBTYPES.get("PTW", {})
+    default_values = HSE_LISTS.get("hse_ptw_subtype", ())
+    for p in hse_projects:
+        pid = p["id"]
+        ptw_dt = q("SELECT id, data FROM doc_types WHERE project_id=%s AND id='PTW'", (pid,), one=True)
+        if ptw_dt:
+            dt_data = ptw_dt.get("data") or {}
+            if isinstance(dt_data, str):
+                try:
+                    dt_data = json.loads(dt_data)
+                except Exception:
+                    dt_data = {}
+            if isinstance(dt_data, dict):
+                cur_subs = dt_data.get("legacy_subtypes")
+                if cur_subs != ptw_subtypes:
+                    dt_data["legacy_subtypes"] = ptw_subtypes
+                    exe("UPDATE doc_types SET data=%s::jsonb WHERE id='PTW' AND project_id=%s",
+                        (json.dumps(dt_data, ensure_ascii=False), pid))
+        for order, value in enumerate(default_values):
+            code = PTW_SUBTYPE_CODES.get(value)
+            exe("""
+                INSERT INTO dropdown_lists(project_id, list_name, item_value, sort_order, meta)
+                VALUES(%s, 'hse_ptw_subtype', %s, %s, %s)
+                ON CONFLICT(project_id, list_name, item_value)
+                DO UPDATE SET meta = CASE
+                    WHEN dropdown_lists.meta IS NULL
+                      OR TRIM(dropdown_lists.meta) = ''
+                      OR UPPER(TRIM(dropdown_lists.meta)) IN ('PENDING','APPROVED','REJECTED','CANCELLED','INFO_CLOSED')
+                    THEN EXCLUDED.meta
+                    ELSE dropdown_lists.meta
+                END
+            """, (pid, value, order, code))
+
+
 def init():
     stmts = [s.strip() for s in SCHEMA.strip().split(";") if s.strip()]
     for stmt in stmts:
@@ -769,6 +811,7 @@ def init():
     _global_rename_filelocation()
     _sync_all_noc_doc_types()
     _sync_all_ltr_doc_types()
+    _sync_all_hse_ptw_subtypes()
 
 def _ensure_admin():
     r = q("SELECT COUNT(*) as c FROM users", one=True)
@@ -2028,7 +2071,7 @@ def delete_project(pid):
         exe(f"DELETE FROM {tbl} WHERE {'id' if tbl=='projects' else 'project_id'}=%s", (pid,))
 
 def _seed_hse_project(pid):
-    from hse_defaults import HSE_LISTS, HSE_REGISTERS, HSE_SUBTYPES, hse_columns
+    from hse_defaults import HSE_LISTS, HSE_REGISTERS, HSE_SUBTYPES, PTW_SUBTYPE_CODES, hse_columns
 
     for order, (code, name, source) in enumerate(HSE_REGISTERS):
         data = {"legacy_source": source, "legacy_subtypes": HSE_SUBTYPES.get(code, {})}
@@ -2048,6 +2091,8 @@ def _seed_hse_project(pid):
             meta = None
             if list_name == "hse_doc_status":
                 meta = "pending" if value == "Open" else ("approved" if value == "Closed" else None)
+            elif list_name == "hse_ptw_subtype":
+                meta = PTW_SUBTYPE_CODES.get(value)
             elif list_name == "hse_extinguisher_status":
                 meta = (
                     "approved" if value == "Valid"
@@ -2909,29 +2954,65 @@ def get_status_meta_map(pid):
     return {r["item_value"]: r["meta"] for r in rows}
 
 def set_list_item_meta(pid, list_name, item_value, meta):
+    clean_meta = meta
+    if str(list_name or "").strip().lower() == "hse_ptw_subtype" and meta is not None:
+        from hse_defaults import get_ptw_subtype_code
+        clean_meta = get_ptw_subtype_code(item_value, str(meta))
     exe("UPDATE dropdown_lists SET meta=%s"
         " WHERE project_id=%s AND list_name=%s AND item_value=%s",
-        (meta, pid, list_name, item_value))
+        (clean_meta, pid, list_name, item_value))
     invalidate_dashboard_cache(pid)
 
-def add_list_item(pid, list_name, item):
+def add_list_item(pid, list_name, item, meta=None):
+    clean_item = str(item or "").strip()
+    resolved_meta = str(meta).strip() if meta is not None and str(meta).strip() else None
+    if str(list_name or "").strip().lower() == "hse_ptw_subtype":
+        from hse_defaults import get_ptw_subtype_code, parse_ptw_list_item_input
+
+        parsed_name, parsed_code = parse_ptw_list_item_input(clean_item)
+        if parsed_name:
+            clean_item = parsed_name
+        explicit_code = resolved_meta or parsed_code
+        resolved_meta = get_ptw_subtype_code(clean_item, explicit_code)
+    if not clean_item:
+        return {"item": "", "meta": resolved_meta}
     r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
           (pid, list_name), one=True)
-    exe("INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-        (pid, list_name, item, r["n"] if r else 0))
+    exe("""INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)
+           VALUES(%s,%s,%s,%s,%s)
+           ON CONFLICT(project_id,list_name,item_value)
+           DO UPDATE SET meta = COALESCE(EXCLUDED.meta, dropdown_lists.meta)""",
+        (pid, list_name, clean_item, r["n"] if r else 0, resolved_meta))
     invalidate_dashboard_cache(pid)
+    return {"item": clean_item, "meta": resolved_meta}
 
-def rename_list_item(pid, list_name, old_item, new_item):
+def rename_list_item(pid, list_name, old_item, new_item, meta=None):
     old_item = str(old_item or "").strip()
     new_item = str(new_item or "").strip()
-    if not old_item or not new_item or old_item == new_item:
+    explicit_meta = str(meta).strip() if meta is not None and str(meta).strip() else None
+    if str(list_name or "").strip().lower() == "hse_ptw_subtype":
+        from hse_defaults import get_ptw_subtype_code, parse_ptw_list_item_input
+
+        parsed_name, parsed_code = parse_ptw_list_item_input(new_item)
+        if parsed_name:
+            new_item = parsed_name
+        if explicit_meta or parsed_code:
+            explicit_meta = get_ptw_subtype_code(new_item, explicit_meta or parsed_code)
+    if not old_item or not new_item or (old_item == new_item and explicit_meta is None):
         return 0
     with DB() as cur:
-        cur.execute("""
-            UPDATE dropdown_lists
-            SET item_value=%s
-            WHERE project_id=%s AND list_name=%s AND item_value=%s
-        """, (new_item, pid, list_name, old_item))
+        if explicit_meta is not None:
+            cur.execute("""
+                UPDATE dropdown_lists
+                SET item_value=%s, meta=%s
+                WHERE project_id=%s AND list_name=%s AND item_value=%s
+            """, (new_item, explicit_meta, pid, list_name, old_item))
+        else:
+            cur.execute("""
+                UPDATE dropdown_lists
+                SET item_value=%s
+                WHERE project_id=%s AND list_name=%s AND item_value=%s
+            """, (new_item, pid, list_name, old_item))
         renamed = cur.rowcount or 0
         if not renamed:
             return 0

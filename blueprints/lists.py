@@ -28,15 +28,21 @@ def api_lists(pid):
 def api_add_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    db.add_list_item(pid, data.get("list_name",""), data.get("item",""))
-    return jsonify(ok=True)
+    res = db.add_list_item(pid, data.get("list_name",""), data.get("item",""), meta=data.get("meta"))
+    return jsonify(ok=True, item=res.get("item", ""), meta=res.get("meta"))
 
 
 @lists_bp.route("/api/lists/<pid>", methods=["PATCH"])
 def api_rename_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    renamed = db.rename_list_item(pid, data.get("list_name",""), data.get("old_item",""), data.get("new_item",""))
+    renamed = db.rename_list_item(
+        pid,
+        data.get("list_name",""),
+        data.get("old_item",""),
+        data.get("new_item",""),
+        meta=data.get("meta"),
+    )
     return jsonify(ok=True, renamed=renamed)
 
 

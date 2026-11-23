@@ -13561,11 +13561,15 @@ init();
 
 
 def render_register(u, proj, active_ws_id=None, lang=None):
+    from hse_defaults import PTW_SUBTYPE_CODES as _PTW_SUBTYPE_CODES
+
     norm     = normalize_lang(lang or get_lang())
     dir_attr = html_dir(norm)
     pid      = proj["id"]
     pcode    = (proj.get("code") or pid) if proj else pid
     pname    = (proj.get("name") or "") if proj else ""
+    ptw_prefix_json = json.dumps(str((proj or {}).get("ptw_prefix") or (proj or {}).get("doc_prefix") or "").strip())
+    ptw_codes_json = json.dumps(_PTW_SUBTYPE_CODES)
     uname    = u["username"] if u else "guest"
     role     = u["role"]     if u else "guest"
     editable = can_edit(pid)
@@ -13671,7 +13675,11 @@ def render_register(u, proj, active_ws_id=None, lang=None):
 <style>
 .hidden{{display:none!important}}
 body{{height:100vh;display:flex;flex-direction:column;overflow:hidden}}
-body.dark #projbar,body.dark #toolbar,body.dark #ltr-quickbar,body.dark #noc-summary{{background:#162132;color:#e2e8f0;border-color:#304257}}
+body.dark #projbar,body.dark #toolbar,body.dark #ltr-quickbar,body.dark #ptw-subtabs,body.dark #noc-summary{{background:#162132;color:#e2e8f0;border-color:#304257}}
+body.dark .ptw-subtab-btn{{background:#101a29;color:#cbd5e1;border-color:#304257}}
+body.dark .ptw-subtab-btn:hover{{background:#1e3147;color:#fff;border-color:#475569}}
+body.dark .ptw-subtab-btn.active{{background:#2563eb;color:#fff;border-color:#3b82f6}}
+body.dark .ptw-subtab-cnt{{background:rgba(255,255,255,.12);color:#e2e8f0}}
 body.dark #tabsbar{{background:#0d1f33}}
 body.dark #tblwrap{{background:#111b2a}}
 body.dark .pf-lbl{{color:#93c5fd}}
@@ -13734,6 +13742,20 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 .tab-add{{padding:5px 10px;background:rgba(255,255,255,.1);border:1px dashed rgba(255,255,255,.35);
   color:rgba(255,255,255,.7);border-radius:4px;cursor:pointer;font-size:16px;margin-left:6px}}
 .tab-add:hover{{background:rgba(255,255,255,.2)}}
+.ptw-subtabs-bar{{background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:6px;
+  padding:6px 14px;overflow-x:auto;flex-shrink:0;scrollbar-width:thin}}
+.ptw-subtabs-bar::-webkit-scrollbar{{height:4px}}
+.ptw-subtabs-bar::-webkit-scrollbar-thumb{{background:rgba(100,116,139,.35);border-radius:4px}}
+.ptw-subtab-btn{{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;
+  border:1px solid var(--bd);background:#fff;color:var(--tx);cursor:pointer;font-family:inherit;
+  font-size:11px;font-weight:600;white-space:nowrap;flex-shrink:0;transition:all .15s}}
+.ptw-subtab-btn:hover{{background:#eff6ff;border-color:#93c5fd;color:var(--pr)}}
+.ptw-subtab-btn.active{{background:var(--pr);color:#fff;border-color:var(--pr);box-shadow:0 1px 3px rgba(15,38,64,.18)}}
+.ptw-subtab-code{{font-family:Consolas,monospace;font-size:9.5px;font-weight:700;opacity:.75;letter-spacing:.3px}}
+.ptw-subtab-btn.active .ptw-subtab-code{{opacity:.92}}
+.ptw-subtab-cnt{{background:rgba(15,23,42,.08);color:var(--tx);border-radius:999px;padding:0 6px;
+  font-size:10px;font-weight:700;min-width:18px;text-align:center}}
+.ptw-subtab-btn.active .ptw-subtab-cnt{{background:rgba(255,255,255,.22);color:#fff}}
 #toolbar{{background:#fff;border-bottom:1px solid var(--bd);padding:4px 8px;
   display:flex;align-items:center;gap:5px;flex-shrink:0;flex-wrap:wrap}}
 #toolbar-actions{{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}}
@@ -14209,6 +14231,7 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
   {tabs_html}
   {'<button class="tab-add" onclick="addDocType()" title="' + t("reg.add_type_title", norm) + '">＋</button>' if editable else ''}
 </div>
+<div id="ptw-subtabs" class="ptw-subtabs-bar" style="display:none" role="tablist" aria-label="{t("hse.ptw.subtabs_aria", norm)}"></div>
 
   <div id="toolbar">
     <div id="toolbar-actions">
@@ -14911,7 +14934,7 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
 {_shared_js_html(norm)}
 <script>
 window._ACCESSIBLE_PROJECTS = {projs_json};
-const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'}, CAN_DOWNLOAD={'true' if can_dl else 'false'};
+const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', PROJ_PTW_PREFIX={ptw_prefix_json}, DEFAULT_PTW_SUBTYPE_CODES={ptw_codes_json}, WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'}, CAN_DOWNLOAD={'true' if can_dl else 'false'};
 const SC_DEFAULTS={{...{sc_json},
   'Approved':['166534','ffffff'],
   'Completed':['bbf7d0','166534'],
@@ -14954,7 +14977,7 @@ const DEFAULT_EXPECTED_REPLY_RULE={{
   weekend_mode:'friday_only',
   exclude_official_holidays:true
 }};
-const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},latestRevisionsOnly:false,editId:null,revisionDraftActive:false,savingRecord:false,lists:{{}},prItemsCache:{{}}}};
+const state={{tab:null,cols:[],recs:null,visibleRows:[],selectedRowId:null,sortCol:null,sortDir:'asc',filters:{{}},ptwSubtypeFilter:'',latestRevisionsOnly:false,editId:null,revisionDraftActive:false,savingRecord:false,lists:{{}},listsMeta:{{}},prItemsCache:{{}}}};
 
 function isPRTab(){{
   const dt=state.dtList?.find(d=>d.id===state.tab)||{{}};
@@ -15363,8 +15386,14 @@ async function refreshCounts(){{
 
 async function loadLists(force=false){{
   if(!force&&Object.keys(state.lists).length) return;
-  const d=await apiFetch('/api/lists/'+PID); if(d) state.lists=d;
+  const [d, m]=await Promise.all([
+    apiFetch('/api/lists/'+PID),
+    apiFetch('/api/lists_meta/'+PID).catch(()=>null)
+  ]);
+  if(d) state.lists=d;
+  if(m) state.listsMeta=m;
   ensureLTRProjectLists();
+  if(typeof updatePtwSubTabs==='function') updatePtwSubTabs();
 }}
 
 function renderTabs(dts){{
@@ -15385,10 +15414,11 @@ function renderTabs(dts){{
 
 function switchTab(id, isInitial){{
   const prevTab = state.tab;
-  state.tab=id;state.recs=null;state.visibleRows=[];state.selectedRowId=null;state.filters={{}};state.sortCol=null;
+  state.tab=id;state.recs=null;state.visibleRows=[];state.selectedRowId=null;state.filters={{}};state.ptwSubtypeFilter='';state.sortCol=null;
   document.getElementById('srchbox').value='';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
   updateLTRQuickBar();
+  updatePtwSubTabs();
   loadRecords();
 
   if(!isInitial && prevTab && prevTab !== id){{
@@ -15515,6 +15545,7 @@ async function loadRecords(){{
   state.colWidths=widths||{{}};
   const cnt=document.getElementById('cnt-'+state.tab); if(cnt)cnt.textContent=data.count;
   updateLTRQuickBar();
+  updatePtwSubTabs();
   buildHead(); requestAnimationFrame(()=>initRz()); renderRows();
 }}
 
@@ -15583,16 +15614,27 @@ function buildHead(){{
     if(['auto_date','auto_num'].includes(col.col_type)){{fr.appendChild(th);return;}}
     if(col.col_type==='dropdown'&&col.list_name){{
       const sel=document.createElement('select');
+      sel.dataset.colKey=col.col_key;
       const ltrRole=isLTRTab()?getLTRFieldRole(col):'';
       const listName=ltrRole==='fromParty'||ltrRole==='toParty'
         ? 'correspondence_parties'
         : (ltrRole==='direction' ? 'letter_direction' : (ltrRole==='status' ? 'letter_status' : col.list_name));
       const isStCol=(col.col_key==='status'||isStatusLikeField(col));
-      sel.innerHTML='<option value="">'+escHtml(window.t('reg.filter_all'))+'</option>'+(state.lists[listName]||[]).map(o=>`<option value="${{escHtml(o)}}" ${{state.filters[col.col_key]===o?'selected':''}}>${{escHtml(isStCol?window.tStatus(o):o)}}</option>`).join('');
-      sel.onchange=()=>{{state.filters[col.col_key]=sel.value;renderRows();}};
+      const curFlt=(isHsePtwTab()&&col.col_key==='legacySubtype')?(state.ptwSubtypeFilter||state.filters[col.col_key]||''):(state.filters[col.col_key]||'');
+      sel.innerHTML='<option value="">'+escHtml(window.t('reg.filter_all'))+'</option>'+(state.lists[listName]||[]).map(o=>`<option value="${{escHtml(o)}}" ${{curFlt===o?'selected':''}}>${{escHtml(isStCol?window.tStatus(o):o)}}</option>`).join('');
+      sel.onchange=()=>{{
+        state.filters[col.col_key]=sel.value;
+        if(isHsePtwTab()&&col.col_key==='legacySubtype'){{
+          state.ptwSubtypeFilter=sel.value||'';
+          updatePtwSubTabs();
+        }}
+        renderRows();
+      }};
       th.appendChild(sel);
     }}else{{
-      const inp=document.createElement('input');inp.value=state.filters[col.col_key]||'';
+      const inp=document.createElement('input');
+      inp.dataset.colKey=col.col_key;
+      inp.value=state.filters[col.col_key]||'';
       inp.oninput=()=>{{state.filters[col.col_key]=inp.value;renderRows();}};
       th.appendChild(inp);
     }}
@@ -15824,9 +15866,16 @@ function renderRows(){{
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
   let rows=state.recs.filter(r=>{{
     if(state.latestRevisionsOnly && r._has_newer_revision) return false;
+    if(isHsePtwTab() && state.ptwSubtypeFilter){{
+      if(normalizePtwSubtypeValue(r.legacySubtype).toLowerCase() !== state.ptwSubtypeFilter.toLowerCase()) return false;
+    }}
     for(const[k,v]of Object.entries(state.filters)){{
       if(k.startsWith('_'))continue;
       if(v){{
+        if(isHsePtwTab() && k==='legacySubtype'){{
+          if(normalizePtwSubtypeValue(r[k]).toLowerCase() !== String(v).trim().toLowerCase()) return false;
+          continue;
+        }}
         const fCol=(state.cols||[]).find(c=>c.col_key===k);
         {{const _t=getRowSearchableText(r,k,fCol).toLowerCase(),_q=String(v).toLowerCase();let _ok=_t.includes(_q);if(!_ok){{const _qn=_q.trim().replace(/\\/+/g,'-'),_iso=_t.trim().match(/^(\\d{{4}})-(\\d{{2}})-(\\d{{2}})(?![\\d])/);if(_iso){{const _dmy=_iso[3]+'-'+_iso[2]+'-'+_iso[1];_ok=_t.includes(_qn)||_dmy.includes(_qn)||_iso[0].includes(_qn);}}}}if(!_ok)return false;}}
       }}
@@ -16265,7 +16314,7 @@ function calcWD(s,e){{
   catch{{return'';}}
 }}
 function getLongTextMeta(col){{
-  if(col.col_type==='long_text')return {{type:'long_text',rows:col.rows||3}};
+  if(col.col_type==='long_text')return {{type:'long_text',rows:col.rows||3,style:col.style||'resize:vertical;min-height:68px;overflow:hidden',placeholder:col.placeholder||''}};
   const key=String(col?.col_key||'').toLowerCase().replace(/[_./-]+/g,'');
   const label=String(col?.label||'').toLowerCase().replace(/[_./-]+/g,' ');
   if(key==='msref' || label.includes('ms ref') || label.includes('material submittal')) return {{type:'long_text',rows:3, style:'resize:vertical;min-height:75px;overflow:hidden', placeholder:'Multiple references supported (Use Enter for new line)'}};
@@ -16740,7 +16789,15 @@ function addRecord(){{
     buildForm(draft,{{mode:'revisionDraft'}});
   }}else{{
     document.getElementById('rec-title').textContent=window.t('form.add_title');
-    buildForm(null,{{suggestedDocNo:suggestNextDocNoFromVisibleRows()}});
+    if(isHsePtwTab()){{
+      const defSub=state.ptwSubtypeFilter||'';
+      buildForm(null,{{
+        defaultSubtype:defSub,
+        suggestedDocNo:defSub?computeNextPtwDocNoClient(defSub):''
+      }});
+    }}else{{
+      buildForm(null,{{suggestedDocNo:suggestNextDocNoFromVisibleRows()}});
+    }}
   }}
   openM('rec-modal');
 }}
@@ -16933,9 +16990,15 @@ async function buildForm(row,opts={{}}){{
   const sectionBodies={{}};
   let nextNo='';
   const isAddMode=!state.editId;
+  const isPtwTab=isHsePtwTab();
+  const initialPtwSubtype=isPtwTab?(row?normalizePtwSubtypeValue(row.legacySubtype):normalizePtwSubtypeValue(opts.defaultSubtype||state.ptwSubtypeFilter||'')):'';
   if(!row){{
-    nextNo=String(opts.suggestedDocNo||'').trim();
-    if(!nextNo){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
+    if(isPtwTab){{
+      nextNo=initialPtwSubtype?(String(opts.suggestedDocNo||'').trim()||computeNextPtwDocNoClient(initialPtwSubtype)):'';
+    }}else{{
+      nextNo=String(opts.suggestedDocNo||'').trim();
+      if(!nextNo){{const r=await apiFetch('/api/next_doc_no/'+PID+'/'+state.tab);nextNo=r?.next||'';}}
+    }}
   }}
   const isPrTab=isPRTab();
   const isNocTab=isNOCTab();
@@ -17060,6 +17123,30 @@ async function buildForm(row,opts={{}}){{
       bindSmartTextarea(ta);
       grp.appendChild(ta);
     }}
+    else if(isPtwTab&&key==='legacySubtype'&&col.col_type==='dropdown'&&col.list_name){{
+      const sel=document.createElement('select');
+      sel.id='f-'+key;
+      const listOpts=[...(state.lists[col.list_name]||Object.keys(DEFAULT_PTW_SUBTYPE_CODES||{{}}))];
+      const currentVal=row?normalizePtwSubtypeValue(val):initialPtwSubtype;
+      if(currentVal&&!listOpts.some(o=>o.toLowerCase()===currentVal.toLowerCase())){{
+        listOpts.push(currentVal);
+      }}
+      sel.innerHTML=`<option value="">${{escHtml(window.t('hse.ptw.select_subtype'))}}</option>`+listOpts.map(o=>{{
+        const sc=getPtwSubtypeCode(o);
+        const lbl=sc?`${{o}} (${{sc}})`:o;
+        return `<option value="${{escHtml(o)}}">${{escHtml(lbl)}}</option>`;
+      }}).join('');
+      const matchedOpt=currentVal?listOpts.find(o=>o.toLowerCase()===currentVal.toLowerCase()):'';
+      sel.value=matchedOpt||currentVal||'';
+      sel.addEventListener('change',()=>{{
+        const docEl=document.getElementById('f-docNo');
+        if(isAddMode&&docEl){{
+          updatePtwDocNoForSubtype(sel.value,docEl);
+        }}
+        formRoot.dispatchEvent(new CustomEvent('dcr:ptw-subtype-changed',{{detail:{{subtype:sel.value}}}}));
+      }});
+      grp.appendChild(sel);
+    }}
     else if(col.col_type==='dropdown'&&col.list_name){{
       // Add free-text input below multiselect
       const wrapper=document.createElement('div');
@@ -17090,7 +17177,16 @@ async function buildForm(row,opts={{}}){{
     else if(col.col_type==='docno'){{
       const inp=document.createElement('input');inp.id='f-'+key;inp.className='bidi-ltr';
       if(row){{inp.value=val;}}
-      else{{inp.value=nextNo;inp.placeholder=nextNo?'':state.tab+'-001 REV00';}}
+      else{{
+        inp.value=nextNo;
+        inp.placeholder=nextNo?'':(isPtwTab?(resolvePtwProjectPrefix()+'-HWP-001'):(state.tab+'-001 REV00'));
+        if(isPtwTab){{
+          inp.addEventListener('input',()=>{{inp.dataset.manualEdit=inp.value.trim()?'1':'';}});
+          if(initialPtwSubtype){{
+            updatePtwDocNoForSubtype(initialPtwSubtype,inp);
+          }}
+        }}
+      }}
       inp.style.cssText='font-family:Consolas,monospace;font-weight:600';
       bindDirectionalInput(inp);
       grp.appendChild(inp);
@@ -17133,8 +17229,8 @@ async function buildForm(row,opts={{}}){{
     else if(longTextMeta){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=isItemRefField(col)?formatItemRefPlainText(val,false):(typeof val==='object'&&val!==null?formatItemRefPlainText(val,false):val);
       ta.rows=longTextMeta.rows;
-      ta.style.cssText=longTextMeta.style;
-      ta.placeholder=longTextMeta.placeholder;
+      ta.style.cssText=longTextMeta.style||'resize:vertical;min-height:68px;overflow:hidden';
+      ta.placeholder=longTextMeta.placeholder||'';
       bindSmartTextarea(ta);
       grp.appendChild(ta);
     }}
@@ -18187,6 +18283,201 @@ function getHseTabCode(dtTab){{
 function isHseQrTab(dtTab){{
   const code = getHseTabCode(dtTab);
   return code === 'FEI' || code === 'PTW';
+}}
+function isHsePtwTab(dtTab){{
+  return getHseTabCode(dtTab) === 'PTW';
+}}
+function normalizePtwSubtypeValue(val){{
+  if(val===null||val===undefined)return '';
+  if(Array.isArray(val)){{
+    for(const item of val){{
+      const cleaned=normalizePtwSubtypeValue(item);
+      if(cleaned)return cleaned;
+    }}
+    return '';
+  }}
+  const s=String(val).trim();
+  if(!s)return '';
+  if(s.startsWith('[')){{
+    try{{
+      const parsed=JSON.parse(s);
+      if(Array.isArray(parsed))return normalizePtwSubtypeValue(parsed);
+    }}catch(_e){{}}
+  }}
+  if(s.includes(',')){{
+    const knownKeys=Object.keys(DEFAULT_PTW_SUBTYPE_CODES||{{}});
+    const exactKnown=knownKeys.find(k=>k.toLowerCase()===s.toLowerCase());
+    if(exactKnown)return exactKnown;
+    const parts=s.split(',').map(p=>p.trim()).filter(Boolean);
+    return parts[0]||'';
+  }}
+  return s;
+}}
+function getPtwSubtypeCode(subtypeName){{
+  const name=normalizePtwSubtypeValue(subtypeName);
+  if(!name)return '';
+  const metaList=state.listsMeta?.hse_ptw_subtype||[];
+  const statusTokens=new Set(['PENDING','APPROVED','REJECTED','CANCELLED','INFOCLOSED','INFO_CLOSED']);
+  const metaMatch=metaList.find(m=>m&&String(m.value||'').trim().toLowerCase()===name.toLowerCase());
+  if(metaMatch&&metaMatch.meta){{
+    let rawMeta=String(metaMatch.meta).trim();
+    if(rawMeta.startsWith('{{')){{
+      try{{const pm=JSON.parse(rawMeta);if(pm&&(pm.code||pm.subtype_code))rawMeta=String(pm.code||pm.subtype_code);}}catch(_e){{}}
+    }}
+    const cleanedMeta=rawMeta.toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(cleanedMeta&&!statusTokens.has(cleanedMeta))return cleanedMeta.slice(0,8);
+  }}
+  const defaults=DEFAULT_PTW_SUBTYPE_CODES||{{}};
+  if(defaults[name])return defaults[name];
+  const low=name.toLowerCase();
+  for(const [k,v] of Object.entries(defaults)){{
+    if(k.toLowerCase()===low)return v;
+  }}
+  const words=name.match(/[A-Za-z0-9]+/g)||[];
+  if(words.length){{
+    if(words.length===1&&words[0].length>=2&&words[0].length<=5&&words[0]===words[0].toUpperCase())return words[0];
+    const hasPermit=words.length>1&&/^permits?$/i.test(words[words.length-1]);
+    const baseWords=hasPermit?words.slice(0,-1):words;
+    const stop=new Set(['of','and','the','for','at','in','or','on','to']);
+    const sig=baseWords.filter(w=>!stop.has(w.toLowerCase()));
+    const useWords=sig.length?sig:baseWords;
+    if(hasPermit){{
+      if(useWords.length>=2)return (useWords[0][0]+useWords[1][0]+'P').toUpperCase();
+      const w=useWords[0].toUpperCase();
+      return w.length>=2?(w.slice(0,2)+'P'):(w+'WP');
+    }}
+    if(useWords.length>=3)return useWords.slice(0,3).map(w=>w[0]).join('').toUpperCase();
+    if(useWords.length===2)return (useWords[0].slice(0,2)+useWords[1][0]).toUpperCase();
+    const w=useWords[0].toUpperCase();
+    return w.length>=3?w.slice(0,3):(w+'P');
+  }}
+  let h=0;
+  for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))%900;
+  return 'P'+String(h+100);
+}}
+function formatPtwSubTabLabel(subtypeName){{
+  const s=normalizePtwSubtypeValue(subtypeName);
+  if(!s)return '';
+  const stripped=s.replace(/\\s+Permit$/i,'').trim();
+  return stripped||s;
+}}
+function resolvePtwProjectPrefix(){{
+  if(typeof PROJ_PTW_PREFIX!=='undefined'&&PROJ_PTW_PREFIX){{
+    const c=String(PROJ_PTW_PREFIX).trim().replace(/[^A-Za-z0-9_-]/g,'').toUpperCase();
+    if(c)return c;
+  }}
+  const pidUp=String(PID||'').trim().toUpperCase();
+  const codeUp=String(typeof PROJ_CODE!=='undefined'?PROJ_CODE:'').trim().toUpperCase();
+  if(pidUp==='HSE-CFC-P2'||codeUp==='HSE-CFC-P2')return 'PEM058';
+  for(const rec of (state.recs||[])){{
+    const dn=String(rec?.docNo||'').trim();
+    const m=dn.match(/^([A-Za-z]{{2,8}})-?(\\d{{2,4}})-/);
+    if(m)return m[1].toUpperCase()+m[2];
+  }}
+  const raw=codeUp||pidUp;
+  const stripped=raw.replace(/^HSE[-_]+/,'');
+  const cleaned=(stripped&&/[A-Z]/.test(stripped)?stripped:raw).replace(/[^A-Z0-9]/g,'');
+  return cleaned||'PTW';
+}}
+function computeNextPtwDocNoClient(subtypeName){{
+  const cleanSub=normalizePtwSubtypeValue(subtypeName);
+  const code=getPtwSubtypeCode(cleanSub);
+  if(!cleanSub||!code)return '';
+  const prefix=resolvePtwProjectPrefix();
+  const escaped=code.replace(/[^A-Za-z0-9_-]/g,'');
+  if(!escaped)return '';
+  const pat=new RegExp('^(?:[A-Z0-9_-]+-)?'+escaped+'-(\\\\d+)(?:\\\\s+REV\\\\d+)?$','i');
+  let maxSeq=0;
+  for(const rec of (state.recs||[])){{
+    const dn=String(rec?.docNo||'').trim();
+    const m=dn.match(pat);
+    if(m)maxSeq=Math.max(maxSeq,parseInt(m[1],10)||0);
+  }}
+  return prefix+'-'+code+'-'+String(maxSeq+1).padStart(3,'0');
+}}
+let _ptwDocNoReqSeq=0;
+async function updatePtwDocNoForSubtype(subtypeName,inputEl){{
+  if(!inputEl||inputEl.dataset.manualEdit==='1')return;
+  const cleanSub=normalizePtwSubtypeValue(subtypeName);
+  if(!cleanSub){{
+    inputEl.value='';
+    return;
+  }}
+  const immediate=computeNextPtwDocNoClient(cleanSub);
+  if(immediate)inputEl.value=immediate;
+  const seq=++_ptwDocNoReqSeq;
+  try{{
+    const r=await apiFetch('/api/next_doc_no/'+encodeURIComponent(PID)+'/'+encodeURIComponent(state.tab)+'?subtype='+encodeURIComponent(cleanSub));
+    if(!inputEl.isConnected||inputEl.dataset.manualEdit==='1'||seq!==_ptwDocNoReqSeq)return;
+    const selEl=document.getElementById('f-legacySubtype');
+    if(selEl&&normalizePtwSubtypeValue(selEl.value)!==cleanSub)return;
+    if(r&&r.next)inputEl.value=r.next;
+  }}catch(_e){{}}
+}}
+function updatePtwSubTabs(){{
+  const bar=document.getElementById('ptw-subtabs');
+  if(!bar)return;
+  const on=isHsePtwTab();
+  bar.style.display=on?'flex':'none';
+  if(!on){{
+    state.ptwSubtypeFilter='';
+    return;
+  }}
+  const configured=[...(state.lists?.hse_ptw_subtype||Object.keys(DEFAULT_PTW_SUBTYPE_CODES||{{}}))];
+  if(state.ptwSubtypeFilter&&!configured.some(s=>s.toLowerCase()===state.ptwSubtypeFilter.toLowerCase())){{
+    state.ptwSubtypeFilter='';
+  }}
+  const recs=Array.isArray(state.recs)?state.recs:[];
+  const counts=new Map();
+  configured.forEach(s=>counts.set(s.toLowerCase(),0));
+  recs.forEach(r=>{{
+    const sub=normalizePtwSubtypeValue(r?.legacySubtype);
+    if(sub){{
+      const k=sub.toLowerCase();
+      counts.set(k,(counts.get(k)||0)+1);
+    }}
+  }});
+  bar.innerHTML='';
+  const mkBtn=(subtypeVal,labelText,codeText,countNum,isActive,titleText)=>{{
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='ptw-subtab-btn'+(isActive?' active':'');
+    btn.dataset.subtype=subtypeVal;
+    btn.setAttribute('role','tab');
+    btn.setAttribute('aria-selected',isActive?'true':'false');
+    btn.title=titleText||labelText;
+    const lbl=document.createElement('span');
+    lbl.textContent=labelText;
+    btn.appendChild(lbl);
+    if(codeText){{
+      const cd=document.createElement('span');
+      cd.className='ptw-subtab-code bidi-ltr';
+      cd.textContent=codeText;
+      btn.appendChild(cd);
+    }}
+    const cnt=document.createElement('span');
+    cnt.className='ptw-subtab-cnt bidi-ltr';
+    cnt.textContent=String(countNum);
+    btn.appendChild(cnt);
+    btn.onclick=()=>setPtwSubtypeFilter(subtypeVal);
+    return btn;
+  }};
+  bar.appendChild(mkBtn('',window.t('reg.filter_all'),'',recs.length,!state.ptwSubtypeFilter,window.t('reg.filter_all')));
+  configured.forEach(sub=>{{
+    const code=getPtwSubtypeCode(sub);
+    const cnt=counts.get(sub.toLowerCase())||0;
+    const active=!!state.ptwSubtypeFilter&&state.ptwSubtypeFilter.toLowerCase()===sub.toLowerCase();
+    bar.appendChild(mkBtn(sub,formatPtwSubTabLabel(sub),code,cnt,active,`${{sub}}${{code?' ('+code+')':''}}`));
+  }});
+}}
+function setPtwSubtypeFilter(subtype){{
+  state.ptwSubtypeFilter=normalizePtwSubtypeValue(subtype);
+  if(state.ptwSubtypeFilter)state.filters.legacySubtype=state.ptwSubtypeFilter;
+  else delete state.filters.legacySubtype;
+  const fltSel=document.querySelector('#thead .frow select[data-col-key="legacySubtype"]');
+  if(fltSel)fltSel.value=state.ptwSubtypeFilter||'';
+  updatePtwSubTabs();
+  renderRows();
 }}
 function isHseFeiTab(dtTab){{
   return getHseTabCode(dtTab) === 'FEI';
@@ -19491,7 +19782,13 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const dtObj=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT || String(d.code||'').trim().toUpperCase()===curT)||{{}};
   const hasReply=isEng&&dtHasReplyCycle(dtObj);
   const isHseCo=isHseCloseoutTab();
+  const isPtwTab=isHsePtwTab();
   const hasDual=hasReply||isHseCo;
+  const getCurrentFormSubtype=()=>{{
+    const subEl=formRoot.querySelector('#f-legacySubtype')||formRoot.querySelector('[name="legacySubtype"]');
+    const raw=(subEl&&subEl.value)?subEl.value:(row?.legacySubtype||'');
+    return normalizePtwSubtypeValue(raw);
+  }};
   const slots=isNoc
     ? [{{key:'part_a',title:window.t('noc.part_a_title'),pathSub:'Part A',emptyText:window.t('noc.part_a_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
        {{key:'part_b',title:window.t('noc.part_b_title'),pathSub:'Part B',emptyText:window.t('noc.part_b_empty'),color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
@@ -19553,8 +19850,27 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     const folderHint=document.createElement('div');
     folderHint.style.cssText='font-size:9.5px;color:var(--mu);display:flex;align-items:center;gap:3px;margin-top:-2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     const _projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
-    const pathText = isNoc ? `${{_projLbl}} ❯ NOC ❯ ${{pathSubName}}` : `${{_projLbl}} ❯ ${{dtName}}${{hasDual?(' ❯ '+pathSubName):''}}`;
-    folderHint.innerHTML=`<span>📁</span> <strong style="color:${{isDark?'#cbd5e1':'#334155'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escHtml(pathText)}}">${{escHtml(pathText)}}</strong>`;
+    const computeCardPathText=()=>{{
+      if(isNoc)return `${{_projLbl}} ❯ NOC ❯ ${{pathSubName}}`;
+      if(isPtwTab){{
+        const sub=getCurrentFormSubtype();
+        return sub?`${{_projLbl}} ❯ PTW ❯ ${{sub}}`:`${{_projLbl}} ❯ PTW`;
+      }}
+      return `${{_projLbl}} ❯ ${{dtName}}${{hasDual?(' ❯ '+pathSubName):''}}`;
+    }};
+    const pathStrong=document.createElement('strong');
+    pathStrong.style.cssText=`color:${{isDark?'#cbd5e1':'#334155'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+    const syncCardPathHint=()=>{{
+      const pt=computeCardPathText();
+      pathStrong.textContent=pt;
+      pathStrong.title=pt;
+    }};
+    syncCardPathHint();
+    folderHint.innerHTML='<span>📁</span> ';
+    folderHint.appendChild(pathStrong);
+    if(isPtwTab){{
+      formRoot.addEventListener('dcr:ptw-subtype-changed',syncCardPathHint);
+    }}
     card.appendChild(folderHint);
 
     const statusLine=document.createElement('div');
@@ -19900,13 +20216,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const formTo=(toEl&&toEl.value)?toEl.value:(row?.toParty||row?.to||'');
         const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]')||formRoot.querySelector('#f-nocNo')||formRoot.querySelector('[name="nocNo"]');
         const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||row?.nocNo||'');
+        const formSubtype=getCurrentFormSubtype();
         const revOpts=getUploadRevOpts(cur[s.key]);
         try{{
           const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
             const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
             progBarInner.style.width=pct+'%';
             progTxt.textContent=label||(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
-          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, rev_mode: revOpts.rev_mode, part_rev: revOpts.part_rev}});
+          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, subtype: formSubtype, rev_mode: revOpts.rev_mode, part_rev: revOpts.part_rev}});
           if(res&&res.pending){{
             state.pendingDriveAttachments[s.key]=res;
             renderSlotInfo(cur[s.key],res);
@@ -20036,11 +20353,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const formTo=(toEl&&toEl.value)?toEl.value:(row?.toParty||row?.to||'');
             const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]')||formRoot.querySelector('#f-nocNo')||formRoot.querySelector('[name="nocNo"]');
             const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||row?.nocNo||'');
+            const formSubtype=getCurrentFormSubtype();
             lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
               const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
               progBarInner.style.width = overall + '%';
               progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
-            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, rev_mode: (fi === 0 ? revOpts.rev_mode : 'overwrite'), part_rev: revOpts.part_rev, direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, signal: slotAbortCtrl.signal}});
+            }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, rev_mode: (fi === 0 ? revOpts.rev_mode : 'overwrite'), part_rev: revOpts.part_rev, direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, subtype: formSubtype, signal: slotAbortCtrl.signal}});
             if(lastRes && lastRes.pending) pendingItems.push(lastRes);
             uploadedCount++;
           }}
@@ -20229,6 +20547,7 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
     from_party: extraOpts.from_party||row?.fromParty||row?.from||'',
     to_party: extraOpts.to_party||row?.toParty||row?.to||'',
     doc_no: extraOpts.doc_no||row?.docNo||row?.nocNo||'',
+    subtype: (extraOpts.subtype!==undefined)?extraOpts.subtype:(row?.legacySubtype?normalizePtwSubtypeValue(row.legacySubtype):''),
     destination_folder_id: extraOpts.destination_folder_id||''
   }};
   const sessRes=await fetch('/api/drive/upload-session',{{
@@ -20364,6 +20683,9 @@ function getBatchTargetDrivePath(slot){{
   const slotMap={{submission:'Submit',approval:'Replied',part_a:'Part A',part_b:'Part B',part_c:'Part C',part_d:'Part D'}};
   const sub=slotMap[slot]||'Submit';
   const projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
+  if(isHsePtwTab()){{
+    return state.ptwSubtypeFilter ? `${{projLbl}} ❯ PTW ❯ ${{state.ptwSubtypeFilter}}` : `${{projLbl}} ❯ PTW ❯ <Subtype>`;
+  }}
   return (tabHasReplyCycle()||isHseCloseoutTab()||isNOCTab()) ? `${{projLbl}} ❯ ${{dtName}} ❯ ${{sub}}` : `${{projLbl}} ❯ ${{dtName}}`;
 }}
 
@@ -21542,6 +21864,7 @@ async function openLists(){{
   const body=document.getElementById('lists-body');body.innerHTML='';
   for(const[ln,items]of Object.entries(state.lists).filter(([ln])=>!isHiddenSystemListName(ln))){{
     const isStatus=ln.toLowerCase().startsWith('status');
+    const isPtwSubList=ln.toLowerCase()==='hse_ptw_subtype';
     const t=document.createElement('div');t.className='stitle';
     t.textContent=ln.charAt(0).toUpperCase()+ln.slice(1)+(isStatus?' 🏷':'');
     body.appendChild(t);
@@ -21555,7 +21878,26 @@ async function openLists(){{
       li.style.cssText='display:flex;align-items:center;gap:6px;padding:5px 8px';
       const nm=document.createElement('span');nm.style.flex='1';nm.textContent=item;
       li.appendChild(nm);
-      if(isStatus){{
+      if(isPtwSubList){{
+        const ptwCode=getPtwSubtypeCode(item);
+        const codeBtn=document.createElement('button');
+        codeBtn.type='button';
+        codeBtn.className='bidi-ltr';
+        codeBtn.style.cssText='font-family:Consolas,monospace;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;cursor:pointer';
+        codeBtn.textContent=ptwCode||'SET';
+        codeBtn.title=window.t('hse.ptw.edit_code_btn');
+        codeBtn.onclick=async()=>{{
+          const nextCode=prompt(window.t('hse.ptw.edit_code_prompt',{{item}}),ptwCode);
+          if(nextCode===null)return;
+          const cleanCode=nextCode.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+          if(!cleanCode)return;
+          await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:item,meta:cleanCode}})}});
+          await loadLists(true);openLists();
+          if(isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
+          toast(window.t('reg.lists_saved'),'ok');
+        }};
+        li.appendChild(codeBtn);
+      }}else if(isStatus){{
         const badge=document.createElement('span');
         badge.style.cssText=`background:${{ml.bg}};color:${{ml.fg}};font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap`;
         badge.textContent=ml.lbl;
@@ -21593,8 +21935,17 @@ async function openLists(){{
     body.appendChild(ul);
     const ar=document.createElement('div');ar.className='addrow';
     const ni=document.createElement('input');ni.id='new-'+ln;ni.placeholder=window.t('reg.lists_new_item_ph');
+    ar.appendChild(ni);
+    if(isPtwSubList){{
+      const ci=document.createElement('input');
+      ci.id='new-code-'+ln;
+      ci.className='bidi-ltr';
+      ci.placeholder=window.t('hse.ptw.list_code_ph');
+      ci.style.cssText='max-width:125px;text-transform:uppercase;font-family:Consolas,monospace';
+      ar.appendChild(ci);
+    }}
     const ab=document.createElement('button');ab.className='btn btn-ok btn-sm';ab.textContent=window.t('common.add');ab.onclick=()=>addItem(ln);
-    ar.appendChild(ni);ar.appendChild(ab);
+    ar.appendChild(ab);
     if(isStatus){{
       const hint=document.createElement('div');
       hint.style.cssText='font-size:10px;color:#94a3b8;margin-top:4px';
@@ -21612,12 +21963,17 @@ async function openLists(){{
 
 async function addItem(ln){{
   const inp=document.getElementById('new-'+ln);const val=inp?.value.trim();if(!val)return;
-  await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item:val}})}});
+  const codeInp=document.getElementById('new-code-'+ln);
+  const codeVal=codeInp?codeInp.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,''):'';
+  const payload={{list_name:ln,item:val}};
+  if(codeVal)payload.meta=codeVal;
+  await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
   // Auto-assign pending meta for new status items
   if(ln.toLowerCase().startsWith('status')){{
     await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:val,meta:'pending'}})}});
   }}
   await loadLists(true);openLists();
+  if(ln.toLowerCase()==='hse_ptw_subtype'&&isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
 }}
 async function renameItem(ln,item){{
   const next=prompt(window.t('reg.lists_rename_prompt'),item);
@@ -21625,7 +21981,9 @@ async function renameItem(ln,item){{
   const new_item=next.trim();
   if(!new_item||new_item===item)return;
   await apiFetch('/api/lists/'+PID,{{method:'PATCH',body:JSON.stringify({{list_name:ln,old_item:item,new_item}})}});
-  await loadLists(true);openLists();toast(window.t('reg.lists_item_renamed'),'ok');
+  await loadLists(true);openLists();
+  if(ln.toLowerCase()==='hse_ptw_subtype'&&isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
+  toast(window.t('reg.lists_item_renamed'),'ok');
 }}
 async function moveListItem(ln,item,delta){{
   const items=[...(state.lists[ln]||[])];
@@ -21633,11 +21991,14 @@ async function moveListItem(ln,item,delta){{
   if(idx<0||next<0||next>=items.length)return;
   [items[idx],items[next]]=[items[next],items[idx]];
   await apiFetch('/api/lists/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{list_name:ln,order:items}})}});
-  await loadLists(true);openLists();toast(window.t('reg.lists_order_updated'),'ok');
+  await loadLists(true);openLists();
+  if(ln.toLowerCase()==='hse_ptw_subtype'&&isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
+  toast(window.t('reg.lists_order_updated'),'ok');
 }}
 async function rmItem(ln,item,btn){{
   await apiFetch('/api/lists/'+PID,{{method:'DELETE',body:JSON.stringify({{list_name:ln,item}})}});
   btn.closest('li').remove();await loadLists(true);
+  if(ln.toLowerCase()==='hse_ptw_subtype'&&isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
 }}
 async function mkList(){{
   const name=document.getElementById('new-list')?.value.trim().toLowerCase().replace(/[\\s]+/g,'_');if(!name)return;

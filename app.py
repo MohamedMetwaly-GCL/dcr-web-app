@@ -339,7 +339,35 @@ def api_dashboard_stats():
 def api_next_doc_no(pid, dt_id):
     if not can_access_doc_type(pid, dt_id):
         return jsonify(error="Document type access denied"), 403
+    subtype = str(request.args.get("subtype", "") or "").strip()
+    dt_meta = db.get_doc_type(pid, dt_id) or {}
+    dt_code = str(dt_meta.get("code") or dt_id or "").strip().upper()
+    project = db.get_project(pid) or {}
+    ws_id = str(project.get("workspace_id") or "ENG").strip().upper()
     records = db.get_records(pid, dt_id)
+    if ws_id == "HSE" and dt_code == "PTW":
+        from hse_defaults import generate_next_ptw_doc_no, resolve_ptw_project_prefix
+        lists_meta = db.get_lists_with_meta(pid).get("hse_ptw_subtype", [])
+        meta_map = {
+            it["value"]: it.get("meta")
+            for it in lists_meta
+            if isinstance(it, dict) and it.get("value")
+        }
+        if subtype:
+            res = generate_next_ptw_doc_no(
+                pid, subtype, project=project, records=records, subtype_meta_map=meta_map
+            )
+        else:
+            res = {
+                "next": "",
+                "prefix": resolve_ptw_project_prefix(pid, project=project, records=records),
+                "subtype": "",
+                "subtype_code": "",
+                "seq": 0,
+            }
+        resp = jsonify(**res)
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return resp
     doc_nos = [str(r.get("docNo", "")).strip() for r in records if str(r.get("docNo", "")).strip()]
     if not doc_nos:
         # First Document: Leave blank for the user to define the pattern

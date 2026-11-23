@@ -1,5 +1,9 @@
 """Defaults for new HSE projects. See docs/hse/HSE_DECISION_LOG.md for provenance."""
 
+import json
+import re
+import zlib
+
 HSE_REGISTERS = (
     ("PTW", "Permit to Work", "DOC_CATEGORIES.permits"),
     ("OBS", "Safety Observations", "DOC_CATEGORIES.OBS_KEYS"),
@@ -25,7 +29,6 @@ HSE_SUBTYPES = {
         "electrical_permit": "Electrical / Isolation Permit",
         "lifting_permit": "Lifting Operations Permit",
         "radiography_permit": "Radiography Permit",
-        "maintenance": "Maintenance Work",
     },
     "OBS": {
         "unsafe_act": "Unsafe Act",
@@ -190,6 +193,206 @@ HSE_COLUMNS = {
         ("jobTitle", "Job Title", "text", None), ("hireDate", "Start Date", "date", None), NOTES,
     ),
 }
+
+
+PTW_SUBTYPE_CODES = {
+    "Hot Work Permit": "HWP",
+    "Cold Work Permit": "CWP",
+    "Work at Height Permit": "WAH",
+    "Confined Space Permit": "CSP",
+    "Excavation Permit": "EXP",
+    "Electrical / Isolation Permit": "EIP",
+    "Lifting Operations Permit": "LOP",
+    "Radiography Permit": "RGP",
+}
+
+_STATUS_META_TOKENS = frozenset({"PENDING", "APPROVED", "REJECTED", "CANCELLED", "INFOCLOSED", "INFO_CLOSED"})
+_PTW_LIST_ITEM_BRACKET_RE = re.compile(r"^(.*?)\s*\[\s*([A-Za-z0-9_-]{2,8})\s*\]\s*$")
+_PTW_LIST_ITEM_PIPE_RE = re.compile(r"^(.*?)\s*\|\s*([A-Za-z0-9_-]{2,8})\s*$")
+
+
+def normalize_ptw_subtype_value(val) -> str:
+    """Normalize legacy string/list/CSV subtype values into a single stripped string."""
+    if val is None:
+        return ""
+    if isinstance(val, (list, tuple)):
+        for item in val:
+            cleaned = normalize_ptw_subtype_value(item)
+            if cleaned:
+                return cleaned
+        return ""
+    s = str(val).strip()
+    if not s:
+        return ""
+    if s.startswith("["):
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, list):
+                return normalize_ptw_subtype_value(parsed)
+        except Exception:
+            pass
+    if "," in s:
+        if s in PTW_SUBTYPE_CODES or any(s.lower() == k.lower() for k in PTW_SUBTYPE_CODES):
+            return s
+        for part in s.split(","):
+            part_s = part.strip()
+            if part_s:
+                return part_s
+        return ""
+    return s
+
+
+def parse_ptw_list_item_input(raw_item: str) -> tuple[str, str | None]:
+    """Extract optional explicit code suffix from 'Subtype Name [CODE]' or 'Subtype Name | CODE'."""
+    s = str(raw_item or "").strip()
+    if not s:
+        return "", None
+    for pat in (_PTW_LIST_ITEM_BRACKET_RE, _PTW_LIST_ITEM_PIPE_RE):
+        m = pat.match(s)
+        if m:
+            name = m.group(1).strip()
+            code = re.sub(r"[^A-Z0-9]", "", m.group(2).upper())
+            if name and code:
+                return name, code
+    return s, None
+
+
+def _extract_code_from_meta(raw_meta) -> str:
+    if raw_meta is None:
+        return ""
+    if isinstance(raw_meta, dict):
+        cand = raw_meta.get("code") or raw_meta.get("subtype_code") or ""
+        return _extract_code_from_meta(cand)
+    s = str(raw_meta).strip()
+    if not s:
+        return ""
+    if s.startswith("{"):
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, dict):
+                return _extract_code_from_meta(parsed)
+        except Exception:
+            pass
+    if s.upper() in _STATUS_META_TOKENS:
+        return ""
+    cleaned = re.sub(r"[^A-Z0-9]", "", s.upper())
+    if not cleaned or cleaned in _STATUS_META_TOKENS:
+        return ""
+    return cleaned[:8]
+
+
+def get_ptw_subtype_code(subtype_name: str, custom_meta=None) -> str:
+    """Resolve the configurable Doc No. code for a PTW subtype name."""
+    name = normalize_ptw_subtype_value(subtype_name)
+    if not name:
+        return ""
+    if isinstance(custom_meta, dict):
+        if name in custom_meta:
+            c = _extract_code_from_meta(custom_meta[name])
+            if c:
+                return c
+        low = name.lower()
+        for k, v in custom_meta.items():
+            if str(k).strip().lower() == low:
+                c = _extract_code_from_meta(v)
+                if c:
+                    return c
+    elif custom_meta is not None:
+        c = _extract_code_from_meta(custom_meta)
+        if c:
+            return c
+
+    if name in PTW_SUBTYPE_CODES:
+        return PTW_SUBTYPE_CODES[name]
+    low = name.lower()
+    for k, v in PTW_SUBTYPE_CODES.items():
+        if k.lower() == low:
+            return v
+
+    # Deterministic fallback code for custom subtypes added via 'Lists' without explicit code metadata.
+    ascii_words = re.findall(r"[A-Za-z0-9]+", name)
+    if ascii_words:
+        if len(ascii_words) == 1 and 2 <= len(ascii_words[0]) <= 5 and ascii_words[0].isupper():
+            return ascii_words[0]
+        has_permit = ascii_words[-1].lower() in ("permit", "permits") and len(ascii_words) > 1
+        base_words = ascii_words[:-1] if has_permit else ascii_words
+        sig_words = [w for w in base_words if w.lower() not in {"of", "and", "the", "for", "at", "in", "or", "on", "to"}] or base_words
+        if has_permit:
+            if len(sig_words) >= 2:
+                return (sig_words[0][0] + sig_words[1][0] + "P").upper()
+            w = sig_words[0].upper()
+            return (w[:2] + "P") if len(w) >= 2 else (w + "WP")
+        if len(sig_words) >= 3:
+            return "".join(w[0] for w in sig_words[:3]).upper()
+        if len(sig_words) == 2:
+            return (sig_words[0][:2] + sig_words[1][0]).upper()
+        w = sig_words[0].upper()
+        return w[:3] if len(w) >= 3 else (w + "P")
+
+    digest = zlib.crc32(name.encode("utf-8")) % 900 + 100
+    return f"P{digest}"
+
+
+def resolve_ptw_project_prefix(pid: str, project: dict | None = None, records: list[dict] | None = None) -> str:
+    """Resolve the active project's PTW Doc No. prefix (e.g., PEM058 for HSE-CFC-P2)."""
+    proj = project if isinstance(project, dict) else {}
+    for key in ("ptw_prefix", "doc_prefix"):
+        explicit = str(proj.get(key) or "").strip()
+        if explicit:
+            return re.sub(r"[^A-Za-z0-9_-]", "", explicit).upper()
+
+    pid_up = str(pid or "").strip().upper()
+    code_up = str(proj.get("code") or "").strip().upper()
+    if pid_up == "HSE-CFC-P2" or code_up == "HSE-CFC-P2":
+        return "PEM058"
+
+    for rec in records or []:
+        doc_no = str((rec or {}).get("docNo") or "").strip()
+        m = re.match(r"^([A-Za-z]{2,8})-?(\d{2,4})-", doc_no)
+        if m:
+            return f"{m.group(1).upper()}{m.group(2)}"
+
+    raw = code_up or pid_up
+    stripped = re.sub(r"^HSE[-_]+", "", raw)
+    if stripped and re.search(r"[A-Z]", stripped):
+        cleaned = re.sub(r"[^A-Z0-9]", "", stripped)
+    else:
+        cleaned = re.sub(r"[^A-Z0-9]", "", raw)
+    return cleaned or "PTW"
+
+
+def generate_next_ptw_doc_no(
+    pid: str,
+    subtype: str,
+    project: dict | None = None,
+    records: list[dict] | None = None,
+    subtype_meta_map: dict | None = None,
+) -> dict:
+    """Generate the next sequential PTW Doc No. independently per (project, subtype)."""
+    clean_subtype = normalize_ptw_subtype_value(subtype)
+    prefix = resolve_ptw_project_prefix(pid, project, records)
+    code = get_ptw_subtype_code(clean_subtype, subtype_meta_map)
+    if not clean_subtype or not code:
+        return {"next": "", "prefix": prefix, "subtype": clean_subtype, "subtype_code": "", "seq": 0}
+
+    pat = re.compile(rf"^(?:[A-Z0-9_-]+-)?{re.escape(code)}-(\d+)(?:\s+REV\d+)?$", re.IGNORECASE)
+    max_seq = 0
+    for rec in records or []:
+        doc_no = str((rec or {}).get("docNo") or "").strip()
+        if not doc_no:
+            continue
+        m = pat.match(doc_no)
+        if m:
+            max_seq = max(max_seq, int(m.group(1)))
+
+    next_seq = max_seq + 1
+    return {
+        "next": f"{prefix}-{code}-{next_seq:03d}",
+        "prefix": prefix,
+        "subtype": clean_subtype,
+        "subtype_code": code,
+        "seq": next_seq,
+    }
 
 
 def hse_columns(code):
