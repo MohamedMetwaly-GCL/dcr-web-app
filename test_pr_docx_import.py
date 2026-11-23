@@ -247,6 +247,44 @@ class DocxParserTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["quantity"], "TBD")
         self.assertEqual(len(result["warnings"]), 2)
 
+    def test_multi_paragraph_cell_does_not_bleed_into_doc_no(self):
+        xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tr>
+        <w:tc>
+          <w:p><w:r><w:t>رقم أشعار الاحتياج : PEM064-PR-075</w:t></w:r></w:p>
+          <w:p><w:r><w:t>السنة المالية : 2026</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc>
+          <w:p><w:r><w:t>تاريخ ورود الأشعار : 22/11/2026</w:t></w:r></w:p>
+          <w:p><w:r><w:t>رقم المراجعة : 01</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Sr</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Description</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Qty</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Unit</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Pipe DN50</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>10</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>m</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+"""
+        raw = _build_docx_bytes(xml)
+        result = parse_pr_docx(raw)
+        self.assertEqual(result["header"]["docNo"], "PEM064-PR-075")
+        self.assertEqual(result["header"]["issuedDate"], "2026-11-22")
+
 
 class ParsePrDocxEndpointTests(unittest.TestCase):
     @classmethod

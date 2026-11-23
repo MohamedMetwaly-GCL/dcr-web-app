@@ -193,26 +193,35 @@ def _parse_quantity(raw: str) -> Tuple[Any, Optional[str]]:
         return raw.strip(), f"Unparseable quantity '{raw.strip()}'"
 
 
-def _extract_after_label(text: str, label_patterns: Tuple[str, ...]) -> Optional[str]:
-    norm_full = _norm_arabic(text)
-    for pat in label_patterns:
-        if re.search(pat, norm_full):
-            if ":" in text:
-                after = text.split(":", 1)[1].strip()
-                if after:
-                    return after
-            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-            if len(lines) > 1:
-                return "\n".join(lines[1:])
-            return ""
+def _extract_after_label(
+    text: str,
+    label_patterns: Tuple[str, ...],
+    single_line: bool = True,
+) -> Optional[str]:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    for line_idx, ln in enumerate(lines):
+        norm_ln = _norm_arabic(ln)
+        for pat in label_patterns:
+            if re.search(pat, norm_ln):
+                if ":" in ln:
+                    after = ln.split(":", 1)[1].strip()
+                    if after:
+                        return after
+                if line_idx + 1 < len(lines):
+                    return lines[line_idx + 1] if single_line else "\n".join(lines[line_idx + 1 :])
+                return ""
     return None
 
 
-def _find_adjacent_value(cells: List[str], idx: int) -> str:
+def _find_adjacent_value(cells: List[str], idx: int, single_line: bool = True) -> str:
     for offset in (1, -1):
         nbr = idx + offset
         if 0 <= nbr < len(cells) and cells[nbr].strip():
-            return cells[nbr].strip()
+            val = cells[nbr].strip()
+            if single_line:
+                lines = [ln.strip() for ln in val.splitlines() if ln.strip()]
+                return lines[0] if lines else ""
+            return val
     return ""
 
 
@@ -242,22 +251,22 @@ def _extract_header_metadata(
                 if not cell:
                     continue
                 if not header["docNo"]:
-                    inline = _extract_after_label(cell, doc_no_pats)
+                    inline = _extract_after_label(cell, doc_no_pats, single_line=True)
                     if inline is not None:
-                        header["docNo"] = inline or _find_adjacent_value(cells, idx)
+                        header["docNo"] = inline or _find_adjacent_value(cells, idx, single_line=True)
                 if not header["issuedDate"]:
-                    inline = _extract_after_label(cell, date_pats)
+                    inline = _extract_after_label(cell, date_pats, single_line=True)
                     if inline is not None:
-                        candidate = inline or _find_adjacent_value(cells, idx)
+                        candidate = inline or _find_adjacent_value(cells, idx, single_line=True)
                         parsed_date = parse_date_to_iso(candidate)
                         if parsed_date:
                             header["issuedDate"] = parsed_date
                 if not header["title"]:
-                    inline = _extract_after_label(cell, title_pats)
+                    inline = _extract_after_label(cell, title_pats, single_line=True)
                     if inline is not None:
-                        header["title"] = inline or _find_adjacent_value(cells, idx)
+                        header["title"] = inline or _find_adjacent_value(cells, idx, single_line=True)
 
-                inline_ms = _extract_after_label(cell, ms_pats)
+                inline_ms = _extract_after_label(cell, ms_pats, single_line=False)
                 if inline_ms is not None:
                     if inline_ms:
                         _add_ms_ref(inline_ms)
@@ -270,20 +279,20 @@ def _extract_header_metadata(
         if not p:
             continue
         if not header["docNo"]:
-            inline = _extract_after_label(p, doc_no_pats)
+            inline = _extract_after_label(p, doc_no_pats, single_line=True)
             if inline:
                 header["docNo"] = inline
         if not header["issuedDate"]:
-            inline = _extract_after_label(p, date_pats)
+            inline = _extract_after_label(p, date_pats, single_line=True)
             if inline:
                 parsed_date = parse_date_to_iso(inline)
                 if parsed_date:
                     header["issuedDate"] = parsed_date
         if not header["title"]:
-            inline = _extract_after_label(p, title_pats)
+            inline = _extract_after_label(p, title_pats, single_line=True)
             if inline:
                 header["title"] = inline
-        inline_ms = _extract_after_label(p, ms_pats)
+        inline_ms = _extract_after_label(p, ms_pats, single_line=False)
         if inline_ms:
             _add_ms_ref(inline_ms)
 
