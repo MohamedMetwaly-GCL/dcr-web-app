@@ -22,11 +22,24 @@ No routes, no business logic, no database writes.
 """
 import json
 import os
+from html import escape as _html_escape
 
 import db
 from flask import url_for
 from auth import can_edit, is_project_admin, get_allowed_doc_type_filter, get_user_doc_type_scope
 from utils import STATUS_COLORS
+from i18n import (
+    get_lang,
+    normalize_lang,
+    is_rtl,
+    html_dir,
+    t,
+    t_status,
+    t_dt,
+    t_col,
+    get_client_i18n_json,
+    translate_workspace_meta,
+)
 
 
 def _asset_ver(rel_path: str) -> str:
@@ -50,49 +63,109 @@ def _head_icon_tags() -> str:
         f'<meta name="theme-color" content="#0f1d2e">'
     )
 
-ABOUT_MODAL_HTML = """
+
+def _lang_switcher_btn_html(lang: str = "en", btn_class: str = "tb-btn lang-switch-btn", btn_id: str = "langBtn") -> str:
+    norm = normalize_lang(lang)
+    target = t("lang.switch_target", norm)
+    label = t("lang.switch_label", norm)
+    title = t("lang.switch_title", norm)
+    return (
+        f'<button type="button" class="{btn_class}" id="{btn_id}" '
+        f'onclick="setLanguage(\'{target}\')" title="{title}" aria-label="{title}">'
+        f'<span class="lang-switch-ico">🌐</span>'
+        f'<span class="lang-switch-txt">{label}</span>'
+        f'</button>'
+    )
+
+
+def _about_modal_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang)
+    return f"""
 <!-- ABOUT SYSTEM MODAL -->
 <div class="overlay hidden" id="about-modal" style="z-index: 10000;">
   <div class="modal" style="max-width:550px">
     <div class="mhdr" style="display:flex;align-items:center;">
-      <span style="flex:1;">ℹ️<span class="tb-btn-text"> About</span> System</span>
+      <span style="flex:1;">ℹ️<span class="tb-btn-text"> {t("about.header_prefix", norm)}</span> {t("about.header_suffix", norm)}</span>
       <button class="xbtn" onclick="closeM('about-modal')">✕</button>
     </div>
     <div class="mbody" style="padding: 24px; font-size: 13px; color: var(--tx); line-height: 1.6;">
       <div style="text-align: center; margin-bottom: 20px;">
-        <div style="font-size: 20px; font-weight: 800; color: var(--brand-teal); margin-bottom: 4px;">Document Control Register</div>
-        <div style="font-size: 12px; color: var(--mu); font-family: 'IBM Plex Mono', monospace;">v1.0.0 — Stable Release</div>
+        <div style="font-size: 20px; font-weight: 800; color: var(--brand-teal); margin-bottom: 4px;">{t("about.system_title", norm)}</div>
+        <div class="bidi-ltr" style="font-size: 12px; color: var(--mu); font-family: 'IBM Plex Mono', monospace;">{t("about.release_badge", norm)}</div>
       </div>
       
-      <div class="stitle" style="margin-top:0;">🎯 PURPOSE & BUSINESS IMPACT</div>
-      <p style="margin-bottom: 16px;">An enterprise-grade Document Management System developed in-house to digitize engineering workflows, ensure zero data loss, and accelerate the decision-making process. Built to eliminate manual tracking and centralize document control for Project Management and Operations teams.</p>
+      <div class="stitle" style="margin-top:0;">{t("about.purpose_title", norm)}</div>
+      <p style="margin-bottom: 16px;">{t("about.purpose_body", norm)}</p>
       
-      <div class="stitle">⚙️ CORE TECHNOLOGIES</div>
-      <ul style="margin-bottom: 16px; padding-left: 20px; color: var(--mu);">
-        <li><strong>Database:</strong> PostgreSQL with dynamic JSONB architecture for high scalability.</li>
-        <li><strong>Backend Engine:</strong> Python / Flask.</li>
-        <li><strong>Frontend:</strong> Vanilla JavaScript & CSS (Optimized for speed and zero latency).</li>
+      <div class="stitle">{t("about.tech_title", norm)}</div>
+      <ul class="about-tech-list" style="margin-bottom: 16px; padding-inline-start: 20px; color: var(--mu);">
+        <li><strong>{t("about.tech_db_label", norm)}</strong> {t("about.tech_db_val", norm)}</li>
+        <li><strong>{t("about.tech_backend_label", norm)}</strong> {t("about.tech_backend_val", norm)}</li>
+        <li><strong>{t("about.tech_frontend_label", norm)}</strong> {t("about.tech_frontend_val", norm)}</li>
       </ul>
       
-      <div class="stitle">👨‍💻 CREDITS</div>
-      <p style="margin-bottom: 0;"><strong>Architect & Full-Stack Developer:</strong> Mohamed Metwaly<br><span style="color:var(--mu); font-size: 11px;">Document Control Department</span></p>
+      <div class="stitle">{t("about.credits_title", norm)}</div>
+      <p style="margin-bottom: 0;"><strong>{t("about.credits_role", norm)}</strong> {t("footer.developer_name", norm)}<br><span style="color:var(--mu); font-size: 11px;">{t("footer.department", norm)}</span></p>
     </div>
-    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('about-modal')">Close</button></div>
+    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('about-modal')">{t("about.close_btn", norm)}</button></div>
   </div>
 </div>
 """
 
-GLOBAL_FOOTER_HTML = """
-<div class="global-footer">Designed & Developed by <strong>Mohamed Metwaly</strong> - Document Control Department</div>
+
+def _global_footer_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang)
+    return f"""
+<div class="global-footer">{t("footer.designed_by", norm)} <strong>{t("footer.developer_name", norm)}</strong> - {t("footer.department", norm)}</div>
 """
 
-GLOBAL_SEARCH_TRIGGER_HTML = """
-<div class="global-search-trigger" onclick="openGlobalSearch()" title="Global Search (Ctrl+K)" style="cursor: pointer; user-select: none;">
+
+def _global_search_trigger_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang)
+    return f"""
+<div class="global-search-trigger" onclick="openGlobalSearch()" title="{t("topbar.global_search_title", norm)}" style="cursor: pointer; user-select: none;">
   <span class="gst-icon">🔍</span>
-  <span class="gst-text">Search all projects...</span>
-  <kbd>Ctrl+K</kbd>
+  <span class="gst-text">{t("topbar.global_search_placeholder", norm)}</span>
+  <kbd class="bidi-ltr">Ctrl+K</kbd>
 </div>
 """
+
+
+ABOUT_MODAL_HTML = _about_modal_html("en")
+GLOBAL_FOOTER_HTML = _global_footer_html("en")
+GLOBAL_SEARCH_TRIGGER_HTML = _global_search_trigger_html("en")
+
+def _spotlight_modal_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang or get_lang())
+    return (
+        SPOTLIGHT_MODAL_COMPONENT
+        .replace('placeholder="Search across all accessible projects (min. 2 chars)..."', f'placeholder="{t("spotlight.input_placeholder", norm)}"')
+        .replace('title="Clear search"', f'title="{t("spotlight.clear_title", norm)}"')
+        .replace('title="Close (Esc)"', f'title="{t("spotlight.close_title", norm)}"')
+        .replace('title="Filter by Project"', f'title="{t("spotlight.filter_project_title", norm)}"')
+        .replace('<option value="ALL">All Projects</option>', f'<option value="ALL">{t("spotlight.all_projects", norm)}</option>')
+        .replace('title="Filter by Status"', f'title="{t("spotlight.filter_status_title", norm)}"')
+        .replace('<option value="ALL">All Statuses</option>', f'<option value="ALL">{t("spotlight.all_statuses", norm)}</option>')
+        .replace('<option value="Approved">Approved</option>', f'<option value="Approved">{t("spotlight.status_approved", norm)}</option>')
+        .replace('<option value="Under Review">Under Review</option>', f'<option value="Under Review">{t("spotlight.status_under_review", norm)}</option>')
+        .replace('<option value="Revise & Resubmit">Revise & Resubmit</option>', f'<option value="Revise & Resubmit">{t("spotlight.status_revise", norm)}</option>')
+        .replace('<option value="Rejected">Rejected</option>', f'<option value="Rejected">{t("spotlight.status_rejected", norm)}</option>')
+        .replace('title="Date Range"', f'title="{t("spotlight.date_range_title", norm)}"')
+        .replace('title="From Date"', f'title="{t("spotlight.date_from_title", norm)}"')
+        .replace('title="To Date"', f'title="{t("spotlight.date_to_title", norm)}"')
+        .replace('title="Reset all filters">↺ Reset</button>', f'title="{t("spotlight.reset_title", norm)}">{t("spotlight.reset_btn", norm)}</button>')
+        .replace('>🔒 RBAC Scope</span>', f'>{t("spotlight.scope_rbac", norm)}</span>')
+        .replace('>Checking permissions...</span>', f'>{t("spotlight.scope_checking", norm)}</span>')
+        .replace('>0 found</div>', f'>{t("spotlight.count_zero", norm)}</div>')
+        .replace('>Instant Global Search</div>', f'>{t("spotlight.empty_title", norm)}</div>')
+        .replace('Type at least 2 characters to search across all accessible projects, document numbers, subjects, and statuses...', t("spotlight.empty_sub", norm))
+        .replace('<span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>', f'<span><kbd class="bidi-ltr">↑</kbd> <kbd class="bidi-ltr">↓</kbd> {t("spotlight.kbd_navigate", norm)}</span>')
+        .replace('<span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>', f'<span><kbd class="bidi-ltr">↑</kbd><kbd class="bidi-ltr">↓</kbd> {t("spotlight.kbd_navigate", norm)}</span>')
+        .replace('<span><kbd>↵</kbd> Open in new tab</span>', f'<span><kbd class="bidi-ltr">↵</kbd> {t("spotlight.kbd_open_tab", norm)}</span>')
+        .replace('<span><kbd>ESC</kbd> Close</span>', f'<span><kbd class="bidi-ltr">ESC</kbd> {t("spotlight.kbd_close", norm)}</span>')
+        .replace('>🔒 RBAC-Filtered Results</div>', f'>{t("spotlight.footer_rbac", norm)}</div>')
+    )
+
 
 SPOTLIGHT_MODAL_COMPONENT = r"""
 <!-- SPOTLIGHT / GLOBAL SEARCH COMPONENT -->
@@ -127,9 +200,9 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
       </div>
       <div class="spotlight-filter-group spotlight-dates-group">
         <span class="spotlight-filter-label" title="Date Range">📅</span>
-        <input type="date" id="spotlight-date-from" class="spotlight-date-input" title="From Date">
-        <span class="spotlight-date-sep">→</span>
-        <input type="date" id="spotlight-date-to" class="spotlight-date-input" title="To Date">
+        <input type="date" id="spotlight-date-from" class="spotlight-date-input bidi-ltr" title="From Date">
+        <span class="spotlight-date-sep rtl-flip">→</span>
+        <input type="date" id="spotlight-date-to" class="spotlight-date-input bidi-ltr" title="To Date">
       </div>
       <button type="button" id="spotlight-reset-filters" class="spotlight-reset-btn hidden" onclick="resetSpotlightFilters()" title="Reset all filters">↺ Reset</button>
     </div>
@@ -181,19 +254,26 @@ SPOTLIGHT_MODAL_COMPONENT = r"""
 .global-search-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: rgba(255, 255, 255, 0.8);
-  padding: 4px 12px;
+  padding: 4px 8px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer !important;
   user-select: none !important;
-  margin: 0 10px;
+  margin: 0 4px;
+  min-width: 0;
   flex-shrink: 0;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.global-search-trigger .gst-text {
+  max-width: 85px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .global-search-trigger:hover {
   background: rgba(255, 255, 255, 0.15);
@@ -785,6 +865,29 @@ body.dark .spotlight-item-date, body.dark .result-date,
   color: var(--sl-kbd-text);
   margin-right: 3px;
 }
+
+/* RTL Layout Overrides for Global Spotlight Search */
+html[dir="rtl"] #spotlight-modal,
+html[dir="rtl"] .spotlight-palette {
+  direction: rtl;
+  text-align: right;
+}
+html[dir="rtl"] .spotlight-input {
+  text-align: right;
+}
+html[dir="rtl"] .spotlight-reset-btn {
+  margin-left: 0;
+  margin-right: auto;
+}
+html[dir="rtl"] .spotlight-item-meta {
+  margin-left: 0;
+  margin-right: 14px;
+  align-items: flex-start;
+}
+html[dir="rtl"] .spotlight-footer kbd {
+  margin-right: 0;
+  margin-left: 3px;
+}
 </style>
 
 <script>
@@ -801,6 +904,14 @@ const _spotlightState = {
 
 function _slEsc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function _slT(key, vars, fallback) {
+  if (typeof window.t === 'function') {
+    const res = window.t(key, vars);
+    if (res && res !== key) return res;
+  }
+  return fallback !== undefined ? fallback : key;
 }
 
 async function openGlobalSearch() {
@@ -932,15 +1043,17 @@ async function updateSpotlightContext() {
     const isAdmin = u.role === 'admin' || u.role === 'superadmin';
     if (isAdmin) {
       badgeEl.className = 'spotlight-scope-badge admin';
-      badgeEl.textContent = '👑 Admin Scope';
-      textEl.textContent = 'Searching across all projects (Admin)';
+      badgeEl.textContent = _slT('spotlight.scope_admin', null, '👑 Admin Scope');
+      textEl.textContent = _slT('spotlight.scope_admin_text', null, 'Searching across all projects (Admin)');
     } else {
       const pCount = (u.projects || []).length;
       badgeEl.className = 'spotlight-scope-badge';
-      badgeEl.textContent = '🔒 Assigned Scope';
+      badgeEl.textContent = _slT('spotlight.scope_assigned', null, '🔒 Assigned Scope');
       textEl.textContent = pCount > 0 
-        ? ('Searching in your ' + pCount + ' assigned project' + (pCount === 1 ? '' : 's'))
-        : 'No projects assigned (Results restricted)';
+        ? (pCount === 1
+            ? _slT('spotlight.scope_assigned_one', null, 'Searching in your 1 assigned project')
+            : _slT('spotlight.scope_assigned_many', { count: pCount }, 'Searching in your ' + pCount + ' assigned projects'))
+        : _slT('spotlight.scope_none', null, 'No projects assigned (Results restricted)');
     }
   }
 
@@ -955,7 +1068,10 @@ async function updateSpotlightContext() {
         projs = await apiFetch('/api/projects' + wsParam);
       }
       if (Array.isArray(projs) && projs.length > 0) {
-        projSelect.innerHTML = '<option value="ALL">All ' + (activeWs === 'OM' ? 'Contracts / Facilities' : 'Projects') + '</option>';
+        const allOptLabel = activeWs === 'OM'
+          ? _slT('spotlight.all_contracts_facilities', null, 'All Contracts / Facilities')
+          : _slT('spotlight.all_projects', null, 'All Projects');
+        projSelect.innerHTML = '<option value="ALL">' + _slEsc(allOptLabel) + '</option>';
         projs.forEach(p => {
           const opt = document.createElement('option');
           opt.value = p.id || p.code;
@@ -1011,17 +1127,17 @@ function handleSpotlightInput(val) {
       const badgeEl = document.getElementById('spotlight-scope-badge');
       const textEl = document.getElementById('spotlight-scope-text');
       if (data.user_scope === 'all') {
-        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge admin'; badgeEl.textContent = '👑 Admin Scope'; }
-        if (textEl) textEl.textContent = 'Searching across all projects (Admin)';
+        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge admin'; badgeEl.textContent = _slT('spotlight.scope_admin', null, '👑 Admin Scope'); }
+        if (textEl) textEl.textContent = _slT('spotlight.scope_admin_text', null, 'Searching across all projects (Admin)');
       } else if (data.user_scope === 'filtered') {
-        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge'; badgeEl.textContent = '🔒 Assigned Scope'; }
+        if (badgeEl) { badgeEl.className = 'spotlight-scope-badge'; badgeEl.textContent = _slT('spotlight.scope_assigned', null, '🔒 Assigned Scope'); }
       }
 
       if (countEl) {
         if (_spotlightState.totalFound > _spotlightState.rawResults.length) {
-          countEl.textContent = _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found';
+          countEl.textContent = _slT('spotlight.count_of_total_found', { shown: _spotlightState.rawResults.length, total: _spotlightState.totalFound }, _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found');
         } else {
-          countEl.textContent = _spotlightState.rawResults.length + ' records found';
+          countEl.textContent = _slT('spotlight.count_records_found', { count: _spotlightState.rawResults.length }, _spotlightState.rawResults.length + ' records found');
         }
         countEl.classList.remove('hidden');
       }
@@ -1029,7 +1145,7 @@ function handleSpotlightInput(val) {
       renderSpotlightChips();
       filterSpotlightByChip('all');
     } catch(err) {
-      renderSpotlightError(err.message || 'Error executing search');
+      renderSpotlightError(err.message || _slT('spotlight.err_default', null, 'Error executing search'));
     } finally {
       if (spinner) spinner.style.display = 'none';
     }
@@ -1059,13 +1175,14 @@ function renderSpotlightChips() {
   const allChip = document.createElement('div');
   allChip.className = 'spotlight-chip ' + (_spotlightState.activeChip === 'all' ? 'active' : '');
   allChip.setAttribute('data-dt', 'all');
-  allChip.textContent = 'All (' + recs.length + (hasTruncated ? '+' : '') + ')';
+  const allCountStr = String(recs.length) + (hasTruncated ? '+' : '');
+  allChip.textContent = _slT('spotlight.chip_all', { count: allCountStr }, 'All (' + allCountStr + ')');
   allChip.onclick = () => filterSpotlightByChip('all');
   container.appendChild(allChip);
 
   sortedDts.forEach(dt => {
     const chip = document.createElement('div');
-    chip.className = 'spotlight-chip ' + (_spotlightState.activeChip === dt ? 'active' : '');
+    chip.className = 'spotlight-chip bidi-ltr ' + (_spotlightState.activeChip === dt ? 'active' : '');
     chip.setAttribute('data-dt', dt);
     chip.textContent = dt + ' (' + counts[dt] + (hasTruncated ? '+' : '') + ')';
     chip.onclick = () => filterSpotlightByChip(dt);
@@ -1112,7 +1229,8 @@ async function filterSpotlightByChip(dt) {
         }
 
         if (countEl) {
-          countEl.textContent = (data.total_found || data.results.length) + ' ' + dt + ' records found';
+          const dtTotal = data.total_found || data.results.length;
+          countEl.textContent = _slT('spotlight.count_dt_found', { count: dtTotal, dt: dt }, dtTotal + ' ' + dt + ' records found');
         }
       } else {
         _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
@@ -1127,15 +1245,15 @@ async function filterSpotlightByChip(dt) {
     _spotlightState.filteredResults = [..._spotlightState.rawResults];
     if (countEl) {
       if (_spotlightState.totalFound > _spotlightState.rawResults.length) {
-        countEl.textContent = _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found';
+        countEl.textContent = _slT('spotlight.count_of_total_found', { shown: _spotlightState.rawResults.length, total: _spotlightState.totalFound }, _spotlightState.rawResults.length + ' of ' + _spotlightState.totalFound + ' records found');
       } else {
-        countEl.textContent = _spotlightState.rawResults.length + ' records found';
+        countEl.textContent = _slT('spotlight.count_records_found', { count: _spotlightState.rawResults.length }, _spotlightState.rawResults.length + ' records found');
       }
     }
   } else {
     _spotlightState.filteredResults = _spotlightState.rawResults.filter(r => (r.dt_id || '').toUpperCase() === dt);
     if (countEl) {
-      countEl.textContent = _spotlightState.filteredResults.length + ' ' + dt + ' records';
+      countEl.textContent = _slT('spotlight.count_dt_records', { count: _spotlightState.filteredResults.length, dt: dt }, _spotlightState.filteredResults.length + ' ' + dt + ' records');
     }
   }
 
@@ -1149,14 +1267,14 @@ function renderSpotlightInitial() {
   container.innerHTML = `
     <div class="spotlight-empty-state">
       <div style="font-size: 28px; margin-bottom: 8px;">🔍</div>
-      <div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">Instant Global Search</div>
+      <div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">${_slEsc(_slT('spotlight.empty_title', null, 'Instant Global Search'))}</div>
       <div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px; max-width: 440px; margin-left: auto; margin-right: auto;">
-        Type at least 2 characters to search across document numbers, titles, subjects, descriptions, and statuses across your authorized projects.
+        ${_slEsc(_slT('spotlight.empty_initial_sub', null, 'Type at least 2 characters to search across document numbers, titles, subjects, descriptions, and statuses across your authorized projects.'))}
       </div>
       <div style="margin-top: 14px; display: inline-flex; gap: 8px; font-size: 11px; color: var(--sl-empty-sub);">
-        <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
-        <span><kbd>↵</kbd> Open in new tab</span>
-        <span><kbd>ESC</kbd> Close</span>
+        <span><kbd class="bidi-ltr">↑</kbd> <kbd class="bidi-ltr">↓</kbd> ${_slEsc(_slT('spotlight.kbd_navigate', null, 'Navigate'))}</span>
+        <span><kbd class="bidi-ltr">↵</kbd> ${_slEsc(_slT('spotlight.kbd_open_tab', null, 'Open in new tab'))}</span>
+        <span><kbd class="bidi-ltr">ESC</kbd> ${_slEsc(_slT('spotlight.kbd_close', null, 'Close'))}</span>
       </div>
     </div>
   `;
@@ -1165,7 +1283,7 @@ function renderSpotlightInitial() {
 function renderSpotlightError(msg) {
   const container = document.getElementById('spotlight-results');
   if (!container) return;
-  container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div><div style="font-weight: 600; font-size: 13px; color: #ef4444;">Search Error</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">' + _slEsc(msg) + '</div></div>';
+  container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 24px; margin-bottom: 6px; color: #ef4444;">⚠️</div><div style="font-weight: 600; font-size: 13px; color: #ef4444;">' + _slEsc(_slT('spotlight.err_title', null, 'Search Error')) + '</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">' + _slEsc(msg) + '</div></div>';
 }
 
 function renderSpotlightResults() {
@@ -1174,7 +1292,9 @@ function renderSpotlightResults() {
   const rows = _spotlightState.filteredResults;
   if (!rows.length) {
     const q = document.getElementById('spotlight-input')?.value || '';
-    container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 26px; margin-bottom: 8px;">🔍</div><div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">No Matching Records Found</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">No records matched "' + _slEsc(q) + '" in your accessible projects.</div></div>';
+    const noMatchTitle = _slT('spotlight.no_match_title', null, 'No Matching Records Found');
+    const noMatchSub = _slT('spotlight.no_match_sub', { query: q }, 'No records matched "' + q + '" in your accessible projects.');
+    container.innerHTML = '<div class="spotlight-empty-state"><div style="font-size: 26px; margin-bottom: 8px;">🔍</div><div style="font-weight: 600; font-size: 14px; color: var(--sl-empty-title);">' + _slEsc(noMatchTitle) + '</div><div style="font-size: 12px; color: var(--sl-empty-sub); margin-top: 4px;">' + _slEsc(noMatchSub) + '</div></div>';
     return;
   }
 
@@ -1182,16 +1302,18 @@ function renderSpotlightResults() {
   rows.forEach((r, idx) => {
     const isHl = idx === _spotlightState.highlightIndex;
     const docNo = r.doc_no || '—';
-    const title = r.title || 'Untitled Document';
+    const title = r.title || _slT('spotlight.untitled_doc', null, 'Untitled Document');
     const dt = r.dt_id || 'DOC';
     const projCode = r.project_code || r.project_id || '';
     const projName = r.project_name || '';
     const status = r.status || '';
     const stBadge = getSpotlightStatusBadge(status);
-    const driveLink = r.drive_link ? ('<a class="spotlight-drive-link" href="' + _slEsc(r.drive_link) + '" target="_blank" onclick="event.stopPropagation()" title="Open attached Drive link">🔗</a>') : '';
+    const driveTitle = _slT('spotlight.open_drive_title', null, 'Open attached Drive link');
+    const driveLink = r.drive_link ? ('<a class="spotlight-drive-link" href="' + _slEsc(r.drive_link) + '" target="_blank" onclick="event.stopPropagation()" title="' + _slEsc(driveTitle) + '">🔗</a>') : '';
     const rawDate = String(r.doc_date || r.issued_date || '').trim();
     const docDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
-    const dateHtml = docDate ? ('<div class="result-date spotlight-item-date text-muted" style="font-size: 0.85em;" title="Submission Date"><i class="fas fa-calendar-alt"></i> ' + _slEsc(docDate) + '</div>') : '';
+    const dateTitle = _slT('spotlight.submission_date_title', null, 'Submission Date');
+    const dateHtml = docDate ? ('<div class="result-date spotlight-item-date text-muted" style="font-size: 0.85em;" title="' + _slEsc(dateTitle) + '"><i class="fas fa-calendar-alt"></i> <span class="bidi-ltr">' + _slEsc(docDate) + '</span></div>') : '';
 
     const item = document.createElement('div');
     item.className = 'spotlight-item ' + (isHl ? 'highlighted' : '');
@@ -1200,15 +1322,15 @@ function renderSpotlightResults() {
 
     item.innerHTML = '<div class="spotlight-item-main">' +
       '<div class="spotlight-item-header">' +
-        '<span class="spotlight-item-docno">' + _slEsc(docNo) + '</span>' +
-        '<span class="spotlight-item-dt">' + _slEsc(dt) + '</span>' +
+        '<span class="spotlight-item-docno bidi-ltr">' + _slEsc(docNo) + '</span>' +
+        '<span class="spotlight-item-dt bidi-ltr">' + _slEsc(dt) + '</span>' +
         stBadge +
       '</div>' +
-      '<div class="spotlight-item-title">' + _slEsc(title) + '</div>' +
+      '<div class="spotlight-item-title" dir="auto">' + _slEsc(title) + '</div>' +
       '<div class="spotlight-item-proj">' +
-        '<span class="spotlight-item-proj-code">' + _slEsc(projCode) + '</span>' +
+        '<span class="spotlight-item-proj-code bidi-ltr">' + _slEsc(projCode) + '</span>' +
         '<span>•</span>' +
-        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _slEsc(projName) + '</span>' +
+        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" dir="auto">' + _slEsc(projName) + '</span>' +
       '</div>' +
     '</div>' +
     '<div class="spotlight-item-meta">' +
@@ -1371,6 +1493,35 @@ if (document.readyState === 'loading') {
 }
 </script>
 """
+
+def _ai_drawer_html(lang: str = "en") -> str:
+    norm = normalize_lang(lang or get_lang())
+    return (
+        AI_DRAWER_COMPONENT
+        .replace('title="DCR AI Assistant (Gemini Flash) — Drag to reposition"', f'title="{t("ai.fab_title", norm)}"')
+        .replace('aria-label="Open AI Assistant"', f'aria-label="{t("ai.fab_aria", norm)}"')
+        .replace('<span class="ai-fab-text">AI</span>', f'<span class="ai-fab-text">{t("ai.fab_text", norm)}</span>')
+        .replace('aria-label="DCR AI Assistant"', f'aria-label="{t("ai.drawer_aria", norm)}"')
+        .replace('title="Drag horizontally to resize width"', f'title="{t("ai.resizer_title", norm)}"')
+        .replace('<span class="ai-drawer-badge">✨ Gemini Flash</span>', f'<span class="ai-drawer-badge">{t("ai.badge_gemini", norm)}</span>')
+        .replace('<span class="ai-drawer-readonly">🔒 Read-Only</span>', f'<span class="ai-drawer-readonly">{t("ai.badge_readonly", norm)}</span>')
+        .replace('<div class="ai-drawer-title">DCR Engineering Assistant</div>', f'<div class="ai-drawer-title">{t("ai.title_eng", norm)}</div>')
+        .replace('>Scope: Detecting...</div>', f'>{t("ai.scope_detecting", norm)}</div>')
+        .replace('title="Maximize / Restore width"', f'title="{t("ai.btn_expand_title", norm)}"')
+        .replace('title="Clear Chat History"', f'title="{t("ai.btn_clear_title", norm)}"')
+        .replace('title="Close (Esc)"', f'title="{t("ai.btn_close_title", norm)}"')
+        .replace('<div class="ai-quick-label">Quick Queries:</div>', f'<div class="ai-quick-label">{t("ai.quick_label", norm)}</div>')
+        .replace('>📌 Overdue Submittals</button>', f'>{t("ai.chip_eng_overdue", norm)}</button>')
+        .replace('>💵 Approved NOCs Total</button>', f'>{t("ai.chip_eng_noc", norm)}</button>')
+        .replace('>📊 Status Summary</button>', f'>{t("ai.chip_eng_status", norm)}</button>')
+        .replace('>Querying registers & analyzing with Gemini Flash...</span>', f'>{t("ai.loading_text", norm)}</span>')
+        .replace('placeholder="Ask about submittals, NOCs, costs, or document statuses..."', f'placeholder="{t("ai.placeholder_eng", norm)}"')
+        .replace('title="Send (Enter)"', f'title="{t("ai.send_title", norm)}"')
+        .replace('<span><kbd>↵</kbd> Send</span>', f'<span><kbd class="bidi-ltr">↵</kbd> {t("ai.hint_send", norm)}</span>')
+        .replace('<span><kbd>Shift+↵</kbd> New line</span>', f'<span><kbd class="bidi-ltr">Shift+↵</kbd> {t("ai.hint_newline", norm)}</span>')
+        .replace('<span class="ai-foot-sec">Factual responses from register data only</span>', f'<span class="ai-foot-sec">{t("ai.hint_factual", norm)}</span>')
+    )
+
 
 AI_DRAWER_COMPONENT = r"""
 <!-- DCR AI ASSISTANT COMPONENT -->
@@ -2122,6 +2273,56 @@ body.dark .ai-foot-hint kbd,
   font-style: italic;
   font-size: 9.5px;
 }
+
+/* RTL Layout Overrides for AI Assistant Drawer & FAB */
+html[dir="rtl"] #ai-fab-btn {
+  right: auto;
+  left: 18px;
+}
+html[dir="rtl"] #ai-assistant-drawer {
+  right: auto;
+  left: 0;
+  box-shadow: 10px 0 35px rgba(0, 0, 0, 0.25);
+  transform: translateX(-100%);
+  font-family: 'Cairo', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  direction: rtl;
+  text-align: right;
+}
+html[dir="rtl"] #ai-assistant-drawer:not(.hidden) {
+  transform: translateX(0);
+}
+html[dir="rtl"] #ai-assistant-drawer.hidden {
+  transform: translateX(-100%);
+}
+html[dir="rtl"] body.dark .ai-assistant-drawer,
+html[dir="rtl"] .ai-assistant-drawer.dark-theme {
+  border-left: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+html[dir="rtl"] .ai-drawer-resizer {
+  left: auto;
+  right: -4px;
+}
+html[dir="rtl"] .ai-quick-label {
+  letter-spacing: 0;
+}
+html[dir="rtl"] .ai-msg.user .ai-msg-bubble {
+  border-radius: 14px 14px 14px 3px;
+}
+html[dir="rtl"] .ai-msg.assistant .ai-msg-bubble {
+  border-radius: 14px 14px 3px 14px;
+}
+html[dir="rtl"] .ai-msg.assistant .ai-msg-bubble ul,
+html[dir="rtl"] .ai-msg.assistant .ai-msg-bubble ol {
+  margin: 4px 18px 8px 0;
+}
+html[dir="rtl"] .ai-msg.assistant .ai-msg-bubble pre {
+  direction: ltr;
+  text-align: left;
+}
+html[dir="rtl"] .ai-send-btn svg {
+  transform: scaleX(-1);
+}
 </style>
 
 <script>
@@ -2132,6 +2333,14 @@ const _aiAssistantState = {
   activeProjectId: null,
   activeProjectCode: null
 };
+
+function _aiT(key, vars, fallback) {
+  if (typeof window.t === 'function') {
+    const res = window.t(key, vars);
+    if (res && res !== key) return res;
+  }
+  return fallback !== undefined ? fallback : key;
+}
 
 function _aiEscape(str) {
   return String(str || '')
@@ -2192,7 +2401,7 @@ function _renderSimpleMarkdown(md) {
       } else if (line.startsWith('## ')) {
         out.push('<h3 dir="auto">' + line.slice(3) + '</h3>');
       } else if (line.startsWith('- ') || line.startsWith('* ') || line.startsWith('• ')) {
-        out.push('<li dir="auto">' + line.replace(/^[-*•]\\s*/, '') + '</li>');
+        out.push('<li dir="auto">' + line.replace(/^[-*•]\s*/, '') + '</li>');
       } else if (line.length > 0) {
         out.push('<p dir="auto">' + line + '</p>');
       }
@@ -2279,30 +2488,45 @@ function updateAiScopeBadge() {
   const chipsEl = document.querySelector('.ai-quick-chips');
   const activeWs = resolveActiveWorkspace();
   const isOM = activeWs === 'OM';
+  const isHSE = activeWs === 'HSE';
 
   if (titleEl) {
-    titleEl.textContent = isOM ? 'DCR O&M Assistant' : (activeWs === 'ENG' ? 'DCR Engineering Assistant' : `DCR ${activeWs} Assistant`);
+    titleEl.textContent = isHSE
+      ? _aiT('ai.title_hse', null, 'DCR HSE Safety Assistant')
+      : (isOM
+          ? _aiT('ai.title_om', null, 'DCR O&M Assistant')
+          : (activeWs === 'ENG'
+              ? _aiT('ai.title_eng', null, 'DCR Engineering Assistant')
+              : _aiT('ai.title_ws', { ws: activeWs }, `DCR ${activeWs} Assistant`)));
   }
 
   const promptInput = document.getElementById('ai-prompt-input');
   if (promptInput) {
-    promptInput.placeholder = isOM 
-      ? 'Ask about work orders, PPM schedules, maintenance requests, SLA...' 
-      : 'Ask about submittals, NOCs, costs, or document statuses...';
+    promptInput.placeholder = isHSE
+      ? _aiT('ai.placeholder_hse', null, 'Ask about HSE KPIs, permits (PTW), fire equipment (FEI), or safety compliance...')
+      : (isOM
+          ? _aiT('ai.placeholder_om', null, 'Ask about work orders, PPM schedules, maintenance requests, SLA...')
+          : _aiT('ai.placeholder_eng', null, 'Ask about submittals, NOCs, costs, or document statuses...'));
   }
 
   if (chipsEl) {
-    if (isOM) {
+    if (isHSE) {
       chipsEl.innerHTML = `
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the summary of maintenance contracts, facilities, and active work orders?')">⚡ Maintenance Summary</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all open or pending Work Orders (WO) and maintenance requests.')">📌 Open Work Orders</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show Preventive Maintenance (PPM) schedule and SLA compliance status.')">📊 PPM & SLA Status</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show current HSE KPIs, LTI-Free streak, LTIF, and TRIR.')">${_aiEscape(_aiT('ai.chip_hse_kpis', null, '🛡️ HSE KPIs & Rates'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all expiring permits (PTW) and fire extinguishers (FEI) within 30 days.')">${_aiEscape(_aiT('ai.chip_hse_expiring', null, '⚠️ Expiring PTW / FEI'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Draft an HSE safety violation NCR per OSHA and Egyptian Decision 211.')">${_aiEscape(_aiT('ai.chip_hse_ncr', null, '📝 Draft Safety NCR'))}</button>
+      `;
+    } else if (isOM) {
+      chipsEl.innerHTML = `
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the summary of maintenance contracts, facilities, and active work orders?')">${_aiEscape(_aiT('ai.chip_om_summary', null, '⚡ Maintenance Summary'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all open or pending Work Orders (WO) and maintenance requests.')">${_aiEscape(_aiT('ai.chip_om_wo', null, '📌 Open Work Orders'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show Preventive Maintenance (PPM) schedule and SLA compliance status.')">${_aiEscape(_aiT('ai.chip_om_ppm', null, '📊 PPM & SLA Status'))}</button>
       `;
     } else {
       chipsEl.innerHTML = `
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all overdue submittals and their delay days.')">📌 Overdue Submittals</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the total approved cost for Notice of Change (NOCs) and list the approved items?')">💵 Approved NOCs Total</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Provide a complete status breakdown of documents across the project registers.')">📊 Status Summary</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all overdue submittals and their delay days.')">${_aiEscape(_aiT('ai.chip_eng_overdue', null, '📌 Overdue Submittals'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('What is the total approved cost for Notice of Change (NOCs) and list the approved items?')">${_aiEscape(_aiT('ai.chip_eng_noc', null, '💵 Approved NOCs Total'))}</button>
+        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Provide a complete status breakdown of documents across the project registers.')">${_aiEscape(_aiT('ai.chip_eng_status', null, '📊 Status Summary'))}</button>
       `;
     }
   }
@@ -2311,14 +2535,28 @@ function updateAiScopeBadge() {
   const pid = resolveActiveProjectScope();
   if (pid) {
     let projName = pid;
-    const topbarInfo = document.getElementById('topbar-proj-info');
-    if (topbarInfo) {
-      const titleSpan = topbarInfo.querySelector('span') || topbarInfo;
-      projName = titleSpan.textContent.trim() || pid;
+    if (typeof PROJ_NAME !== 'undefined' && PROJ_NAME) {
+      projName = (typeof PROJ_CODE !== 'undefined' && PROJ_CODE && PROJ_CODE !== PROJ_NAME)
+        ? (PROJ_CODE + ' — ' + PROJ_NAME)
+        : PROJ_NAME;
+    } else if (typeof PROJ_CODE !== 'undefined' && PROJ_CODE) {
+      projName = PROJ_CODE;
+    } else {
+      const topbarInfo = document.getElementById('topbar-proj-info');
+      if (topbarInfo) {
+        const codeEl = topbarInfo.querySelector('.pf-val[data-key="code"]');
+        const nameEl = topbarInfo.querySelector('.pf-val[data-key="name"]');
+        const codeTxt = codeEl ? codeEl.textContent.trim() : '';
+        const nameTxt = nameEl ? nameEl.textContent.trim() : '';
+        if (codeTxt && nameTxt && codeTxt !== nameTxt) projName = codeTxt + ' — ' + nameTxt;
+        else projName = nameTxt || codeTxt || pid;
+      }
     }
-    scopeEl.textContent = 'Active Project: ' + projName;
+    scopeEl.textContent = _aiT('ai.scope_active_project', { name: projName }, 'Active Project: ' + projName);
   } else {
-    scopeEl.textContent = isOM ? 'Scope: O&M Contracts & Facilities' : 'Scope: All Authorized Projects (Global)';
+    scopeEl.textContent = isOM
+      ? _aiT('ai.scope_om', null, 'Scope: O&M Contracts & Facilities')
+      : _aiT('ai.scope_global', null, 'Scope: All Authorized Projects (Global)');
   }
 }
 
@@ -2336,7 +2574,7 @@ function openAiDrawer() {
     if (localStorage.getItem('ai_drawer_expanded') === '1') {
       drawer.classList.add('expanded');
       const expBtn = document.getElementById('ai-expand-btn');
-      if (expBtn) { expBtn.textContent = '🗗'; expBtn.title = 'Restore normal width'; }
+      if (expBtn) { expBtn.textContent = '🗗'; expBtn.title = _aiT('ai.btn_expand_restore', null, 'Restore normal width'); }
     }
   } catch (e) {}
 
@@ -2357,20 +2595,12 @@ function openAiDrawer() {
   _aiAssistantState.currentWs = currentWs;
 
   const titleEl = document.querySelector('#ai-assistant-drawer .ai-drawer-title');
-  const chipsEl = document.querySelector('#ai-assistant-drawer .ai-quick-chips');
   if (currentWs === 'HSE') {
-    if (titleEl) titleEl.textContent = 'DCR HSE Safety Assistant';
-    if (chipsEl) {
-      chipsEl.innerHTML = `
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Show current HSE KPIs, LTI-Free streak, LTIF, and TRIR.')">🛡️ HSE KPIs &amp; Rates</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('List all expiring permits (PTW) and fire extinguishers (FEI) within 30 days.')">⚠️ Expiring PTW / FEI</button>
-        <button type="button" class="ai-chip" onclick="sendAiQuickPrompt('Draft an HSE safety violation NCR per OSHA and Egyptian Decision 211.')">📝 Draft Safety NCR</button>
-      `;
-    }
+    if (titleEl) titleEl.textContent = _aiT('ai.title_hse', null, 'DCR HSE Safety Assistant');
   } else if (currentWs === 'OM') {
-    if (titleEl) titleEl.textContent = 'DCR O&M Assistant';
+    if (titleEl) titleEl.textContent = _aiT('ai.title_om', null, 'DCR O&M Assistant');
   } else {
-    if (titleEl) titleEl.textContent = 'DCR Engineering Assistant';
+    if (titleEl) titleEl.textContent = _aiT('ai.title_eng', null, 'DCR Engineering Assistant');
   }
 
   updateAiScopeBadge();
@@ -2413,7 +2643,7 @@ function toggleAiDrawerExpand() {
   const isExp = drawer.classList.contains('expanded');
   if (btn) {
     btn.textContent = isExp ? '🗗' : '⛶';
-    btn.title = isExp ? 'Restore normal width' : 'Maximize width (920px)';
+    btn.title = isExp ? _aiT('ai.btn_expand_restore', null, 'Restore normal width') : _aiT('ai.btn_expand_max', null, 'Maximize width (920px)');
   }
   try {
     localStorage.setItem('ai_drawer_expanded', isExp ? '1' : '0');
@@ -2446,7 +2676,8 @@ function initAiDrawerResizer() {
 
   window.addEventListener('mousemove', function(e) {
     if (!isResizing) return;
-    const diff = startX - e.clientX;
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    const diff = isRtl ? (e.clientX - startX) : (startX - e.clientX);
     const newWidth = Math.min(Math.max(startWidth + diff, 420), window.innerWidth - 20);
     drawer.style.width = newWidth + 'px';
   });
@@ -2475,31 +2706,31 @@ function initAiWelcomeMessage() {
   const isHSE = activeWs === 'HSE';
   let welcomeText = '';
   if (isHSE) {
-    welcomeText =
+    welcomeText = _aiT('ai.welcome_hse', null,
       "Hello! I am your **DCR HSE Safety & Compliance Assistant** powered by Gemini Flash.\n\n" +
       "I have real-time, RBAC-scoped access to your authorized HSE sites and can help with:\n" +
       "- 🛡️ **Safety KPIs & Streaks:** LTI-Free Days, LTIF, TRIR, Severity Rate & Man-Hours\n" +
       "- ⚠️ **Permits & Equipment Alerts:** Overdue/expiring PTWs, FEI extinguishers & stale observations\n" +
       "- ⚖️ **Compliance & NCR Drafting:** OSHA 29 CFR 1910/1926, NFPA 10/51B & Egyptian Labor Law Decision 211/2003\n\n" +
-      "*How can I help keep your sites safe today?*";
+      "*How can I help keep your sites safe today?*");
   } else if (isOM) {
-    welcomeText = 
+    welcomeText = _aiT('ai.welcome_om', null,
       "Hello! I am your **DCR Operation & Maintenance (O&M) AI Assistant** powered by Gemini Flash.\n\n" +
       "I have real-time, read-only access to your maintenance contracts, facilities, and registers:\n" +
       "- ⚙️ **Work Orders (WO)** and Maintenance Requests (MR)\n" +
       "- 📅 **Preventive Maintenance (PPM)** schedules & Corrective Maintenance (CM)\n" +
       "- 📊 **SLA Compliance & Service Reports**\n" +
       "- 🔍 **Contract submittals & incident logs**\n\n" +
-      "*How can I assist you with your maintenance contracts today?*";
+      "*How can I assist you with your maintenance contracts today?*");
   } else {
-    welcomeText = 
+    welcomeText = _aiT('ai.welcome_eng', null,
       "Hello! I am your **DCR Engineering AI Assistant** powered by Gemini Flash.\n\n" +
       "I have real-time, read-only access to your authorized project registers and can help you with:\n" +
       "- 📌 **Overdue submittals** and delay days\n" +
       "- 💵 **Notice of Change (NOC)** cost totals and approvals\n" +
       "- 📊 **Register status breakdowns** (Approved, Under Review, Rejected)\n" +
       "- 🔍 **Specific document numbers** or disciplines\n\n" +
-      "*How can I assist you today?*";
+      "*How can I assist you today?*");
   }
   appendAiMessage('assistant', welcomeText);
 }
@@ -2531,7 +2762,8 @@ function appendAiMessage(role, text) {
 
   const timeDiv = document.createElement('div');
   timeDiv.className = 'ai-msg-time';
-  timeDiv.textContent = (role === 'user' ? 'You • ' : 'Gemini • ') + timeStr;
+  const senderLbl = role === 'user' ? _aiT('ai.sender_you', null, 'You') : _aiT('ai.sender_gemini', null, 'Gemini');
+  timeDiv.textContent = senderLbl + ' • ' + timeStr;
 
   msgDiv.appendChild(bubbleDiv);
   msgDiv.appendChild(timeDiv);
@@ -2606,25 +2838,27 @@ async function sendAiPrompt(promptText) {
     console.log('AI Response:', res.status, data);
 
     if (res.status === 503) {
-      appendAiMessage('assistant', '⚠️ **AI Assistant is not configured on this instance.**\n\nPlease configure the `GEMINI_API_KEY` environment variable on Railway to enable Gemini Flash.');
+      appendAiMessage('assistant', _aiT('ai.err_503', null, '⚠️ **AI Assistant is not configured on this instance.**\n\nPlease configure the `GEMINI_API_KEY` environment variable on Railway to enable Gemini Flash.'));
     } else if (res.status === 403) {
-      appendAiMessage('assistant', '🔒 **Authentication Required.**\n\nYour session may have expired. Please refresh the page and log in.');
+      appendAiMessage('assistant', _aiT('ai.err_403', null, '🔒 **Authentication Required.**\n\nYour session may have expired. Please refresh the page and log in.'));
     } else if (data.error) {
-      appendAiMessage('assistant', '⚠️ **AI Service Error:** ' + data.error);
+      appendAiMessage('assistant', _aiT('ai.err_service', { error: data.error }, '⚠️ **AI Service Error:** ' + data.error));
     } else if (!res.ok) {
-      appendAiMessage('assistant', '⚠️ **Error (' + res.status + '):** ' + (data.error || 'Server error'));
+      const srvErr = data.error || _aiT('ai.err_server', null, 'Server error');
+      appendAiMessage('assistant', _aiT('ai.err_http', { status: res.status, error: srvErr }, '⚠️ **Error (' + res.status + '):** ' + srvErr));
     } else if (data.reply) {
       appendAiMessage('assistant', data.reply);
     } else {
-      appendAiMessage('assistant', '⚠️ Received empty response from AI service.');
+      appendAiMessage('assistant', _aiT('ai.err_empty', null, '⚠️ Received empty response from AI service.'));
     }
   } catch(err) {
     clearTimeout(timeoutId);
     console.error('Fetch error:', err);
     if (err && (err.name === 'AbortError' || err.code === 20)) {
-      appendAiMessage('assistant', '⏱️ **Request Timed Out (60s):** Analysis took too long. Please retry with a simpler query.');
+      appendAiMessage('assistant', _aiT('ai.err_timeout', null, '⏱️ **Request Timed Out (60s):** Analysis took too long. Please retry with a simpler query.'));
     } else {
-      appendAiMessage('assistant', '⚠️ **Network Error:** ' + (err.message || 'Could not reach AI Assistant endpoint.'));
+      const netErr = err.message || _aiT('ai.err_unreachable', null, 'Could not reach AI Assistant endpoint.');
+      appendAiMessage('assistant', _aiT('ai.err_network', { error: netErr }, '⚠️ **Network Error:** ' + netErr));
     }
   } finally {
     clearTimeout(timeoutId);
@@ -2787,14 +3021,20 @@ function _initAiFabDraggable() {
     }
   }, true);
 
-  // Double click resets position to default bottom-right
+  // Double click resets position to default bottom-right (or bottom-left in RTL)
   btn.addEventListener('dblclick', function(e) {
     e.preventDefault();
     e.stopPropagation();
     try { localStorage.removeItem('dcr_ai_fab_pos'); } catch (err) {}
-    btn.style.removeProperty('left');
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
     btn.style.removeProperty('top');
-    btn.style.setProperty('right', '18px', 'important');
+    if (isRtl) {
+      btn.style.removeProperty('right');
+      btn.style.setProperty('left', '18px', 'important');
+    } else {
+      btn.style.removeProperty('left');
+      btn.style.setProperty('right', '18px', 'important');
+    }
     btn.style.setProperty('bottom', '28px', 'important');
     btn.style.setProperty('width', 'max-content', 'important');
   });
@@ -2832,26 +3072,50 @@ if (document.readyState === 'loading') {
 </script>
 """
 
-def _user_info_html(u):
+def _user_info_html(u, lang=None):
+    norm = normalize_lang(lang or get_lang())
     if not u:
-        return ('<a href="/login"><button class="tb-btn glow">🔐 Login</button></a>', "guest", "GUEST", "#fff3")
+        return (
+            f'<a href="/login"><button class="tb-btn glow">🔐 {t("topbar.login_btn", norm)}</button></a>',
+            "guest",
+            t("role.guest", norm),
+            "#fff3",
+        )
     role = u["role"]
-    colors = {"superadmin":"rgba(240,165,0,.35)","admin":"rgba(255,255,255,.2)",
-              "editor":"rgba(99,102,241,.3)","viewer":"rgba(255,255,255,.15)","guest":"rgba(255,255,255,.1)"}
+    colors = {
+        "superadmin": "rgba(240,165,0,.35)",
+        "admin": "rgba(255,255,255,.2)",
+        "editor": "rgba(99,102,241,.3)",
+        "viewer": "rgba(255,255,255,.15)",
+        "guest": "rgba(255,255,255,.1)",
+    }
     rbg = colors.get(role, "#fff3")
-    labels = {"superadmin":"SUPER ADMIN","admin":"ADMIN","editor":"EDITOR","viewer":"VIEWER"}
+    labels = {
+        "superadmin": t("role.superadmin", norm),
+        "admin": t("role.admin", norm),
+        "editor": t("role.editor", norm),
+        "viewer": t("role.viewer", norm),
+    }
     rlbl = labels.get(role, role.upper())
     btns = ""
     if role in ("superadmin", "admin"):
-        btns += '<button class="tb-btn" onclick="openAdmin()">⚙<span class="tb-btn-text"> Admin</span></button>'
-    btns += '<button class="tb-btn" onclick="changePw()">🔑</button>'
-    btns += '<form action="/logout" method="post" style="display:inline"><button type="submit" class="tb-btn" style="padding:4px 6px;" title="Logout"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button></form>'
+        btns += f'<button class="tb-btn" onclick="openAdmin()">⚙<span class="tb-btn-text"> {t("topbar.admin_btn", norm)}</span></button>'
+    btns += f'<button class="tb-btn" onclick="changePw()" title="{t("topbar.change_pw_title", norm)}">🔑</button>'
+    btns += (
+        f'<form action="/logout" method="post" style="display:inline">'
+        f'<button type="submit" class="tb-btn" style="padding:4px 6px;" title="{t("topbar.logout_title", norm)}">'
+        f'<svg class="rtl-flip" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-inline-end:2px">'
+        f'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>'
+        f'</svg></button></form>'
+    )
     name = u["username"]
     return btns, name, rlbl, rbg
 
-def _workspace_switcher_html(u, active_ws_id=None):
+
+def _workspace_switcher_html(u, active_ws_id=None, lang=None):
     if not u:
         return ""
+    norm = normalize_lang(lang or get_lang())
     try:
         workspaces = db.get_user_workspaces(u.get("username", "")) if hasattr(db, "get_user_workspaces") else []
     except Exception:
@@ -2868,15 +3132,12 @@ def _workspace_switcher_html(u, active_ws_id=None):
         current_id = workspaces[0]["id"]
 
     current_ws = ws_map.get(current_id, workspaces[0])
+    cur_meta = translate_workspace_meta(current_ws, norm)
+    cur_disp_name = cur_meta["name"]
     is_multi = len(workspaces) > 1
     arrow_html = '<span class="ws-arrow">▾</span>' if is_multi else ''
     btn_class = "ws-switcher-btn" if is_multi else "ws-switcher-btn single-ws"
     btn_onclick = 'onclick="toggleWsDropdown(event)"' if is_multi else ''
-
-    sub_map = {
-        "ENG": "EPC & Site Submittals",
-        "OM": "Facilities & Maintenance Contracts"
-    }
 
     items_html = ""
     if is_multi:
@@ -2884,17 +3145,15 @@ def _workspace_switcher_html(u, active_ws_id=None):
             is_active = (ws["id"] == current_id)
             active_class = "active" if is_active else ""
             check_html = '<span class="ws-item-check">✓</span>' if is_active else ""
-            raw_sub = ws.get("description")
-            if raw_sub is not None:
-                sub_title = str(raw_sub).strip()
-            else:
-                sub_title = sub_map.get(ws["id"], ws.get("name_ar", ""))
+            meta = translate_workspace_meta(ws, norm)
+            item_title = meta["name"]
+            sub_title = meta["sub"]
             sub_title_html = f'<div class="ws-item-sub">{sub_title}</div>' if sub_title else ''
             items_html += f'''
             <a href="/?ws={ws['id']}" class="ws-item {active_class}" onclick="selectWorkspace('{ws['id']}', event)">
               <span class="ws-item-icon">{ws.get('icon', '📁')}</span>
               <div class="ws-item-text">
-                <div class="ws-item-title">{ws['name']}</div>
+                <div class="ws-item-title">{item_title}</div>
                 {sub_title_html}
               </div>
               {check_html}
@@ -2902,7 +3161,7 @@ def _workspace_switcher_html(u, active_ws_id=None):
             '''
         dropdown_html = f'''
         <div class="ws-dropdown-menu" id="ws-dropdown-menu">
-          <div class="ws-dropdown-header">Enterprise Workspaces</div>
+          <div class="ws-dropdown-header">{t("topbar.enterprise_workspaces", norm)}</div>
           {items_html}
         </div>
         '''
@@ -2910,18 +3169,18 @@ def _workspace_switcher_html(u, active_ws_id=None):
         dropdown_html = ""
 
     return f'''
-    <a href="/hub" class="tb-hub-launcher" title="Return to Company Workspaces Launchpad">
+    <a href="/hub" class="tb-hub-launcher" title="{t("topbar.workspaces_title", norm)}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
         <circle cx="5" cy="5" r="2.2"/><circle cx="12" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/>
         <circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/>
         <circle cx="5" cy="19" r="2.2"/><circle cx="12" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/>
       </svg>
-      <span class="tb-btn-text">Workspaces</span>
+      <span class="tb-btn-text">{t("topbar.workspaces", norm)}</span>
     </a>
     <div class="ws-switcher" id="ws-switcher" data-active-ws="{current_id}">
-      <button class="{btn_class}" {btn_onclick} title="Active Workspace: {current_ws.get('name', 'Engineering & Projects')}">
+      <button class="{btn_class}" {btn_onclick} title="{t("topbar.active_workspace", norm, name=cur_disp_name)}">
         <span class="ws-icon">{current_ws.get('icon', '📁')}</span>
-        <span class="ws-name">{current_ws.get('name', 'Engineering & Projects')}</span>
+        <span class="ws-name">{cur_disp_name}</span>
         {arrow_html}
       </button>
       {dropdown_html}
@@ -2932,7 +3191,14 @@ def _workspace_switcher_html(u, active_ws_id=None):
 
 BASE_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap');
+@font-face {
+  font-family: 'Cairo';
+  src: url('/static/fonts/Cairo-Regular.ttf') format('truetype');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* ═══════════════════════════════════════════════════════
    GAS CHILL DCR — Enterprise Design Token System v2.0
@@ -3154,8 +3420,8 @@ body.dark #noc-summary div[style*="color:#64748b"] {
   height:52px;
   display:flex;
   align-items:center;
-  padding:0 18px;
-  gap:10px;
+  padding:0 10px;
+  gap:5px;
   box-shadow:0 2px 12px rgba(0,0,0,.35);
   flex-shrink:0;
   position:relative;
@@ -3199,7 +3465,7 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   background:rgba(255,255,255,.08);
   border:1px solid rgba(255,255,255,.15);
   color:rgba(255,255,255,.9);
-  padding:6px 12px;
+  padding:4px 7px;
   border-radius:var(--rd);
   cursor:pointer;
   font-size:11.5px;
@@ -3208,9 +3474,22 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
   text-decoration:none;
   display:inline-flex;
   align-items:center;
-  gap:5px;
+  gap:4px;
+  white-space:nowrap;
+  flex-shrink:0;
   transition:all .15s;
   letter-spacing:.2px;
+}
+.sr-only{
+  position:absolute;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
 }
 .tb-btn:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.3);transform:translateY(-1px)}
 .tb-btn:active{transform:translateY(0)}
@@ -3224,15 +3503,36 @@ body.dark #topbar{background:var(--shell-bg,#0a1929);border-bottom-color:rgba(12
 
 /* Topbar user chip */
 .topbar-user{
-  display:inline-flex;align-items:center;gap:7px;
-  padding:4px 10px 4px 5px;
-  border-radius:20px;
+  display:inline-flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:2px;
+  line-height:1.1;
+  padding:3px 8px;
+  border-radius:10px;
   background:rgba(255,255,255,.08);
   border:1px solid rgba(255,255,255,.12);
   color:rgba(255,255,255,.9);
-  font-size:11.5px;
-  font-weight:500;
+  font-size:11px;
+  font-weight:600;
+  white-space:nowrap;
+  flex-shrink:0;
 }
+.topbar-user-name{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  line-height:1.1;
+}
+.topbar-user-role{
+  font-size:9px !important;
+  padding:1px 5px !important;
+  line-height:1.1;
+  border-radius:3px;
+  font-weight:700;
+}
+.topbar-title-full{white-space:nowrap;flex-shrink:0}
 .topbar-user-avatar{
   width:24px;height:24px;border-radius:50%;
   background:linear-gradient(135deg,var(--brand-green),var(--brand-teal));
@@ -3577,11 +3877,22 @@ body.dark #regtbl tbody tr.ov:hover { background-color: #4a2a24 !important; }
 /* Specific styling for the data cells (not header) */
 #regtbl td.docno-cell, #regtbl td:nth-child(3) {
     font-family: 'Consolas', 'Courier New', monospace !important; font-weight: 600 !important; color: var(--brand-teal) !important;
+    white-space: nowrap !important;
+    min-width: 130px;
 }
 
 /* Header z-index for Frozen Columns */
 #regtbl th:nth-child(1), #regtbl th:nth-child(2), #regtbl th:nth-child(3), #regtbl th.docno-cell { z-index: 10 !important; background-color: var(--brand-navy) !important; }
 body.dark #regtbl th:nth-child(1), body.dark #regtbl th:nth-child(2), body.dark #regtbl th:nth-child(3), body.dark #regtbl th.docno-cell { background-color: #0b131e !important; }
+
+/* RTL Frozen Columns (mirror left -> right) */
+html[dir="rtl"] #regtbl th:nth-child(1), html[dir="rtl"] #regtbl td:nth-child(1) { left: auto !important; right: 0 !important; }
+html[dir="rtl"] #regtbl th:nth-child(2), html[dir="rtl"] #regtbl td:nth-child(2) { left: auto !important; right: 32px !important; }
+html[dir="rtl"] #regtbl th.docno-cell, html[dir="rtl"] #regtbl td.docno-cell, html[dir="rtl"] #regtbl th:nth-child(3), html[dir="rtl"] #regtbl td:nth-child(3) {
+    left: auto !important; right: 66px !important;
+    box-shadow: -2px 0 5px -2px rgba(0,0,0,0.1) !important;
+}
+html[dir="rtl"] .sbadge { text-align: right !important; }
 
 /* 3. Status Pill Badges & Resizing (Allow Wrapping) */
 .sbadge { 
@@ -3740,11 +4051,31 @@ body.dark .mbody, body.dark .slist, body.dark .tool-dd-menu { scrollbar-color: r
 #projbar .pf-val { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; max-width: none !important; }
 
 /* Topbar Project Info (Moved from projbar) */
+#topbar-proj-info { min-width: 0; flex-shrink: 1; }
 #topbar-proj-info:hover { background: rgba(255,255,255,0.08); }
-#topbar-proj-info .pf { display: flex; flex-direction: column; gap: 2px; }
-#topbar-proj-info .pf-lbl { font-size: 9px; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
-#topbar-proj-info .pf-val { font-size: 15px; color: #ffffff; font-weight: 800; white-space: nowrap; max-width: none !important; }
+#topbar-proj-info .pf { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#topbar-proj-info .pf-lbl { font-size: 9px; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
+#topbar-proj-info .pf-val { font-size: 14px; color: #ffffff; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: none !important; }
 #topbar-proj-info .pf.primary .pf-val { font-size: 14px; color: var(--brand-teal); }
+.topbar-proj-edit-btn {
+  background: rgba(255,255,255,0.12) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255,255,255,0.22) !important;
+  padding: 2px 7px !important;
+  border-radius: 9999px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  align-self: center !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+.topbar-proj-edit-btn:hover {
+  background: rgba(255,255,255,0.22) !important;
+  border-color: rgba(255,255,255,0.4) !important;
+  color: #ffffff !important;
+}
 .global-footer { text-align: center; padding: 12px 20px; font-size: 11px; color: var(--mu); margin-top: auto; border-top: 1px solid var(--bd); letter-spacing: 0.3px; }
 .global-footer strong { font-weight: 600; color: var(--tx); }
 
@@ -4327,7 +4658,357 @@ body.dark .uact-btn-del:hover {
   transform: scale(1.15);
 }
 
+/* ═══════════════════════════════════════════════════════
+   I18N-01A: RTL & BIDI FOUNDATION (Arabic / English)
+═══════════════════════════════════════════════════════ */
+.bidi-ltr {
+  direction: ltr !important;
+  unicode-bidi: isolate !important;
+  display: inline-block;
+}
+td.bidi-ltr, th.bidi-ltr {
+  display: table-cell;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.rtl-flip {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+html[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}
+html[dir="rtl"] body {
+  font-family: 'Cairo', 'Inter', 'Segoe UI', Tahoma, Arial, sans-serif;
+  direction: rtl;
+  text-align: right;
+}
+html[dir="rtl"] #topbar::after {
+  background: linear-gradient(270deg, var(--brand-green) 0%, var(--brand-teal) 60%, transparent 100%);
+}
+html[dir="rtl"] .tb-hub-launcher {
+  margin-left: 0;
+  margin-right: 6px;
+}
+html[dir="rtl"] .ws-switcher {
+  margin-left: 0;
+  margin-right: 8px;
+}
+html[dir="rtl"] .ws-switcher-btn .ws-arrow {
+  margin-left: 0;
+  margin-right: 2px;
+}
+html[dir="rtl"] .ws-dropdown-menu {
+  left: auto;
+  right: 0;
+  text-align: right;
+}
+html[dir="rtl"] .topbar-user {
+  padding: 3px 8px;
+  gap: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+html[dir="rtl"] #topbar {
+  padding: 0 10px;
+  gap: 5px;
+}
+html[dir="rtl"] #topbar .topbar-title-full {
+  font-size: 12.5px !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+html[dir="rtl"] #topbar .tb-btn {
+  padding: 4px 7px;
+  font-size: 11px;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+html[dir="rtl"] #topbar .tb-hub-launcher,
+html[dir="rtl"] #topbar .ws-switcher-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+html[dir="rtl"] #topbar .global-search-trigger {
+  padding: 4px 8px;
+  margin: 0 4px;
+  gap: 5px;
+  font-size: 11px;
+  min-width: 0;
+}
+html[dir="rtl"] #topbar-proj-info {
+  gap: 8px !important;
+  padding: 3px 8px !important;
+  min-width: 0;
+}
+html[dir="rtl"] #topbar-proj-info .pf-lbl {
+  letter-spacing: 0;
+}
+html[dir="rtl"] #topbar-proj-info .pf-val {
+  font-size: 13px !important;
+}
+@media (max-width: 1366px) and (min-width: 769px) {
+  html[dir="rtl"] #topbar .global-search-trigger .gst-text {
+    max-width: 85px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  html[dir="rtl"] #topbar-proj-info .pf:last-of-type .pf-val {
+    max-width: clamp(220px, 34vw, 520px) !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+html[dir="rtl"] .stitle {
+  padding-left: 0 !important;
+  padding-right: 10px !important;
+  border-left: none !important;
+  border-right: 4px solid var(--brand-navy) !important;
+  background: linear-gradient(270deg, rgba(126,200,50,0.07) 0%, transparent 100%) !important;
+  border-radius: 4px 0 0 4px !important;
+  letter-spacing: 0 !important;
+}
+html[dir="rtl"] body.dark .stitle {
+  border-right-color: var(--brand-teal) !important;
+  background: linear-gradient(270deg, rgba(126,200,50,0.1) 0%, transparent 100%) !important;
+}
+html[dir="rtl"] .fg label,
+html[dir="rtl"] .form-section-title,
+html[dir="rtl"] .klbl,
+html[dir="rtl"] .om-kpi-lbl,
+html[dir="rtl"] .hse-kpi-lbl {
+  letter-spacing: 0 !important;
+}
+html[dir="rtl"] #toast {
+  right: auto;
+  left: 18px;
+}
+html[dir="rtl"] .user-tbl,
+html[dir="rtl"] .perm-table,
+html[dir="rtl"] .perm-table th {
+  text-align: right;
+}
+html[dir="rtl"] .user-tbl th {
+  letter-spacing: 0 !important;
+}
+html[dir="rtl"] .user-tbl-th-actions {
+  text-align: left !important;
+}
+html[dir="rtl"] .u-avatar {
+  margin-right: 0 !important;
+  margin-left: 10px !important;
+}
+html[dir="rtl"] .about-tech-list {
+  padding-left: 0 !important;
+  padding-right: 20px !important;
+}
+.lang-switch-btn {
+  font-family: 'Cairo', 'Inter', sans-serif !important;
+  font-weight: 700 !important;
+}
+@media (max-width: 768px) {
+  html[dir="rtl"] .topbar-title-short {
+    margin-right: 0 !important;
+    margin-left: auto !important;
+  }
+}
+
+/* ── I18N-FIX-02 / I18N-FIX-03: Topbar Project Info & Smart BiDi Alignment ── */
+#topbar-proj-info .pf.pf-code {
+  flex: 0 0 auto !important;
+}
+#topbar-proj-info .pf-val[data-key="code"] {
+  max-width: none !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+#topbar-proj-info .pf.pf-name {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+@media (min-width: 769px) {
+  #topbar-proj-info .pf.pf-name {
+    min-width: 140px !important;
+  }
+  #topbar-proj-info .pf-val[data-key="name"] {
+    max-width: clamp(220px, 34vw, 520px) !important;
+    font-size: 13px !important;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 1440px) and (min-width: 769px) {
+  #topbar {
+    padding: 0 10px;
+    gap: 5px;
+  }
+  #topbar .global-search-trigger {
+    padding: 4px 8px;
+    margin: 0 4px;
+    gap: 5px;
+    min-width: 0;
+  }
+  #topbar .global-search-trigger .gst-text {
+    max-width: 85px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #topbar-proj-info {
+    gap: 8px !important;
+    padding: 3px 8px !important;
+  }
+  #topbar .tb-btn {
+    padding: 4px 7px;
+    gap: 4px;
+  }
+}
+#regtbl td[dir="auto"],
+#projbar .pf-val[dir="auto"],
+#topbar-proj-info .pf-val[dir="auto"] {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+html[dir="rtl"] #regtbl td.sr,
+html[dir="rtl"] #regtbl td.reg-date-cell,
+html[dir="rtl"] #regtbl td.reg-dur-cell {
+  text-align: center;
+}
+html[dir="rtl"] #regtbl td.docno-cell,
+html[dir="rtl"] #regtbl td.item-ref-cell {
+  text-align: left;
+}
+
 </style>"""
+
+def _shared_js_html(lang=None) -> str:
+    norm = normalize_lang(lang or get_lang())
+    i18n_json = get_client_i18n_json(norm)
+    i18n_boot = f"""<script>
+window.DCR_LANG = "{norm}";
+window.DCR_DIR = "{html_dir(norm)}";
+window.DCR_I18N = {i18n_json};
+window.t = function(key, vars) {{
+  const dict = window.DCR_I18N || {{}};
+  let val = Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : key;
+  if (vars && typeof val === 'string') {{
+    Object.keys(vars).forEach(function(k) {{
+      val = val.replaceAll('{{' + k + '}}', String(vars[k] == null ? '' : vars[k]));
+    }});
+  }}
+  return val;
+}};
+window.tCol = function(colKey, defaultLabel) {{
+  if (window.DCR_LANG !== 'ar') return defaultLabel || colKey || '';
+  const k = 'col.' + String(colKey || '').trim();
+  const dict = window.DCR_I18N || {{}};
+  return Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : (defaultLabel || colKey || '');
+}};
+window.tDt = function(code, defaultName) {{
+  const fallback = defaultName || code || '';
+  if (window.DCR_LANG !== 'ar') return fallback;
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return fallback;
+  const k = 'dt_name.' + c;
+  const dict = window.DCR_I18N || {{}};
+  const tr = Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : '';
+  return (tr && tr !== k && !String(tr).startsWith('dt_name.')) ? tr : fallback;
+}};
+window.tStatus = function(val) {{
+  if (!val || window.DCR_LANG !== 'ar') return val || '';
+  const raw = String(val).trim();
+  const low = raw.toLowerCase().replace(/\\s+/g, ' ');
+  const lowNoCommaSpace = low.replace(/\\s*,\\s*/g, ',');
+  const map = {{
+    'approved': 'status.approved',
+    'approved with comments': 'status.approved_with_comments',
+    'pending': 'status.pending',
+    'under review': 'status.under_review',
+    'open': 'status.open',
+    'in progress': 'status.in_progress',
+    'in-progress': 'status.in_progress',
+    'closed': 'status.closed',
+    'completed': 'status.completed',
+    'rejected': 'status.rejected',
+    'revise & resubmit': 'status.revise_resubmit',
+    'revise and resubmit': 'status.revise_resubmit',
+    'overdue': 'status.overdue',
+    'expired': 'status.expired',
+    'valid': 'status.valid',
+    'expiring': 'status.expiring',
+    'active': 'status.active',
+    'info / closed': 'status.info_closed',
+    'info/closed': 'status.info_closed',
+    'not closed': 'status.not_closed',
+    'cancelled': 'status.cancelled',
+    'canceled': 'status.cancelled',
+    'a - approved': 'status.a_approved',
+    'b - approved as noted': 'status.b_approved_noted',
+    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b,c - approved and resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved and resubmit': 'status.bc_approved_resubmit',
+    'c - revise & resubmit': 'status.c_revise_resubmit',
+    'd - review not required': 'status.d_review_not_required',
+    'replied': 'status.replied',
+    'accepted & to proceed with part c': 'status.noc_accepted_part_c',
+    'information required': 'status.info_required',
+    'needs maintenance': 'status.needs_maintenance',
+    'under refill': 'status.under_refill',
+    'out of service': 'status.out_of_service',
+    'draft': 'status.draft',
+    'revised': 'status.revised'
+  }};
+  const k = map[low] || map[lowNoCommaSpace];
+  return k ? window.t(k) : raw;
+}};
+window.setLanguage = function(nextLang) {{
+  const lang = (String(nextLang || '').trim().toLowerCase() === 'ar') ? 'ar' : 'en';
+  try {{
+    document.cookie = 'dcr_lang=' + lang + '; path=/; max-age=31536000; SameSite=Lax';
+  }} catch(e) {{}}
+  try {{
+    localStorage.setItem('dcr_lang', lang);
+  }} catch(e) {{}}
+  try {{
+    const u = new URL(window.location.href);
+    if (u.searchParams.has('lang')) {{
+      u.searchParams.set('lang', lang);
+      window.location.href = u.toString();
+      return;
+    }}
+  }} catch(e) {{}}
+  window.location.reload();
+}};
+try {{
+  localStorage.setItem('dcr_lang', window.DCR_LANG);
+}} catch(e) {{}}
+</script>
+"""
+    localized_shared = (
+        SHARED_JS
+        .replace('<strong style="font-size:14px;">User Management & Access Control</strong>', f'<strong style="font-size:14px;">{t("admin.modal_title", norm)}</strong>')
+        .replace('<div style="font-size:11px; color:var(--mu);">Scoped Multi-Workspace RBAC Active</div>', f'<div style="font-size:11px; color:var(--mu);">{t("admin.rbac_active", norm)}</div>')
+        .replace('<button class="btn btn-sc" onclick="closeM(\'admin-modal\')">Close</button>', f'<button class="btn btn-sc" onclick="closeM(\'admin-modal\')">{t("common.close", norm)}</button>')
+        .replace('id="perm-title">⚙ User Permissions</div>', f'id="perm-title">{t("perm.modal_title_default", norm)}</div>')
+        .replace('id="perm-subtitle">Department Projects & Contracts</div>', f'id="perm-subtitle">{t("perm.modal_sub_default", norm)}</div>')
+        .replace('id="perm-search" placeholder="Search projects/contracts..."', f'id="perm-search" placeholder="{t("perm.search_placeholder", norm)}"')
+        .replace('onclick="permSelectAll(event)">Select All</a>', f'onclick="permSelectAll(event)">{t("perm.select_all", norm)}</a>')
+        .replace('onclick="permClearAll(event)">Clear All</a>', f'onclick="permClearAll(event)">{t("perm.clear_all", norm)}</a>')
+        .replace('id="perm-save-status" style="font-size:11px; color:var(--mu);">Permissions are applied immediately.</div>', f'id="perm-save-status" style="font-size:11px; color:var(--mu);">{t("perm.status_immediate", norm)}</div>')
+        .replace('<button class="btn btn-sc" onclick="closeM(\'permissions-modal\')">Done</button>', f'<button class="btn btn-sc" onclick="closeM(\'permissions-modal\')">{t("common.done", norm)}</button>')
+    )
+    return i18n_boot + localized_shared
+
 
 SHARED_JS = """
 <!-- ADMIN MODAL (Users & Access Control) -->
@@ -4437,21 +5118,21 @@ function toggleProjectInfo(){
   const btn=document.getElementById('projbar-toggle');
   if(!bar||!btn)return;
   const open=bar.classList.toggle('show-details');
-  btn.textContent=open?'Hide Info':'Project Info';
+  btn.textContent=open?(typeof t==='function'?t('common.hide_info'):'Hide Info'):(typeof t==='function'?t('common.project_info'):'Project Info');
 }
 async function apiFetch(url,opts={}){
   const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json'},cache:'no-store',...opts});
   if(r.status===403){const d=await r.json().catch(()=>({}));
     if(d.error==='LOGIN_REQUIRED'){window.location='/login';return null;}
-    throw new Error(d.error||'Forbidden');}
+    throw new Error(d.error||(typeof t==='function'?t('common.forbidden'):'Forbidden'));}
   if(!r.ok)throw new Error(await r.text());
   return r.json();
 }
 async function changePw(){
-  const pw=prompt('New password (min 4 chars):');
+  const pw=prompt(typeof t==='function'?t('common.new_password_prompt'):'New password (min 4 chars):');
   if(!pw||pw.length<4)return;
   const r=await apiFetch('/api/change_password',{method:'POST',body:JSON.stringify({password:pw})});
-  if(r&&r.ok)toast('✔ Password changed','ok');else toast((r&&r.error)||'Error','er');
+  if(r&&r.ok)toast(typeof t==='function'?t('common.password_changed'):'✔ Password changed','ok');else toast((r&&r.error)||(typeof t==='function'?t('common.error'):'Error'),'er');
 }
 function escHtml(v){
   return String(v==null?'':v)
@@ -4460,6 +5141,24 @@ function escHtml(v){
     .replaceAll('>','&gt;')
     .replaceAll('"','&quot;')
     .replaceAll("'",'&#39;');
+}
+function _admT(key, vars, fallback) {
+  if (typeof window.t === 'function') {
+    const res = window.t(key, vars);
+    if (res && res !== key) return res;
+  }
+  return fallback !== undefined ? fallback : key;
+}
+function _admWsLabel(w) {
+  if (!w) return '';
+  const isAr = (window.DCR_LANG === 'ar' || document.documentElement.getAttribute('lang') === 'ar');
+  if (isAr) {
+    if (w.name_ar) return w.name_ar;
+    const idUp = String(w.id || w.code || '').toUpperCase();
+    const tName = _admT('ws.' + idUp + '.name', null, '');
+    if (tName) return tName;
+  }
+  return w.name || w.code || w.id || '';
 }
 
 // ── Unified Multi-Workspace Enterprise Admin Panel ─────────────────────────
@@ -4497,10 +5196,10 @@ async function openAdmin() {
       tabNav.style.cssText = 'display:flex;gap:4px;padding:8px 18px 0;background:var(--surface);border-bottom:1px solid var(--bd);';
       tabNav.innerHTML = `
         <button id="admin-tab-btn-users" class="tb-btn active" onclick="switchAdminTab('users')" style="padding:6px 14px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--pr);background:transparent;cursor:pointer;color:var(--tx);border-radius:0;">
-          👥 Users & Access Control
+          ${escHtml(_admT('admin.tab_users', null, '👥 Users & Access Control'))}
         </button>
         <button id="admin-tab-btn-depts" class="tb-btn" onclick="switchAdminTab('depts')" style="padding:6px 14px;font-size:12px;font-weight:600;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:var(--mu);border-radius:0;">
-          🏢 Departments & Workspaces
+          ${escHtml(_admT('admin.tab_depts', null, '🏢 Departments & Workspaces'))}
         </button>
       `;
       body.appendChild(tabNav);
@@ -4520,36 +5219,36 @@ async function openAdmin() {
     const toolbar = document.createElement('div');
     toolbar.className = 'admin-toolbar';
     
-    let deptOptions = '<option value="">All Departments</option>';
+    let deptOptions = `<option value="">${escHtml(_admT('admin.all_depts_opt', null, 'All Departments'))}</option>`;
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-      const label = w.name || w.code || w.id;
-      deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+      const label = _admWsLabel(w);
+      deptOptions += `<option value="${escHtml(w.id)}">${escHtml(icon)} ${escHtml(label)}</option>`;
     });
     
     toolbar.innerHTML = `
       <div class="admin-toolbar-left" style="display:flex;align-items:center;gap:8px;flex:1 1 auto;flex-wrap:wrap;">
-        <input type="text" id="admin-user-search" class="tbl-input" placeholder="🔍 Search by user or email..." style="width:220px;padding:6px 10px;font-size:11.5px;" oninput="renderAdminTable()">
+        <input type="text" id="admin-user-search" class="tbl-input" placeholder="${escHtml(_admT('admin.search_placeholder', null, '🔍 Search by user or email...'))}" style="width:220px;padding:6px 10px;font-size:11.5px;" oninput="renderAdminTable()">
         <select id="admin-dept-filter" class="tbl-select" style="padding:6px 10px;font-weight:600;min-width:180px;font-size:11.5px;" onchange="renderAdminTable()">
           ${deptOptions}
         </select>
         <select id="admin-role-filter" class="tbl-select" style="padding:6px 10px;font-weight:600;min-width:110px;font-size:11.5px;" onchange="renderAdminTable()">
-          <option value="">All Roles</option>
-          ${isSuper ? '<option value="superadmin">Super Admin</option>' : ''}
-          <option value="admin">Admin</option>
-          <option value="editor">Editor</option>
-          <option value="viewer">Viewer</option>
+          <option value="">${escHtml(_admT('admin.all_roles_opt', null, 'All Roles'))}</option>
+          ${isSuper ? `<option value="superadmin">${escHtml(_admT('admin.role_superadmin', null, 'Super Admin'))}</option>` : ''}
+          <option value="admin">${escHtml(_admT('admin.role_admin', null, 'Admin'))}</option>
+          <option value="editor">${escHtml(_admT('admin.role_editor', null, 'Editor'))}</option>
+          <option value="viewer">${escHtml(_admT('admin.role_viewer', null, 'Viewer'))}</option>
         </select>
       </div>
       <div class="admin-toolbar-right" style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
         <button class="btn btn-pr btn-sm" onclick="toggleAddUserCard()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;font-weight:600;">
-          <span>➕</span><span>Add User</span>
+          <span>➕</span><span>${escHtml(_admT('admin.btn_add_user', null, 'Add User'))}</span>
         </button>
-        <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="Export Users Matrix to Excel/CSV" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
-          <span>📥</span><span>Export Matrix</span>
+        <button class="btn btn-sc btn-sm" onclick="exportUsersCSV()" title="${escHtml(_admT('admin.btn_export_matrix_title', null, 'Export Users Matrix to Excel/CSV'))}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
+          <span>📥</span><span>${escHtml(_admT('admin.btn_export_matrix', null, 'Export Matrix'))}</span>
         </button>
-        <button class="btn btn-sc btn-sm" onclick="toggleAuditCard()" title="Detect Sequence Gaps" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
-          <span>🔍</span><span>Gap Audit</span>
+        <button class="btn btn-sc btn-sm" onclick="toggleAuditCard()" title="${escHtml(_admT('admin.btn_gap_audit_title', null, 'Detect Sequence Gaps'))}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;">
+          <span>🔍</span><span>${escHtml(_admT('admin.btn_gap_audit', null, 'Gap Audit'))}</span>
         </button>
       </div>
     `;
@@ -4564,32 +5263,32 @@ async function openAdmin() {
     let addDeptOptions = '';
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-      const label = w.name || w.code || w.id;
-      addDeptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+      const label = _admWsLabel(w);
+      addDeptOptions += `<option value="${escHtml(w.id)}">${escHtml(icon)} ${escHtml(label)}</option>`;
     });
     
     addCard.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <strong style="font-size:13px;color:var(--tx);">➕ Add New User</strong>
-        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAddUserCard();">Close ✕</a>
+        <strong style="font-size:13px;color:var(--tx);">${escHtml(_admT('admin.add_user_title', null, '➕ Add New User'))}</strong>
+        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAddUserCard();">${escHtml(_admT('admin.close_x', null, 'Close ✕'))}</a>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)) auto;gap:8px;align-items:end;">
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Username</label><input id="nu-name" class="tbl-input" placeholder="username" autocomplete="off"></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Email</label><input id="nu-email" class="tbl-input" placeholder="user@company.com"></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Department</label><select id="nu-dept" class="tbl-select" style="width:100%">${addDeptOptions}</select></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Role</label><select id="nu-role" class="tbl-select" style="width:100%">
-          <option value="editor">Editor</option>
-          <option value="viewer">Viewer</option>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_username', null, 'Username'))}</label><input id="nu-name" class="tbl-input bidi-ltr" placeholder="${escHtml(_admT('admin.ph_username', null, 'username'))}" autocomplete="off"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_email', null, 'Email'))}</label><input id="nu-email" class="tbl-input bidi-ltr" placeholder="${escHtml(_admT('admin.ph_email', null, 'user@company.com'))}"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_department', null, 'Department'))}</label><select id="nu-dept" class="tbl-select" style="width:100%">${addDeptOptions}</select></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_role', null, 'Role'))}</label><select id="nu-role" class="tbl-select" style="width:100%">
+          <option value="editor">${escHtml(_admT('admin.role_editor', null, 'Editor'))}</option>
+          <option value="viewer">${escHtml(_admT('admin.role_viewer', null, 'Viewer'))}</option>
           ${isSuper ? '<option value="admin">Admin</option><option value="superadmin">Super Admin</option>' : ''}
         </select></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Password</label><input id="nu-pw" type="password" class="tbl-input" placeholder="••••••••"></div>
-        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">Downloads</label>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_password', null, 'Password'))}</label><input id="nu-pw" type="password" class="tbl-input bidi-ltr" placeholder="••••••••"></div>
+        <div class="fg" style="margin:0;"><label style="font-size:10px;font-weight:600;display:block;margin-bottom:2px;">${escHtml(_admT('admin.lbl_downloads', null, 'Downloads'))}</label>
           <label style="display:flex;align-items:center;gap:4px;height:28px;font-size:11px;font-weight:600;cursor:pointer;background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1);padding:0 8px;border-radius:4px;">
             <input type="checkbox" id="nu-can-dl" style="cursor:pointer;margin:0;">
-            <span>Allow 📥</span>
+            <span>${escHtml(_admT('admin.lbl_allow_dl', null, 'Allow 📥'))}</span>
           </label>
         </div>
-        <button class="btn btn-pr btn-sm" onclick="submitAddUser()" style="height:30px;padding:0 12px;">Create</button>
+        <button class="btn btn-pr btn-sm" onclick="submitAddUser()" style="height:30px;padding:0 12px;">${escHtml(_admT('common.create', null, 'Create'))}</button>
       </div>
     `;
     usersView.appendChild(addCard);
@@ -4600,22 +5299,22 @@ async function openAdmin() {
     auditCard.className = 'add-user-card';
     auditCard.style.display = 'none';
     
-    let auditProjOptions = _ADMIN_DATA.projects.map(p => `<option value="${p.id}">${p.code} - ${escHtml(p.name)}</option>`).join('');
+    let auditProjOptions = _ADMIN_DATA.projects.map(p => `<option value="${escHtml(p.id)}">${escHtml(p.code)} - ${escHtml(p.name)}</option>`).join('');
     auditCard.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <strong style="font-size:13px;color:var(--tx);">Global Sequence Gap Audit</strong>
-        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAuditCard();">Close ✕</a>
+        <strong style="font-size:13px;color:var(--tx);">${escHtml(_admT('admin.audit_title', null, 'Global Sequence Gap Audit'))}</strong>
+        <a href="#" style="font-size:11px;color:var(--mu);text-decoration:none;" onclick="event.preventDefault();toggleAuditCard();">${escHtml(_admT('admin.close_x', null, 'Close ✕'))}</a>
       </div>
-      <p style="font-size:11px;color:var(--mu);margin-bottom:10px;">Detect missing sequence numbers (gaps) in document logs for any project.</p>
+      <p style="font-size:11px;color:var(--mu);margin-bottom:10px;">${escHtml(_admT('admin.audit_desc', null, 'Detect missing sequence numbers (gaps) in document logs for any project.'))}</p>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <select id="audit-proj" class="tbl-select" style="min-width:180px;">
-          <option value="">Select Project</option>
+          <option value="">${escHtml(_admT('admin.audit_select_proj', null, 'Select Project'))}</option>
           ${auditProjOptions}
         </select>
         <select id="audit-dt" class="tbl-select" style="min-width:180px;">
-          <option value="">Select Doc Type</option>
+          <option value="">${escHtml(_admT('admin.audit_select_dt', null, 'Select Doc Type'))}</option>
         </select>
-        <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">Run Audit</button>
+        <button class="btn btn-pr btn-sm" onclick="runSequenceAudit()">${escHtml(_admT('admin.audit_run_btn', null, 'Run Audit'))}</button>
       </div>
       <div id="audit-result" style="font-size:11px;margin-top:10px;"></div>
     `;
@@ -4628,11 +5327,11 @@ async function openAdmin() {
         const pid = e.target.value;
         const dtSel = document.getElementById('audit-dt');
         if (!dtSel) return;
-        dtSel.innerHTML = '<option value="">Select Doc Type</option>';
+        dtSel.innerHTML = `<option value="">${escHtml(_admT('admin.audit_select_dt', null, 'Select Doc Type'))}</option>`;
         if (!pid) return;
         const dts = await apiFetch('/api/doc_types/' + pid);
         if (dts) {
-          dtSel.innerHTML += dts.map(d => `<option value="${d.id}">${d.code} - ${escHtml(d.name)}</option>`).join('');
+          dtSel.innerHTML += dts.map(d => `<option value="${escHtml(d.id)}">${escHtml(d.code)} - ${escHtml(d.name)}</option>`).join('');
         }
       });
     }
@@ -4646,7 +5345,7 @@ async function openAdmin() {
     renderAdminTable();
     openM('admin-modal');
   } catch (err) {
-    toast('Error opening admin: ' + err.message, 'er');
+    toast(_admT('admin.err_open', { error: err.message }, 'Error opening admin: ' + err.message), 'er');
   }
 }
 
@@ -4759,9 +5458,9 @@ function toggleAddDeptCard(show, reset=false) {
     if (reset || !document.getElementById('dept-form-mode')?.value || document.getElementById('dept-form-mode')?.value === 'add') {
       document.getElementById('dept-form-mode').value = 'add';
       const titleEl = document.getElementById('dept-form-title');
-      if (titleEl) titleEl.innerHTML = '<span>➕ Add New Department (إضافة قسم جديد)</span>';
+      if (titleEl) titleEl.innerHTML = '<span>' + escHtml(_admT('dept.form_add_title', null, '➕ Add New Department (إضافة قسم جديد)')) + '</span>';
       const submitLbl = document.getElementById('dept-submit-lbl');
-      if (submitLbl) submitLbl.textContent = 'Save Department (حفظ القسم)';
+      if (submitLbl) submitLbl.textContent = _admT('dept.btn_save', null, 'Save Department (حفظ القسم)');
       
       const idInp = document.getElementById('dept-inp-id');
       if (idInp) idInp.value = '';
@@ -4788,9 +5487,10 @@ function editDepartment(wsId) {
   if (!w) return;
   toggleAddDeptCard(true, false);
   const titleEl = document.getElementById('dept-form-title');
-  if (titleEl) titleEl.innerHTML = '<span>✏️ Edit Department: ' + escHtml(w.name || w.id) + '</span>';
+  const dispName = _admWsLabel(w) || w.name || w.id;
+  if (titleEl) titleEl.innerHTML = '<span>' + escHtml(_admT('dept.form_edit_title', { name: dispName }, '✏️ Edit Department: ' + dispName)) + '</span>';
   const submitLbl = document.getElementById('dept-submit-lbl');
-  if (submitLbl) submitLbl.textContent = 'Update Department (حفظ التعديلات)';
+  if (submitLbl) submitLbl.textContent = _admT('dept.btn_update', null, 'Update Department (حفظ التعديلات)');
   const modeEl = document.getElementById('dept-form-mode');
   if (modeEl) modeEl.value = 'update';
   
@@ -4821,7 +5521,7 @@ async function submitDepartmentForm() {
   const icon = (document.getElementById('dept-inp-icon')?.value || '').trim() || '📁';
 
   if (!code || !name) {
-    alert('Please enter Department Code and English Name.');
+    alert(_admT('dept.err_code_name_req', null, 'Please enter Department Code and English Name.'));
     return;
   }
 
@@ -4839,7 +5539,7 @@ async function submitDepartmentForm() {
       body: JSON.stringify(payload)
     });
     if (res && res.ok) {
-      toast('✔ Department saved successfully!', 'ok');
+      toast(_admT('dept.toast_saved', null, '✔ Department saved successfully!'), 'ok');
       toggleAddDeptCard(false);
       const updatedWs = await apiFetch('/api/workspaces');
       if (updatedWs) {
@@ -4848,10 +5548,10 @@ async function submitDepartmentForm() {
         refreshAdminDeptDropdowns();
       }
     } else {
-      alert((res && res.error) || 'Failed to save department');
+      alert((res && res.error) || _admT('dept.err_save', null, 'Failed to save department'));
     }
   } catch(e) {
-    alert('Error saving department: ' + e.message);
+    alert(_admT('dept.err_save', null, 'Failed to save department') + ': ' + e.message);
   }
 }
 
@@ -4884,16 +5584,16 @@ async function moveDepartmentOrder(wsId, dir) {
       _ADMIN_DATA.workspaces = updatedWs;
       renderDepartmentsTable();
       refreshAdminDeptDropdowns();
-      toast('✔ Department order updated', 'ok');
+      toast(_admT('dept.toast_order_updated', null, '✔ Department order updated'), 'ok');
     }
   } catch (err) {
-    toast('Error reordering: ' + err.message, 'er');
+    toast(_admT('dept.err_reorder', { error: err.message }, 'Error reordering: ' + err.message), 'er');
   }
 }
 
 function openUserDeptsModal(username) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
-  if (!u) return toast('User not found', 'er');
+  if (!u) return toast(_admT('admin.toast_user_not_found', null, 'User not found'), 'er');
   
   let modal = document.getElementById('user-depts-modal');
   if (!modal) {
@@ -4914,7 +5614,7 @@ function openUserDeptsModal(username) {
     const isAssigned = (w.id in wsMap);
     const wsRole = wsMap[w.id] || 'viewer';
     const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '🏗️' : '📁'));
-    const name = w.name || w.id;
+    const name = _admWsLabel(w) || w.name || w.id;
     const desc = w.description || w.name_ar || '';
     
     rowsHtml += `
@@ -4925,18 +5625,18 @@ function openUserDeptsModal(username) {
                  style="width:16px;height:16px;accent-color:var(--brand-teal);cursor:pointer;">
           <span style="font-size:20px;width:24px;text-align:center;">${icon}</span>
           <div>
-            <div style="font-weight:700;font-size:13px;color:var(--tx);">${escHtml(name)} <span style="font-family:monospace;color:var(--brand-teal);font-size:11px;">(${escHtml(w.code || w.id)})</span></div>
+            <div style="font-weight:700;font-size:13px;color:var(--tx);">${escHtml(name)} <span class="bidi-ltr" style="font-family:monospace;color:var(--brand-teal);font-size:11px;">(${escHtml(w.code || w.id)})</span></div>
             ${desc ? `<div style="font-size:11px;color:var(--mu);">${escHtml(desc)}</div>` : ''}
           </div>
         </label>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:11px;color:var(--mu);font-weight:600;">Role:</span>
+          <span style="font-size:11px;color:var(--mu);font-weight:600;">${escHtml(_admT('dept.lbl_role_colon', null, 'Role:'))}</span>
           <select id="modal-dept-role-${w.id}" class="tbl-select" style="padding:4px 8px;font-size:11.5px;font-weight:600;min-width:95px;"
                   onchange="updUsrWsRole('${escHtml(username)}', '${w.id}', this.value)"
                   ${!isAssigned ? 'disabled style="opacity:0.4;"' : ''}>
-            <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
-            <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
-            <option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>
+            <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>${escHtml(_admT('admin.role_viewer', null, 'Viewer'))}</option>
+            <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>${escHtml(_admT('admin.role_editor', null, 'Editor'))}</option>
+            <option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>${escHtml(_admT('admin.role_admin', null, 'Admin'))}</option>
           </select>
         </div>
       </div>
@@ -4949,18 +5649,18 @@ function openUserDeptsModal(username) {
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">🏢</span>
           <div>
-            <div style="font-weight:800;font-size:14px;color:var(--tx);">Department Access & Roles — ${escHtml(username)}</div>
-            <div style="font-size:11px;color:var(--mu);">Assign company departments and define access level for this user</div>
+            <div style="font-weight:800;font-size:14px;color:var(--tx);">${escHtml(_admT('dept.user_modal_title', { user: username }, 'Department Access & Roles — ' + username))}</div>
+            <div style="font-size:11px;color:var(--mu);">${escHtml(_admT('dept.user_modal_sub', null, 'Assign company departments and define access level for this user'))}</div>
           </div>
         </div>
         <button class="xbtn" onclick="closeUserDeptsModal()">✕</button>
       </div>
       
       <div style="padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:11.5px;font-weight:600;color:var(--tx);">Company Departments (${workspaces.length})</span>
+        <span style="font-size:11.5px;font-weight:600;color:var(--tx);">${escHtml(_admT('dept.company_depts_count', { count: workspaces.length }, 'Company Departments (' + workspaces.length + ')'))}</span>
         <div style="display:flex;gap:10px;">
-          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', true)" style="font-size:11px;padding:3px 8px;">Select All</button>
-          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', false)" style="font-size:11px;padding:3px 8px;">Clear All</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', true)" style="font-size:11px;padding:3px 8px;">${escHtml(_admT('perm.select_all', null, 'Select All'))}</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="modalToggleAllDepts('${escHtml(username)}', false)" style="font-size:11px;padding:3px 8px;">${escHtml(_admT('perm.clear_all', null, 'Clear All'))}</button>
         </div>
       </div>
 
@@ -4970,7 +5670,7 @@ function openUserDeptsModal(username) {
 
       <div style="padding:12px 20px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;align-items:center;background:var(--bg);border-bottom-left-radius:12px;border-bottom-right-radius:12px;">
         <button class="btn btn-pr btn-sm" onclick="closeUserDeptsModal()" style="padding:6px 20px;font-weight:700;background:var(--brand-teal);color:#fff;">
-          Done (إتمام)
+          ${escHtml(_admT('dept.btn_done', null, 'Done (إتمام)'))}
         </button>
       </div>
     </div>
@@ -5020,7 +5720,7 @@ async function updUsrAllDeptsRole(username, role) {
     u.workspaces.forEach(w => w.role = role);
   }
   u.role = role;
-  toast('✔ All department roles updated to ' + role, 'ok');
+  toast(_admT('admin.toast_all_roles_updated', { role: role }, '✔ All department roles updated to ' + role), 'ok');
   renderAdminTable();
 }
 
@@ -5028,11 +5728,11 @@ function refreshAdminDeptDropdowns() {
   const filter = document.getElementById('admin-dept-filter');
   if (filter) {
     const curVal = filter.value;
-    let deptOptions = '<option value="">All Departments</option>';
+    let deptOptions = `<option value="">${escHtml(_admT('admin.all_depts_opt', null, 'All Departments'))}</option>`;
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-      const label = w.name || w.code || w.id;
-      deptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+      const label = _admWsLabel(w);
+      deptOptions += `<option value="${escHtml(w.id)}">${escHtml(icon)} ${escHtml(label)}</option>`;
     });
     filter.innerHTML = deptOptions;
     if (curVal) filter.value = curVal;
@@ -5043,8 +5743,8 @@ function refreshAdminDeptDropdowns() {
     let addDeptOptions = '';
     (_ADMIN_DATA.workspaces || []).forEach(w => {
       const icon = w.icon || (w.id === 'OM' ? '⚙️' : (w.id === 'ENG' ? '📐' : '📁'));
-      const label = w.name || w.code || w.id;
-      addDeptOptions += `<option value="${w.id}">${icon} ${label}</option>`;
+      const label = _admWsLabel(w);
+      addDeptOptions += `<option value="${escHtml(w.id)}">${escHtml(icon)} ${escHtml(label)}</option>`;
     });
     nuDept.innerHTML = addDeptOptions;
     if (curVal) nuDept.value = curVal;
@@ -5066,6 +5766,9 @@ function renderDepartmentsTable() {
     const icon = w.icon || (isOm ? '⚙️' : (isEng ? '🏗️' : '📁'));
     const rawDesc = (w.description !== undefined && w.description !== null) ? String(w.description).trim() : '';
     const descDisplay = rawDesc ? escHtml(rawDesc) : '<span style="color:var(--mu);font-style:italic;">—</span>';
+    const pCountLbl = isOm
+      ? _admT('dept.count_contracts', { count: pCount }, pCount + ' Contracts')
+      : _admT('dept.count_projects', { count: pCount }, pCount + ' Projects');
     
     rowsHtml += `
       <tr>
@@ -5076,19 +5779,19 @@ function renderDepartmentsTable() {
             <div style="font-size:11px;color:var(--mu);">${escHtml(w.name_ar || '')}</div>
           </div>
         </td>
-        <td style="font-family:monospace;font-weight:800;color:var(--brand-teal);font-size:12.5px;">${escHtml(w.code || w.id)}</td>
+        <td><span class="bidi-ltr" style="font-family:monospace;font-weight:800;color:var(--brand-teal);font-size:12.5px;">${escHtml(w.code || w.id)}</span></td>
         <td style="font-size:11.5px;color:var(--mu);max-width:280px;">${descDisplay}</td>
-        <td style="text-align:center;"><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-weight:700;">${pCount} ${isOm ? 'Contracts' : 'Projects'}</span></td>
-        <td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;">Active</span></td>
+        <td style="text-align:center;"><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-weight:700;">${escHtml(pCountLbl)}</span></td>
+        <td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;">${escHtml(_admT('dept.status_active', null, 'Active'))}</span></td>
         <td>
           <div style="display:flex;gap:4px;align-items:center;">
-            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', -1)" title="Move Up" ${idx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▲</button>
-            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', 1)" title="Move Down" ${idx === workspaces.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▼</button>
-            <button class="uact-btn" onclick="editDepartment('${escHtml(w.id)}')" title="Edit Department Details">
-              <span>✏️</span><span>Edit</span>
+            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', -1)" title="${escHtml(_admT('dept.move_up_title', null, 'Move Up'))}" ${idx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▲</button>
+            <button class="uact-btn" onclick="moveDepartmentOrder('${escHtml(w.id)}', 1)" title="${escHtml(_admT('dept.move_down_title', null, 'Move Down'))}" ${idx === workspaces.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>▼</button>
+            <button class="uact-btn" onclick="editDepartment('${escHtml(w.id)}')" title="${escHtml(_admT('dept.edit_title', null, 'Edit Department Details'))}">
+              <span>✏️</span><span>${escHtml(_admT('admin.btn_edit', null, 'Edit'))}</span>
             </button>
-            <a href="/?ws=${encodeURIComponent(w.id)}" class="uact-btn" style="text-decoration:none;" title="Open Department Dashboard">
-              <span>👁️</span><span>Open</span>
+            <a href="/?ws=${encodeURIComponent(w.id)}" class="uact-btn" style="text-decoration:none;" title="${escHtml(_admT('dept.open_title', null, 'Open Department Dashboard'))}">
+              <span>👁️</span><span>${escHtml(_admT('admin.btn_open', null, 'Open'))}</span>
             </a>
           </div>
         </td>
@@ -5106,12 +5809,12 @@ function renderDepartmentsTable() {
   deptsView.innerHTML = `
     <div class="admin-toolbar" style="border-bottom:1px solid var(--bd);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;">
       <div style="display:flex;flex-direction:column;">
-        <span style="font-weight:700;font-size:13.5px;color:var(--tx);">🏢 Enterprise Departments & Workspaces</span>
-        <span style="font-size:11px;color:var(--mu);">Configure company departments, codes, descriptions, and icons across the platform</span>
+        <span style="font-weight:700;font-size:13.5px;color:var(--tx);">${escHtml(_admT('dept.enterprise_title', null, '🏢 Enterprise Departments & Workspaces'))}</span>
+        <span style="font-size:11px;color:var(--mu);">${escHtml(_admT('dept.enterprise_sub', null, 'Configure company departments, codes, descriptions, and icons across the platform'))}</span>
       </div>
       <div>
         <button class="btn btn-pr btn-sm" onclick="toggleAddDeptCard(true, true)" style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;font-weight:700;background:var(--brand-teal);color:#fff;">
-          <span>➕</span><span>Add Department</span>
+          <span>➕</span><span>${escHtml(_admT('dept.btn_add', null, 'Add Department'))}</span>
         </button>
       </div>
     </div>
@@ -5120,9 +5823,9 @@ function renderDepartmentsTable() {
     <div id="dept-edit-card" class="add-user-card" style="display:none;margin:14px 18px;background:var(--wh);border:1.5px solid var(--brand-teal);border-radius:10px;padding:16px 20px;box-shadow:0 4px 14px rgba(0,0,0,0.06);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--bd);padding-bottom:8px;">
         <strong id="dept-form-title" style="font-size:13.5px;color:var(--tx);font-weight:800;display:flex;align-items:center;gap:6px;">
-          <span>➕ Add New Department (إضافة قسم جديد)</span>
+          <span>${escHtml(_admT('dept.form_add_title', null, '➕ Add New Department (إضافة قسم جديد)'))}</span>
         </strong>
-        <a href="#" style="font-size:12px;color:var(--mu);text-decoration:none;font-weight:600;" onclick="event.preventDefault();toggleAddDeptCard(false);">Close ✕</a>
+        <a href="#" style="font-size:12px;color:var(--mu);text-decoration:none;font-weight:600;" onclick="event.preventDefault();toggleAddDeptCard(false);">${escHtml(_admT('admin.close_x', null, 'Close ✕'))}</a>
       </div>
       <input type="hidden" id="dept-form-mode" value="add">
       <input type="hidden" id="dept-inp-id" value="">
@@ -5131,21 +5834,21 @@ function renderDepartmentsTable() {
       <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end;">
         <div class="fg" style="margin:0;width:120px;flex:0 0 120px;">
           <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
-            Code (كود القسم) <span style="color:#ef4444">*</span>
+            ${escHtml(_admT('dept.lbl_code', null, 'Code (كود القسم)'))} <span style="color:#ef4444">*</span>
           </label>
-          <input id="dept-inp-code" class="tbl-input" placeholder="e.g. O&M, HSE" style="font-weight:700;text-transform:uppercase;font-family:monospace;letter-spacing:0.5px;width:100%;">
+          <input id="dept-inp-code" class="tbl-input bidi-ltr" placeholder="${escHtml(_admT('dept.ph_code', null, 'e.g. O&M, HSE'))}" style="font-weight:700;text-transform:uppercase;font-family:monospace;letter-spacing:0.5px;width:100%;">
         </div>
         <div class="fg" style="margin:0;flex:1.2;min-width:200px;">
           <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
-            Name in English (اسم القسم بالإنجليزي) <span style="color:#ef4444">*</span>
+            ${escHtml(_admT('dept.lbl_name_en', null, 'Name in English (اسم القسم بالإنجليزي)'))} <span style="color:#ef4444">*</span>
           </label>
-          <input id="dept-inp-name" class="tbl-input" placeholder="e.g. Quality Assurance & Control" style="width:100%;">
+          <input id="dept-inp-name" class="tbl-input bidi-ltr" placeholder="${escHtml(_admT('dept.ph_name_en', null, 'e.g. Quality Assurance & Control'))}" style="width:100%;">
         </div>
         <div class="fg" style="margin:0;flex:1.2;min-width:200px;">
           <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
-            Name in Arabic (اسم القسم بالعربي)
+            ${escHtml(_admT('dept.lbl_name_ar', null, 'Name in Arabic (اسم القسم بالعربي)'))}
           </label>
-          <input id="dept-inp-name-ar" class="tbl-input" placeholder="e.g. توكيد ومراقبة الجودة" dir="rtl" style="width:100%;">
+          <input id="dept-inp-name-ar" class="tbl-input" placeholder="${escHtml(_admT('dept.ph_name_ar', null, 'e.g. توكيد ومراقبة الجودة'))}" dir="rtl" style="width:100%;">
         </div>
       </div>
 
@@ -5153,9 +5856,9 @@ function renderDepartmentsTable() {
       <div style="display:flex;gap:12px;margin-bottom:12px;">
         <div class="fg" style="margin:0;flex:1;">
           <label style="font-size:10.5px;font-weight:700;display:block;margin-bottom:4px;color:var(--tx);">
-            Subtitle / Description (التعريف البسيط أسفل اسم القسم في القوائم والشاشات)
+            ${escHtml(_admT('dept.lbl_desc', null, 'Subtitle / Description (التعريف البسيط أسفل اسم القسم في القوائم والشاشات)'))}
           </label>
-          <input id="dept-inp-desc" class="tbl-input" placeholder="e.g. Facilities & Maintenance Contracts" style="width:100%;">
+          <input id="dept-inp-desc" class="tbl-input" placeholder="${escHtml(_admT('dept.ph_desc', null, 'e.g. Facilities & Maintenance Contracts'))}" style="width:100%;">
         </div>
       </div>
 
@@ -5163,10 +5866,10 @@ function renderDepartmentsTable() {
       <div style="margin-bottom:14px;background:var(--bg);padding:10px 14px;border-radius:8px;border:1px solid var(--bd);">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:8px;">
-            <label style="font-size:11px;font-weight:700;color:var(--tx);margin:0;">Icon (أيقونة القسم):</label>
+            <label style="font-size:11px;font-weight:700;color:var(--tx);margin:0;">${escHtml(_admT('dept.lbl_icon', null, 'Icon (أيقونة القسم):'))}</label>
             <input id="dept-inp-icon" class="tbl-input" placeholder="🏢" value="📁" style="width:55px;text-align:center;font-size:18px;padding:3px 6px;">
           </div>
-          <span style="font-size:11px;color:var(--mu);">اضغط على أي أيقونة جاهزة أو اكتب أي رمز تريده:</span>
+          <span style="font-size:11px;color:var(--mu);">${escHtml(_admT('dept.icon_hint', null, 'اضغط على أي أيقونة جاهزة أو اكتب أي رمز تريده:'))}</span>
         </div>
         <div id="dept-icon-palette" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
           ${paletteHtml}
@@ -5175,9 +5878,9 @@ function renderDepartmentsTable() {
 
       <!-- Actions -->
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
-        <button class="btn btn-sc btn-sm" onclick="toggleAddDeptCard(false)">Cancel (إلغاء)</button>
+        <button class="btn btn-sc btn-sm" onclick="toggleAddDeptCard(false)">${escHtml(_admT('dept.btn_cancel', null, 'Cancel (إلغاء)'))}</button>
         <button class="btn btn-pr btn-sm" onclick="submitDepartmentForm()" style="padding:7px 18px;font-weight:700;background:var(--brand-teal);color:#fff;">
-          <span>💾</span> <span id="dept-submit-lbl">Save Department (حفظ القسم)</span>
+          <span>💾</span> <span id="dept-submit-lbl">${escHtml(_admT('dept.btn_save', null, 'Save Department (حفظ القسم)'))}</span>
         </button>
       </div>
     </div>
@@ -5187,12 +5890,12 @@ function renderDepartmentsTable() {
       <table class="user-tbl" style="width:100%;">
         <thead>
           <tr>
-            <th style="padding:10px 14px;">Department / Workspace</th>
-            <th style="padding:10px 14px;">Code</th>
-            <th style="padding:10px 14px;">Subtitle / Description</th>
-            <th style="padding:10px 14px;text-align:center;">Projects / Contracts</th>
-            <th style="padding:10px 14px;text-align:center;">Status</th>
-            <th style="padding:10px 14px;">Actions</th>
+            <th style="padding:10px 14px;">${escHtml(_admT('dept.th_workspace', null, 'Department / Workspace'))}</th>
+            <th style="padding:10px 14px;">${escHtml(_admT('dept.th_code', null, 'Code'))}</th>
+            <th style="padding:10px 14px;">${escHtml(_admT('dept.th_desc', null, 'Subtitle / Description'))}</th>
+            <th style="padding:10px 14px;text-align:center;">${escHtml(_admT('dept.th_projects', null, 'Projects / Contracts'))}</th>
+            <th style="padding:10px 14px;text-align:center;">${escHtml(_admT('dept.th_status', null, 'Status'))}</th>
+            <th style="padding:10px 14px;">${escHtml(_admT('dept.th_actions', null, 'Actions'))}</th>
           </tr>
         </thead>
         <tbody>
@@ -5235,7 +5938,7 @@ function renderAdminTable() {
   if (countEl) countEl.textContent = `${filteredUsers.length} / ${_ADMIN_DATA.users.length}`;
   
   if (filteredUsers.length === 0) {
-    tblWrap.innerHTML = '<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">No users match the selected filters.</div>';
+    tblWrap.innerHTML = `<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">${escHtml(_admT('admin.no_users_match', null, 'No users match the selected filters.'))}</div>`;
     return;
   }
   
@@ -5243,11 +5946,11 @@ function renderAdminTable() {
     <table class="user-tbl">
       <thead>
         <tr>
-          <th style="min-width:140px;">User</th>
-          <th style="min-width:180px;">Email</th>
-          <th style="min-width:130px;">Department</th>
-          <th style="min-width:110px;">Role</th>
-          <th style="text-align:right;min-width:180px;">Actions</th>
+          <th style="min-width:140px;">${escHtml(_admT('admin.th_user', null, 'User'))}</th>
+          <th style="min-width:180px;">${escHtml(_admT('admin.th_email', null, 'Email'))}</th>
+          <th style="min-width:130px;">${escHtml(_admT('admin.th_department', null, 'Department'))}</th>
+          <th style="min-width:110px;">${escHtml(_admT('admin.th_role', null, 'Role'))}</th>
+          <th class="user-tbl-th-actions" style="text-align:right;min-width:180px;">${escHtml(_admT('admin.th_actions', null, 'Actions'))}</th>
         </tr>
       </thead>
       <tbody>
@@ -5279,8 +5982,8 @@ function renderAdminTable() {
     let scopedSingleRole = '';
 
     if (isSuperAdminUser) {
-      deptCol = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;">🌐 All Departments</span>';
-      roleCol = '<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;">Super Admin</span>';
+      deptCol = `<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;">${escHtml(_admT('admin.badge_all_depts', null, '🌐 All Departments'))}</span>`;
+      roleCol = `<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;">${escHtml(_admT('admin.role_superadmin', null, 'Super Admin'))}</span>`;
     } else {
       const assignedWorkspaces = availableWorkspaces.filter(w => (String(w.id || '').toUpperCase() in wsMap));
       const allAssigned = (isSuper && availableWorkspaces.length > 1 && assignedWorkspaces.length === availableWorkspaces.length);
@@ -5291,12 +5994,12 @@ function renderAdminTable() {
         deptCol = `
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:700;display:inline-flex;align-items:center;gap:4px;">
-              <span>🌐 All Departments</span>
+              <span>${escHtml(_admT('admin.badge_all_depts', null, '🌐 All Departments'))}</span>
               <span style="font-size:10px;background:rgba(55,48,163,0.15);padding:1px 5px;border-radius:4px;">${availableWorkspaces.length}</span>
             </span>
             ${isSuper ? `
-              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="Manage department assignments">
-                <span>✏️</span><span>Edit</span>
+              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="${escHtml(_admT('admin.manage_depts_title', null, 'Manage department assignments'))}">
+                <span>✏️</span><span>${escHtml(_admT('admin.btn_edit', null, 'Edit'))}</span>
               </button>
             ` : ''}
           </div>
@@ -5306,10 +6009,10 @@ function renderAdminTable() {
             ${isSuper ? `
               <select class="tbl-select" style="padding:2px 6px;font-size:11px;height:24px;font-weight:600;"
                       onchange="updUsrAllDeptsRole('${escHtml(u.username)}', this.value)">
-                <option value="viewer" ${isUniform && commonRole === 'viewer' ? 'selected' : ''}>All as Viewer</option>
-                <option value="editor" ${isUniform && commonRole === 'editor' ? 'selected' : ''}>All as Editor</option>
-                <option value="admin" ${isUniform && commonRole === 'admin' ? 'selected' : ''}>All as Admin</option>
-                ${!isUniform ? '<option value="" selected disabled>Mixed Roles</option>' : ''}
+                <option value="viewer" ${isUniform && commonRole === 'viewer' ? 'selected' : ''}>${escHtml(_admT('admin.role_all_viewer', null, 'All as Viewer'))}</option>
+                <option value="editor" ${isUniform && commonRole === 'editor' ? 'selected' : ''}>${escHtml(_admT('admin.role_all_editor', null, 'All as Editor'))}</option>
+                <option value="admin" ${isUniform && commonRole === 'admin' ? 'selected' : ''}>${escHtml(_admT('admin.role_all_admin', null, 'All as Admin'))}</option>
+                ${!isUniform ? `<option value="" selected disabled>${escHtml(_admT('admin.role_mixed', null, 'Mixed Roles'))}</option>` : ''}
               </select>
             ` : `<span class="badge" style="background:#f1f5f9;color:#475569;font-weight:600;">${escHtml(commonRole.toUpperCase())}</span>`}
           </div>
@@ -5317,10 +6020,10 @@ function renderAdminTable() {
       } else if (assignedWorkspaces.length === 0) {
         deptCol = `
           <div style="display:flex;align-items:center;gap:6px;">
-            <span style="color:var(--mu);font-size:11px;font-style:italic;">No Departments</span>
+            <span style="color:var(--mu);font-size:11px;font-style:italic;">${escHtml(_admT('admin.no_depts', null, 'No Departments'))}</span>
             ${isSuper ? `
               <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="padding:2px 7px;font-size:10.5px;color:var(--brand-teal);border-color:var(--brand-teal);font-weight:700;">
-                <span>➕ Assign</span>
+                <span>${escHtml(_admT('admin.btn_assign', null, '➕ Assign'))}</span>
               </button>
             ` : ''}
           </div>
@@ -5336,13 +6039,13 @@ function renderAdminTable() {
 
           return `
             <span class="dept-role-pill" style="display:inline-flex;align-items:center;gap:4px;background:var(--wh);border:1px solid var(--bd);padding:2px 6px;border-radius:6px;font-size:11px;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
-              <span style="font-weight:700;color:var(--tx);font-family:monospace;">${icon} ${escHtml(code)}:</span>
+              <span class="bidi-ltr" style="font-weight:700;color:var(--tx);font-family:monospace;">${icon} ${escHtml(code)}:</span>
               ${canManageThisWs ? `
                 <select class="tbl-select" style="padding:0 3px;font-size:10.5px;height:20px;font-weight:600;color:var(--brand-teal);border:none;background:transparent;cursor:pointer;"
                         onchange="updUsrWsRole('${escHtml(u.username)}', '${escHtml(w.id)}', this.value)">
-                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>Viewer</option>
-                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>Editor</option>
-                  ${isSuper ? `<option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>Admin</option>` : ''}
+                  <option value="viewer" ${wsRole === 'viewer' ? 'selected' : ''}>${escHtml(_admT('admin.role_viewer', null, 'Viewer'))}</option>
+                  <option value="editor" ${wsRole === 'editor' ? 'selected' : ''}>${escHtml(_admT('admin.role_editor', null, 'Editor'))}</option>
+                  ${isSuper ? `<option value="admin" ${wsRole === 'admin' ? 'selected' : ''}>${escHtml(_admT('admin.role_admin', null, 'Admin'))}</option>` : ''}
                 </select>
               ` : `<strong style="font-size:10px;text-transform:uppercase;color:var(--mu);">${escHtml(wsRole)}</strong>`}
             </span>
@@ -5356,59 +6059,68 @@ function renderAdminTable() {
         deptCol = `
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
             ${pills}
-            ${isMultiDeptUser ? '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;" title="Shared across multiple departments — global account controls are managed by Super Admin">🌐 Multi-Dept</span>' : ''}
+            ${isMultiDeptUser ? `<span class="badge" style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;" title="${escHtml(_admT('admin.badge_multi_dept_title', null, 'Shared across multiple departments — global account controls are managed by Super Admin'))}">${escHtml(_admT('admin.badge_multi_dept', null, '🌐 Multi-Dept'))}</span>` : ''}
             ${isSuper ? `
-              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;font-size:10px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="Add or remove departments for ${escHtml(u.username)}">
+              <button class="uact-btn" onclick="openUserDeptsModal('${escHtml(u.username)}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;font-size:10px;font-weight:700;color:var(--brand-teal);border-color:var(--brand-teal);" title="${escHtml(_admT('admin.add_remove_depts_title', { user: u.username }, 'Add or remove departments for ' + u.username))}">
                 <span>➕/✏️</span>
               </button>
             ` : ''}
           </div>
         `;
+        const deptCntLbl = assignedWorkspaces.length === 1
+          ? _admT('admin.dept_count_one', null, '1 Dept')
+          : _admT('admin.dept_count_many', { count: assignedWorkspaces.length }, assignedWorkspaces.length + ' Depts');
         roleCol = scopedSingleRole
           ? `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${escHtml(scopedSingleRole.toUpperCase())}</span>`
-          : `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${assignedWorkspaces.length} ${assignedWorkspaces.length === 1 ? 'Dept' : 'Depts'}</span>`;
+          : `<span class="badge" style="background:#f0fdf4;color:#166534;font-weight:700;font-size:10.5px;">${escHtml(deptCntLbl)}</span>`;
       }
     }
     
     // Email column
     const emailCol = canEditGlobalAccount
-      ? `<input class="tbl-input email-input" id="email-inp-${escHtml(u.username)}" value="${escHtml(u.email || '')}" placeholder="Add email..." style="border-color:transparent;background:transparent;" onfocus="this.style.borderColor='';this.style.background='var(--wh)';" onblur="this.style.borderColor='transparent';this.style.background='transparent';updUsrEmail('${escHtml(u.username)}', this.value);">`
-      : `<span style="color:var(--mu);font-size:12px;">${escHtml(u.email || '—')}</span>`;
+      ? `<input class="tbl-input email-input bidi-ltr" id="email-inp-${escHtml(u.username)}" value="${escHtml(u.email || '')}" placeholder="${escHtml(_admT('admin.ph_add_email', null, 'Add email...'))}" style="border-color:transparent;background:transparent;" onfocus="this.style.borderColor='';this.style.background='var(--wh)';" onblur="this.style.borderColor='transparent';this.style.background='transparent';updUsrEmail('${escHtml(u.username)}', this.value);">`
+      : `<span class="bidi-ltr" style="color:var(--mu);font-size:12px;">${escHtml(u.email || '—')}</span>`;
     
     // Actions column
     const canDl = !!u.can_download;
     const effectiveRole = (!isSuper && scopedSingleRole) ? scopedSingleRole : (isPeerOrHigherAdmin ? (isSuperAdminUser ? 'superadmin' : 'admin') : (u.role || 'viewer'));
     const isGlobalOrEditor = effectiveRole === 'superadmin' || effectiveRole === 'admin' || effectiveRole === 'editor';
     const dlPill = isGlobalOrEditor
-      ? `<span class="badge" title="Full file download rights included with ${escHtml(effectiveRole)} role" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 6px;font-weight:700;">📥 Full</span>`
+      ? `<span class="badge" title="${escHtml(_admT('admin.dl_full_title', { role: effectiveRole }, 'Full file download rights included with ' + effectiveRole + ' role'))}" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 6px;font-weight:700;">${escHtml(_admT('admin.dl_full', null, '📥 Full'))}</span>`
       : (canEditGlobalAccount
         ? `<button type="button" class="uact-btn ${canDl ? 'dl-allowed' : 'dl-restricted'}"
                  onclick="toggleUserDownloadPerm('${escHtml(u.username)}', ${!canDl})"
-                 title="${canDl ? 'File Downloads: Allowed (Click to Restrict)' : 'File Downloads: Restricted (Click to Allow)'}"
+                 title="${escHtml(canDl ? _admT('admin.dl_allowed_title', null, 'File Downloads: Allowed (Click to Restrict)') : _admT('admin.dl_restricted_title', null, 'File Downloads: Restricted (Click to Allow)'))}"
                  style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;font-size:10.5px;font-weight:700;border-radius:6px;cursor:pointer;${canDl ? 'background:#ecfdf5;color:#047857;border:1px solid #10b981;' : 'background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;'}">
            <span>${canDl ? '📥' : '🔒'}</span>
-           <span>${canDl ? 'Downloads: ON' : 'View Only'}</span>
+           <span>${escHtml(canDl ? _admT('admin.dl_on', null, 'Downloads: ON') : _admT('admin.dl_view_only', null, 'View Only'))}</span>
          </button>`
-        : `<span class="badge" title="Global download setting managed by Super Admin" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 6px;font-weight:700;">${canDl ? '📥 Downloads: ON' : '🔒 View Only'}</span>`);
+        : `<span class="badge" title="${escHtml(_admT('admin.dl_global_title', null, 'Global download setting managed by Super Admin'))}" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 6px;font-weight:700;">${escHtml(canDl ? _admT('admin.dl_on_badge', null, '📥 Downloads: ON') : _admT('admin.dl_view_only_badge', null, '🔒 View Only'))}</span>`);
 
-    const lockLabel = isProtected ? '🔒 Protected' : (isSelf ? '👤 You' : (isPeerOrHigherAdmin ? '🔒 Admin' : '🌐 Multi-Dept'));
+    const lockLabel = isProtected
+      ? _admT('admin.lock_protected', null, '🔒 Protected')
+      : (isSelf
+          ? _admT('admin.lock_you', null, '👤 You')
+          : (isPeerOrHigherAdmin
+              ? _admT('admin.lock_admin', null, '🔒 Admin')
+              : _admT('admin.badge_multi_dept', null, '🌐 Multi-Dept')));
 
     let actionsHtml = `
-      <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
+      <div class="user-tbl-actions-cell" style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
         ${dlPill}
         ${canManagePerms ? `
-          <button class="uact-btn uact-btn-perm" id="perm-btn-${escHtml(u.username)}" onclick="openPermissionsModal('${escHtml(u.username)}')" title="Manage project & contract permissions">
-            <span>⚙️</span><span>Permissions</span><span class="badge" style="background:#15803d;color:#fff;padding:1px 5px;font-size:10px;margin-left:2px;">${assignedCount}</span>
+          <button class="uact-btn uact-btn-perm" id="perm-btn-${escHtml(u.username)}" onclick="openPermissionsModal('${escHtml(u.username)}')" title="${escHtml(_admT('admin.btn_permissions_title', null, 'Manage project & contract permissions'))}">
+            <span>⚙️</span><span>${escHtml(_admT('admin.btn_permissions', null, 'Permissions'))}</span><span class="badge" style="background:#15803d;color:#fff;padding:1px 5px;font-size:10px;margin-inline-start:2px;">${assignedCount}</span>
           </button>
         ` : ''}
         ${canEditGlobalAccount ? `
-          <button class="uact-btn" onclick="chgPw('${escHtml(u.username)}')" title="Reset Password">
+          <button class="uact-btn" onclick="chgPw('${escHtml(u.username)}')" title="${escHtml(_admT('admin.btn_reset_pw_title', null, 'Reset Password'))}">
             <span>🔑</span>
           </button>
-          <button class="uact-btn uact-btn-del" onclick="delUsr('${escHtml(u.username)}')" title="Delete User">
+          <button class="uact-btn uact-btn-del" onclick="delUsr('${escHtml(u.username)}')" title="${escHtml(_admT('admin.btn_delete_user_title', null, 'Delete User'))}">
             <span>🗑️</span>
           </button>
-        ` : `<span style="font-size:10px;color:var(--mu);padding:0 6px;">${lockLabel}</span>`}
+        ` : `<span style="font-size:10px;color:var(--mu);padding:0 6px;">${escHtml(lockLabel)}</span>`}
       </div>
     `;
     
@@ -5417,7 +6129,7 @@ function renderAdminTable() {
         <td>
           <div class="u-name-cell">
             <span class="u-avatar" style="width:30px;height:30px;min-width:30px;border-radius:50%;background:#e0f2fe;color:#0369a1;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;margin-right:10px;flex-shrink:0;border:1px solid #bae6fd;">${initial}</span>
-            <span>${escHtml(u.username)}</span>
+            <span class="bidi-ltr">${escHtml(u.username)}</span>
           </div>
         </td>
         <td>${emailCol}</td>
@@ -5447,20 +6159,22 @@ async function toggleUserDownloadPerm(username, canDownload, fromModal = false) 
       if (u) {
         u.can_download = !!canDownload;
       }
-      toast(canDownload ? '📥 File downloads enabled for ' + username : '🔒 File downloads restricted for ' + username, 'ok');
+      toast(canDownload
+        ? _admT('admin.toast_dl_enabled', { user: username }, '📥 File downloads enabled for ' + username)
+        : _admT('admin.toast_dl_restricted', { user: username }, '🔒 File downloads restricted for ' + username), 'ok');
       renderAdminTable();
       if (fromModal && window._ACTIVE_PERM_USER === username) {
         openPermissionsModal(username);
       }
     } else {
-      toast((r && r.error) || 'Failed to update download permission', 'er');
+      toast((r && r.error) || _admT('admin.err_dl_update', null, 'Failed to update download permission'), 'er');
       if (fromModal) {
         const chk = document.getElementById('perm-modal-dl-toggle');
         if (chk) chk.checked = !canDownload;
       }
     }
   } catch (err) {
-    toast('Error updating download permission: ' + err.message, 'er');
+    toast(_admT('admin.err_dl_update', null, 'Failed to update download permission') + ': ' + err.message, 'er');
     if (fromModal) {
       const chk = document.getElementById('perm-modal-dl-toggle');
       if (chk) chk.checked = !canDownload;
@@ -5490,14 +6204,14 @@ async function updUsrWsRole(username, wsId, role) {
         else u.workspaces.push({ workspace_id: wsId, role: role });
         if (String(u.primary_workspace || 'ENG').toUpperCase() === wsIdUp || u.workspaces.length === 1) u.role = role;
       }
-      toast('✔ Role updated for ' + wsId, 'ok');
+      toast(_admT('admin.toast_role_updated_ws', { ws: wsId }, '✔ Role updated for ' + wsId), 'ok');
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to update role', 'er');
+      toast((r && r.error) || _admT('admin.err_role_update', null, 'Failed to update role'), 'er');
       renderAdminTable();
     }
   } catch (err) {
-    toast('Error updating role: ' + err.message, 'er');
+    toast(_admT('admin.err_role_update', null, 'Failed to update role') + ': ' + err.message, 'er');
     renderAdminTable();
   }
 }
@@ -5526,13 +6240,15 @@ async function toggleAllDepts(username, selectAll, e) {
     if (r && r.ok) {
       const oldRoleMap = Object.fromEntries((u.workspaces || []).map(w => [w.workspace_id, w.role]));
       u.workspaces = wsArray.map(w => ({ workspace_id: w, role: oldRoleMap[w] || u.role || 'viewer' }));
-      toast(selectAll ? '✔ Assigned to All Departments' : '✔ Reset to default department', 'ok');
+      toast(selectAll
+        ? _admT('admin.toast_assigned_all_depts', null, '✔ Assigned to All Departments')
+        : _admT('admin.toast_reset_default_dept', null, '✔ Reset to default department'), 'ok');
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to update', 'er');
+      toast((r && r.error) || _admT('admin.err_dept_update', null, 'Failed to update department'), 'er');
     }
   } catch(err) {
-    toast('Error: ' + err.message, 'er');
+    toast(_admT('common.error', null, 'Error') + ': ' + err.message, 'er');
   }
 }
 
@@ -5551,7 +6267,7 @@ async function toggleUserDept(username, changedWs, isChecked) {
   }
   
   if (newWs.size === 0) {
-    toast('User must belong to at least one department', 'wa');
+    toast(_admT('admin.toast_min_one_dept', null, 'User must belong to at least one department'), 'wa');
     renderAdminTable();
     return;
   }
@@ -5576,21 +6292,21 @@ async function toggleUserDept(username, changedWs, isChecked) {
         const removedPids = _ADMIN_DATA.projects.filter(p => (p.workspace_id || 'ENG') === changedWs).map(p => p.id);
         u.projects = u.projects.filter(p => !removedPids.includes(p.project_id));
       }
-      toast('✔ Department updated', 'ok');
+      toast(_admT('admin.toast_dept_updated', null, '✔ Department updated'), 'ok');
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to update department', 'er');
+      toast((r && r.error) || _admT('admin.err_dept_update', null, 'Failed to update department'), 'er');
       renderAdminTable();
     }
   } catch (err) {
-    toast('Error updating department: ' + err.message, 'er');
+    toast(_admT('admin.err_dept_update', null, 'Failed to update department') + ': ' + err.message, 'er');
     renderAdminTable();
   }
 }
 
 function openPermissionsModal(username) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
-  if (!u) return toast('User not found', 'er');
+  if (!u) return toast(_admT('admin.toast_user_not_found', null, 'User not found'), 'er');
   window._ACTIVE_PERM_USER = username;
 
   const isSuper = !!(_ADMIN_DATA.whoami && _ADMIN_DATA.whoami.is_superadmin);
@@ -5620,16 +6336,18 @@ function openPermissionsModal(username) {
     const fb = fallbacks[id] || { icon: '📁', code: id, name: id, cls: '', style: 'background:#f1f5f9;color:#334155;' };
     const icon = (w && w.icon) || fb.icon;
     const code = (w && w.code) || fb.code;
-    let name = (w && w.name) || fb.name;
-    if (id === 'HSE' && !name.includes('(HSE)')) name = `${name} (HSE)`;
-    if (id === 'OM' && !name.includes('(O&M)')) name = `${name} (O&M)`;
+    let name = _admWsLabel(w) || (w && w.name) || _admT('ws.' + id + '.name', null, fb.name);
+    if (window.DCR_LANG !== 'ar') {
+      if (id === 'HSE' && !name.includes('(HSE)')) name = `${name} (HSE)`;
+      if (id === 'OM' && !name.includes('(O&M)')) name = `${name} (O&M)`;
+    }
     return { id, icon, code, name, cls: fb.cls, style: fb.style };
   };
 
   let deptBadge = '';
   const availWsCount = (_ADMIN_DATA.workspaces || []).length;
   if (isSuper && availWsCount > 1 && allowedWs.length >= availWsCount) {
-    deptBadge = '<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:600;">🌐 All Departments</span>';
+    deptBadge = `<span class="dept-badge" style="background:#e0e7ff;color:#3730a3;font-weight:600;">${escHtml(_admT('admin.badge_all_depts', null, '🌐 All Departments'))}</span>`;
   } else {
     deptBadge = allowedWs.map(id => {
       const m = getWsMeta(id);
@@ -5637,19 +6355,19 @@ function openPermissionsModal(username) {
     }).join(' ');
   }
 
-  document.getElementById('perm-title').innerHTML = `⚙️ Project / Contract Permissions — <strong>${escHtml(u.username)}</strong>`;
+  document.getElementById('perm-title').innerHTML = `${escHtml(_admT('perm.modal_title_user', null, '⚙️ Project / Contract Permissions —'))} <strong class="bidi-ltr">${escHtml(u.username)}</strong>`;
   const canDl = !!u.can_download;
   const effectiveRole = (!isSuper && scopedWsIds.length === 1) ? (wsMap[scopedWsIds[0]] || u.role || 'viewer') : (u.role || 'viewer');
   const isGlobalOrEditor = effectiveRole === 'superadmin' || effectiveRole === 'admin' || effectiveRole === 'editor';
   const dlToggleHtml = isGlobalOrEditor
-    ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 7px;font-weight:700;">📥 Full File Downloads (${escHtml(effectiveRole)})</span>`
+    ? `<span class="badge" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:10px;padding:2px 7px;font-weight:700;">${escHtml(_admT('perm.dl_full_role', { role: effectiveRole }, '📥 Full File Downloads (' + effectiveRole + ')'))}</span>`
     : (canEditGlobalAccount
-      ? `<label style="display:inline-flex;align-items:center;gap:5px;background:${canDl ? '#ecfdf5' : '#f8fafc'};border:1px solid ${canDl ? '#10b981' : '#cbd5e1'};color:${canDl ? '#047857' : '#475569'};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px;">
+      ? `<label style="display:inline-flex;align-items:center;gap:5px;background:${canDl ? '#ecfdf5' : '#f8fafc'};border:1px solid ${canDl ? '#10b981' : '#cbd5e1'};color:${canDl ? '#047857' : '#475569'};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-inline-start:6px;">
            <input type="checkbox" id="perm-modal-dl-toggle" ${canDl ? 'checked' : ''} onchange="toggleUserDownloadPerm('${escHtml(u.username)}', this.checked, true)" style="cursor:pointer;margin:0;">
-           <span>📥 Allow File Downloads</span>
+           <span>${escHtml(_admT('perm.dl_allow_chk', null, '📥 Allow File Downloads'))}</span>
          </label>`
-      : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 7px;font-weight:700;margin-left:6px;">${canDl ? '📥 Downloads: ON' : '🔒 View Only'} (Shared Account)</span>`);
-  document.getElementById('perm-subtitle').innerHTML = `${deptBadge} ${dlToggleHtml} <span style="margin-left:6px;color:var(--mu);">Scoped strictly to user's assigned department(s)</span>`;
+      : `<span class="badge" style="background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;font-size:10px;padding:2px 7px;font-weight:700;margin-inline-start:6px;">${escHtml(canDl ? _admT('admin.dl_on_badge', null, '📥 Downloads: ON') : _admT('admin.dl_view_only_badge', null, '🔒 View Only'))} ${escHtml(_admT('perm.dl_shared_suffix', null, '(Shared Account)'))}</span>`);
+  document.getElementById('perm-subtitle').innerHTML = `${deptBadge} ${dlToggleHtml} <span style="margin-inline-start:6px;color:var(--mu);">${escHtml(_admT('perm.scoped_strictly', null, "Scoped strictly to user's assigned department(s)"))}</span>`;
   
   // Filter projects strictly to user's assigned departments AND actor's allowed workspaces (No cross-department leakage)
   let scopedProjects = _ADMIN_DATA.projects.filter(p => {
@@ -5677,7 +6395,7 @@ function renderPermTable(projects) {
   const assignedMap = Object.fromEntries(userProjects.map(p => [p.project_id, p]));
   
   if (!projects || projects.length === 0) {
-    body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">No projects or contracts found for this department.</div>';
+    body.innerHTML = `<div style="padding:32px;text-align:center;color:var(--mu);font-size:12px;">${escHtml(_admT('perm.no_projects', null, 'No projects or contracts found for this department.'))}</div>`;
     return;
   }
   
@@ -5685,9 +6403,9 @@ function renderPermTable(projects) {
     <table class="perm-table" style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
         <tr style="background:var(--bg,#f8fafc);border-bottom:2px solid var(--bd,#e2e8f0);">
-          <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Project / Contract</th>
-          <th style="padding:10px 14px;text-align:center;width:90px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Access</th>
-          <th style="padding:10px 14px;text-align:center;width:160px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">Document Types</th>
+          <th style="padding:10px 14px;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">${escHtml(_admT('perm.th_project', null, 'Project / Contract'))}</th>
+          <th style="padding:10px 14px;text-align:center;width:90px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">${escHtml(_admT('perm.th_access', null, 'Access'))}</th>
+          <th style="padding:10px 14px;text-align:center;width:160px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--tx-mu,#64748b);text-transform:uppercase;">${escHtml(_admT('perm.th_doc_types', null, 'Document Types'))}</th>
         </tr>
       </thead>
       <tbody>
@@ -5697,7 +6415,7 @@ function renderPermTable(projects) {
   projects.forEach(p => {
     const access = assignedMap[p.id];
     const hasAccess = !!access;
-    const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • Client: ${escHtml(p.client)}</span>` : '';
+    const clientText = p.client ? `<span style="color:var(--mu);font-size:11px;"> • ${escHtml(_admT('perm.client_prefix', null, 'Client:'))} ${escHtml(p.client)}</span>` : '';
     const pWsId = String(p.workspace_id || 'ENG').toUpperCase();
     const pWs = wsMetaLookup[pWsId];
     const wsIcon = (pWs && pWs.icon) || (pWsId === 'HSE' ? '🛡️' : (pWsId === 'OM' ? '⚙️' : '📐'));
@@ -5708,17 +6426,21 @@ function renderPermTable(projects) {
       : 'font-size:9.5px;padding:1px 6px;';
     
     const allowedDts = (access && Array.isArray(access.allowed_doc_types)) ? access.allowed_doc_types : null;
-    const dtLabel = allowedDts === null ? 'All' : (allowedDts.length === 0 ? '0 types (None)' : `${allowedDts.length} types`);
+    const dtLabel = allowedDts === null
+      ? _admT('perm.dt_all', null, 'All')
+      : (allowedDts.length === 0
+          ? _admT('perm.dt_none', null, '0 types (None)')
+          : _admT('perm.dt_count', { count: allowedDts.length }, `${allowedDts.length} types`));
     const dtBadgeBg = allowedDts === null ? '#e0f2fe' : (allowedDts.length === 0 ? '#fee2e2' : '#fef3c7');
     const dtBadgeColor = allowedDts === null ? '#0369a1' : (allowedDts.length === 0 ? '#991b1b' : '#92400e');
 
     html += `
       <tr class="perm-row" data-pid="${escHtml(p.id)}" data-text="${escHtml((p.code + ' ' + p.name + ' ' + (p.client||'')).toLowerCase())}" style="border-bottom:1px solid var(--bd,#f1f5f9);">
         <td style="padding:10px 14px;">
-          <div style="font-weight:700;color:var(--tx);display:flex;align-items:center;gap:6px;">
-            <span>${escHtml(p.code)}</span>
+          <div style="font-weight:700;color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="bidi-ltr">${escHtml(p.code)}</span>
             <span style="font-weight:500;color:var(--tx-mu,#64748b);">${escHtml(p.name)}</span>
-            <span class="dept-badge ${wsBadgeCls}" style="${wsBadgeStyle}">${wsIcon} ${escHtml(wsCode)}</span>
+            <span class="dept-badge bidi-ltr ${wsBadgeCls}" style="${wsBadgeStyle}">${wsIcon} ${escHtml(wsCode)}</span>
           </div>
           ${clientText}
         </td>
@@ -5729,7 +6451,7 @@ function renderPermTable(projects) {
           ${hasAccess ? `
             <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(p.id)}" onclick="toggleDocTypesPanel('${escHtml(p.id)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
               <span>📄</span>
-              <span id="dt-badge-${escHtml(p.id)}" style="background:${dtBadgeBg};color:${dtBadgeColor};padding:1px 5px;border-radius:4px;font-weight:600;">${dtLabel}</span>
+              <span id="dt-badge-${escHtml(p.id)}" style="background:${dtBadgeBg};color:${dtBadgeColor};padding:1px 5px;border-radius:4px;font-weight:600;">${escHtml(dtLabel)}</span>
               <span>▾</span>
             </button>
           ` : '<span style="color:var(--mu);font-size:11px;">—</span>'}
@@ -5738,15 +6460,15 @@ function renderPermTable(projects) {
       <tr id="dt-box-${escHtml(p.id)}" class="perm-dt-box" style="display:none;background:var(--bg,#f8fafc);border-bottom:2px solid var(--bd,#e2e8f0);">
         <td colspan="3" style="padding:10px 18px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <span style="font-size:11px;font-weight:700;color:var(--tx);">Allowed Document Types for ${escHtml(p.name)}:</span>
+            <span style="font-size:11px;font-weight:700;color:var(--tx);">${escHtml(_admT('perm.allowed_dts_for', { name: p.name }, 'Allowed Document Types for ' + p.name + ':'))}</span>
             <div style="font-size:11px;display:flex;gap:8px;">
-              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();selectAllDocTypes('${escHtml(p.id)}')">Select All</a>
+              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();selectAllDocTypes('${escHtml(p.id)}')">${escHtml(_admT('perm.select_all', null, 'Select All'))}</a>
               <span style="color:var(--bd);">|</span>
-              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();clearAllDocTypes('${escHtml(p.id)}')">Clear All</a>
+              <a href="#" style="color:var(--pr);text-decoration:none;font-weight:600;" onclick="event.preventDefault();clearAllDocTypes('${escHtml(p.id)}')">${escHtml(_admT('perm.clear_all', null, 'Clear All'))}</a>
             </div>
           </div>
           <div id="dt-chips-${escHtml(p.id)}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <span style="color:var(--mu);font-size:11px;">Loading document types...</span>
+            <span style="color:var(--mu);font-size:11px;">${escHtml(_admT('perm.loading_dts', null, 'Loading document types...'))}</span>
           </div>
         </td>
       </tr>
@@ -5770,7 +6492,7 @@ async function toggleDocTypesPanel(pid, forceOpen) {
   if (!chipsDiv) return;
 
   if (!window._PROJECT_DOC_TYPES_CACHE[pid]) {
-    chipsDiv.innerHTML = '<span style="color:var(--mu);font-size:11px;">Loading document types...</span>';
+    chipsDiv.innerHTML = `<span style="color:var(--mu);font-size:11px;">${escHtml(_admT('perm.loading_dts', null, 'Loading document types...'))}</span>`;
     const dts = await apiFetch('/api/doc_types/' + pid + '?all=1');
     window._PROJECT_DOC_TYPES_CACHE[pid] = dts || [];
   }
@@ -5784,7 +6506,7 @@ async function toggleDocTypesPanel(pid, forceOpen) {
     : null;
 
   if (allDts.length === 0) {
-    chipsDiv.innerHTML = '<span style="color:var(--mu);font-size:11px;">No document types configured for this project.</span>';
+    chipsDiv.innerHTML = `<span style="color:var(--mu);font-size:11px;">${escHtml(_admT('perm.no_dts_configured', null, 'No document types configured for this project.'))}</span>`;
     return;
   }
 
@@ -5794,7 +6516,7 @@ async function toggleDocTypesPanel(pid, forceOpen) {
     html += `
       <label style="display:inline-flex;align-items:center;gap:5px;background:var(--surface,#fff);color:var(--tx);border:1px solid var(--bd);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;user-select:none;">
         <input type="checkbox" class="dt-chk-${escHtml(pid)}" value="${escHtml(d.id)}" data-code="${escHtml(d.code)}" ${isChecked ? 'checked' : ''} onchange="onDocTypeCheckboxChange('${escHtml(pid)}')">
-        <strong>${escHtml(d.code)}</strong>
+        <strong class="bidi-ltr">${escHtml(d.code)}</strong>
         <span style="color:var(--mu);font-size:10px;">${escHtml(d.name)}</span>
       </label>
     `;
@@ -5823,7 +6545,11 @@ async function onDocTypeCheckboxChange(pid) {
 
   const badgeEl = document.getElementById('dt-badge-' + pid);
   if (badgeEl) {
-    const label = docTypesPayload === null ? 'All' : (docTypesPayload.length === 0 ? '0 types (None)' : `${docTypesPayload.length} types`);
+    const label = docTypesPayload === null
+      ? _admT('perm.dt_all', null, 'All')
+      : (docTypesPayload.length === 0
+          ? _admT('perm.dt_none', null, '0 types (None)')
+          : _admT('perm.dt_count', { count: docTypesPayload.length }, `${docTypesPayload.length} types`));
     badgeEl.textContent = label;
     badgeEl.style.background = docTypesPayload === null ? '#e0f2fe' : (docTypesPayload.length === 0 ? '#fee2e2' : '#fef3c7');
     badgeEl.style.color = docTypesPayload === null ? '#0369a1' : (docTypesPayload.length === 0 ? '#991b1b' : '#92400e');
@@ -5840,7 +6566,7 @@ async function onDocTypeCheckboxChange(pid) {
       })
     });
   } catch (err) {
-    toast('Error saving document type permissions: ' + err.message, 'er');
+    toast(_admT('admin.err_dt_perm_save', { error: err.message }, 'Error saving document type permissions: ' + err.message), 'er');
   }
 }
 
@@ -5868,17 +6594,18 @@ function filterPermProjects(query) {
 async function togglePermAccess(username, pid, enable, autoExpand = true) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   const statusEl = document.getElementById('perm-save-status');
-  if (statusEl) statusEl.textContent = 'Saving...';
+  if (statusEl) statusEl.textContent = _admT('perm.status_saving', null, 'Saving...');
   
   // Real-time DOM update: Show/hide document types button and box immediately without reload
   const dtCell = document.getElementById('dt-cell-' + pid);
   const box = document.getElementById('dt-box-' + pid);
+  const allLbl = escHtml(_admT('perm.dt_all', null, 'All'));
   if (dtCell) {
     if (enable) {
       dtCell.innerHTML = `
         <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(pid)}" onclick="toggleDocTypesPanel('${escHtml(pid)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
           <span>📄</span>
-          <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">All</span>
+          <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">${allLbl}</span>
           <span>▾</span>
         </button>
       `;
@@ -5909,16 +6636,16 @@ async function togglePermAccess(username, pid, enable, autoExpand = true) {
       }
       updateUserPermBadge(username);
     }
-    if (statusEl) statusEl.textContent = '✔ Changes saved.';
-    setTimeout(() => { if (statusEl) statusEl.textContent = 'Permissions are applied immediately.'; }, 2000);
+    if (statusEl) statusEl.textContent = _admT('perm.status_saved', null, '✔ Changes saved.');
+    setTimeout(() => { if (statusEl) statusEl.textContent = _admT('perm.status_immediate', null, 'Permissions are applied immediately.'); }, 2000);
     
     // Automatically open document types panel so user can immediately choose tabs
     if (enable && autoExpand) {
       toggleDocTypesPanel(pid, true);
     }
   } catch (e) {
-    toast('Failed to update permission: ' + e.message, 'er');
-    if (statusEl) statusEl.textContent = 'Failed to save.';
+    toast(_admT('admin.err_perm_update', { error: e.message }, 'Failed to update permission: ' + e.message), 'er');
+    if (statusEl) statusEl.textContent = _admT('perm.status_failed', null, 'Failed to save.');
     // Revert UI on network failure
     const chk = document.getElementById('chk-access-' + pid);
     if (chk) chk.checked = !enable;
@@ -5927,7 +6654,7 @@ async function togglePermAccess(username, pid, enable, autoExpand = true) {
         dtCell.innerHTML = `
           <button type="button" class="btn btn-sc btn-sm" id="btn-dt-${escHtml(pid)}" onclick="toggleDocTypesPanel('${escHtml(pid)}')" style="font-size:10.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">
             <span>📄</span>
-            <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">All</span>
+            <span id="dt-badge-${escHtml(pid)}" style="background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:4px;font-weight:600;">${allLbl}</span>
             <span>▾</span>
           </button>
         `;
@@ -5942,7 +6669,7 @@ async function togglePermAccess(username, pid, enable, autoExpand = true) {
 async function togglePermDC(username, pid, isDC) {
   const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
   const statusEl = document.getElementById('perm-save-status');
-  if (statusEl) statusEl.textContent = 'Saving...';
+  if (statusEl) statusEl.textContent = _admT('perm.status_saving', null, 'Saving...');
   
   try {
     await apiFetch('/api/users', {
@@ -5959,11 +6686,11 @@ async function togglePermDC(username, pid, isDC) {
       if (pObj) pObj.is_dc = isDC;
       else u.projects.push({ project_id: pid, is_dc: isDC });
     }
-    if (statusEl) statusEl.textContent = '✔ Changes saved.';
-    setTimeout(() => { if (statusEl) statusEl.textContent = 'Permissions are applied immediately.'; }, 2000);
+    if (statusEl) statusEl.textContent = _admT('perm.status_saved', null, '✔ Changes saved.');
+    setTimeout(() => { if (statusEl) statusEl.textContent = _admT('perm.status_immediate', null, 'Permissions are applied immediately.'); }, 2000);
   } catch (e) {
-    toast('Failed to update DC: ' + e.message, 'er');
-    if (statusEl) statusEl.textContent = 'Failed to save.';
+    toast(_admT('admin.err_perm_update', { error: e.message }, 'Failed to update DC: ' + e.message), 'er');
+    if (statusEl) statusEl.textContent = _admT('perm.status_failed', null, 'Failed to save.');
   }
 }
 
@@ -6017,7 +6744,7 @@ async function submitAddUser() {
   const pw = document.getElementById('nu-pw')?.value;
   const canDl = !!document.getElementById('nu-can-dl')?.checked;
   
-  if (!name || !pw) return toast('Username and password required', 'er');
+  if (!name || !pw) return toast(_admT('admin.err_user_pw_req', null, 'Username and password required'), 'er');
   
   try {
     const r = await apiFetch('/api/users', {
@@ -6033,7 +6760,7 @@ async function submitAddUser() {
       })
     });
     if (r && r.ok) {
-      toast('✔ User added successfully', 'ok');
+      toast(_admT('admin.toast_user_added', null, '✔ User added successfully'), 'ok');
       toggleAddUserCard();
       const updatedUsers = await apiFetch('/api/users');
       if (updatedUsers) {
@@ -6041,10 +6768,10 @@ async function submitAddUser() {
         renderAdminTable();
       }
     } else {
-      toast((r && r.error) || 'Failed to add user', 'er');
+      toast((r && r.error) || _admT('admin.err_user_add', null, 'Failed to add user'), 'er');
     }
   } catch (err) {
-    toast('Error adding user: ' + err.message, 'er');
+    toast(_admT('admin.err_user_add', null, 'Failed to add user') + ': ' + err.message, 'er');
   }
 }
 
@@ -6057,12 +6784,12 @@ async function updUsrEmail(username, email) {
     if (r && r.ok) {
       const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
       if (u) u.email = email;
-      toast('✔ Email updated', 'ok');
+      toast(_admT('admin.toast_email_updated', null, '✔ Email updated'), 'ok');
     } else {
-      toast('Failed to update email', 'er');
+      toast(_admT('admin.err_email_update', null, 'Failed to update email'), 'er');
     }
   } catch (e) {
-    toast('Error updating email: ' + e.message, 'er');
+    toast(_admT('admin.err_email_update', null, 'Failed to update email') + ': ' + e.message, 'er');
   }
 }
 
@@ -6075,13 +6802,13 @@ async function updUsrRole(username, role) {
     if (r && r.ok) {
       const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
       if (u) u.role = role;
-      toast('✔ Role updated', 'ok');
+      toast(_admT('admin.toast_role_updated', null, '✔ Role updated'), 'ok');
     } else {
-      toast((r && r.error) || 'Failed to update role', 'er');
+      toast((r && r.error) || _admT('admin.err_role_update', null, 'Failed to update role'), 'er');
       renderAdminTable();
     }
   } catch (e) {
-    toast('Error updating role: ' + e.message, 'er');
+    toast(_admT('admin.err_role_update', null, 'Failed to update role') + ': ' + e.message, 'er');
     renderAdminTable();
   }
 }
@@ -6095,49 +6822,49 @@ async function updUsrDept(username, dept) {
     if (r && r.ok) {
       const u = (_ADMIN_DATA.users || []).find(x => x.username === username);
       if (u) u.primary_workspace = dept;
-      toast('✔ Department updated to ' + dept, 'ok');
+      toast(_admT('admin.toast_dept_updated_to', { dept: dept }, '✔ Department updated to ' + dept), 'ok');
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to update department', 'er');
+      toast((r && r.error) || _admT('admin.err_dept_update', null, 'Failed to update department'), 'er');
       renderAdminTable();
     }
   } catch (e) {
-    toast('Error updating department: ' + e.message, 'er');
+    toast(_admT('admin.err_dept_update', null, 'Failed to update department') + ': ' + e.message, 'er');
     renderAdminTable();
   }
 }
 
 async function delUsr(username) {
-  if (!confirm(`Are you sure you want to delete user "${username}"?\nThis cannot be undone.`)) return;
+  if (!confirm(_admT('admin.confirm_delete_user', { user: username }, `Are you sure you want to delete user "${username}"?\nThis cannot be undone.`))) return;
   try {
     const r = await apiFetch('/api/users', {
       method: 'POST',
       body: JSON.stringify({ action: 'delete', username: username })
     });
     if (r && r.ok) {
-      toast('✔ User deleted', 'wa');
+      toast(_admT('admin.toast_user_deleted', null, '✔ User deleted'), 'wa');
       _ADMIN_DATA.users = (_ADMIN_DATA.users || []).filter(x => x.username !== username);
       renderAdminTable();
     } else {
-      toast((r && r.error) || 'Failed to delete user', 'er');
+      toast((r && r.error) || _admT('admin.err_user_delete', null, 'Failed to delete user'), 'er');
     }
   } catch (e) {
-    toast('Error deleting user: ' + e.message, 'er');
+    toast(_admT('admin.err_user_delete', null, 'Failed to delete user') + ': ' + e.message, 'er');
   }
 }
 
 async function chgPw(username) {
-  const pw = prompt(`Set new password for "${username}" (min 4 characters):`);
+  const pw = prompt(_admT('admin.prompt_new_pw_user', { user: username }, `Set new password for "${username}" (min 4 characters):`));
   if (!pw || pw.length < 4) return;
   try {
     const r = await apiFetch('/api/users', {
       method: 'POST',
       body: JSON.stringify({ action: 'change_password', username: username, password: pw })
     });
-    if (r && r.ok) toast('✔ Password changed', 'ok');
-    else toast((r && r.error) || 'Error changing password', 'er');
+    if (r && r.ok) toast(_admT('common.password_changed', null, '✔ Password changed'), 'ok');
+    else toast((r && r.error) || _admT('admin.err_pw_change', null, 'Error changing password'), 'er');
   } catch (e) {
-    toast('Error: ' + e.message, 'er');
+    toast(_admT('common.error', null, 'Error') + ': ' + e.message, 'er');
   }
 }
 
@@ -6147,35 +6874,35 @@ async function runSequenceAudit() {
   const resEl = document.getElementById('audit-result');
   if (!resEl) return;
   if (!pid || !dtId) {
-    resEl.innerHTML = '<div style="padding:8px 12px;background:#fef08a;color:#854d0e;border-radius:4px;">Please select both Project and Document Type.</div>';
+    resEl.innerHTML = `<div style="padding:8px 12px;background:#fef08a;color:#854d0e;border-radius:4px;">${escHtml(_admT('admin.audit_select_both', null, 'Please select both Project and Document Type.'))}</div>`;
     return;
   }
-  resEl.innerHTML = '<div style="color:var(--mu)">Auditing document sequences...</div>';
+  resEl.innerHTML = `<div style="color:var(--mu)">${escHtml(_admT('admin.audit_running', null, 'Auditing document sequences...'))}</div>`;
   try {
     const r = await apiFetch('/api/audit-sequence?project_id=' + pid + '&dt_id=' + dtId);
     if (r && !r.error) {
       if (r.missing && r.missing.length > 0) {
         resEl.innerHTML = `
           <div style="padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #f87171;border-radius:4px;">
-            <strong>⚠️ Missing Sequences Found!</strong><br>
-            Expected range: ${r.min} to ${r.max}<br>
-            Missing numbers: ${r.missing.join(', ')}
+            <strong>${escHtml(_admT('admin.audit_missing_title', null, '⚠️ Missing Sequences Found!'))}</strong><br>
+            ${escHtml(_admT('admin.audit_expected_range', { min: r.min, max: r.max }, 'Expected range: ' + r.min + ' to ' + r.max))}<br>
+            ${escHtml(_admT('admin.audit_missing_nums', { list: r.missing.join(', ') }, 'Missing numbers: ' + r.missing.join(', ')))}
           </div>
         `;
       } else if (r.min === 0 && r.max === 0) {
-        resEl.innerHTML = '<div style="padding:8px 12px;background:#f1f5f9;color:#475569;border-radius:4px;">No numbered documents found to audit.</div>';
+        resEl.innerHTML = `<div style="padding:8px 12px;background:#f1f5f9;color:#475569;border-radius:4px;">${escHtml(_admT('admin.audit_no_docs', null, 'No numbered documents found to audit.'))}</div>`;
       } else {
         resEl.innerHTML = `
           <div style="padding:10px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:4px;">
-            <strong>✅ 100% Intact.</strong> No missing sequence numbers. Range: ${r.min} to ${r.max}.
+            <strong>${escHtml(_admT('admin.audit_intact_title', null, '✅ 100% Intact.'))}</strong> ${escHtml(_admT('admin.audit_intact_desc', { min: r.min, max: r.max }, 'No missing sequence numbers. Range: ' + r.min + ' to ' + r.max + '.'))}
           </div>
         `;
       }
     } else {
-      resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">Error: ${(r && r.error) || 'Unknown error'}</div>`;
+      resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">${escHtml(_admT('common.error', null, 'Error'))}: ${escHtml((r && r.error) || 'Unknown error')}</div>`;
     }
   } catch (e) {
-    resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">Audit failed: ${e.message}</div>`;
+    resEl.innerHTML = `<div style="padding:8px 12px;background:#fee2e2;color:#991b1b;border-radius:4px;">${escHtml(_admT('admin.audit_failed', { error: e.message }, 'Audit failed: ' + e.message))}</div>`;
   }
 }
 
@@ -6183,7 +6910,7 @@ async function exportUsersCSV() {
   try {
     const users = _ADMIN_DATA.users || [];
     const projects = _ADMIN_DATA.projects || [];
-    if (!users.length || !projects.length) return toast('No user data to export', 'er');
+    if (!users.length || !projects.length) return toast(_admT('admin.err_no_export_data', null, 'No user data to export'), 'er');
     
     const pCodeMap = Object.fromEntries(projects.map(p => [p.id, p.code || p.id]));
     const pNameMap = Object.fromEntries(projects.map(p => [p.id, (p.code || p.id) + ' - ' + (p.name || '')]));
@@ -6262,31 +6989,48 @@ async function exportUsersCSV() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    toast('✔ Users Matrix exported to CSV', 'ok');
+    toast(_admT('admin.toast_csv_exported', null, '✔ Users Matrix exported to CSV'), 'ok');
   } catch (e) {
-    toast('Export failed: ' + e.message, 'er');
+    toast(_admT('admin.err_export', { error: e.message }, 'Export failed: ' + e.message), 'er');
   }
 }
 
 </script>"""
 
 
-def render_login():
+def render_login(lang=None):
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
+    i18n_json = get_client_i18n_json(norm)
+    lang_btn = _lang_switcher_btn_html(norm, btn_class="login-lang-btn", btn_id="loginLangBtn")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     logo_name = "logo-login.png"
     logo_file = os.path.join(static_dir, logo_name)
-    import time
-    logo_ver = str(int(os.path.getmtime(logo_file))) if os.path.exists(logo_file) else "1"
-    logo_src = url_for("static", filename=logo_name) + f"?v={logo_ver}"
-    return f"""<!DOCTYPE html><html lang="en"><head>
+    try:
+        logo_ver = str(int(os.path.getmtime(logo_file))) if os.path.exists(logo_file) else "1"
+        logo_src = url_for("static", filename=logo_name) + f"?v={logo_ver}"
+    except Exception:
+        logo_src = "/static/logo-login.png"
+    return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gas Chill DCR — Sign In</title>
+<title>{t("login.page_title", norm)}</title>
 {_head_icon_tags()}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+@font-face {{
+  font-family: 'Cairo';
+  src: url('/static/fonts/Cairo-Regular.ttf') format('truetype');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}}
 *{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:hidden}}
+html[dir="rtl"],html[dir="rtl"] body{{font-family:'Cairo','Inter','Segoe UI',Tahoma,Arial,sans-serif;direction:rtl;text-align:right}}
+.bidi-ltr{{direction:ltr!important;unicode-bidi:isolate!important;display:inline-block}}
+.rtl-flip{{display:inline-block;transition:transform .15s ease}}
+html[dir="rtl"] .rtl-flip{{transform:scaleX(-1)}}
 
 /* ── Split Layout ── */
 .login-wrap{{
@@ -6328,6 +7072,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 
 .ll-brand{{font-size:28px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
 .ll-tagline{{font-size:12px;color:rgba(126,200,50,.85);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}}
+html[dir="rtl"] .ll-tagline{{letter-spacing:0}}
 
 .ll-brand-sep {{
   width: 48px;
@@ -6336,7 +7081,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   margin: 0 auto 16px;
 }}
 
-.valmore-logo {{ display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 32px; opacity: 0.95; }}
+.valmore-logo {{ display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 32px; opacity: 0.95; direction: ltr; }}
 .valmore-icon {{ width: 20px; height: 20px; background: #fff; color: #1a2f4e; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; font-weight: 900; font-size: 13px; }}
 .valmore-text {{ display: flex; align-items: baseline; }}
 .v-main {{ font-family: Georgia, serif; font-size: 17px; color: #fff; letter-spacing: 0.5px; font-weight: 700; }}
@@ -6348,19 +7093,21 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   background:linear-gradient(90deg,transparent,#7ec832,transparent);
 }}
 
-.ll-desc{{font-size:13px;color:rgba(255,255,255,.55);line-height:1.7;max-width:260px;margin:0 auto 40px}}
+.ll-desc{{font-size:13px;color:rgba(255,255,255,.55);line-height:1.7;max-width:280px;margin:0 auto 40px}}
 
 /* Stats */
 .ll-stats{{display:flex;justify-content:center;gap:28px}}
 .ll-stat{{text-align:center}}
 .ll-stat-num{{font-size:22px;font-weight:800;color:#7ec832;letter-spacing:-1px;font-variant-numeric:tabular-nums}}
 .ll-stat-lbl{{font-size:9px;color:rgba(255,255,255,.45);font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-top:2px}}
+html[dir="rtl"] .ll-stat-lbl{{letter-spacing:0;font-size:10px}}
 
 /* Bottom brand text */
 .ll-footer{{
   position:absolute;bottom:24px;left:0;right:0;z-index:1;
   text-align:center;font-size:10px;color:rgba(255,255,255,.25);letter-spacing:.5px;
 }}
+html[dir="rtl"] .ll-footer{{letter-spacing:0}}
 
 /* ── RIGHT PANEL: Clean Form ── */
 .login-right{{
@@ -6373,6 +7120,25 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 .login-right::before{{
   content:'';position:absolute;top:0;left:0;right:0;height:3px;
   background:linear-gradient(90deg,#1a2f4e 0%,#7ec832 50%,#00b4a6 100%);
+}}
+
+/* Language Switcher Corner Button */
+.login-lang-corner{{
+  position:absolute;top:18px;right:24px;z-index:20;
+}}
+html[dir="rtl"] .login-lang-corner{{
+  right:auto;left:24px;
+}}
+.login-lang-btn{{
+  display:inline-flex;align-items:center;gap:6px;
+  background:#fff;border:1.5px solid #cbd5e1;color:#1a2f4e;
+  padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;
+  font-family:'Cairo','Inter',sans-serif;cursor:pointer;
+  box-shadow:0 2px 8px rgba(26,47,78,.08);transition:all .18s ease;
+}}
+.login-lang-btn:hover{{
+  border-color:#00b4a6;color:#00b4a6;transform:translateY(-1px);
+  box-shadow:0 4px 12px rgba(0,180,166,.16);
 }}
 
 /* White card wrapping the form for depth */
@@ -6388,6 +7154,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
 .lf-title{{
   font-size:22px;font-weight:800;color:#1a2f4e;margin-bottom:4px;letter-spacing:-.3px;
 }}
+html[dir="rtl"] .lf-title{{letter-spacing:0}}
 .lf-sub{{font-size:12px;color:#6b7a94;margin-bottom:32px;}}
 
 .fld{{margin-bottom:20px}}
@@ -6395,6 +7162,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   display:block;font-size:10.5px;font-weight:700;color:#4a5568;
   text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;
 }}
+html[dir="rtl"] .fld label{{letter-spacing:0;font-size:11.5px}}
 /* Always show border — no invisible fields */
 .fld input{{
   width:100%;padding:13px 15px;
@@ -6423,6 +7191,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   box-shadow:0 4px 14px rgba(26,47,78,.3);
   display:flex;align-items:center;justify-content:center;gap:8px;
 }}
+html[dir="rtl"] .btn-login{{letter-spacing:0}}
 .btn-login:hover{{
   background:linear-gradient(135deg,#243347 0%,#1a2f4e 100%);
   transform:translateY(-2px);
@@ -6434,6 +7203,13 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   margin-top:20px;text-align:center;font-size:11px;color:#94a3b8;
 }}
 .lf-footer a{{color:#7ec832;text-decoration:none;font-weight:600}}
+
+.login-credit{{
+  position:absolute;bottom:24px;right:32px;font-size:10px;color:#94a3b8;letter-spacing:0.3px;font-weight:500;
+}}
+html[dir="rtl"] .login-credit{{
+  right:auto;left:32px;letter-spacing:0;
+}}
 
 /* ── Mobile: Stack vertically ── */
 @media(max-width:700px){{
@@ -6458,6 +7234,8 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   
   /* Bottom Panel (Fixed Flex Direction to push card up) */
   .login-right {{ flex-direction: column !important; flex: 1 1 auto; padding: 16px 20px; justify-content: flex-start !important; align-items: center !important; position: relative; }}
+  .login-lang-corner {{ top: 10px; right: 14px; }}
+  html[dir="rtl"] .login-lang-corner {{ right: auto; left: 14px; }}
   .login-form-wrap {{ padding: 24px 20px; margin-top: 0; width: 100%; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-radius: 12px; }}
   .lf-title {{ font-size: 18px; margin-bottom: 4px; }}
   .lf-sub {{ font-size: 11px; margin-bottom: 16px; }}
@@ -6468,10 +7246,11 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
   .lf-footer {{ margin-top: 12px; font-size: 10px; }}
   
   /* Copyright Text Centered at Bottom */
-  .login-right > div[style*="position:absolute"] {{
+  .login-credit {{
       position: absolute !important;
       bottom: 12px !important;
       right: 0 !important;
+      left: 0 !important;
       width: 100% !important;
       text-align: center !important;
       font-size: 9px !important;
@@ -6487,7 +7266,7 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
         <img src="{logo_src}" alt="Gas Chill">
       </div>
       <div class="ll-brand">GAS CHILL</div>
-      <div class="ll-tagline">Energy. Redefined.</div>
+      <div class="ll-tagline">{t("login.tagline", norm)}</div>
       <div class="ll-brand-sep"></div>
       <div class="valmore-logo">
         <div class="valmore-icon"><span>V</span></div>
@@ -6498,53 +7277,155 @@ html,body{{height:100%;font-family:'Inter','Segoe UI',Arial,sans-serif;overflow:
       </div>
       <div class="ll-divider"></div>
       <div class="ll-desc">
-        Enterprise Document Control System — Unified hub managing company workspaces, registers, and submittals with precision.
+        {t("login.platform_desc", norm)}
       </div>
       <div class="ll-stats">
         <div class="ll-stat">
-          <div class="ll-stat-num">DCR</div>
-          <div class="ll-stat-lbl">Platform</div>
+          <div class="ll-stat-num bidi-ltr">DCR</div>
+          <div class="ll-stat-lbl">{t("login.stat_platform", norm)}</div>
         </div>
         <div class="ll-stat">
-          <div class="ll-stat-num">v2</div>
-          <div class="ll-stat-lbl">Version</div>
+          <div class="ll-stat-num bidi-ltr">v2</div>
+          <div class="ll-stat-lbl">{t("login.stat_version", norm)}</div>
         </div>
         <div class="ll-stat">
-          <div class="ll-stat-num">24/7</div>
-          <div class="ll-stat-lbl">Access</div>
+          <div class="ll-stat-num bidi-ltr">24/7</div>
+          <div class="ll-stat-lbl">{t("login.stat_access", norm)}</div>
         </div>
       </div>
     </div>
-    <div class="ll-footer">Gas Chill &nbsp;&bull;&nbsp; A Valmore Holding Company</div>
+    <div class="ll-footer">{t("login.left_footer", norm)}</div>
   </div>
 
   <!-- RIGHT: Clean Login Form -->
   <div class="login-right">
+    <div class="login-lang-corner">
+      {lang_btn}
+    </div>
     <div class="login-form-wrap">
-      <div class="lf-title">Welcome Back</div>
-      <div class="lf-sub">Sign in to your workspace to continue</div>
+      <div class="lf-title">{t("login.welcome_title", norm)}</div>
+      <div class="lf-sub">{t("login.welcome_sub", norm)}</div>
       <div class="err" id="err" style="display:none"></div>
       <div class="fld">
-        <label>Username</label>
-        <input id="un" type="text" autofocus autocomplete="username" placeholder="Enter your username" maxlength="40" pattern="[a-zA-Z0-9_.-]{3,40}">
+        <label>{t("login.username_label", norm)}</label>
+        <input id="un" type="text" dir="ltr" autofocus autocomplete="username" placeholder="{t("login.username_placeholder", norm)}" maxlength="40" pattern="[a-zA-Z0-9_.-]{{3,40}}">
       </div>
       <div class="fld">
-        <label>Password</label>
-        <input id="pw" type="password" autocomplete="current-password" placeholder="Enter your password">
+        <label>{t("login.password_label", norm)}</label>
+        <input id="pw" type="password" dir="ltr" autocomplete="current-password" placeholder="{t("login.password_placeholder", norm)}">
       </div>
       <button class="btn-login" onclick="login()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-        Sign In
+        <svg class="rtl-flip" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <span>{t("login.signin_btn", norm)}</span>
       </button>
       <div class="lf-footer">
-        Gas Chill Document Control System &nbsp;&mdash;&nbsp; Secure Access
+        {t("login.form_footer", norm)}
       </div>
     </div>
-    <div style="position:absolute; bottom:24px; right:32px; font-size:10px; color:#94a3b8; letter-spacing:0.3px; font-weight:500;">Designed &amp; Developed in-house by Mohamed Metwaly</div>
+    <div class="login-credit">{t("footer.inhouse_by", norm)}</div>
   </div>
 
 </div>
 <script>
+window.DCR_LANG = "{norm}";
+window.DCR_DIR = "{dir_attr}";
+window.DCR_I18N = {i18n_json};
+window.t = function(key, vars) {{
+  const dict = window.DCR_I18N || {{}};
+  let val = Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : key;
+  if (vars && typeof val === 'string') {{
+    Object.keys(vars).forEach(function(k) {{
+      val = val.replaceAll('{{' + k + '}}', String(vars[k] == null ? '' : vars[k]));
+    }});
+  }}
+  return val;
+}};
+window.tCol = function(colKey, defaultLabel) {{
+  if (window.DCR_LANG !== 'ar') return defaultLabel || colKey || '';
+  const k = 'col.' + String(colKey || '').trim();
+  const dict = window.DCR_I18N || {{}};
+  return Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : (defaultLabel || colKey || '');
+}};
+window.tDt = function(code, defaultName) {{
+  const fallback = defaultName || code || '';
+  if (window.DCR_LANG !== 'ar') return fallback;
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return fallback;
+  const k = 'dt_name.' + c;
+  const dict = window.DCR_I18N || {{}};
+  const tr = Object.prototype.hasOwnProperty.call(dict, k) ? dict[k] : '';
+  return (tr && tr !== k && !String(tr).startsWith('dt_name.')) ? tr : fallback;
+}};
+window.tStatus = function(val) {{
+  if (!val || window.DCR_LANG !== 'ar') return val || '';
+  const raw = String(val).trim();
+  const low = raw.toLowerCase().replace(/\\s+/g, ' ');
+  const lowNoCommaSpace = low.replace(/\\s*,\\s*/g, ',');
+  const map = {{
+    'approved': 'status.approved',
+    'approved with comments': 'status.approved_with_comments',
+    'pending': 'status.pending',
+    'under review': 'status.under_review',
+    'open': 'status.open',
+    'in progress': 'status.in_progress',
+    'in-progress': 'status.in_progress',
+    'closed': 'status.closed',
+    'completed': 'status.completed',
+    'rejected': 'status.rejected',
+    'revise & resubmit': 'status.revise_resubmit',
+    'revise and resubmit': 'status.revise_resubmit',
+    'overdue': 'status.overdue',
+    'expired': 'status.expired',
+    'valid': 'status.valid',
+    'expiring': 'status.expiring',
+    'active': 'status.active',
+    'info / closed': 'status.info_closed',
+    'info/closed': 'status.info_closed',
+    'not closed': 'status.not_closed',
+    'cancelled': 'status.cancelled',
+    'canceled': 'status.cancelled',
+    'a - approved': 'status.a_approved',
+    'b - approved as noted': 'status.b_approved_noted',
+    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b,c - approved and resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved and resubmit': 'status.bc_approved_resubmit',
+    'c - revise & resubmit': 'status.c_revise_resubmit',
+    'd - review not required': 'status.d_review_not_required',
+    'replied': 'status.replied',
+    'accepted & to proceed with part c': 'status.noc_accepted_part_c',
+    'information required': 'status.info_required',
+    'needs maintenance': 'status.needs_maintenance',
+    'under refill': 'status.under_refill',
+    'out of service': 'status.out_of_service',
+    'draft': 'status.draft',
+    'revised': 'status.revised'
+  }};
+  const k = map[low] || map[lowNoCommaSpace];
+  return k ? window.t(k) : raw;
+}};
+window.setLanguage = function(nextLang) {{
+  const lang = (String(nextLang || '').trim().toLowerCase() === 'ar') ? 'ar' : 'en';
+  try {{
+    document.cookie = 'dcr_lang=' + lang + '; path=/; max-age=31536000; SameSite=Lax';
+  }} catch(e) {{}}
+  try {{
+    localStorage.setItem('dcr_lang', lang);
+  }} catch(e) {{}}
+  try {{
+    const u = new URL(window.location.href);
+    if (u.searchParams.has('lang')) {{
+      u.searchParams.set('lang', lang);
+      window.location.href = u.toString();
+      return;
+    }}
+  }} catch(e) {{}}
+  window.location.reload();
+}};
+try {{
+  localStorage.setItem('dcr_lang', window.DCR_LANG);
+}} catch(e) {{}}
+
 document.getElementById('pw').onkeydown=e=>{{if(e.key==='Enter')login();}};
 document.getElementById('un').onkeydown=e=>{{if(e.key==='Enter')document.getElementById('pw').focus();}};
 async function login(){{
@@ -6556,10 +7437,10 @@ async function login(){{
   err.style.borderColor='#fecaca';
   err.style.color='#b91c1c';
   err.style.fontWeight='normal';
-  if(!un||!pw){{err.textContent='Please enter username and password';err.style.display='flex';return;}}
+  if(!un||!pw){{err.textContent=t('login.err_missing');err.style.display='flex';return;}}
   const unameRegex = /^[a-zA-Z0-9_.-]{{3,40}}$/;
   if(!unameRegex.test(un)){{
-    err.textContent='Invalid username format: letters, numbers, dots, hyphens, and underscores only (3-40 chars).';
+    err.textContent=t('login.err_format');
     err.style.display='block';
     return;
   }}
@@ -6569,7 +7450,7 @@ async function login(){{
     const d=await r.json();
     if(d.ok) window.location=d.redirect_to||'/';
     else{{
-      err.textContent=d.error||'Invalid credentials';
+      err.textContent=d.error||t('login.err_invalid');
       err.style.display='block';
       if(d.locked){{
         err.style.background='#fee2e2';
@@ -6579,7 +7460,7 @@ async function login(){{
       }}
     }}
   }} catch(e){{
-    err.textContent='Connection error. Please try again.';
+    err.textContent=t('login.err_connection');
     err.style.display='block';
   }}
 }}
@@ -6589,7 +7470,9 @@ async function login(){{
 
 
 
-def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="OM"):
+def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="OM", lang=None):
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
     role = u["role"] if u else "guest"
     can_manage = role in ("superadmin", "admin")
     
@@ -6602,15 +7485,11 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
             "id": active_ws, "code": active_ws, "name": "Operation & Maintenance (O&M)" if active_ws == "OM" else f"{active_ws} Department",
             "icon": "⚙️" if active_ws == "OM" else "📁", "name_ar": "الصيانة والتشغيل" if active_ws == "OM" else ""
         }
-    ws_name = ws_obj.get("name") or "Operation & Maintenance (O&M)"
+    ws_meta = translate_workspace_meta(ws_obj, norm)
+    ws_name = ws_meta["name"] or ws_obj.get("name") or "Operation & Maintenance (O&M)"
     ws_icon = ws_obj.get("icon") or "⚙️"
     ws_code = ws_obj.get("code") or active_ws
-    ws_name_ar = ws_obj.get("name_ar") or ""
-    raw_ws_desc = ws_obj.get("description")
-    if raw_ws_desc is not None:
-        ws_desc = str(raw_ws_desc).strip()
-    else:
-        ws_desc = ws_name_ar or ("Facilities & Maintenance Contracts" if active_ws == "OM" else "")
+    ws_desc = ws_meta["desc"] or ""
 
     # Calculate Universal Dynamic KPIs
     total_contracts = len(accessible_projs)
@@ -6623,7 +7502,10 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     doc_types_breakdown = []
 
     if pids:
-        dt_scope = get_user_doc_type_scope(u, pids) if u else {}
+        try:
+            dt_scope = get_user_doc_type_scope(u, pids) if u else {}
+        except Exception:
+            dt_scope = None
         dt_info_map = {}  # (pid, dt_id_upper) -> (code, name)
         dt_agg = {}       # (code, name) -> {"code": ..., "name": ..., "count": 0, "completed": 0}
         try:
@@ -6634,7 +7516,11 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
                    ORDER BY sort_order, code, id""",
                 (pids,),
             ) or []
+            if not isinstance(dt_rows, list):
+                dt_rows = []
             for dt in dt_rows:
+                if not isinstance(dt, dict):
+                    continue
                 p_id = dt.get("project_id")
                 dt_id = dt.get("id")
                 dt_c = dt.get("code") or dt_id or "DOC"
@@ -6656,30 +7542,33 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
                    WHERE project_id = ANY(%s)""",
                 (pids,),
             ) or []
-            for r in rec_rows:
-                p_id = r.get("project_id")
-                dt_id = r.get("dt_id")
-                dt_key = (p_id, str(dt_id or "").strip().upper())
-                dt_meta = dt_info_map.get(dt_key)
-                dt_code_hint = dt_meta[0] if dt_meta else ""
-                if not db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code_hint):
-                    continue
-                total_records += 1
-                st_low = str(r.get("status_val") or "").lower()
-                is_comp = ("not closed" not in st_low) and any(k in st_low for k in ("complete", "close", "approved"))
-                is_pend = any(k in st_low for k in ("open", "progress", "pending", "review"))
-                if is_comp:
-                    completed_records += 1
-                if is_pend:
-                    pending_records += 1
-                if dt_meta is None:
-                    fallback_code = str(dt_id or "DOC")
-                    dt_meta = (fallback_code, fallback_code)
-                    if dt_meta not in dt_agg:
-                        dt_agg[dt_meta] = {"code": dt_meta[0], "name": dt_meta[1], "count": 0, "completed": 0}
-                dt_agg[dt_meta]["count"] += 1
-                if is_comp:
-                    dt_agg[dt_meta]["completed"] += 1
+            if isinstance(rec_rows, list):
+                for r in rec_rows:
+                    if not isinstance(r, dict):
+                        continue
+                    p_id = r.get("project_id")
+                    dt_id = r.get("dt_id")
+                    dt_key = (p_id, str(dt_id or "").strip().upper())
+                    dt_meta = dt_info_map.get(dt_key)
+                    dt_code_hint = dt_meta[0] if dt_meta else ""
+                    if not db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code_hint):
+                        continue
+                    total_records += 1
+                    st_low = str(r.get("status_val") or "").lower()
+                    is_comp = ("not closed" not in st_low) and any(k in st_low for k in ("complete", "close", "approved"))
+                    is_pend = any(k in st_low for k in ("open", "progress", "pending", "review"))
+                    if is_comp:
+                        completed_records += 1
+                    if is_pend:
+                        pending_records += 1
+                    if dt_meta is None:
+                        fallback_code = str(dt_id or "DOC")
+                        dt_meta = (fallback_code, fallback_code)
+                        if dt_meta not in dt_agg:
+                            dt_agg[dt_meta] = {"code": dt_meta[0], "name": dt_meta[1], "count": 0, "completed": 0}
+                    dt_agg[dt_meta]["count"] += 1
+                    if is_comp:
+                        dt_agg[dt_meta]["completed"] += 1
         except Exception:
             pass
 
@@ -6693,12 +7582,22 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
         except Exception:
             overdue_records = 0
 
+    is_om = (active_ws == "OM")
+    add_btn_lbl = t("om.add_contract", norm) if is_om else t("om.add_project", norm)
+    empty_btn_lbl = t("om.empty_add_contract", norm) if is_om else t("om.empty_add_project", norm)
+    empty_icon = "⚙️" if is_om else ws_icon
+    empty_title = t("om.empty_title_om", norm) if is_om else t("om.empty_title_ws", norm, ws_name=ws_name)
+    empty_sub = t("om.empty_sub_om", norm) if is_om else t("om.empty_sub_ws", norm, ws_name=ws_name)
+    kpi_contracts_lbl = t("om.kpi_contracts", norm) if is_om else t("om.kpi_projects", norm)
+    kpi_records_lbl = t("om.kpi_work_orders", norm) if is_om else t("om.kpi_records", norm)
+    breakdown_lbl = t("om.sec_registers_om", norm) if is_om else t("om.sec_registers_ws", norm)
+
     dt_cards_html = ""
     for dt in doc_types_breakdown:
         if not isinstance(dt, dict):
             continue
         dt_c = dt.get("code") or dt.get("name") or "DOC"
-        dt_n = dt.get("name") or dt_c
+        dt_n = t_dt(dt_c, dt.get("name") or dt_c, norm)
         cnt = dt.get("count") or 0
         cmp = dt.get("completed") or 0
         pct = round((cmp / cnt) * 100) if cnt else 0
@@ -6706,39 +7605,25 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
         <div style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
           <div>
             <div style="display:flex;align-items:center;gap:6px;">
-              <span class="badge" style="background:rgba(0,180,166,0.12);color:var(--brand-teal);font-weight:700;font-size:11px;font-family:monospace;">{dt_c}</span>
+              <span class="badge bidi-ltr" style="background:rgba(0,180,166,0.12);color:var(--brand-teal);font-weight:700;font-size:11px;font-family:monospace;">{dt_c}</span>
               <span style="font-weight:600;font-size:12px;color:var(--tx);">{dt_n}</span>
             </div>
-            <div style="font-size:10px;color:var(--mu);margin-top:2px;">{cmp} of {cnt} completed ({pct}%)</div>
+            <div style="font-size:10px;color:var(--mu);margin-top:2px;">{t("om.reg_completed_pct", norm, cmp=cmp, cnt=cnt, pct=pct)}</div>
           </div>
-          <div style="font-size:16px;font-weight:800;color:var(--tx);font-family:monospace;">{cnt}</div>
+          <div class="bidi-ltr" style="font-size:16px;font-weight:800;color:var(--tx);font-family:monospace;">{cnt}</div>
         </div>
         '''
 
     doc_breakdown_section = f'''
     <div style="margin-bottom:20px;">
       <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
-        <span>📄</span><span>Active Document Registers & Submittals</span>
+        <span>📄</span><span>{breakdown_lbl}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;">
         {dt_cards_html}
       </div>
     </div>
     ''' if dt_cards_html else ""
-
-    is_om = (active_ws == "OM")
-    add_btn_lbl = "➕ New Contract / Facility" if is_om else "➕ New Project / Register"
-    empty_btn_lbl = "➕ Register First Contract / Facility" if is_om else "➕ Register First Project / Register"
-    empty_icon = "⚙️" if is_om else ws_icon
-    empty_title = "No Maintenance Contracts Registered Yet" if is_om else f"No Projects or Registers Registered Yet in {ws_name}"
-    empty_sub = (
-        "Register your first client facility or maintenance contract to start logging Work Orders, PPM schedules, and SLA reports."
-        if is_om else
-        f"Register your first project, contract, or register in {ws_name} to start logging documents and tracking records."
-    )
-    kpi_contracts_lbl = "Total Facilities & Contracts" if is_om else "Total Projects & Registers"
-    kpi_records_lbl = "Total Work Orders & Records" if is_om else "Total Registered Records"
-    breakdown_lbl = "Active Document Registers & Submittals" if is_om else "Configured Registers & Document Types"
 
     # Render Contract Cards
     empty_add_btn = (
@@ -6753,7 +7638,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
     ) if can_manage else ""
 
     audit_btn = (
-        '<button class="tbtn" onclick="showOmTab(&#39;audit&#39;, this)">📜 Audit Log</button>'
+        f'<button class="tbtn" onclick="showOmTab(&#39;audit&#39;, this)">{t("om.tab_audit", norm)}</button>'
     ) if can_manage else ""
 
     cards_html = ""
@@ -6766,18 +7651,18 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
             try: p_data = json.loads(p_data)
             except Exception: p_data = {}
         client = p_data.get("client", "—")
-        del_btn = f'<button type="button" class="pcard-btn pcard-del" title="Delete Contract" onclick="event.preventDefault();event.stopPropagation();delProject(&#39;{p_id}&#39;,&#39;{p_name}&#39;)">🗑️</button>' if can_manage else ''
+        del_btn = f'<button type="button" class="pcard-btn pcard-del" title="{t("om.del_contract_title", norm)}" onclick="event.preventDefault();event.stopPropagation();delProject(&#39;{p_id}&#39;,&#39;{p_name}&#39;)">🗑️</button>' if can_manage else ''
         
         cards_html += f'''
-        <div class="om-card" onclick="window.location='/app?p={p_id}'" title="Open {p_name}">
+        <div class="om-card" onclick="window.location='/app?p={p_id}'" title="{t("om.open_title", norm, name=p_name)}">
           <div class="om-card-header">
-            <span class="om-code-badge">{p_code}</span>
-            <span class="om-status-badge">Active</span>
+            <span class="om-code-badge bidi-ltr">{p_code}</span>
+            <span class="om-status-badge">{t("om.status_active", norm)}</span>
           </div>
           <div class="om-card-title">{p_name}</div>
-          <div class="om-card-client">🏢 Client: <strong>{client}</strong></div>
+          <div class="om-card-client">🏢 {t("om.lbl_client", norm)} <strong>{client}</strong></div>
           <div class="om-card-footer">
-            <span class="om-card-action">Open Register ➔</span>
+            <span class="om-card-action">{t("om.open_register", norm)} <span class="rtl-flip">➔</span></span>
             {del_btn}
           </div>
         </div>
@@ -6793,7 +7678,7 @@ def _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlb
         </div>
         '''
 
-    return f'''<!DOCTYPE html><html lang="en"><head>
+    return f'''<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DCR — {ws_name}</title>
 {_head_icon_tags()}
@@ -7027,23 +7912,39 @@ body.dark .tbtn.active {{
   color: #fff !important;
   border-color: var(--brand-teal) !important;
 }}
+html[dir="rtl"] .om-header-bar,
+html[dir="rtl"] .om-kpi-card,
+html[dir="rtl"] .om-card {{
+  text-align: right;
+}}
+html[dir="rtl"] .om-kpi-lbl {{
+  letter-spacing: 0;
+  text-transform: none;
+}}
+html[dir="rtl"] .user-tbl th,
+html[dir="rtl"] .user-tbl td,
+html[dir="rtl"] #om-aud-tbl th,
+html[dir="rtl"] #om-aud-tbl td {{
+  text-align: right;
+}}
 </style>
 </head>
 <body data-workspace="{active_ws}">
 <div id="topbar">
   <span style="font-size:20px">📋</span>
-  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
-  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">{t("app.title_full", norm)}</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">{t("app.title_short", norm)}</span>
   {ws_switcher_html}
-  {GLOBAL_SEARCH_TRIGGER_HTML}
+  {_global_search_trigger_html(norm)}
   <div class="sp"></div>
-  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
-  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
+  <button class="tb-btn tb-about-btn" onclick="openM('about-modal')" title="{t("topbar.about_btn", norm)}" aria-label="{t("topbar.about_btn", norm)}">ℹ️<span class="tb-btn-text sr-only">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
+  {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
-    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  <span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">{uname}</span></span>
+    <span class="topbar-user-role" style="background:{rbg};border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
 
@@ -7062,15 +7963,15 @@ body.dark .tbtn.active {{
   <!-- Unified Navigation Toolbar -->
   <div class="psel-bar">
     <div style="display:flex;align-items:center;gap:8px;">
-      <input type="text" id="om-search" placeholder="🔍 Search in {ws_name}..." oninput="filterOmCards(this.value)" style="min-width:220px;">
+      <input type="text" id="om-search" placeholder="{t("om.search_ph", norm, ws_name=ws_name)}" oninput="filterOmCards(this.value)" style="min-width:220px;">
     </div>
     <div class="sp" style="flex:1"></div>
     <div style="display:flex;gap:4px;flex-wrap:nowrap;justify-content:flex-end;">
-      <button class="tbtn active" onclick="showOmTab('overview', this)">📊 Overview</button>
-      <button class="tbtn" onclick="showOmTab('analytics', this)">📈 Analytics</button>
-      <button class="tbtn" onclick="showOmTab('overdue', this)">⚠️ Overdue</button>
-      <button class="tbtn" onclick="showOmTab('executive', this)">📋 Executive</button>
-      <button class="tbtn" onclick="showOmTab('daily-digest', this)">🌟 Daily Digest</button>
+      <button class="tbtn active" onclick="showOmTab('overview', this)">{t("om.tab_overview", norm)}</button>
+      <button class="tbtn" onclick="showOmTab('analytics', this)">{t("om.tab_analytics", norm)}</button>
+      <button class="tbtn" onclick="showOmTab('overdue', this)">{t("om.tab_overdue", norm)}</button>
+      <button class="tbtn" onclick="showOmTab('executive', this)">{t("om.tab_executive", norm)}</button>
+      <button class="tbtn" onclick="showOmTab('daily-digest', this)">{t("om.tab_daily_digest", norm)}</button>
       {audit_btn}
     </div>
   </div>
@@ -7081,23 +7982,23 @@ body.dark .tbtn.active {{
     <div class="om-kpi-grid">
       <div class="om-kpi-card">
         <span class="om-kpi-lbl">{kpi_contracts_lbl}</span>
-        <span class="om-kpi-val primary">{total_contracts}</span>
+        <span class="om-kpi-val primary bidi-ltr">{total_contracts}</span>
       </div>
       <div class="om-kpi-card">
         <span class="om-kpi-lbl">{kpi_records_lbl}</span>
-        <span class="om-kpi-val">{total_records}</span>
+        <span class="om-kpi-val bidi-ltr">{total_records}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Completed / Closed</span>
-        <span class="om-kpi-val success">{completed_records}</span>
+        <span class="om-kpi-lbl">{t("om.kpi_completed", norm)}</span>
+        <span class="om-kpi-val success bidi-ltr">{completed_records}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">In-Progress / Open</span>
-        <span class="om-kpi-val warning">{pending_records}</span>
+        <span class="om-kpi-lbl">{t("om.kpi_in_progress", norm)}</span>
+        <span class="om-kpi-val warning bidi-ltr">{pending_records}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Overdue Items</span>
-        <span class="om-kpi-val" style="color:{'#ef4444' if overdue_records > 0 else 'var(--tx)'};">{overdue_records}</span>
+        <span class="om-kpi-lbl">{t("om.kpi_overdue", norm)}</span>
+        <span class="om-kpi-val bidi-ltr" style="color:{'#ef4444' if overdue_records > 0 else 'var(--tx)'};">{overdue_records}</span>
       </div>
     </div>
 
@@ -7113,47 +8014,47 @@ body.dark .tbtn.active {{
   <!-- TAB PANE: DAILY DIGEST -->
   <div id="tab-om-daily-digest" class="tab-pane" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
-      <div style="font-weight:700;font-size:14px;color:var(--tx);">🌟 Daily Digest & Activity Stream</div>
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">{t("om.digest_title", norm)}</div>
       <div>
-        <input type="date" id="om-digest-date" style="padding:5px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);" onchange="loadOmDailyDigest()">
+        <input type="date" id="om-digest-date" class="bidi-ltr" style="padding:5px 10px; border:1px solid var(--bd); border-radius:6px; font-size:12px; background:var(--bg); color:var(--tx);" onchange="loadOmDailyDigest()">
       </div>
     </div>
     <div id="om-daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
-      <div style="color:var(--mu);font-size:14px;">Loading Daily Digest...</div>
+      <div style="color:var(--mu);font-size:14px;">{t("om.digest_loading", norm)}</div>
     </div>
   </div>
 
   <!-- TAB PANE: EXECUTIVE SUMMARY -->
   <div id="tab-om-executive" class="tab-pane" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
-      <div style="font-weight:700;font-size:14px;color:var(--tx);">📋 Executive Summary & SLA Metrics</div>
-      <button class="tb-btn" onclick="loadOmExecutiveReport()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">{t("om.exec_title", norm)}</div>
+      <button class="tb-btn" onclick="loadOmExecutiveReport()" style="padding:5px 12px;font-size:11px;">{t("hse.refresh_btn", norm)}</button>
     </div>
     <div id="om-exec-content" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:18px;">
-      <div style="color:var(--mu);font-size:14px;">Loading Executive Report...</div>
+      <div style="color:var(--mu);font-size:14px;">{t("om.exec_loading", norm)}</div>
     </div>
   </div>
 
   <!-- TAB PANE: OVERDUE -->
   <div id="tab-om-overdue" class="tab-pane" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
-      <div style="font-weight:700;font-size:14px;color:var(--tx);">⚠️ Overdue Actions & Records</div>
-      <button class="tb-btn" onclick="loadOmOverdue()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">{t("om.ov_title", norm)}</div>
+      <button class="tb-btn" onclick="loadOmOverdue()" style="padding:5px 12px;font-size:11px;">{t("hse.refresh_btn", norm)}</button>
     </div>
     <div id="om-overdue-content" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;overflow-x:auto;">
       <table class="user-tbl" id="om-overdue-tbl" style="width:100%;">
         <thead>
           <tr>
-            <th style="padding:10px 14px;">Contract / Project</th>
-            <th style="padding:10px 14px;">Doc / Ref</th>
-            <th style="padding:10px 14px;">Title / Subject</th>
-            <th style="padding:10px 14px;">Target Date</th>
-            <th style="padding:10px 14px;">Status</th>
-            <th style="padding:10px 14px;">Delay</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_contract", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_doc", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_title", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_target", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_status", norm)}</th>
+            <th style="padding:10px 14px;">{t("om.ov_th_delay", norm)}</th>
           </tr>
         </thead>
         <tbody id="om-overdue-tbody">
-          <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">Loading overdue records...</td></tr>
+          <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu);">{t("om.ov_loading", norm)}</td></tr>
         </tbody>
       </table>
     </div>
@@ -7162,17 +8063,17 @@ body.dark .tbtn.active {{
   <!-- TAB PANE: ANALYTICS -->
   <div id="tab-om-analytics" class="tab-pane" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:var(--wh); padding:10px 16px; border-radius:8px; border:1px solid var(--bd);">
-      <div style="font-weight:700;font-size:14px;color:var(--tx);">📈 Operational Analytics & Turnaround</div>
-      <button class="tb-btn" onclick="loadOmAnalytics()" style="padding:5px 12px;font-size:11px;">🔄 Refresh</button>
+      <div style="font-weight:700;font-size:14px;color:var(--tx);">{t("om.ana_title", norm)}</div>
+      <button class="tb-btn" onclick="loadOmAnalytics()" style="padding:5px 12px;font-size:11px;">{t("hse.refresh_btn", norm)}</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;">
       <div class="panel" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">📊 Aging & Turnaround Analysis</div>
-        <div id="om-aging-chart">Loading...</div>
+        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">{t("om.ana_aging_title", norm)}</div>
+        <div id="om-aging-chart">{t("common.loading", norm)}</div>
       </div>
       <div class="panel" style="background:var(--wh);border:1px solid var(--bd);border-radius:8px;padding:16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">📈 Monthly Volume Trend</div>
-        <div id="om-trend-chart">Loading...</div>
+        <div style="font-weight:700;font-size:13px;margin-bottom:12px;color:var(--tx);">{t("om.ana_trend_title", norm)}</div>
+        <div id="om-trend-chart">{t("common.loading", norm)}</div>
       </div>
     </div>
   </div>
@@ -7181,24 +8082,24 @@ body.dark .tbtn.active {{
   <div id="tab-om-audit" class="tab-pane" style="display:none;">
     <div class="panel">
       <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <span>📜 Activity & Audit Log — {ws_name}</span>
+        <span>{t("om.aud_title", norm, ws_name=ws_name)}</span>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button class="tbtn" onclick="loadOmAudit(true)">🔄 Refresh</button>
+          <button class="tbtn" onclick="loadOmAudit(true)">{t("hse.refresh_btn", norm)}</button>
         </div>
       </div>
       <!-- Filters -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <select id="om-aud-pid" onchange="loadOmAudit(true)"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;min-width:160px;background:var(--bg);color:var(--tx)">
-          <option value="">All Contracts / Facilities</option>
+          <option value="">{t("om.aud_all_contracts", norm)}</option>
         </select>
         <select id="om-aud-user" onchange="loadOmAudit(true)"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;background:var(--bg);color:var(--tx)">
-          <option value="">All Users</option>
+          <option value="">{t("dash.aud_all_users", norm)}</option>
         </select>
         <select id="om-aud-action" onchange="loadOmAudit(true)"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;background:var(--bg);color:var(--tx)">
-          <option value="">All Actions</option>
+          <option value="">{t("dash.aud_all_actions", norm)}</option>
         </select>
       </div>
       <!-- Table -->
@@ -7210,29 +8111,29 @@ body.dark .tbtn.active {{
       <div style="overflow:auto;max-height:calc(100vh - 270px);border:1px solid var(--bd);border-radius:var(--rd);background:var(--wh)">
         <table class="dt-tbl" id="om-aud-tbl" style="min-width:1050px;width:100%;table-layout:fixed">
           <thead><tr>
-            <th style="width:130px">Time</th>
-            <th style="width:90px">User</th>
-            <th style="width:95px">Action</th>
-            <th style="width:130px">Contract / Facility</th>
-            <th style="width:110px">Document</th>
-            <th style="width:90px">Field</th>
-            <th style="width:120px">Old Value</th>
-            <th style="width:120px">New Value</th>
-            <th style="width:160px">Detail</th>
-            <th style="width:105px">IP Address</th>
-            <th style="width:125px">Device</th>
+            <th style="width:130px">{t("dash.aud_th_time", norm)}</th>
+            <th style="width:90px">{t("dash.aud_th_user", norm)}</th>
+            <th style="width:95px">{t("dash.aud_th_action", norm)}</th>
+            <th style="width:130px">{t("om.ov_th_contract", norm)}</th>
+            <th style="width:110px">{t("dash.aud_th_document", norm)}</th>
+            <th style="width:90px">{t("dash.aud_th_field", norm)}</th>
+            <th style="width:120px">{t("dash.aud_th_old", norm)}</th>
+            <th style="width:120px">{t("dash.aud_th_new", norm)}</th>
+            <th style="width:160px">{t("dash.aud_th_detail", norm)}</th>
+            <th style="width:105px">{t("dash.aud_th_ip", norm)}</th>
+            <th style="width:125px">{t("dash.aud_th_device", norm)}</th>
           </tr></thead>
           <tbody id="om-aud-tbody">
-            <tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">Loading logs...</td></tr>
+            <tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">{t("om.aud_loading", norm)}</td></tr>
           </tbody>
         </table>
       </div>
       <div id="om-aud-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--mu)">
         <span id="om-aud-count"></span>
         <div style="display:flex;gap:8px">
-          <button id="om-aud-prev" class="tbtn" onclick="omAuditPage(-1)" disabled>← Prev</button>
-          <span id="om-aud-page" style="padding:5px 10px;font-size:11px">Page 1</span>
-          <button id="om-aud-next" class="tbtn" onclick="omAuditPage(1)">Next →</button>
+          <button id="om-aud-prev" class="tbtn" onclick="omAuditPage(-1)" disabled>{t("dash.aud_prev", norm)}</button>
+          <span id="om-aud-page" style="padding:5px 10px;font-size:11px">{t("dash.aud_page", norm, page=1)}</span>
+          <button id="om-aud-next" class="tbtn" onclick="omAuditPage(1)">{t("dash.aud_next", norm)}</button>
         </div>
       </div>
     </div>
@@ -7243,39 +8144,63 @@ body.dark .tbtn.active {{
 <div id="new-om-modal" class="overlay hidden" onclick="if(event.target===this)closeM('new-om-modal')">
   <div class="modal" style="max-width:480px">
     <div class="mhdr">
-      <span>{f'➕ Register New O&M Contract / Facility' if is_om else f'➕ Register New Project / Register ({ws_name})'}</span>
+      <span>{t("om.modal_new_om", norm) if is_om else t("om.modal_new_ws", norm, ws_name=ws_name)}</span>
       <button class="xbtn" onclick="closeM('new-om-modal')">✕</button>
     </div>
     <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Contract / Facility ID (Internal ID):' if is_om else 'Project / Register ID (Internal ID):'}</label>
-        <input type="text" id="om-new-id" placeholder="{f'e.g. OM-CFC-01' if is_om else f'e.g. {ws_code}-01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("om.lbl_id_om", norm) if is_om else t("om.lbl_id_ws", norm)}</label>
+        <input type="text" id="om-new-id" class="bidi-ltr" placeholder="{f'e.g. OM-CFC-01' if is_om else f'e.g. {ws_code}-01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Facility / Contract Name:' if is_om else 'Project / Register Name:'}</label>
-        <input type="text" id="om-new-name" placeholder="{f'e.g. CFC District Cooling Maintenance' if is_om else f'e.g. Annual Procurement Plan / Vendor Register'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("om.lbl_name_om", norm) if is_om else t("om.lbl_name_ws", norm)}</label>
+        <input type="text" id="om-new-name" placeholder="{f'e.g. CFC District Cooling Maintenance' if is_om else t('om.ph_name_ws', norm)}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Contract Short Code:' if is_om else 'Short Code / Identifier:'}</label>
-        <input type="text" id="om-new-code" placeholder="{f'e.g. OM01' if is_om else f'e.g. {ws_code}01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("om.lbl_code_om", norm) if is_om else t("om.lbl_code_ws", norm)}</label>
+        <input type="text" id="om-new-code" class="bidi-ltr" placeholder="{f'e.g. OM01' if is_om else f'e.g. {ws_code}01'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{f'Client Name:' if is_om else 'Client / Entity / Department:'}</label>
-        <input type="text" id="om-new-client" placeholder="{f'e.g. Al-Futtaim' if is_om else 'e.g. Internal / GasChill'}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("om.lbl_client_om", norm) if is_om else t("om.lbl_client_ws", norm)}</label>
+        <input type="text" id="om-new-client" placeholder="{t('om.ph_client_om', norm) if is_om else t('om.ph_client_ws', norm)}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:inherit;box-sizing:border-box;">
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
-        <button class="tb-btn" onclick="closeM('new-om-modal')">Cancel</button>
-        <button class="tb-btn glow" onclick="submitNewOmContract()" style="background:var(--brand-teal);color:#fff;font-weight:700">{f'Save Contract' if is_om else 'Save Project'}</button>
+        <button class="tb-btn" onclick="closeM('new-om-modal')">{t("common.cancel", norm)}</button>
+        <button class="tb-btn glow" onclick="submitNewOmContract()" style="background:var(--brand-teal);color:#fff;font-weight:700">{t("om.btn_save_contract", norm) if is_om else t("om.btn_save_project", norm)}</button>
       </div>
     </div>
   </div>
 </div>
 
-{SHARED_JS}
-{ABOUT_MODAL_HTML}
-{SPOTLIGHT_MODAL_COMPONENT}
-{AI_DRAWER_COMPONENT}
+{_shared_js_html(norm)}
+{_about_modal_html(norm)}
+{_spotlight_modal_html(norm)}
+{_ai_drawer_html(norm)}
 <script>
+const _omT = (k, v, fb) => {{
+  const res = typeof window.t === 'function' ? window.t(k, v) : '';
+  return (res && res !== k) ? res : (fb || k);
+}};
+function _omStatusLbl(val) {{
+  const s = String(val || '').trim();
+  if (!s) return _omT('status.pending', null, 'Pending');
+  const low = s.toLowerCase().replace(/\\s+/g, ' ');
+  const lowNoCommaSpace = low.replace(/\\s*,\\s*/g, ',');
+  const map = {{
+    'approved': 'status.approved', 'approved with comments': 'status.approved_with_comments',
+    'pending': 'status.pending', 'under review': 'status.under_review',
+    'open': 'status.open', 'in progress': 'status.in_progress', 'in-progress': 'status.in_progress',
+    'closed': 'status.closed', 'completed': 'status.completed',
+    'rejected': 'status.rejected', 'revise & resubmit': 'status.revise_resubmit',
+    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved & resubmit': 'status.bc_approved_resubmit',
+    'overdue': 'status.overdue', 'expired': 'status.expired',
+    'valid': 'status.valid', 'expiring': 'status.expiring', 'active': 'status.active'
+  }};
+  const key = map[low] || map[lowNoCommaSpace];
+  return key ? _omT(key, null, s) : s;
+}}
+
 function showOmTab(tabName, btn) {{
   document.querySelectorAll('.psel-bar .tbtn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
@@ -7298,84 +8223,84 @@ async function loadOmDailyDigest() {{
   if (!container) return;
   const dateInput = document.getElementById('om-digest-date');
   const dVal = dateInput ? dateInput.value : '';
-  container.innerHTML = '<div style="color:var(--mu);font-size:14px;padding:20px;">Loading Daily Digest...</div>';
+  container.innerHTML = `<div style="color:var(--mu);font-size:14px;padding:20px;">${{escHtml(_omT('om.digest_loading', null, 'Loading Daily Digest...'))}}</div>`;
   try {{
     const ws = document.body.getAttribute('data-workspace') || 'OM';
     const qs = '?workspace_id=' + encodeURIComponent(ws) + (dVal ? '&date=' + encodeURIComponent(dVal) : '');
     const r = await apiFetch('/api/daily_digest/all' + qs);
-    if (!r) {{ container.innerHTML = '<div style="color:red;padding:20px;">Failed to load digest.</div>'; return; }}
+    if (!r) {{ container.innerHTML = `<div style="color:red;padding:20px;">${{escHtml(_omT('om.digest_failed', null, 'Failed to load digest.'))}}</div>`; return; }}
     
     let html = '';
-    html += '<div class="panel" style="border-top:4px solid #3b82f6;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#1e40af;font-size:15px;font-weight:700;margin-bottom:8px;">📥 Received (' + (r.received||[]).length + ')</div>';
-    if ((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:12px;font-style:italic;">No records received.</div>';
+    html += `<div class="panel" style="border-top:4px solid #3b82f6;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#1e40af;font-size:15px;font-weight:700;margin-bottom:8px;">${{escHtml(_omT('om.digest_received', {{count: (r.received||[]).length}}, '📥 Received (' + (r.received||[]).length + ')'))}}</div>`;
+    if ((r.received||[]).length === 0) html += `<div style="color:var(--mu);font-size:12px;font-style:italic;">${{escHtml(_omT('om.digest_no_received', null, 'No records received.'))}}</div>`;
     (r.received||[]).forEach(doc => {{
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong class="bidi-ltr">' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
     }});
     html += '</div>';
 
-    html += '<div class="panel" style="border-top:4px solid #22c55e;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#166534;font-size:15px;font-weight:700;margin-bottom:8px;">✅ Closed / Completed (' + (r.replied||[]).length + ')</div>';
-    if ((r.replied||[]).length === 0) html += '<div style="color:var(--mu);font-size:12px;font-style:italic;">No records completed.</div>';
+    html += `<div class="panel" style="border-top:4px solid #22c55e;background:var(--wh);border-radius:8px;padding:14px;border:1px solid var(--bd);"><div style="color:#166534;font-size:15px;font-weight:700;margin-bottom:8px;">${{escHtml(_omT('om.digest_closed', {{count: (r.replied||[]).length}}, '✅ Closed / Completed (' + (r.replied||[]).length + ')'))}}</div>`;
+    if ((r.replied||[]).length === 0) html += `<div style="color:var(--mu);font-size:12px;font-style:italic;">${{escHtml(_omT('om.digest_no_closed', null, 'No records completed.'))}}</div>`;
     (r.replied||[]).forEach(doc => {{
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong class="bidi-ltr">' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
     }});
     html += '</div>';
     container.innerHTML = html;
   }} catch(e) {{
-    container.innerHTML = '<div style="color:red;padding:20px;">Error: ' + escHtml(e.message) + '</div>';
+    container.innerHTML = '<div style="color:red;padding:20px;">' + escHtml(_omT('common.error', null, 'Error')) + ': ' + escHtml(e.message) + '</div>';
   }}
 }}
 
 async function loadOmExecutiveReport() {{
   const container = document.getElementById('om-exec-content');
   if (!container) return;
-  container.innerHTML = '<div style="color:var(--mu);font-size:14px;padding:20px;">Loading Executive Report...</div>';
+  container.innerHTML = `<div style="color:var(--mu);font-size:14px;padding:20px;">${{escHtml(_omT('om.exec_loading', null, 'Loading Executive Report...'))}}</div>`;
   try {{
     const ws = document.body.getAttribute('data-workspace') || 'OM';
     const r = await apiFetch('/api/executive_summary?workspace_id=' + encodeURIComponent(ws));
     if (!r || !r.summary) {{
-      container.innerHTML = '<div style="color:var(--mu);padding:20px;">No executive data available.</div>';
+      container.innerHTML = `<div style="color:var(--mu);padding:20px;">${{escHtml(_omT('om.exec_no_data', null, 'No executive data available.'))}}</div>`;
       return;
     }}
     const s = r.summary;
     let html = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--tx);">${{s.total}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Total Records</div></div>
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#16a34a;">${{s.approved}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Completed / Closed</div></div>
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#d97706;">${{s.pending}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">In-Progress / Open</div></div>
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#ef4444;">${{s.overdue}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Overdue</div></div>
-        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--brand-teal);">${{s.completion_pct}}%</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">Completion Rate</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:var(--tx);">${{s.total}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('om.kpi_records', null, 'Total Records'))}}</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:#16a34a;">${{s.approved}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('om.kpi_completed', null, 'Completed / Closed'))}}</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:#d97706;">${{s.pending}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('om.kpi_in_progress', null, 'In-Progress / Open'))}}</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:#ef4444;">${{s.overdue}}</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('dash.kpi_overdue', null, 'Overdue'))}}</div></div>
+        <div style="background:var(--bg);padding:12px;border-radius:8px;text-align:center;"><div class="bidi-ltr" style="font-size:22px;font-weight:800;color:var(--brand-teal);">${{s.completion_pct}}%</div><div style="font-size:10.5px;color:var(--mu);text-transform:uppercase;">${{escHtml(_omT('om.exec_completion_rate', null, 'Completion Rate'))}}</div></div>
       </div>
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--tx);">Facility / Contract Status Breakdown</div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--tx);">${{escHtml(_omT('om.exec_breakdown_title', null, 'Facility / Contract Status Breakdown'))}}</div>
       <table class="user-tbl" style="width:100%;border:1px solid var(--bd);border-radius:6px;">
-        <thead><tr><th style="padding:8px 12px;">Code</th><th style="padding:8px 12px;">Contract / Project</th><th style="padding:8px 12px;">Total Records</th><th style="padding:8px 12px;">Completed</th><th style="padding:8px 12px;">% Done</th><th style="padding:8px 12px;">Overdue</th></tr></thead>
+        <thead><tr><th style="padding:8px 12px;">${{escHtml(_omT('dash.th_code', null, 'Code'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('om.exec_th_contract', null, 'Contract / Project'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('om.kpi_records', null, 'Total Records'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('status.completed', null, 'Completed'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('om.exec_th_pct_done', null, '% Done'))}}</th><th style="padding:8px 12px;">${{escHtml(_omT('dash.th_overdue', null, 'Overdue'))}}</th></tr></thead>
         <tbody>
     `;
     (r.projects || []).forEach(p => {{
       html += `<tr>
-        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${{escHtml(p.code||'')}}</td>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);"><span class="bidi-ltr">${{escHtml(p.code||'')}}</span></td>
         <td style="padding:8px 12px;font-weight:600;">${{escHtml(p.name||'')}}</td>
-        <td style="padding:8px 12px;">${{p.total}}</td>
-        <td style="padding:8px 12px;color:#16a34a;font-weight:600;">${{p.approved}}</td>
-        <td style="padding:8px 12px;"><div style="display:flex;align-items:center;gap:6px;"><div style="flex:1;height:6px;background:var(--bd);border-radius:3px;overflow:hidden;"><div style="width:${{p.pct}}%;height:100%;background:#16a34a;"></div></div><span style="font-size:10.5px;font-weight:700;">${{p.pct}}%</span></div></td>
-        <td style="padding:8px 12px;color:${{p.overdue>0?'#ef4444':'var(--mu)'}};font-weight:${{p.overdue>0?700:400}};">${{p.overdue}}</td>
+        <td class="bidi-ltr" style="padding:8px 12px;">${{p.total}}</td>
+        <td class="bidi-ltr" style="padding:8px 12px;color:#16a34a;font-weight:600;">${{p.approved}}</td>
+        <td style="padding:8px 12px;"><div style="display:flex;align-items:center;gap:6px;"><div style="flex:1;height:6px;background:var(--bd);border-radius:3px;overflow:hidden;"><div style="width:${{p.pct}}%;height:100%;background:#16a34a;"></div></div><span class="bidi-ltr" style="font-size:10.5px;font-weight:700;">${{p.pct}}%</span></div></td>
+        <td class="bidi-ltr" style="padding:8px 12px;color:${{p.overdue>0?'#ef4444':'var(--mu)'}};font-weight:${{p.overdue>0?700:400}};">${{p.overdue}}</td>
       </tr>`;
     }});
     html += '</tbody></table>';
     container.innerHTML = html;
   }} catch(e) {{
-    container.innerHTML = '<div style="color:red;padding:20px;">Error: ' + escHtml(e.message) + '</div>';
+    container.innerHTML = '<div style="color:red;padding:20px;">' + escHtml(_omT('common.error', null, 'Error')) + ': ' + escHtml(e.message) + '</div>';
   }}
 }}
 
 async function loadOmOverdue() {{
   const tbody = document.getElementById('om-overdue-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--mu);">Loading overdue records...</td></tr>';
+  tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--mu);">${{escHtml(_omT('om.ov_loading', null, 'Loading overdue records...'))}}</td></tr>`;
   try {{
     const ws = document.body.getAttribute('data-workspace') || 'OM';
     const list = await apiFetch('/api/analytics/overdue?workspace_id=' + encodeURIComponent(ws)) || [];
     if (!list.length) {{
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#16a34a;font-weight:600;">🎉 No overdue records found across contracts!</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:#16a34a;font-weight:600;">${{escHtml(_omT('om.ov_none', null, '🎉 No overdue records found across contracts!'))}}</td></tr>`;
       return;
     }}
     let html = '';
@@ -7383,17 +8308,17 @@ async function loadOmOverdue() {{
       html += `
         <tr>
           <td style="padding:8px 12px;font-weight:600;">${{escHtml(r.project_name || r.project_id || '—')}}</td>
-          <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${{escHtml(r.doc_no || r.id || '—')}}</td>
+          <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);"><span class="bidi-ltr">${{escHtml(r.doc_no || r.id || '—')}}</span></td>
           <td style="padding:8px 12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${{escHtml(r.title || r.subject || '—')}}</td>
-          <td style="padding:8px 12px;color:var(--mu);">${{escHtml(r.target_date || '—')}}</td>
-          <td style="padding:8px 12px;"><span class="badge" style="background:#fee2e2;color:#991b1b;font-weight:600;">${{escHtml(r.status || 'Pending')}}</span></td>
-          <td style="padding:8px 12px;color:#ef4444;font-weight:700;">+${{r.days_overdue || 0}}d</td>
+          <td style="padding:8px 12px;color:var(--mu);"><span class="bidi-ltr">${{escHtml(r.target_date || '—')}}</span></td>
+          <td style="padding:8px 12px;"><span class="badge" style="background:#fee2e2;color:#991b1b;font-weight:600;">${{escHtml(_omStatusLbl(r.status || 'Pending'))}}</span></td>
+          <td class="bidi-ltr" style="padding:8px 12px;color:#ef4444;font-weight:700;">+${{r.days_overdue || 0}}d</td>
         </tr>
       `;
     }});
     tbody.innerHTML = html;
   }} catch(e) {{
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:red;">Error: ' + escHtml(e.message) + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:red;">' + escHtml(_omT('common.error', null, 'Error')) + ': ' + escHtml(e.message) + '</td></tr>';
   }}
 }}
 
@@ -7413,8 +8338,8 @@ async function loadOmAnalytics() {{
       agingHtml += `
         <div>
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
-            <span>${{escHtml(b.bucket || b.label || '')}}</span>
-            <strong>${{b.count || 0}} items</strong>
+            <span class="bidi-ltr">${{escHtml(b.bucket || b.label || '')}}</span>
+            <strong>${{escHtml(_omT('om.ana_items_unit', {{count: b.count || 0}}, (b.count || 0) + ' items'))}}</strong>
           </div>
           <div style="height:8px;background:var(--bd);border-radius:4px;overflow:hidden;">
             <div style="width:${{Math.min(100, (b.pct || (b.count*10)))}}%;height:100%;background:var(--pr);"></div>
@@ -7423,21 +8348,21 @@ async function loadOmAnalytics() {{
       `;
     }});
     agingHtml += '</div>';
-    agingEl.innerHTML = (aging && aging.length) ? agingHtml : '<div style="color:var(--mu);font-size:12px;">No aging data available.</div>';
+    agingEl.innerHTML = (aging && aging.length) ? agingHtml : `<div style="color:var(--mu);font-size:12px;">${{escHtml(_omT('om.ana_no_aging', null, 'No aging data available.'))}}</div>`;
 
     let trendHtml = '<div style="display:flex;flex-direction:column;gap:8px;">';
     (trend || []).slice(-6).forEach(t => {{
       trendHtml += `
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd);font-size:11px;">
-          <span>${{escHtml(t.month || t.period || '')}}</span>
-          <span style="font-weight:700;">${{t.total || t.count || 0}} records</span>
+          <span class="bidi-ltr">${{escHtml(t.month || t.period || '')}}</span>
+          <span style="font-weight:700;">${{escHtml(_omT('om.ana_records_unit', {{count: t.total || t.count || 0}}, (t.total || t.count || 0) + ' records'))}}</span>
         </div>
       `;
     }});
     trendHtml += '</div>';
-    trendEl.innerHTML = (trend && trend.length) ? trendHtml : '<div style="color:var(--mu);font-size:12px;">No trend data available.</div>';
+    trendEl.innerHTML = (trend && trend.length) ? trendHtml : `<div style="color:var(--mu);font-size:12px;">${{escHtml(_omT('om.ana_no_trend', null, 'No trend data available.'))}}</div>`;
   }} catch(e) {{
-    agingEl.innerHTML = '<div style="color:red;">Error loading analytics</div>';
+    agingEl.innerHTML = `<div style="color:red;">${{escHtml(_omT('om.ana_err', null, 'Error loading analytics'))}}</div>`;
   }}
 }}
 
@@ -7457,7 +8382,7 @@ async function submitNewOmContract() {{
   const client = document.getElementById('om-new-client').value.trim();
   
   if (!id || !name || !code) {{
-    alert('Please enter Contract ID, Name, and Code.');
+    alert(_omT('om.err_req_fields', null, 'Please enter Contract ID, Name, and Code.'));
     return;
   }}
   
@@ -7470,19 +8395,19 @@ async function submitNewOmContract() {{
     if (res && res.ok) {{
       window.location = '/?ws=' + encodeURIComponent(currentWs);
     }} else {{
-      alert((res && res.error) || 'Failed to create contract');
+      alert((res && res.error) || _omT('om.err_create', null, 'Failed to create contract'));
     }}
   }} catch(e) {{
-    alert('Error creating contract: ' + e.message);
+    alert(_omT('om.err_create_msg', {{error: e.message}}, 'Error creating contract: ' + e.message));
   }}
 }}
 
 async function delProject(pid, pname) {{
-  if (!confirm('Are you sure you want to delete contract: ' + pname + '? All work orders and documents inside will be deleted.')) return;
+  if (!confirm(_omT('om.confirm_del', {{name: pname}}, 'Are you sure you want to delete contract: ' + pname + '? All work orders and documents inside will be deleted.'))) return;
   try {{
     const r = await apiFetch('/api/projects/delete/' + encodeURIComponent(pid), {{ method: 'POST' }});
     if (r && r.ok) window.location.reload();
-    else alert((r && r.error) || 'Delete failed');
+    else alert((r && r.error) || _omT('om.err_del', null, 'Delete failed'));
   }} catch(e) {{
     alert(e.message);
   }}
@@ -7509,7 +8434,7 @@ async function loadOmAudit(reset=false) {{
   params.set('workspace_id', ws);
   
   if (tbody && (reset || _omAuditOffset === 0)) {{
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">Loading logs...</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">${{escHtml(_omT('om.aud_loading', null, 'Loading logs...'))}}</td></tr>`;
   }}
 
   try {{
@@ -7524,21 +8449,21 @@ async function loadOmAudit(reset=false) {{
       const pSel = document.getElementById('om-aud-pid');
       if (pSel) {{
         const curPid = pSel.value;
-        pSel.innerHTML = '<option value="">All Contracts / Facilities</option>' +
+        pSel.innerHTML = `<option value="">${{escHtml(_omT('om.aud_all_contracts', null, 'All Contracts / Facilities'))}}</option>` +
           (data.projects || []).map(p => `<option value="${{p.id}}"${{p.id === curPid ? ' selected' : ''}}>${{p.code ? p.code + ' — ' : ''}}${{p.name}}</option>`).join('');
       }}
 
       const uSel = document.getElementById('om-aud-user');
       if (uSel) {{
         const curU = uSel.value;
-        uSel.innerHTML = '<option value="">All Users</option>' +
+        uSel.innerHTML = `<option value="">${{escHtml(_omT('dash.aud_all_users', null, 'All Users'))}}</option>` +
           (data.users || []).map(u => `<option value="${{u}}"${{u === curU ? ' selected' : ''}}>${{u}}</option>`).join('');
       }}
 
       const aSel = document.getElementById('om-aud-action');
       if (aSel) {{
         const curA = aSel.value;
-        aSel.innerHTML = '<option value="">All Actions</option>' +
+        aSel.innerHTML = `<option value="">${{escHtml(_omT('dash.aud_all_actions', null, 'All Actions'))}}</option>` +
           (data.actions || []).map(a => `<option value="${{a}}"${{a === curA ? ' selected' : ''}}>${{a}}</option>`).join('');
       }}
     }} else if (data.projects) {{
@@ -7549,7 +8474,7 @@ async function loadOmAudit(reset=false) {{
     _omAuditHasMore = rows.length === 100;
 
     if (!rows.length) {{
-      if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
+      if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">${{escHtml(_omT('dash.aud_no_activity', null, 'No activity found'))}}</td></tr>`;
     }} else {{
       const _dash = '<span style="color:var(--mu);opacity:0.4">—</span>';
       const _val = (v) => {{
@@ -7582,16 +8507,16 @@ async function loadOmAudit(reset=false) {{
 
         const projRaw = _omAuditProjMap[r.project_id] || r.project_id || '';
         const projDisplay = _val(projRaw);
-        const docDisplay = (r.doc_no || r.document_id) ? `<span style="color:var(--pr);font-weight:600">${{escHtml(r.doc_no || r.document_id)}}</span>` : _dash;
+        const docDisplay = (r.doc_no || r.document_id) ? `<span class="bidi-ltr" style="color:var(--pr);font-weight:600">${{escHtml(r.doc_no || r.document_id)}}</span>` : _dash;
         const oldDisplay = r.old_value ? `<span style="color:#dc2626">${{escHtml(r.old_value)}}</span>` : _dash;
         const newDisplay = r.new_value ? `<span style="color:#166534">${{escHtml(r.new_value)}}</span>` : _dash;
-        const ipDisplay = r.ip_address ? `<span style="font-family:monospace;color:var(--mu);font-size:9.5px">${{escHtml(r.ip_address)}}</span>` : _dash;
-        const devDisplay = (r.device || r.user_agent) ? `<span style="color:var(--tx);font-size:9.5px">${{escHtml(r.device || r.user_agent)}}</span>` : _dash;
+        const ipDisplay = r.ip_address ? `<span class="bidi-ltr" style="font-family:monospace;color:var(--mu);font-size:9.5px">${{escHtml(r.ip_address)}}</span>` : _dash;
+        const devDisplay = (r.device || r.user_agent) ? `<span class="bidi-ltr" style="color:var(--tx);font-size:9.5px">${{escHtml(r.device || r.user_agent)}}</span>` : _dash;
 
         html += `<tr class="${{i % 2 === 0 ? '' : 'alt'}}">
-          <td style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
-          <td style="font-weight:600;font-size:11px">${{escHtml(r.username || '')}}</td>
-          <td><span style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{escHtml(r.action || '')}}</span></td>
+          <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap"><span class="bidi-ltr">${{tsStr}}</span></td>
+          <td style="font-weight:600;font-size:11px"><span class="bidi-ltr">${{escHtml(r.username || '')}}</span></td>
+          <td><span class="bidi-ltr" style="background:${{actionBg}};color:${{actionColor}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{escHtml(r.action || '')}}</span></td>
           <td style="font-size:10px;color:var(--mu)" title="${{escHtml(r.project_id || '')}}">${{projDisplay}}</td>
           <td style="font-size:11px" title="${{escHtml(r.doc_no || r.document_id || '')}}">${{docDisplay}}</td>
           <td style="font-size:10px;color:var(--mu)" title="${{escHtml(r.field_name || '')}}">${{_val(r.field_name)}}</td>
@@ -7606,15 +8531,15 @@ async function loadOmAudit(reset=false) {{
     }}
 
     const page = Math.floor(_omAuditOffset / 100) + 1;
-    if (countEl) countEl.textContent = `Showing ${{rows.length}} entries`;
+    if (countEl) countEl.textContent = _omT('dash.aud_showing', {{count: rows.length}}, `Showing ${{rows.length}} entries`);
     const pEl = document.getElementById('om-aud-page');
-    if (pEl) pEl.textContent = `Page ${{page}}`;
+    if (pEl) pEl.textContent = _omT('dash.aud_page', {{page}}, `Page ${{page}}`);
     const prevBtn = document.getElementById('om-aud-prev');
     if (prevBtn) prevBtn.disabled = _omAuditOffset === 0;
     const nextBtn = document.getElementById('om-aud-next');
     if (nextBtn) nextBtn.disabled = !_omAuditHasMore;
   }} catch(e) {{
-    if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:#ef4444;">Error loading audit log: ' + escHtml(e.message) + '</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:#ef4444;">' + escHtml(_omT('om.aud_err', {{error: e.message}}, 'Error loading audit log: ' + e.message)) + '</td></tr>';
   }}
 }}
 
@@ -7752,6 +8677,24 @@ body.dark .hse-pill.warn { background:rgba(146,64,14,0.35); color:#fde68a; borde
 body.dark .hse-pill.ok { background:rgba(22,101,52,0.35); color:#bbf7d0; border-color:#14532d; }
 body.dark .hse-alert-item { background:#0f172a; border-color:#334155; }
 body.dark .hse-alert-item.danger { background:rgba(127,29,29,0.28); }
+html[dir="rtl"] .hse-header-bar {
+  border-left:1px solid var(--bd); border-right:4px solid #10b981;
+}
+html[dir="rtl"] .hse-alert-item {
+  border-left:1px solid var(--bd); border-right:4px solid #f59e0b;
+}
+html[dir="rtl"] .hse-alert-item.danger {
+  border-left-color:var(--bd); border-right-color:#ef4444;
+}
+html[dir="rtl"] .hse-kpi-card, html[dir="rtl"] .om-kpi-card, html[dir="rtl"] .hse-panel, html[dir="rtl"] .om-card {
+  text-align:right;
+}
+html[dir="rtl"] .hse-kpi-lbl, html[dir="rtl"] .om-kpi-lbl {
+  letter-spacing:0; text-transform:none;
+}
+html[dir="rtl"] .user-tbl th, html[dir="rtl"] .user-tbl td, html[dir="rtl"] .dt-tbl th, html[dir="rtl"] .dt-tbl td {
+  text-align:right;
+}
 """
 
 
@@ -7763,6 +8706,11 @@ let _hseAlertType = '';
 let _hseAuditOffset = 0;
 let _hseAuditHasMore = false;
 let _hseAuditProjMap = {};
+const _hseT = (k, v, fb) => {
+  const res = typeof window.t === 'function' ? window.t(k, v) : '';
+  return (res && res !== k) ? res : (fb || k);
+};
+const _hseIsRtl = () => (window.DCR_DIR === 'rtl' || document.documentElement.dir === 'rtl');
 
 function showHseTab(tabName, btn) {
   document.querySelectorAll('.psel-bar .tbtn').forEach(b => b.classList.remove('active'));
@@ -7834,7 +8782,7 @@ async function refreshHseDashboard() {
     };
     renderHseState();
   } catch (e) {
-    toast('Failed to load HSE metrics: ' + e.message, 'er');
+    toast(_hseT('hse.err_load_metrics', {error: e.message}, 'Failed to load HSE metrics: ' + e.message), 'er');
   }
 }
 
@@ -7855,7 +8803,7 @@ function renderHseState() {
   const ySel = document.getElementById('hse-filter-year');
   if (ySel && Array.isArray(_hseState.available_years)) {
     const curY = ySel.value;
-    ySel.innerHTML = '<option value="">All Years</option>' +
+    ySel.innerHTML = `<option value="">${escHtml(_hseT('hse.all_years', null, 'All Years'))}</option>` +
       _hseState.available_years.map(y => `<option value="${y}"${String(y) === String(curY) ? ' selected' : ''}>${y}</option>`).join('');
   }
 
@@ -7864,13 +8812,17 @@ function renderHseState() {
   if (ltiDaysEl) ltiDaysEl.textContent = ltiSt.days !== null && ltiSt.days !== undefined ? fmtHseNum(ltiSt.days) : '—';
   setCardTone('hse-card-lti', 'hse-kpi-lti-days', streakTone(ltiSt));
   const ltiSub = document.getElementById('hse-sub-lti');
-  if (ltiSub) ltiSub.textContent = ltiSt.ref_date ? `Best: ${fmtHseNum(ltiSt.best_days)}d • Ref: ${ltiSt.ref_date}` : 'No dated HSE records yet';
+  if (ltiSub) ltiSub.textContent = ltiSt.ref_date
+    ? _hseT('hse.sub_lti_best', {best: fmtHseNum(ltiSt.best_days), ref: ltiSt.ref_date}, `Best: ${fmtHseNum(ltiSt.best_days)}d • Ref: ${ltiSt.ref_date}`)
+    : _hseT('hse.sub_lti_empty', null, 'No dated HSE records yet');
 
   const anyDaysEl = document.getElementById('hse-kpi-any-days');
   if (anyDaysEl) anyDaysEl.textContent = anySt.days !== null && anySt.days !== undefined ? fmtHseNum(anySt.days) : '—';
   setCardTone('hse-card-any', 'hse-kpi-any-days', streakTone(anySt));
   const anySub = document.getElementById('hse-sub-any');
-  if (anySub) anySub.textContent = anySt.ref_date ? `FAC/MTC/LTI • Ref: ${anySt.ref_date}` : 'No injury baseline recorded';
+  if (anySub) anySub.textContent = anySt.ref_date
+    ? _hseT('hse.sub_any_ref', {ref: anySt.ref_date}, `FAC/MTC/LTI • Ref: ${anySt.ref_date}`)
+    : _hseT('hse.sub_any_empty', null, 'No injury baseline recorded');
 
   // Rates
   const hasHrs = !!rates.has_hours;
@@ -7878,45 +8830,49 @@ function renderHseState() {
   if (ltifEl) ltifEl.textContent = hasHrs ? fmtHseNum(rates.ltif, 2) : '—';
   setCardTone('hse-card-ltif', 'hse-kpi-ltif', !hasHrs ? 'info' : ((rates.ltif || 0) > 0 ? 'bad' : 'good'));
   const ltifSub = document.getElementById('hse-sub-ltif');
-  if (ltifSub) ltifSub.textContent = hasHrs ? `LTI: ${inc.lti || 0} | Fatalities: ${inc.fatalities || 0}` : 'Log MHR hours to compute';
+  if (ltifSub) ltifSub.textContent = hasHrs
+    ? _hseT('hse.sub_ltif_val', {lti: inc.lti || 0, fat: inc.fatalities || 0}, `LTI: ${inc.lti || 0} | Fatalities: ${inc.fatalities || 0}`)
+    : _hseT('hse.sub_ltif_empty', null, 'Log MHR hours to compute');
 
   const trirEl = document.getElementById('hse-kpi-trir');
   if (trirEl) trirEl.textContent = hasHrs ? fmtHseNum(rates.trir, 2) : '—';
   setCardTone('hse-card-trir', 'hse-kpi-trir', !hasHrs ? 'info' : ((rates.trir || 0) > 0 ? 'warn' : 'good'));
   const trirSub = document.getElementById('hse-sub-trir');
-  if (trirSub) trirSub.textContent = hasHrs ? `Recordable: ${inc.recordable || 0} | FAC: ${inc.fac || 0}` : 'LTI + MTC per 1M hrs';
+  if (trirSub) trirSub.textContent = hasHrs
+    ? _hseT('hse.sub_trir_val', {rec: inc.recordable || 0, fac: inc.fac || 0}, `Recordable: ${inc.recordable || 0} | FAC: ${inc.fac || 0}`)
+    : _hseT('hse.sub_trir_empty', null, 'LTI + MTC per 1M hrs');
 
   const sevEl = document.getElementById('hse-kpi-sev');
   if (sevEl) sevEl.textContent = hasHrs ? fmtHseNum(rates.severity_rate, 2) : '—';
   setCardTone('hse-card-sev', 'hse-kpi-sev', !hasHrs ? 'info' : ((rates.severity_rate || 0) > 0 ? 'bad' : 'good'));
   const sevSub = document.getElementById('hse-sub-sev');
-  if (sevSub) sevSub.textContent = `Lost Days: ${fmtHseNum(inc.lost_days || 0)}`;
+  if (sevSub) sevSub.textContent = _hseT('hse.kpi_sev_sub', {days: fmtHseNum(inc.lost_days || 0)}, `Lost Days: ${fmtHseNum(inc.lost_days || 0)}`);
 
   const hrsEl = document.getElementById('hse-kpi-hours');
   if (hrsEl) hrsEl.textContent = fmtHseNum(k.man_hours || 0);
   const hrsSub = document.getElementById('hse-sub-hours');
-  if (hrsSub) hrsSub.textContent = `${(_hseState.projects || []).length} active HSE project(s)`;
+  if (hrsSub) hrsSub.textContent = _hseT('hse.kpi_hours_sub', {count: (_hseState.projects || []).length}, `${(_hseState.projects || []).length} active HSE project(s)`);
 
   // Leading & summary KPIs
   const obsOpenEl = document.getElementById('hse-sum-obs-open');
   if (obsOpenEl) obsOpenEl.textContent = `${obs.open || 0} / ${obs.total || 0}`;
   const obsSubEl = document.getElementById('hse-sum-obs-sub');
-  if (obsSubEl) obsSubEl.textContent = `Closed: ${obs.closed || 0} • Stale (>30d): ${obs.stale || 0}`;
+  if (obsSubEl) obsSubEl.textContent = _hseT('hse.kpi_obs_sub', {closed: obs.closed || 0, stale: obs.stale || 0}, `Closed: ${obs.closed || 0} • Stale (>30d): ${obs.stale || 0}`);
 
   const ptwOpenEl = document.getElementById('hse-sum-ptw-open');
   if (ptwOpenEl) ptwOpenEl.textContent = fmtHseNum(ptw.open || 0);
   const ptwSubEl = document.getElementById('hse-sum-ptw-sub');
-  if (ptwSubEl) ptwSubEl.textContent = `Expiring: ${ptw.expiring || 0} • Overdue: ${ptw.overdue || 0}`;
+  if (ptwSubEl) ptwSubEl.textContent = _hseT('hse.kpi_ptw_sub', {expiring: ptw.expiring || 0, overdue: ptw.overdue || 0}, `Expiring: ${ptw.expiring || 0} • Overdue: ${ptw.overdue || 0}`);
 
   const feiExpEl = document.getElementById('hse-sum-fei-exp');
   if (feiExpEl) feiExpEl.textContent = fmtHseNum(fei.actionable || 0);
   const feiSubEl = document.getElementById('hse-sum-fei-sub');
-  if (feiSubEl) feiSubEl.textContent = `Expired: ${fei.expired || 0} • Due ≤${k.warn_days || 30}d: ${fei.expiring || 0}`;
+  if (feiSubEl) feiSubEl.textContent = _hseT('hse.kpi_fei_sub', {expired: fei.expired || 0, days: k.warn_days || 30, expiring: fei.expiring || 0}, `Expired: ${fei.expired || 0} • Due ≤${k.warn_days || 30}d: ${fei.expiring || 0}`);
 
   const compEl = document.querySelector('#hse-card-sum-completed .om-kpi-val');
   if (compEl) compEl.textContent = fmtHseNum(sum.completed_records || 0);
   const totSubEl = document.getElementById('hse-sum-tot-sub');
-  if (totSubEl) totSubEl.textContent = `${fmtHseNum(sum.total_records || 0)} total across ${(_hseState.projects || []).length} site(s)`;
+  if (totSubEl) totSubEl.textContent = _hseT('hse.kpi_completed_sub', {total: fmtHseNum(sum.total_records || 0), sites: (_hseState.projects || []).length}, `${fmtHseNum(sum.total_records || 0)} total across ${(_hseState.projects || []).length} site(s)`);
 
   const alertBadge = document.getElementById('hse-tab-alert-badge');
   if (alertBadge) {
@@ -7934,21 +8890,21 @@ function renderHseState() {
 function _hseAlertItemHtml(a) {
   const isDanger = a.severity === 'danger';
   const cls = isDanger ? 'danger' : '';
-  const tag = isDanger ? 'CRITICAL' : 'WARNING';
+  const tag = isDanger ? _hseT('hse.alert_critical', null, 'CRITICAL') : _hseT('hse.alert_warning', null, 'WARNING');
   const tagStyle = isDanger ? 'background:#fee2e2;color:#991b1b;' : 'background:#fef3c7;color:#92400e;';
   const linkUrl = `/app?p=${encodeURIComponent(a.project_id)}&tab=${encodeURIComponent(a.dt_id)}&highlight=${encodeURIComponent(a.id)}`;
   return `
     <div class="hse-alert-item ${cls}">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span class="badge" style="${tagStyle}font-weight:700;font-size:10px;">${tag}</span>
-        <span class="badge" style="background:rgba(16,185,129,0.14);color:#047857;font-family:monospace;font-weight:700;">${escHtml(a.dt_code)}</span>
-        <strong style="font-family:monospace;">${escHtml(a.doc_no)}</strong>
+        <span class="badge" style="${tagStyle}font-weight:700;font-size:10px;">${escHtml(tag)}</span>
+        <span class="badge bidi-ltr" style="background:rgba(16,185,129,0.14);color:#047857;font-family:monospace;font-weight:700;">${escHtml(a.dt_code)}</span>
+        <strong class="bidi-ltr" style="font-family:monospace;">${escHtml(a.doc_no)}</strong>
         <span>${escHtml(a.title)}</span>
-        <span style="color:var(--mu);font-size:11px;">• ${escHtml(a.project_code || a.project_id)}</span>
+        <span class="bidi-ltr" style="color:var(--mu);font-size:11px;">• ${escHtml(a.project_code || a.project_id)}</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
         <span style="font-size:11px;font-weight:700;color:${isDanger ? '#dc2626' : '#d97706'};">${escHtml(a.detail)}</span>
-        <a href="${linkUrl}" class="tbtn" style="text-decoration:none;">Open ➔</a>
+        <a href="${linkUrl}" class="tbtn" style="text-decoration:none;">${escHtml(_hseT('hse.alert_open', null, 'Open'))} <span class="rtl-flip">➔</span></a>
       </div>
     </div>
   `;
@@ -7959,13 +8915,13 @@ function renderHseAlertsPreview() {
   if (!wrap) return;
   const list = (_hseState && _hseState.alerts) || [];
   if (!list.length) {
-    wrap.innerHTML = '<div style="padding:18px;text-align:center;color:#16a34a;font-weight:700;font-size:12.5px;">✅ No expired PTWs, expiring equipment, or stale observations (>30d).</div>';
+    wrap.innerHTML = `<div style="padding:18px;text-align:center;color:#16a34a;font-weight:700;font-size:12.5px;">${escHtml(_hseT('hse.alerts_none', null, '✅ No expired PTWs, expiring equipment, or stale observations (>30d).'))}</div>`;
     return;
   }
   const top = list.slice(0, 6);
   let html = top.map(_hseAlertItemHtml).join('');
   if (list.length > top.length) {
-    html += `<div style="text-align:right;margin-top:6px;"><button class="tbtn" onclick="showHseTab('alerts', document.getElementById('hse-btn-alerts'))">View all ${list.length} alerts ➔</button></div>`;
+    html += `<div style="text-align:end;margin-top:6px;"><button class="tbtn" onclick="showHseTab('alerts', document.getElementById('hse-btn-alerts'))">${escHtml(_hseT('hse.alerts_view_all', {count: list.length}, 'View all ' + list.length + ' alerts'))} <span class="rtl-flip">➔</span></button></div>`;
   }
   wrap.innerHTML = html;
 }
@@ -7986,24 +8942,69 @@ function renderHseAlertsTab() {
     return String(a.dt_code || '').toLowerCase() === _hseAlertType;
   });
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#16a34a;font-weight:700;">✅ No alerts matching this filter.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:#16a34a;font-weight:700;">${escHtml(_hseT('hse.alerts_none_filter', null, '✅ No alerts matching this filter.'))}</td></tr>`;
     return;
   }
   tbody.innerHTML = list.map(a => {
     const isDanger = a.severity === 'danger';
+    const tag = isDanger ? _hseT('hse.alert_critical', null, 'CRITICAL') : _hseT('hse.alert_warning', null, 'WARNING');
     const linkUrl = `/app?p=${encodeURIComponent(a.project_id)}&tab=${encodeURIComponent(a.dt_id)}&highlight=${encodeURIComponent(a.id)}`;
     return `
       <tr>
-        <td style="padding:8px 12px;"><span class="badge" style="${isDanger ? 'background:#fee2e2;color:#991b1b;' : 'background:#fef3c7;color:#92400e;'}font-weight:700;">${isDanger ? 'CRITICAL' : 'WARNING'}</span></td>
-        <td style="padding:8px 12px;font-family:monospace;font-weight:700;">${escHtml(a.dt_code)}</td>
-        <td style="padding:8px 12px;font-weight:600;">${escHtml(a.project_code || a.project_id)}</td>
-        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);">${escHtml(a.doc_no)}</td>
+        <td style="padding:8px 12px;"><span class="badge" style="${isDanger ? 'background:#fee2e2;color:#991b1b;' : 'background:#fef3c7;color:#92400e;'}font-weight:700;">${escHtml(tag)}</span></td>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;"><span class="bidi-ltr">${escHtml(a.dt_code)}</span></td>
+        <td style="padding:8px 12px;font-weight:600;"><span class="bidi-ltr">${escHtml(a.project_code || a.project_id)}</span></td>
+        <td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--pr);"><span class="bidi-ltr">${escHtml(a.doc_no)}</span></td>
         <td style="padding:8px 12px;">${escHtml(a.title)}${a.location ? ` <span style="color:var(--mu);font-size:11px;">(${escHtml(a.location)})</span>` : ''}</td>
         <td style="padding:8px 12px;color:${isDanger ? '#dc2626' : '#d97706'};font-weight:700;">${escHtml(a.detail)}</td>
-        <td style="padding:8px 12px;text-align:right;"><a href="${linkUrl}" class="tbtn" style="text-decoration:none;">Open ➔</a></td>
+        <td style="padding:8px 12px;text-align:end;"><a href="${linkUrl}" class="tbtn" style="text-decoration:none;">${escHtml(_hseT('hse.alert_open', null, 'Open'))} <span class="rtl-flip">➔</span></a></td>
       </tr>
     `;
   }).join('');
+}
+
+function _formatHseRegSubtitle(r) {
+  const code = String((r && r.code) || '').trim().toUpperCase();
+  const sc = (r && r.sub_counts) || {};
+  if (code === 'PTW' || code === 'OBS' || code === 'SVP') {
+    const op = sc.open !== undefined ? sc.open : (r.open || 0);
+    const cl = sc.closed !== undefined ? sc.closed : (r.closed || 0);
+    return _hseT('hse.reg_open_closed', {open: op, closed: cl}, 'Open: ' + op + ' • Closed: ' + cl);
+  }
+  if (code === 'INC') {
+    const lti = sc.lti || 0, mtc = sc.mtc || 0, fac = sc.fac || 0;
+    return _hseT('hse.reg_inc', {lti: lti, mtc: mtc, fac: fac}, 'LTI: ' + lti + ' • MTC: ' + mtc + ' • FAC: ' + fac);
+  }
+  if (code === 'FEI') {
+    const valid = sc.valid || 0, expiring = sc.expiring || 0, expired = sc.expired || 0;
+    return _hseT('hse.reg_fei', {valid: valid, expiring: expiring, expired: expired}, 'Valid: ' + valid + ' • Expiring: ' + expiring + ' • Expired: ' + expired);
+  }
+  if (code === 'MHR') {
+    const months = sc.logged_months !== undefined ? sc.logged_months : (r.total || 0);
+    const hours = fmtHseNum(sc.total_hours || 0, 0);
+    return _hseT('hse.reg_mhr', {months: months, hours: hours}, 'Logged Months: ' + months + ' • ' + hours + ' hrs');
+  }
+  if (code === 'WKR') {
+    const count = sc.workers !== undefined ? sc.workers : (r.total || 0);
+    return _hseT('hse.reg_wkr', {count: count}, 'Registered Workers: ' + count);
+  }
+  if (code === 'JSA') {
+    const approved = sc.approved || 0, pending = sc.pending || 0;
+    return _hseT('hse.reg_jsa', {approved: approved, pending: pending}, 'Approved: ' + approved + ' • Pending/Draft: ' + pending);
+  }
+  if (code === 'TBT') {
+    const count = sc.talks !== undefined ? sc.talks : (r.total || 0);
+    return _hseT('hse.reg_tbt', {count: count}, 'Logged Talks: ' + count);
+  }
+  if (code === 'CEV') {
+    const count = sc.evaluations !== undefined ? sc.evaluations : (r.total || 0);
+    return _hseT('hse.reg_cev', {count: count}, 'Evaluations: ' + count);
+  }
+  if (code === 'EVAC') {
+    const count = sc.drills !== undefined ? sc.drills : (r.total || 0);
+    return _hseT('hse.reg_evac', {count: count}, 'Logged Drills: ' + count);
+  }
+  return r.subtitle || _hseT('hse.reg_open_closed', {open: r.open || 0, closed: r.closed || 0}, 'Open: ' + (r.open || 0) + ' • Closed: ' + (r.closed || 0));
 }
 
 function renderHseRegisterCards() {
@@ -8014,18 +9015,22 @@ function renderHseRegisterCards() {
     wrap.innerHTML = '';
     return;
   }
-  wrap.innerHTML = regs.map(r => `
+  wrap.innerHTML = regs.map(r => {
+    const dtName = (typeof window.tDt === 'function') ? window.tDt(r.code, r.name) : (r.name || r.code);
+    const sub = _formatHseRegSubtitle(r);
+    return `
     <div class="hse-reg-card">
       <div>
         <div style="display:flex;align-items:center;gap:6px;">
-          <span class="badge" style="background:rgba(16,185,129,0.14);color:#047857;font-weight:700;font-family:monospace;font-size:11px;">${escHtml(r.code)}</span>
-          <span style="font-weight:700;font-size:12px;">${escHtml(r.name)}</span>
+          <span class="badge bidi-ltr" style="background:rgba(16,185,129,0.14);color:#047857;font-weight:700;font-family:monospace;font-size:11px;">${escHtml(r.code)}</span>
+          <span style="font-weight:700;font-size:12px;">${escHtml(dtName)}</span>
         </div>
-        <div style="font-size:10.5px;color:var(--mu);margin-top:3px;">${escHtml(r.subtitle || ('Open: ' + r.open + ' • Closed: ' + r.closed))}</div>
+        <div dir="auto" style="font-size:10.5px;color:var(--mu);margin-top:3px;">${escHtml(sub)}</div>
       </div>
-      <div style="font-size:18px;font-weight:800;font-family:monospace;">${r.total}</div>
+      <div class="bidi-ltr" style="font-size:18px;font-weight:800;font-family:monospace;">${r.total}</div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function _drawHseCanvasChart(canvas, labels, datasets, dark) {
@@ -8125,6 +9130,7 @@ function _drawHseCanvasChart(canvas, labels, datasets, dark) {
 
 function renderHseCharts() {
   const dark = document.body.classList.contains('dark');
+  const isRtl = _hseIsRtl();
   const gridColor = dark ? 'rgba(159,176,198,.16)' : 'rgba(0,0,0,.06)';
   const tickColor = dark ? '#cbd5e1' : '#54657d';
   const legendColor = dark ? '#dbe7f3' : '#334155';
@@ -8134,8 +9140,8 @@ function renderHseCharts() {
   const trends = (_hseState && _hseState.monthly_trends) || [];
   const trendLabels = trends.map(t => t.label);
   const trendDatasets = [
-    { label: 'OBS Open', data: trends.map(t => t.observations_open), backgroundColor: '#f59e0b', borderRadius: 4, stack: 'obs' },
-    { label: 'OBS Closed', data: trends.map(t => t.observations_closed), backgroundColor: '#10b981', borderRadius: 4, stack: 'obs' },
+    { label: _hseT('hse.chart_obs_open', null, 'OBS Open'), data: trends.map(t => t.observations_open), backgroundColor: '#f59e0b', borderRadius: 4, stack: 'obs' },
+    { label: _hseT('hse.chart_obs_closed', null, 'OBS Closed'), data: trends.map(t => t.observations_closed), backgroundColor: '#10b981', borderRadius: 4, stack: 'obs' },
     { label: 'FAC', data: trends.map(t => t.incidents_fac), backgroundColor: '#38bdf8', borderRadius: 4, stack: 'inc' },
     { label: 'MTC', data: trends.map(t => t.incidents_mtc), backgroundColor: '#fb923c', borderRadius: 4, stack: 'inc' },
     { label: 'LTI', data: trends.map(t => t.incidents_lti), backgroundColor: '#ef4444', borderRadius: 4, stack: 'inc' }
@@ -8152,9 +9158,12 @@ function renderHseCharts() {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } } },
+          plugins: {
+            legend: { position: 'bottom', rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } },
+            tooltip: { rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr' }
+          },
           scales: {
-            y: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
+            y: { beginAtZero: true, stacked: true, position: isRtl ? 'right' : 'left', grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
             x: { stacked: true, grid: { display: false }, ticks: { color: tickColor } }
           }
         }
@@ -8184,9 +9193,9 @@ function renderHseCharts() {
     return r.other || 0;
   });
   const statusDatasets = [
-    { label: 'Closed / Valid', data: safeGreen, backgroundColor: '#16a34a', borderRadius: 4, stack: 'st' },
-    { label: 'Open / Expiring', data: warnAmber, backgroundColor: '#f59e0b', borderRadius: 4, stack: 'st' },
-    { label: 'LTI / Expired / Other', data: critOther, backgroundColor: '#ef4444', borderRadius: 4, stack: 'st' }
+    { label: _hseT('hse.chart_closed_valid', null, 'Closed / Valid'), data: safeGreen, backgroundColor: '#16a34a', borderRadius: 4, stack: 'st' },
+    { label: _hseT('hse.chart_open_expiring', null, 'Open / Expiring'), data: warnAmber, backgroundColor: '#f59e0b', borderRadius: 4, stack: 'st' },
+    { label: _hseT('hse.chart_crit_other', null, 'LTI / Expired / Other'), data: critOther, backgroundColor: '#ef4444', borderRadius: 4, stack: 'st' }
   ];
   if (statusEl) {
     if (_hseStatusChart && typeof _hseStatusChart.destroy === 'function') {
@@ -8200,9 +9209,12 @@ function renderHseCharts() {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } } },
+          plugins: {
+            legend: { position: 'bottom', rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr', labels: { boxWidth: 10, font: { size: 10.5 }, color: legendColor } },
+            tooltip: { rtl: isRtl, textDirection: isRtl ? 'rtl' : 'ltr' }
+          },
           scales: {
-            y: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
+            y: { beginAtZero: true, stacked: true, position: isRtl ? 'right' : 'left', grid: { color: gridColor }, ticks: { color: tickColor, precision: 0 } },
             x: { stacked: true, grid: { display: false }, ticks: { color: tickColor } }
           }
         }
@@ -8216,10 +9228,10 @@ function renderHseCharts() {
   const pillRow = document.getElementById('hse-ptw-pills');
   if (pillRow) {
     pillRow.innerHTML = `
-      <span class="hse-pill ok">Valid Open PTWs: ${ptwS.valid_active || 0}</span>
-      <span class="hse-pill warn">Expiring PTWs: ${ptwS.expiring || 0}</span>
-      <span class="hse-pill danger">Overdue PTWs: ${ptwS.overdue || 0}</span>
-      <span class="hse-pill">Closed PTWs: ${ptwS.closed || 0}</span>
+      <span class="hse-pill ok">${escHtml(_hseT('hse.pill_valid_ptw', {count: ptwS.valid_active || 0}, 'Valid Open PTWs: ' + (ptwS.valid_active || 0)))}</span>
+      <span class="hse-pill warn">${escHtml(_hseT('hse.pill_expiring_ptw', {count: ptwS.expiring || 0}, 'Expiring PTWs: ' + (ptwS.expiring || 0)))}</span>
+      <span class="hse-pill danger">${escHtml(_hseT('hse.pill_overdue_ptw', {count: ptwS.overdue || 0}, 'Overdue PTWs: ' + (ptwS.overdue || 0)))}</span>
+      <span class="hse-pill">${escHtml(_hseT('hse.pill_closed_ptw', {count: ptwS.closed || 0}, 'Closed PTWs: ' + (ptwS.closed || 0)))}</span>
     `;
   }
 }
@@ -8237,7 +9249,7 @@ async function submitNewHseSite() {
   const code = document.getElementById('om-new-code').value.trim().toUpperCase();
   const client = document.getElementById('om-new-client').value.trim();
   if (!id || !name || !code) {
-    alert('Please enter Project ID, Name, and Code.');
+    alert(_hseT('hse.err_req_fields', null, 'Please enter Project ID, Name, and Code.'));
     return;
   }
   try {
@@ -8246,18 +9258,18 @@ async function submitNewHseSite() {
       body: JSON.stringify({ id, name, code, workspace_id: 'HSE', client })
     });
     if (res && res.ok) window.location = '/?ws=HSE';
-    else alert((res && res.error) || 'Failed to create HSE site');
+    else alert((res && res.error) || _hseT('hse.err_create', null, 'Failed to create HSE site'));
   } catch (e) {
-    alert('Error creating HSE site: ' + e.message);
+    alert(_hseT('hse.err_create_msg', {error: e.message}, 'Error creating HSE site: ' + e.message));
   }
 }
 
 async function delProject(pid, pname) {
-  if (!confirm('Delete HSE site: ' + pname + '? All records inside will be permanently deleted.')) return;
+  if (!confirm(_hseT('hse.confirm_del', {name: pname}, 'Delete HSE site: ' + pname + '? All records inside will be permanently deleted.'))) return;
   try {
     const r = await apiFetch('/api/projects/delete/' + encodeURIComponent(pid), { method: 'POST' });
     if (r && r.ok) window.location.reload();
-    else alert((r && r.error) || 'Delete failed');
+    else alert((r && r.error) || _hseT('om.err_del', null, 'Delete failed'));
   } catch (e) {
     alert(e.message);
   }
@@ -8267,25 +9279,25 @@ async function loadHseDailyDigest() {
   const container = document.getElementById('hse-daily-digest-content');
   if (!container) return;
   const dVal = document.getElementById('hse-digest-date')?.value || '';
-  container.innerHTML = '<div style="color:var(--mu);font-size:13px;padding:16px;">Loading Daily Digest...</div>';
+  container.innerHTML = `<div style="color:var(--mu);font-size:13px;padding:16px;">${escHtml(_hseT('om.digest_loading', null, 'Loading Daily Digest...'))}</div>`;
   try {
     const qs = '?workspace_id=HSE' + (dVal ? '&date=' + encodeURIComponent(dVal) : '');
     const r = await apiFetch('/api/daily_digest/all' + qs);
-    if (!r) { container.innerHTML = '<div style="color:red;padding:16px;">Failed to load digest.</div>'; return; }
-    let html = '<div class="hse-panel" style="border-top:4px solid #3b82f6;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">📥 Logged / Updated (' + (r.received || []).length + ')</div>';
-    if (!(r.received || []).length) html += '<div style="color:var(--mu);font-size:12px;">No records logged.</div>';
+    if (!r) { container.innerHTML = `<div style="color:red;padding:16px;">${escHtml(_hseT('om.digest_failed', null, 'Failed to load digest.'))}</div>`; return; }
+    let html = `<div class="hse-panel" style="border-top:4px solid #3b82f6;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">${escHtml(_hseT('hse.digest_logged', {count: (r.received || []).length}, '📥 Logged / Updated (' + (r.received || []).length + ')'))}</div>`;
+    if (!(r.received || []).length) html += `<div style="color:var(--mu);font-size:12px;">${escHtml(_hseT('hse.digest_no_logged', null, 'No records logged.'))}</div>`;
     (r.received || []).forEach(doc => {
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong class="bidi-ltr">' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
     });
-    html += '</div><div class="hse-panel" style="border-top:4px solid #22c55e;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">✅ Closed (' + (r.replied || []).length + ')</div>';
-    if (!(r.replied || []).length) html += '<div style="color:var(--mu);font-size:12px;">No records closed.</div>';
+    html += `</div><div class="hse-panel" style="border-top:4px solid #22c55e;"><div style="font-size:14px;font-weight:700;margin-bottom:8px;">${escHtml(_hseT('hse.digest_closed', {count: (r.replied || []).length}, '✅ Closed (' + (r.replied || []).length + ')'))}</div>`;
+    if (!(r.replied || []).length) html += `<div style="color:var(--mu);font-size:12px;">${escHtml(_hseT('hse.digest_no_closed', null, 'No records closed.'))}</div>`;
     (r.replied || []).forEach(doc => {
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong>' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;"><strong class="bidi-ltr">' + escHtml(doc.docNo || doc.title) + '</strong><div style="font-size:10px;color:var(--mu);">' + escHtml(doc.title || '') + '</div></div>';
     });
     html += '</div>';
     container.innerHTML = html;
   } catch (e) {
-    container.innerHTML = '<div style="color:red;padding:16px;">Error: ' + escHtml(e.message) + '</div>';
+    container.innerHTML = '<div style="color:red;padding:16px;">' + escHtml(_hseT('common.error', null, 'Error')) + ': ' + escHtml(e.message) + '</div>';
   }
 }
 
@@ -8307,11 +9319,11 @@ async function loadHseAudit(reset = false) {
       _hseAuditProjMap = {};
       (data.projects || []).forEach(p => { _hseAuditProjMap[p.id] = p.name || p.code || p.id; });
       const pSel = document.getElementById('hse-aud-pid');
-      if (pSel) pSel.innerHTML = '<option value="">All HSE Sites</option>' + (data.projects || []).map(p => `<option value="${escHtml(p.id)}"${p.id === pid ? ' selected' : ''}>${escHtml(p.name || p.id)}</option>`).join('');
+      if (pSel) pSel.innerHTML = `<option value="">${escHtml(_hseT('hse.aud_all_sites', null, 'All HSE Sites'))}</option>` + (data.projects || []).map(p => `<option value="${escHtml(p.id)}"${p.id === pid ? ' selected' : ''}>${escHtml(p.name || p.id)}</option>`).join('');
       const uSel = document.getElementById('hse-aud-user');
-      if (uSel) uSel.innerHTML = '<option value="">All Users</option>' + (data.users || []).map(u => `<option value="${escHtml(u)}"${u === user ? ' selected' : ''}>${escHtml(u)}</option>`).join('');
+      if (uSel) uSel.innerHTML = `<option value="">${escHtml(_hseT('dash.aud_all_users', null, 'All Users'))}</option>` + (data.users || []).map(u => `<option value="${escHtml(u)}"${u === user ? ' selected' : ''}>${escHtml(u)}</option>`).join('');
       const aSel = document.getElementById('hse-aud-action');
-      if (aSel) aSel.innerHTML = '<option value="">All Actions</option>' + (data.actions || []).map(a => `<option value="${escHtml(a)}"${a === action ? ' selected' : ''}>${escHtml(a)}</option>`).join('');
+      if (aSel) aSel.innerHTML = `<option value="">${escHtml(_hseT('dash.aud_all_actions', null, 'All Actions'))}</option>` + (data.actions || []).map(a => `<option value="${escHtml(a)}"${a === action ? ' selected' : ''}>${escHtml(a)}</option>`).join('');
     }
     const rows = data.rows || [];
     _hseAuditHasMore = rows.length === 100;
@@ -8320,20 +9332,20 @@ async function loadHseAudit(reset = false) {
       const ts = new Date(rawTs);
       const tsStr = (!rawTs || isNaN(ts.getTime())) ? '—' : (ts.toLocaleDateString('en-GB') + ' ' + ts.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }));
       return `<tr>
-        <td style="font-size:10px;color:var(--mu);white-space:nowrap">${tsStr}</td>
-        <td style="font-weight:600;font-size:11px">${escHtml(r.username || '')}</td>
-        <td><span class="badge" style="font-size:9px;">${escHtml(r.action || '')}</span></td>
+        <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap"><span class="bidi-ltr">${tsStr}</span></td>
+        <td style="font-weight:600;font-size:11px"><span class="bidi-ltr">${escHtml(r.username || '')}</span></td>
+        <td><span class="badge bidi-ltr" style="font-size:9px;">${escHtml(r.action || '')}</span></td>
         <td style="font-size:10px;color:var(--mu)">${escHtml(_hseAuditProjMap[r.project_id] || r.project_id || '—')}</td>
-        <td style="font-size:11px">${escHtml(r.doc_no || r.document_id || '—')}</td>
+        <td style="font-size:11px"><span class="bidi-ltr">${escHtml(r.doc_no || r.document_id || '—')}</span></td>
         <td style="font-size:10px;color:var(--mu)">${escHtml(r.detail || '—')}</td>
       </tr>`;
-    }).join('') : '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu)">No HSE activity found</td></tr>';
+    }).join('') : `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--mu)">${escHtml(_hseT('hse.aud_no_activity', null, 'No HSE activity found'))}</td></tr>`;
     const prevBtn = document.getElementById('hse-aud-prev');
     if (prevBtn) prevBtn.disabled = _hseAuditOffset === 0;
     const nextBtn = document.getElementById('hse-aud-next');
     if (nextBtn) nextBtn.disabled = !_hseAuditHasMore;
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#ef4444;">Error loading audit log</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:#ef4444;">${escHtml(_hseT('hse.aud_err', null, 'Error loading audit log'))}</td></tr>`;
   }
 }
 
@@ -8359,10 +9371,12 @@ window.addEventListener('load', function() {
 """
 
 
-def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="HSE"):
+def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws="HSE", lang=None):
     from html import escape as _h_esc
     from hse_analytics import build_hse_overview, get_scoped_hse_analytics
 
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
     role = (u or {}).get("role") or "guest"
     can_manage = role in ("superadmin", "admin")
     try:
@@ -8370,9 +9384,10 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     except Exception:
         ws_obj = None
     ws_obj = ws_obj or {"id": "HSE", "code": "HSE", "name": "Health, Safety & Environment", "icon": "🛡️", "description": "Permits, Safety Observations, Incidents, Man-Hours & Fire Equipment"}
-    ws_name = _h_esc(str(ws_obj.get("name") or "Health, Safety & Environment"))
+    ws_meta = translate_workspace_meta(ws_obj, norm)
+    ws_name = _h_esc(str(ws_meta["name"] or ws_obj.get("name") or "Health, Safety & Environment"))
     ws_icon = _h_esc(str(ws_obj.get("icon") or "🛡️"))
-    ws_desc = _h_esc(str(ws_obj.get("description") or "").strip())
+    ws_desc = _h_esc(str(ws_meta["desc"] or "").strip())
 
     payload = None
     if u:
@@ -8405,9 +9420,9 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     header_add_btn = (
         '<button class="tb-btn glow" onclick="openM(\'new-om-modal\')" '
         'style="background:var(--brand-teal);color:#fff;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;border:none;">'
-        '➕ New HSE Project / Site</button>'
+        f'{t("hse.add_site_btn", norm)}</button>'
     ) if can_manage else ""
-    audit_btn = '<button class="tbtn" onclick="showHseTab(\'audit\', this)">📜 Audit Log</button>' if can_manage else ""
+    audit_btn = f'<button class="tbtn" onclick="showHseTab(\'audit\', this)">{t("hse.tab_audit", norm)}</button>' if can_manage else ""
 
     cards_html = ""
     for p in (accessible_projs or []):
@@ -8424,19 +9439,19 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
         js_pid = p_id.replace("\\", "\\\\").replace("'", "\\'")
         js_pname = str(p.get("name") or p_id).replace("\\", "\\\\").replace("'", "\\'")
         del_btn = (
-            f'<button type="button" class="pcard-btn pcard-del" title="Delete Site" '
+            f'<button type="button" class="pcard-btn pcard-del" title="{_h_esc(t("hse.del_site_title", norm))}" '
             f'onclick="event.preventDefault();event.stopPropagation();delProject(\'{_h_esc(js_pid)}\',\'{_h_esc(js_pname)}\')">🗑️</button>'
         ) if can_manage else ""
         cards_html += f"""
-        <div class="om-card" onclick="window.location='/app?p={_h_esc(p_id)}'" title="Open {p_name}">
+        <div class="om-card" onclick="window.location='/app?p={_h_esc(p_id)}'" title="{_h_esc(t("om.open_title", norm, name=p_name))}">
           <div class="om-card-header">
-            <span class="om-code-badge">{p_code}</span>
-            <span class="om-status-badge">Active HSE</span>
+            <span class="om-code-badge bidi-ltr">{p_code}</span>
+            <span class="om-status-badge">{t("hse.status_active", norm)}</span>
           </div>
           <div class="om-card-title">{p_name}</div>
-          <div class="om-card-client">🏢 Client / Site: <strong>{client}</strong></div>
+          <div class="om-card-client">🏢 {t("hse.lbl_client_site", norm)} <strong>{client}</strong></div>
           <div class="om-card-footer">
-            <span class="om-card-action">Open HSE Registers ➔</span>
+            <span class="om-card-action">{t("hse.open_registers", norm)} <span class="rtl-flip">➔</span></span>
             {del_btn}
           </div>
         </div>
@@ -8445,13 +9460,13 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     if not cards_html:
         empty_add = (
             '<button class="tb-btn glow" style="margin-top:14px;padding:8px 18px;font-size:13px;" '
-            'onclick="openM(\'new-om-modal\')">➕ Register First HSE Project / Site</button>'
+            f'onclick="openM(\'new-om-modal\')">{t("hse.empty_add_btn", norm)}</button>'
         ) if can_manage else ""
         cards_html = f"""
         <div class="om-empty-state">
           <div style="font-size:38px;margin-bottom:8px;">🛡️</div>
-          <div style="font-size:16px;font-weight:700;margin-bottom:4px;">No HSE Sites or Projects Assigned Yet</div>
-          <div style="font-size:12px;color:var(--mu);max-width:480px;margin:0 auto;">Register or request assignment to an HSE project to start tracking permits, observations, incidents, and man-hours.</div>
+          <div style="font-size:16px;font-weight:700;margin-bottom:4px;">{t("hse.empty_title", norm)}</div>
+          <div style="font-size:12px;color:var(--mu);max-width:480px;margin:0 auto;">{t("hse.empty_sub", norm)}</div>
           {empty_add}
         </div>
         """
@@ -8459,9 +9474,9 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     safe_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     hse_js_block = HSE_DASHBOARD_JS.replace("__HSE_INIT_JSON__", safe_json)
 
-    return f"""<!DOCTYPE html><html lang="en"><head>
+    return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR — {ws_name} Command Dashboard</title>
+<title>{t("hse.page_title", norm, ws_name=ws_name)}</title>
 {_head_icon_tags()}
 {BASE_CSS}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -8470,25 +9485,26 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 <body data-workspace="{_h_esc(active_ws)}">
 <div id="topbar">
   <span style="font-size:20px">📋</span>
-  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
-  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">{t("app.title_full", norm)}</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">{t("app.title_short", norm)}</span>
   {ws_switcher_html}
-  {GLOBAL_SEARCH_TRIGGER_HTML}
+  {_global_search_trigger_html(norm)}
   <div class="sp"></div>
-  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
-  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
+  <button class="tb-btn tb-about-btn" onclick="openM('about-modal')" title="{t("topbar.about_btn", norm)}" aria-label="{t("topbar.about_btn", norm)}">ℹ️<span class="tb-btn-text sr-only">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
+  {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
-    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  <span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">{uname}</span></span>
+    <span class="topbar-user-role" style="background:{rbg};border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
 
 <div class="wrap">
   <div class="hse-header-bar">
     <div>
-      <div class="hse-header-title">{ws_icon} {ws_name} — Executive Command Center</div>
+      <div class="hse-header-title">{ws_icon} {ws_name} — {t("hse.header_suffix", norm)}</div>
       {f'<div class="hse-header-sub">{ws_desc}</div>' if ws_desc else ''}
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
@@ -8498,26 +9514,26 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 
   <div class="psel-bar">
     <select id="hse-filter-pid" onchange="refreshHseDashboard()" aria-label="Filter by HSE project">
-      <option value="">All HSE Sites & Projects</option>
+      <option value="">{t("hse.all_sites", norm)}</option>
       {proj_opts_html}
     </select>
     <select id="hse-filter-year" onchange="refreshHseDashboard()" aria-label="Filter by year">
-      <option value="">All Years</option>
+      <option value="">{t("hse.all_years", norm)}</option>
       {year_opts_html}
     </select>
     <select id="hse-filter-warn" onchange="refreshHseDashboard()" aria-label="Alert warning window">
-      <option value="14">Warn: 14 Days</option>
-      <option value="30" selected>Warn: 30 Days</option>
-      <option value="60">Warn: 60 Days</option>
-      <option value="90">Warn: 90 Days</option>
+      <option value="14">{t("hse.warn_days", norm, days=14)}</option>
+      <option value="30" selected>{t("hse.warn_days", norm, days=30)}</option>
+      <option value="60">{t("hse.warn_days", norm, days=60)}</option>
+      <option value="90">{t("hse.warn_days", norm, days=90)}</option>
     </select>
-    <input type="text" id="hse-site-search" placeholder="🔍 Filter HSE sites..." oninput="filterHseCards(this.value)" style="min-width:170px;">
-    <button class="tbtn" onclick="refreshHseDashboard()" title="Refresh live KPIs">🔄 Refresh</button>
+    <input type="text" id="hse-site-search" placeholder="{_h_esc(t("hse.search_ph", norm))}" oninput="filterHseCards(this.value)" style="min-width:170px;">
+    <button class="tbtn" onclick="refreshHseDashboard()" title="{_h_esc(t("hse.refresh_title", norm))}">{t("hse.refresh_btn", norm)}</button>
     <div class="sp" style="flex:1"></div>
     <div style="display:flex;gap:4px;flex-wrap:wrap;">
-      <button class="tbtn active" onclick="showHseTab('overview', this)">🛡️ Command Center</button>
-      <button class="tbtn" id="hse-btn-alerts" onclick="showHseTab('alerts', this)">⚠️ Expiry & Alerts <span id="hse-tab-alert-badge" class="badge" style="background:#ef4444;color:#fff;font-size:9.5px;display:none;">0</span></button>
-      <button class="tbtn" onclick="showHseTab('daily-digest', this)">🌟 Daily Digest</button>
+      <button class="tbtn active" onclick="showHseTab('overview', this)">{t("hse.tab_command_center", norm)}</button>
+      <button class="tbtn" id="hse-btn-alerts" onclick="showHseTab('alerts', this)">{t("hse.tab_alerts", norm)} <span id="hse-tab-alert-badge" class="badge bidi-ltr" style="background:#ef4444;color:#fff;font-size:9.5px;display:none;">0</span></button>
+      <button class="tbtn" onclick="showHseTab('daily-digest', this)">{t("hse.tab_daily_digest", norm)}</button>
       {audit_btn}
     </div>
   </div>
@@ -8525,64 +9541,64 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   <div id="tab-hse-overview" class="tab-pane active">
     <div class="hse-hero-grid">
       <div class="hse-kpi-card tone-info" id="hse-card-lti">
-        <span class="hse-kpi-lbl">LTI-Free Days Streak</span>
-        <span class="hse-kpi-val info" id="hse-kpi-lti-days">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-lti">No dated HSE records yet</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_lti_streak", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-lti-days">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-lti">{t("hse.sub_lti_empty", norm)}</span>
       </div>
       <div class="hse-kpi-card tone-info" id="hse-card-any">
-        <span class="hse-kpi-lbl">Any-Injury-Free Days</span>
-        <span class="hse-kpi-val info" id="hse-kpi-any-days">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-any">FAC / MTC / LTI streak</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_any_streak", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-any-days">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-any">{t("hse.kpi_any_sub_default", norm)}</span>
       </div>
       <div class="hse-kpi-card tone-info" id="hse-card-ltif">
-        <span class="hse-kpi-lbl">LTIF (per 1M Man-Hours)</span>
-        <span class="hse-kpi-val info" id="hse-kpi-ltif">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-ltif">Lost Time Injury Frequency</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_ltif", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-ltif">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-ltif">{t("hse.kpi_ltif_sub_default", norm)}</span>
       </div>
       <div class="hse-kpi-card tone-info" id="hse-card-trir">
-        <span class="hse-kpi-lbl">TRIR (per 1M Man-Hours)</span>
-        <span class="hse-kpi-val info" id="hse-kpi-trir">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-trir">Total Recordable Incident Rate</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_trir", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-trir">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-trir">{t("hse.kpi_trir_sub_default", norm)}</span>
       </div>
       <div class="hse-kpi-card tone-info" id="hse-card-sev">
-        <span class="hse-kpi-lbl">Severity Rate (per 1M hrs)</span>
-        <span class="hse-kpi-val info" id="hse-kpi-sev">—</span>
-        <span class="hse-kpi-sub" id="hse-sub-sev">Lost Days: 0</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_sev", norm)}</span>
+        <span class="hse-kpi-val info bidi-ltr" id="hse-kpi-sev">—</span>
+        <span class="hse-kpi-sub" id="hse-sub-sev">{t("hse.kpi_sev_sub", norm, days=0)}</span>
       </div>
       <div class="hse-kpi-card tone-good" id="hse-card-hours">
-        <span class="hse-kpi-lbl">Total Worked Man-Hours</span>
-        <span class="hse-kpi-val" id="hse-kpi-hours">0</span>
-        <span class="hse-kpi-sub" id="hse-sub-hours">{total_sites} active HSE project(s)</span>
+        <span class="hse-kpi-lbl">{t("hse.kpi_hours", norm)}</span>
+        <span class="hse-kpi-val bidi-ltr" id="hse-kpi-hours">0</span>
+        <span class="hse-kpi-sub" id="hse-sub-hours">{t("hse.kpi_hours_sub", norm, count=total_sites)}</span>
       </div>
     </div>
 
     <div class="om-kpi-grid" style="grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));">
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Open Safety Observations (OBS)</span>
-        <span class="om-kpi-val warning" id="hse-sum-obs-open">0 / 0</span>
-        <span class="hse-kpi-sub" id="hse-sum-obs-sub">Closed: 0 • Stale (&gt;30d): 0</span>
+        <span class="om-kpi-lbl">{t("hse.kpi_obs_open", norm)}</span>
+        <span class="om-kpi-val warning bidi-ltr" id="hse-sum-obs-open">0 / 0</span>
+        <span class="hse-kpi-sub" id="hse-sum-obs-sub">{t("hse.kpi_obs_sub", norm, closed=0, stale=0)}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Open / Expiring Permits (PTW)</span>
-        <span class="om-kpi-val warning" id="hse-sum-ptw-open">0</span>
-        <span class="hse-kpi-sub" id="hse-sum-ptw-sub">Expiring: 0 • Overdue: 0</span>
+        <span class="om-kpi-lbl">{t("hse.kpi_ptw_open", norm)}</span>
+        <span class="om-kpi-val warning bidi-ltr" id="hse-sum-ptw-open">0</span>
+        <span class="hse-kpi-sub" id="hse-sum-ptw-sub">{t("hse.kpi_ptw_sub", norm, expiring=0, overdue=0)}</span>
       </div>
       <div class="om-kpi-card">
-        <span class="om-kpi-lbl">Expiring / Expired FEI</span>
-        <span class="om-kpi-val" id="hse-sum-fei-exp" style="color:#ef4444;">0</span>
-        <span class="hse-kpi-sub" id="hse-sum-fei-sub">Expired: 0 • Due ≤30d: 0</span>
+        <span class="om-kpi-lbl">{t("hse.kpi_fei_exp", norm)}</span>
+        <span class="om-kpi-val bidi-ltr" id="hse-sum-fei-exp" style="color:#ef4444;">0</span>
+        <span class="hse-kpi-sub" id="hse-sum-fei-sub">{t("hse.kpi_fei_sub", norm, expired=0, days=30, expiring=0)}</span>
       </div>
       <div class="om-kpi-card" id="hse-card-sum-completed">
-        <span class="om-kpi-lbl">Completed / Closed</span>
-        <span class="om-kpi-val success">{completed_records}</span>
-        <span class="hse-kpi-sub" id="hse-sum-tot-sub">{total_records} total across {total_sites} site(s)</span>
+        <span class="om-kpi-lbl">{t("hse.kpi_completed", norm)}</span>
+        <span class="om-kpi-val success bidi-ltr">{completed_records}</span>
+        <span class="hse-kpi-sub" id="hse-sum-tot-sub">{t("hse.kpi_completed_sub", norm, total=total_records, sites=total_sites)}</span>
       </div>
     </div>
 
     <div class="hse-panel" style="margin-bottom:16px;" id="hse-alerts-panel">
       <div class="hse-panel-hdr">
-        <div class="hse-panel-title">🚨 Actionable Expiry &amp; Overdue Alerts</div>
-        <span style="font-size:11px;color:var(--mu);">Overdue/Expiring PTWs, FEI inspections &amp; Stale Observations (&gt;30d)</span>
+        <div class="hse-panel-title">{t("hse.sec_alerts_title", norm)}</div>
+        <span style="font-size:11px;color:var(--mu);">{_h_esc(t("hse.sec_alerts_sub", norm))}</span>
       </div>
       <div id="hse-alerts-preview"></div>
     </div>
@@ -8590,15 +9606,15 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     <div class="hse-charts-grid">
       <div class="hse-panel">
         <div class="hse-panel-hdr">
-          <div class="hse-panel-title">📈 Monthly Incidents &amp; Observations Trend</div>
-          <span style="font-size:11px;color:var(--mu);">FAC / MTC / LTI vs Open/Closed OBS</span>
+          <div class="hse-panel-title">{t("hse.sec_trend_title", norm)}</div>
+          <span style="font-size:11px;color:var(--mu);">{t("hse.sec_trend_sub", norm)}</span>
         </div>
         <div class="hse-chart-box"><canvas id="hseTrendChart" height="260"></canvas></div>
       </div>
       <div class="hse-panel">
         <div class="hse-panel-hdr">
-          <div class="hse-panel-title">🔥 PTW &amp; Register Status Breakdown</div>
-          <span style="font-size:11px;color:var(--mu);">PTW, OBS, INC, SVP, FEI &amp; JSA</span>
+          <div class="hse-panel-title">{t("hse.sec_status_title", norm)}</div>
+          <span style="font-size:11px;color:var(--mu);">{t("hse.sec_status_sub", norm)}</span>
         </div>
         <div class="hse-chart-box"><canvas id="hseStatusChart" height="260"></canvas></div>
         <div class="hse-pill-row" id="hse-ptw-pills"></div>
@@ -8606,11 +9622,11 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
     </div>
 
     <div style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:8px;">📄 11 Configured HSE Registers</div>
+      <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:8px;">{t("hse.sec_registers", norm)}</div>
       <div class="hse-reg-grid" id="hse-reg-grid"></div>
     </div>
 
-    <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:10px;">🏗️ HSE Projects &amp; Sites</div>
+    <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:10px;">{t("hse.sec_sites", norm)}</div>
     <div class="om-grid" id="hse-sites-grid">
       {cards_html}
     </div>
@@ -8619,12 +9635,12 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   <div id="tab-hse-alerts" class="tab-pane" style="display:none;">
     <div class="hse-panel" style="margin-bottom:12px;">
       <div class="hse-panel-hdr" style="margin-bottom:0;">
-        <div class="hse-panel-title">⚠️ Expiry, Overdue &amp; Stale Observation Queue</div>
+        <div class="hse-panel-title">{t("hse.alerts_queue_title", norm)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="tbtn hse-alert-flt active" onclick="setHseAlertFilter('', this)">All Alerts</button>
-          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('ptw', this)">Permits (PTW)</button>
-          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('fei', this)">Fire &amp; Equipment (FEI)</button>
-          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('obs', this)">Stale OBS (&gt;30d)</button>
+          <button class="tbtn hse-alert-flt active" onclick="setHseAlertFilter('', this)">{t("hse.flt_all", norm)}</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('ptw', this)">{t("hse.flt_ptw", norm)}</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('fei', this)">{t("hse.flt_fei", norm)}</button>
+          <button class="tbtn hse-alert-flt" onclick="setHseAlertFilter('obs', this)">{t("hse.flt_obs", norm)}</button>
         </div>
       </div>
     </div>
@@ -8632,13 +9648,13 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
       <table class="user-tbl" style="width:100%;">
         <thead>
           <tr>
-            <th style="padding:10px 12px;">Severity</th>
-            <th style="padding:10px 12px;">Register</th>
-            <th style="padding:10px 12px;">Site</th>
-            <th style="padding:10px 12px;">Ref No.</th>
-            <th style="padding:10px 12px;">Title / Subject</th>
-            <th style="padding:10px 12px;">Status / Due</th>
-            <th style="padding:10px 12px;text-align:right;">Action</th>
+            <th style="padding:10px 12px;">{t("hse.th_severity", norm)}</th>
+            <th style="padding:10px 12px;">{t("hse.th_register", norm)}</th>
+            <th style="padding:10px 12px;">{t("hse.th_site", norm)}</th>
+            <th style="padding:10px 12px;">{t("hse.th_ref_no", norm)}</th>
+            <th style="padding:10px 12px;">{t("om.ov_th_title", norm)}</th>
+            <th style="padding:10px 12px;">{t("hse.th_status_due", norm)}</th>
+            <th style="padding:10px 12px;text-align:end;">{t("hse.th_action", norm)}</th>
           </tr>
         </thead>
         <tbody id="hse-alerts-tbody"></tbody>
@@ -8649,8 +9665,8 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   <div id="tab-hse-daily-digest" class="tab-pane" style="display:none;">
     <div class="hse-panel" style="margin-bottom:14px;">
       <div class="hse-panel-hdr" style="margin-bottom:0;">
-        <div class="hse-panel-title">🌟 HSE Daily Digest</div>
-        <input type="date" id="hse-digest-date" onchange="loadHseDailyDigest()" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;">
+        <div class="hse-panel-title">{t("hse.digest_title", norm)}</div>
+        <input type="date" id="hse-digest-date" class="bidi-ltr" onchange="loadHseDailyDigest()" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;">
       </div>
     </div>
     <div id="hse-daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;"></div>
@@ -8659,23 +9675,23 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
   <div id="tab-hse-audit" class="tab-pane" style="display:none;">
     <div class="hse-panel">
       <div class="hse-panel-hdr">
-        <div class="hse-panel-title">📜 HSE Audit &amp; Activity Log</div>
-        <button class="tbtn" onclick="loadHseAudit(true)">🔄 Refresh</button>
+        <div class="hse-panel-title">{t("hse.aud_title", norm)}</div>
+        <button class="tbtn" onclick="loadHseAudit(true)">{t("hse.refresh_btn", norm)}</button>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-        <select id="hse-aud-pid" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All HSE Sites</option></select>
-        <select id="hse-aud-user" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All Users</option></select>
-        <select id="hse-aud-action" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">All Actions</option></select>
+        <select id="hse-aud-pid" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">{t("hse.aud_all_sites", norm)}</option></select>
+        <select id="hse-aud-user" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">{t("dash.aud_all_users", norm)}</option></select>
+        <select id="hse-aud-action" onchange="loadHseAudit(true)" style="padding:5px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px;"><option value="">{t("dash.aud_all_actions", norm)}</option></select>
       </div>
       <div style="overflow:auto;max-height:calc(100vh - 280px);border:1px solid var(--bd);border-radius:var(--rd);">
         <table class="dt-tbl" style="width:100%;">
-          <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Site</th><th>Document</th><th>Detail</th></tr></thead>
+          <thead><tr><th>{t("dash.aud_th_time", norm)}</th><th>{t("dash.aud_th_user", norm)}</th><th>{t("dash.aud_th_action", norm)}</th><th>{t("hse.th_site", norm)}</th><th>{t("dash.aud_th_document", norm)}</th><th>{t("dash.aud_th_detail", norm)}</th></tr></thead>
           <tbody id="hse-aud-tbody"></tbody>
         </table>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
-        <button id="hse-aud-prev" class="tbtn" onclick="hseAuditPage(-1)" disabled>← Prev</button>
-        <button id="hse-aud-next" class="tbtn" onclick="hseAuditPage(1)">Next →</button>
+        <button id="hse-aud-prev" class="tbtn" onclick="hseAuditPage(-1)" disabled>{t("dash.aud_prev", norm)}</button>
+        <button id="hse-aud-next" class="tbtn" onclick="hseAuditPage(1)">{t("dash.aud_next", norm)}</button>
       </div>
     </div>
   </div>
@@ -8684,26 +9700,26 @@ def _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rl
 <div id="new-om-modal" class="overlay hidden" onclick="if(event.target===this)closeM('new-om-modal')">
   <div class="modal" style="max-width:480px">
     <div class="mhdr">
-      <span>➕ Register New HSE Project / Site</span>
+      <span>{t("hse.modal_new_site", norm)}</span>
       <button class="xbtn" onclick="closeM('new-om-modal')">✕</button>
     </div>
     <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
-      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">HSE Project ID:</label><input type="text" id="om-new-id" placeholder="e.g. HSE-SITE-02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
-      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Site / Project Name:</label><input type="text" id="om-new-name" placeholder="e.g. Main Plant Turnaround HSE" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
-      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Short Code:</label><input type="text" id="om-new-code" placeholder="e.g. HSE02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
-      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">Client / Site Location:</label><input type="text" id="om-new-client" placeholder="e.g. GasChill" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("hse.lbl_site_id", norm)}</label><input type="text" id="om-new-id" class="bidi-ltr" placeholder="e.g. HSE-SITE-02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("hse.lbl_site_name", norm)}</label><input type="text" id="om-new-name" placeholder="e.g. Main Plant Turnaround HSE" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("hse.lbl_short_code", norm)}</label><input type="text" id="om-new-code" class="bidi-ltr" placeholder="e.g. HSE02" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:4px">{t("hse.lbl_client_loc", norm)}</label><input type="text" id="om-new-client" placeholder="e.g. GasChill" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
-        <button class="tb-btn" onclick="closeM('new-om-modal')">Cancel</button>
-        <button class="tb-btn glow" onclick="submitNewHseSite()" style="background:var(--brand-teal);color:#fff;font-weight:700">Save HSE Site</button>
+        <button class="tb-btn" onclick="closeM('new-om-modal')">{t("common.cancel", norm)}</button>
+        <button class="tb-btn glow" onclick="submitNewHseSite()" style="background:var(--brand-teal);color:#fff;font-weight:700">{t("hse.btn_save_site", norm)}</button>
       </div>
     </div>
   </div>
 </div>
 
-{SHARED_JS}
-{ABOUT_MODAL_HTML}
-{SPOTLIGHT_MODAL_COMPONENT}
-{AI_DRAWER_COMPONENT}
+{_shared_js_html(norm)}
+{_about_modal_html(norm)}
+{_spotlight_modal_html(norm)}
+{_ai_drawer_html(norm)}
 <script>{hse_js_block}</script>
 </body></html>"""
 
@@ -8861,10 +9877,34 @@ body.dark .perm-table tr:hover { background: rgba(255, 255, 255, 0.04); }
 #toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
 #toast.ok { background: #16a34a; }
 #toast.er { background: #dc2626; }
+
+/* RTL Overrides for Admin & Permissions Modals */
+html[dir="rtl"] .user-tbl,
+html[dir="rtl"] .perm-table,
+html[dir="rtl"] .perm-table th {
+  text-align: right;
+}
+html[dir="rtl"] .user-tbl th {
+  letter-spacing: 0 !important;
+}
+html[dir="rtl"] .user-tbl-th-actions {
+  text-align: left !important;
+}
+html[dir="rtl"] .u-avatar {
+  margin-right: 0 !important;
+  margin-left: 10px !important;
+}
+html[dir="rtl"] #toast {
+  right: auto;
+  left: 24px;
+}
 """
 
-def render_launchpad(u):
+def render_launchpad(u, lang=None):
     """Render the executive Company Workspaces Launchpad (8-Department Grid Hub)."""
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
+    lang_btn_html = _lang_switcher_btn_html(norm, btn_class="hub-theme-toggle lang-switch-btn", btn_id="hub-lang-btn")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     logo_name = "logo-login.png"
     logo_file = os.path.join(static_dir, logo_name)
@@ -8880,15 +9920,15 @@ def render_launchpad(u):
     primary_ws = str((u or {}).get("primary_workspace") or "ENG").strip().upper()
 
     role_labels = {
-        "superadmin": "SUPER ADMIN",
-        "admin": "DEPARTMENT ADMIN",
-        "editor": "DOCUMENT CONTROL • EDITOR",
-        "viewer": "DOCUMENT CONTROL • VIEWER",
+        "superadmin": t("role.superadmin", norm),
+        "admin": t("role.dept_admin", norm),
+        "editor": t("role.dc_editor", norm),
+        "viewer": t("role.dc_viewer", norm),
     }
     can_admin = (role in ("superadmin", "admin"))
-    admin_btn_html = '''<button type="button" class="hub-admin-btn" onclick="openAdmin()" title="Open Enterprise Admin Panel">
+    admin_btn_html = f'''<button type="button" class="hub-admin-btn" onclick="openAdmin()" title="{t("hub.admin_title", norm)}">
         <span>⚙️</span>
-        <span>Admin</span>
+        <span>{t("hub.admin_btn", norm)}</span>
       </button>''' if can_admin else ''
     role_tag = role_labels.get(role, role.upper())
     parts = [p for p in uname.replace(".", " ").replace("_", " ").replace("-", " ").split() if p]
@@ -8907,60 +9947,60 @@ def render_launchpad(u):
 
     default_meta = {
         "ENG": {
-            "code": "ENG", "name": "Engineering & Projects", "icon": "🏗️",
-            "desc": "EPC Submittals, Drawings, Material Approvals, IR, MIR, RFI & NOC Variation Orders.",
+            "code": "ENG", "name": t("ws.ENG.name", norm), "icon": "🏗️",
+            "desc": t("ws.ENG.desc", norm),
             "bar": "linear-gradient(90deg, #7ec832, #00b4a6)", "glow": "rgba(126, 200, 50, 0.22)",
             "codeColor": "#7ec832", "iconBg": "rgba(126, 200, 50, 0.12)", "iconBorder": "rgba(126, 200, 50, 0.35)",
-            "lbl1": "Projects", "lbl2": "Records"
+            "lbl1": t("hub.kpi_projects", norm), "lbl2": t("hub.kpi_records", norm)
         },
         "OM": {
-            "code": "O&M", "name": "Operation & Maintenance (O&M)", "icon": "⚙️",
-            "desc": "Facilities maintenance contracts, Work Orders, PPM schedules and SLA compliance metrics.",
+            "code": "O&M", "name": t("ws.OM.name", norm), "icon": "⚙️",
+            "desc": t("ws.OM.desc", norm),
             "bar": "linear-gradient(90deg, #00b4a6, #38bdf8)", "glow": "rgba(0, 180, 166, 0.22)",
             "codeColor": "#00b4a6", "iconBg": "rgba(0, 180, 166, 0.12)", "iconBorder": "rgba(0, 180, 166, 0.35)",
-            "lbl1": "Contracts", "lbl2": "Records"
+            "lbl1": t("hub.kpi_contracts", norm), "lbl2": t("hub.kpi_records", norm)
         },
         "HR": {
-            "code": "HR", "name": "Human Resources", "icon": "👥",
-            "desc": "Personnel archives, employee onboarding, credential files, attendance and corporate policies.",
+            "code": "HR", "name": t("ws.HR.name", norm), "icon": "👥",
+            "desc": t("ws.HR.desc", norm),
             "bar": "linear-gradient(90deg, #8b5cf6, #ec4899)", "glow": "rgba(139, 92, 246, 0.22)",
             "codeColor": "#8b5cf6", "iconBg": "rgba(139, 92, 246, 0.12)", "iconBorder": "rgba(139, 92, 246, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "FIN": {
-            "code": "FIN", "name": "Finance & Accounting", "icon": "💰",
-            "desc": "Interim Payment Certificates (IPC), subcontractor invoices, project budgets and cost audits.",
+            "code": "FIN", "name": t("ws.FIN.name", norm), "icon": "💰",
+            "desc": t("ws.FIN.desc", norm),
             "bar": "linear-gradient(90deg, #f59e0b, #fbbf24)", "glow": "rgba(245, 158, 11, 0.22)",
             "codeColor": "#d97706", "iconBg": "rgba(245, 158, 11, 0.12)", "iconBorder": "rgba(245, 158, 11, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "PROC": {
-            "code": "PROC", "name": "Procurement", "icon": "🛒",
-            "desc": "Purchase Orders (PO), vendor quotations, material requisition packages and approved suppliers.",
+            "code": "PROC", "name": t("ws.PROC.name", norm), "icon": "🛒",
+            "desc": t("ws.PROC.desc", norm),
             "bar": "linear-gradient(90deg, #06b6d4, #3b82f6)", "glow": "rgba(6, 182, 212, 0.22)",
             "codeColor": "#06b6d4", "iconBg": "rgba(6, 182, 212, 0.12)", "iconBorder": "rgba(6, 182, 212, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "WH": {
-            "code": "WH", "name": "Warehousing", "icon": "🏬",
-            "desc": "Central store inventory, Material Receipt Notes (MRN), site dispatch and stock balances.",
+            "code": "WH", "name": t("ws.WH.name", norm), "icon": "🏬",
+            "desc": t("ws.WH.desc", norm),
             "bar": "linear-gradient(90deg, #eab308, #84cc16)", "glow": "rgba(234, 179, 8, 0.22)",
             "codeColor": "#ca8a04", "iconBg": "rgba(234, 179, 8, 0.12)", "iconBorder": "rgba(234, 179, 8, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "HSE": {
-            "code": "HSE", "name": "Health, Safety & Environment (HSE)", "icon": "🛡️",
-            "desc": "Occupational safety audits, site inspection checklists, incident registers and ISO certifications.",
+            "code": "HSE", "name": t("ws.HSE.name", norm), "icon": "🛡️",
+            "desc": t("ws.HSE.desc", norm),
             "bar": "linear-gradient(90deg, #10b981, #059669)", "glow": "rgba(16, 185, 129, 0.22)",
             "codeColor": "#10b981", "iconBg": "rgba(16, 185, 129, 0.12)", "iconBorder": "rgba(16, 185, 129, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
         "TND": {
-            "code": "TND", "name": "Tendering", "icon": "📑",
-            "desc": "Tender submissions, BOQ bill of quantities, tender addendums, commercial bids and award tracking.",
+            "code": "TND", "name": t("ws.TND.name", norm), "icon": "📑",
+            "desc": t("ws.TND.desc", norm),
             "bar": "linear-gradient(90deg, #6366f1, #a855f7)", "glow": "rgba(99, 102, 241, 0.22)",
             "codeColor": "#6366f1", "iconBg": "rgba(99, 102, 241, 0.12)", "iconBorder": "rgba(99, 102, 241, 0.35)",
-            "lbl1": "Registers", "lbl2": "Documents"
+            "lbl1": t("hub.kpi_registers", norm), "lbl2": t("hub.kpi_documents", norm)
         },
     }
 
@@ -9005,11 +10045,18 @@ def render_launchpad(u):
     if all_lit_pids:
         try:
             dt_scope = get_user_doc_type_scope(u, all_lit_pids)
+        except Exception:
+            dt_scope = None
+        try:
             if dt_scope is None:
                 rows = db.q(
                     "SELECT project_id, COUNT(*) as c FROM records WHERE project_id = ANY(%s) GROUP BY project_id",
                     (all_lit_pids,),
                 ) or []
+                if not rows:
+                    rows = db.q(
+                        "SELECT project_id, COUNT(*) as c FROM records GROUP BY project_id"
+                    ) or []
                 for r in rows:
                     if isinstance(r, dict) and r.get("project_id"):
                         rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
@@ -9036,6 +10083,13 @@ def render_launchpad(u):
                     dt_code = dt_code_map.get((p_id, str(dt_id or "").strip().upper()), "")
                     if db._dt_allowed_in_scope(p_id, dt_id, dt_scope, dt_code):
                         rec_counts_by_proj[p_id] = rec_counts_by_proj.get(p_id, 0) + int(r.get("c") or 0)
+                if not rows and isinstance(dt_scope, dict) and all(not v for v in dt_scope.values()):
+                    fallback_rows = db.q(
+                        "SELECT project_id, COUNT(*) as c FROM records GROUP BY project_id"
+                    ) or []
+                    for r in fallback_rows:
+                        if isinstance(r, dict) and r.get("project_id"):
+                            rec_counts_by_proj[r["project_id"]] = int(r.get("c") or 0)
         except Exception:
             pass
 
@@ -9046,16 +10100,15 @@ def render_launchpad(u):
         ws_id = str(ws.get("id") or "").strip()
         ws_id_up = ws_id.upper()
         ws_code = str(ws.get("code") or ws_id).strip()
-        ws_name = str(ws.get("name") or ws_id).strip()
         meta = default_meta.get(ws_id_up) or default_meta.get(ws_code.upper()) or palette_cycle[idx % len(palette_cycle)]
+        loc_meta = translate_workspace_meta(ws, norm)
+        ws_name = loc_meta["name"] or meta["name"]
 
         ws_icon = str(ws.get("icon") or "").strip()
         if not ws_icon or ws_icon == "📁":
             ws_icon = meta["icon"]
 
-        ws_desc = str(ws.get("description") or "").strip()
-        if not ws_desc or ws_desc in ("EPC & Site Submittals", "Facilities & Maintenance Contracts"):
-            ws_desc = meta["desc"]
+        ws_desc = loc_meta["desc"] or meta["desc"]
 
         is_lit = (ws_id_up in allowed_ids) or is_super
         is_primary = (ws_id_up == primary_ws)
@@ -9070,25 +10123,25 @@ def render_launchpad(u):
             val1 = "&mdash;"
             val2 = "&mdash;"
 
-        lbl1 = meta.get("lbl1", "Registers")
-        lbl2 = meta.get("lbl2", "Documents")
+        lbl1 = meta.get("lbl1", t("hub.kpi_registers", norm))
+        lbl2 = meta.get("lbl2", t("hub.kpi_documents", norm))
         card_cls = "lit" if is_lit else "dimmed"
-        primary_badge = '<span class="hc-primary-pill">★ Primary</span>' if (is_primary and is_lit) else ''
-        status_badge = '<span class="hc-status-pill active">● Active</span>' if is_lit else '<span class="hc-status-pill locked">🔒 Locked</span>'
+        primary_badge = f'<span class="hc-primary-pill">{t("hub.badge_primary", norm)}</span>' if (is_primary and is_lit) else ''
+        status_badge = f'<span class="hc-status-pill active">{t("hub.badge_active", norm)}</span>' if is_lit else f'<span class="hc-status-pill locked">{t("hub.badge_locked", norm)}</span>'
 
         if is_lit:
             onclick_attr = f"window.location.href='/?ws={ws_id}'"
-            action_html = """<button class="btn-enter-workspace" type="button">
-                <span>Enter Workspace</span>
-                <span class="btn-enter-arrow">➔</span>
+            action_html = f"""<button class="btn-enter-workspace" type="button">
+                <span>{t("hub.btn_enter", norm)}</span>
+                <span class="btn-enter-arrow rtl-flip">➔</span>
               </button>"""
         else:
             onclick_attr = "notifyRestrictedToast()"
-            action_html = """<button class="btn-enter-workspace" type="button" disabled>
-                <span>🔒 Restricted Access</span>
+            action_html = f"""<button class="btn-enter-workspace" type="button" disabled>
+                <span>{t("hub.btn_restricted", norm)}</span>
                 <span>&times;</span>
               </button>
-              <div class="dim-tooltip">🔒 Access Restricted: Contact System Administrator to request permissions</div>"""
+              <div class="dim-tooltip">{t("hub.restricted_tooltip", norm)}</div>"""
 
         cards_html_list.append(f"""
         <div class="h-card {card_cls}" data-ws-id="{ws_id}" data-lit="{'1' if is_lit else '0'}"
@@ -9100,7 +10153,7 @@ def render_launchpad(u):
                 <div class="hc-icon">{ws_icon}</div>
                 <div class="hc-meta">
                   <div style="display:flex;align-items:center;gap:5px;">
-                    <span class="hc-code">{ws_code}</span>
+                    <span class="hc-code bidi-ltr">{ws_code}</span>
                     {primary_badge}
                   </div>
                   <span class="hc-title">{ws_name}</span>
@@ -9113,11 +10166,11 @@ def render_launchpad(u):
             <div class="hc-desc">{ws_desc}</div>
             <div class="hc-kpi-row">
               <div class="hc-kpi-cell">
-                <div class="hc-kpi-num">{val1}</div>
+                <div class="hc-kpi-num bidi-ltr">{val1}</div>
                 <div class="hc-kpi-lbl">{lbl1}</div>
               </div>
               <div class="hc-kpi-cell">
-                <div class="hc-kpi-num">{val2}</div>
+                <div class="hc-kpi-num bidi-ltr">{val2}</div>
                 <div class="hc-kpi-lbl">{lbl2}</div>
               </div>
             </div>
@@ -9131,15 +10184,60 @@ def render_launchpad(u):
     cards_html = "\n".join(cards_html_list)
 
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{norm}" dir="{dir_attr}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gas Chill &mdash; Company Workspaces Launchpad</title>
+<title>{t("hub.page_title", norm)}</title>
 {_head_icon_tags()}
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+@font-face {{
+  font-family: 'Cairo';
+  src: url('/static/fonts/Cairo-Regular.ttf') format('truetype');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}}
+.bidi-ltr {{
+  direction: ltr !important;
+  unicode-bidi: isolate !important;
+  display: inline-block;
+}}
+.rtl-flip {{
+  display: inline-block;
+  transition: transform 0.2s ease;
+}}
+html[dir="rtl"] .rtl-flip {{
+  transform: scaleX(-1);
+}}
+html[dir="rtl"], html[dir="rtl"] body {{
+  font-family: 'Cairo', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  direction: rtl;
+  text-align: right;
+}}
+html[dir="rtl"] .h-card.lit:hover .btn-enter-arrow {{
+  transform: scaleX(-1) translateX(4px);
+}}
+html[dir="rtl"] .h-card.lit::after {{
+  right: auto;
+  left: -35px;
+}}
+html[dir="rtl"] #toast-box {{
+  right: auto;
+  left: 24px;
+  border-left: none;
+  border-right: 4px solid #7ec832;
+}}
+html[dir="rtl"] .hc-kpi-lbl,
+html[dir="rtl"] .hub-u-role,
+html[dir="rtl"] .gc-brand-text span {{
+  letter-spacing: 0 !important;
+}}
+.valmore-hub-brand, .gc-brand-box {{
+  direction: ltr;
+}}
 :root {{
   --brand-navy: #1a2f4e;
   --brand-navy-dark: #0f1d2e;
@@ -10053,29 +11151,30 @@ body.dark .hc-status-pill.active {{
 
     <div class="hub-center-group">
       <div class="hub-subtitle-pill">
-        <span>🏢 Enterprise Document Control Hub</span>
+        <span>{t("hub.subtitle_pill", norm)}</span>
       </div>
     </div>
 
     <div class="hub-user-corner">
       {admin_btn_html}
-      <button class="hub-theme-toggle" onclick="toggleHubTheme()" id="hub-theme-btn" title="Toggle Light / Dark Mode">
+      {lang_btn_html}
+      <button class="hub-theme-toggle" onclick="toggleHubTheme()" id="hub-theme-btn" title="{t("hub.theme_title", norm)}">
         <span id="hub-theme-ico">🌙</span>
-        <span id="hub-theme-txt">Dark Mode</span>
+        <span id="hub-theme-txt">{t("hub.theme_dark", norm)}</span>
       </button>
 
       <div class="hub-u-info">
         <div class="hub-avatar">{avatar_txt}</div>
         <div class="hub-u-text">
-          <span class="hub-u-name">{uname}</span>
+          <span class="hub-u-name bidi-ltr">{uname}</span>
           <span class="hub-u-role">{role_tag}</span>
         </div>
       </div>
 
       <form action="/logout" method="post" style="display:inline;margin:0;">
-        <button type="submit" class="hub-signout-btn" title="Sign Out">
+        <button type="submit" class="hub-signout-btn" title="{t("hub.signout_btn", norm)}">
           <span>🚪</span>
-          <span>Sign Out</span>
+          <span>{t("hub.signout_btn", norm)}</span>
         </button>
       </form>
     </div>
@@ -10084,12 +11183,12 @@ body.dark .hc-status-pill.active {{
   <main class="hub-content-wrap">
     <div class="hub-headline-bar">
       <div>
-        <h1>Company Workspaces Launchpad</h1>
-        <p>Select your authorized workspace to access live engineering registers, contracts, and submittals.</p>
+        <h1>{t("hub.headline_title", norm)}</h1>
+        <p>{t("hub.headline_sub", norm)}</p>
       </div>
       <div class="hub-legend">
-        <span class="legend-lit">Authorized Workspace (Active)</span>
-        <span class="legend-dim">🔒 Restricted (Contact Administrator)</span>
+        <span class="legend-lit">{t("hub.legend_active", norm)}</span>
+        <span class="legend-dim">{t("hub.legend_restricted", norm)}</span>
       </div>
     </div>
 
@@ -10099,14 +11198,14 @@ body.dark .hc-status-pill.active {{
   </main>
 
   <footer class="hub-bottom-strip">
-    <span>Gas Chill &mdash; Enterprise Document Control System (DCR)</span>
-    <span>Designed &amp; Developed in-house by <strong>Mohamed Metwaly</strong></span>
+    <span>{t("hub.footer_left", norm)}</span>
+    <span>{t("footer.designed_by", norm)} <strong>{t("footer.developer_name", norm)}</strong></span>
   </footer>
 </div>
 
 <div id="toast-box"></div>
 
-{SHARED_JS}
+{_shared_js_html(norm)}
 
 <script>
 (function initHubTheme() {{
@@ -10115,7 +11214,7 @@ body.dark .hc-status-pill.active {{
     const ico = document.getElementById('hub-theme-ico');
     const txt = document.getElementById('hub-theme-txt');
     if (ico) ico.textContent = '☀️';
-    if (txt) txt.textContent = 'Light Mode';
+    if (txt) txt.textContent = t('hub.theme_light');
   }}
 }})();
 
@@ -10125,22 +11224,22 @@ function toggleHubTheme() {{
   const ico = document.getElementById('hub-theme-ico');
   const txt = document.getElementById('hub-theme-txt');
   if (ico) ico.textContent = isDark ? '☀️' : '🌙';
-  if (txt) txt.textContent = isDark ? 'Light Mode' : 'Dark Mode';
-  notifyToast(isDark ? '🌙 Switched to Dark Mode' : '☀️ Switched to Light Mode');
+  if (txt) txt.textContent = isDark ? t('hub.theme_light') : t('hub.theme_dark');
+  notifyToast(isDark ? t('hub.theme_switched_dark') : t('hub.theme_switched_light'));
 }}
 
 let _toastTimer = null;
 function notifyToast(msg) {{
-  const t = document.getElementById('toast-box');
-  if (!t) return;
-  t.textContent = msg;
-  t.classList.add('show');
+  const tEl = document.getElementById('toast-box');
+  if (!tEl) return;
+  tEl.textContent = msg;
+  tEl.classList.add('show');
   clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
+  _toastTimer = setTimeout(() => tEl.classList.remove('show'), 3400);
 }}
 
 function notifyRestrictedToast() {{
-  notifyToast('🔒 Access Restricted: Contact System Administrator to request permissions');
+  notifyToast(t('hub.restricted_tooltip'));
 }}
 
 window.addEventListener('keydown', (e) => {{
@@ -10162,10 +11261,12 @@ window.addEventListener('keydown', (e) => {{
 </body>
 </html>"""
 
-def render_dashboard(u, active_ws_id=None):
-    btns, uname, rlbl, rbg = _user_info_html(u)
+def render_dashboard(u, active_ws_id=None, lang=None):
+    norm = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
+    btns, uname, rlbl, rbg = _user_info_html(u, lang=norm)
     role = u["role"] if u else "guest"
-    audit_btn = '<button class="tbtn" onclick="showTab(&#39;audit&#39;, this)">📜 Audit Log</button>' if role in ('superadmin','admin') else ''
+    audit_btn = f'<button class="tbtn" onclick="showTab(&#39;audit&#39;, this)">{t("dash.tab_audit", norm)}</button>' if role in ('superadmin','admin') else ''
     user_ws = db.get_user_workspaces(u["username"]) if u else []
     ws_ids = [w["id"] for w in user_ws]
     if not active_ws_id:
@@ -10185,16 +11286,16 @@ def render_dashboard(u, active_ws_id=None):
     except Exception:
         accessible_projs = []
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
-    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
+    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws, lang=norm)
 
     if active_ws == "HSE":
-        return _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws)
+        return _render_hse_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws, lang=norm)
     if active_ws != "ENG":
-        return _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws)
+        return _render_om_dashboard(u, accessible_projs, ws_switcher_html, btns, uname, rlbl, rbg, active_ws=active_ws, lang=norm)
 
-    return f"""<!DOCTYPE html><html lang="en"><head>
+    return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR — Dashboard</title>
+<title>{t("dash.page_title", norm)}</title>
 {_head_icon_tags()}
 {BASE_CSS}
 <style>
@@ -10650,29 +11751,93 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 .del-pbtn{{background:none;border:none;cursor:pointer;color:#ef4444;
   font-size:11px;padding:2px 5px;border-radius:3px}}
 .del-pbtn:hover{{background:#fef2f2}}
+
+/* ── RTL Dashboard Overrides ── */
+html[dir="rtl"] .kpi,
+html[dir="rtl"] .ccard,
+html[dir="rtl"] .pcard,
+html[dir="rtl"] .panel,
+html[dir="rtl"] .pr-block,
+html[dir="rtl"] .ltr-summary-card,
+html[dir="rtl"] .ltr-party-card {{
+  text-align:right;
+}}
+html[dir="rtl"] .klbl,
+html[dir="rtl"] .clbl,
+html[dir="rtl"] .panel-title {{
+  letter-spacing:0;
+  text-transform:none;
+}}
+html[dir="rtl"] .dt-tbl th {{
+  text-align:right;
+}}
+html[dir="rtl"] .dt-tbl th:first-child,
+html[dir="rtl"] .dt-tbl td:first-child {{
+  left:auto;
+  right:0;
+}}
+html[dir="rtl"] .disc-child-label {{
+  padding-left:14px!important;
+  padding-right:18px!important;
+}}
+html[dir="rtl"] .disc-child-label::before {{
+  left:auto;
+  right:8px;
+}}
+html[dir="rtl"] .stitle {{
+  border-left:none;
+  border-right:4px solid var(--pr);
+  padding-left:0;
+  padding-right:10px;
+}}
+html[dir="rtl"] .pr-total {{
+  border-left:1px solid #e3eaf2 !important;
+  border-right:4px solid #2563eb !important;
+}}
+html[dir="rtl"] body.dark .pr-total {{
+  border-left-color:#304257 !important;
+  border-right-color:#2563eb !important;
+}}
+html[dir="rtl"] .ltr-summary-card {{
+  border-left:1px solid #e3eaf2 !important;
+  border-right:4px solid var(--ltr-accent, #2F4F64) !important;
+}}
+html[dir="rtl"] body.dark .ltr-summary-card {{
+  border-left-color:#304257 !important;
+  border-right-color:var(--ltr-accent, #2F4F64) !important;
+}}
+html[dir="rtl"] #aud-tbl th .aud-rz {{
+  right:auto;
+  left:0;
+}}
+html[dir="rtl"] #aud-tbl th,
+html[dir="rtl"] #aud-tbl td {{
+  text-align:right;
+}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head><body data-workspace="{active_ws}">
 
 <div id="ld">
   <div class="spin"></div>
-  <div style="color:rgba(255,255,255,.7);font-size:13px;font-weight:600">Loading dashboard...</div>
+  <div style="color:rgba(255,255,255,.7);font-size:13px;font-weight:600">{t("dash.loading_dashboard", norm)}</div>
 </div>
 
 <div id="topbar">
   <span style="font-size:20px">📋</span>
-  <span class="topbar-title-full" style="font-weight:700;font-size:14px">Document Control Register</span>
-  <span class="topbar-title-short" style="font-weight:800;font-size:13px">DCR</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px">{t("app.title_full", norm)}</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px">{t("app.title_short", norm)}</span>
   {ws_switcher_html}
-  {GLOBAL_SEARCH_TRIGGER_HTML}
+  {_global_search_trigger_html(norm)}
   <div class="sp"></div>
-  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
-  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
+  <button class="tb-btn tb-about-btn" onclick="openM('about-modal')" title="{t("topbar.about_btn", norm)}" aria-label="{t("topbar.about_btn", norm)}">ℹ️<span class="tb-btn-text sr-only">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
+  {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span style="color:rgba(255,255,255,.8);font-size:11px">👤 {uname}
-    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  <span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">{uname}</span></span>
+    <span class="topbar-user-role" style="background:{rbg};border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
 
@@ -10680,21 +11845,21 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
   <!-- Toolbar / Navigation Bar FIRST -->
   <div class="psel-bar">
-    <label>🔍 Project:</label>
+    <label>{t("dash.lbl_project", norm)}</label>
     <select id="proj-sel" onchange="filterProject(this.value)">
-      <option value="">All Projects</option>
+      <option value="">{t("dash.all_projects", norm)}</option>
     </select>
-    <label>🏗 Discipline:</label>
+    <label>{t("dash.lbl_discipline", norm)}</label>
     <select id="disc-sel" onchange="filterDisc(this.value)">
-      <option value="">All Disciplines</option>
+      <option value="">{t("dash.all_disciplines", norm)}</option>
     </select>
     <div class="sp" style="flex:1"></div>
     <div style="display:flex; gap:4px; flex-wrap:nowrap; justify-content:flex-end">
-      <button class="tbtn active" onclick="showTab('overview', this)">📊 Overview</button>
-      <button class="tbtn" onclick="showTab('analytics', this)">📈 Analytics</button>
-      <button class="tbtn" onclick="showTab('overdue', this)">⚠️ Overdue</button>
-      <button class="tbtn" onclick="showTab('executive', this)">📋 Executive</button>
-      <button class="tbtn" onclick="showTab('daily-digest', this)">🌟 Daily Digest</button>
+      <button class="tbtn active" onclick="showTab('overview', this)">{t("dash.tab_overview", norm)}</button>
+      <button class="tbtn" onclick="showTab('analytics', this)">{t("dash.tab_analytics", norm)}</button>
+      <button class="tbtn" onclick="showTab('overdue', this)">{t("dash.tab_overdue", norm)}</button>
+      <button class="tbtn" onclick="showTab('executive', this)">{t("dash.tab_executive", norm)}</button>
+      <button class="tbtn" onclick="showTab('daily-digest', this)">{t("dash.tab_daily_digest", norm)}</button>
       {audit_btn}
     </div>
   </div>
@@ -10703,13 +11868,13 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
     <!-- TAB: DAILY DIGEST -->
     <div id="tab-daily-digest" class="tab-pane">
       <div class="stitle" style="display:flex; justify-content:space-between; align-items:center;">
-        <div>🌟 Daily Digest</div>
+        <div>{t("dash.digest_title", norm)}</div>
         <div>
-          <input type="date" id="digest-date" style="padding:4px 8px; border:1px solid var(--bd); border-radius:4px; font-size:12px; background:var(--bg); color:var(--tx); letter-spacing:normal; text-transform:none; font-weight:normal;" onchange="loadDailyDigest()">
+          <input type="date" id="digest-date" class="bidi-ltr" style="padding:4px 8px; border:1px solid var(--bd); border-radius:4px; font-size:12px; background:var(--bg); color:var(--tx); letter-spacing:normal; text-transform:none; font-weight:normal;" onchange="loadDailyDigest()">
         </div>
       </div>
       <div id="daily-digest-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
-        <div style="color:var(--mu);font-size:14px;">Loading Daily Digest...</div>
+        <div style="color:var(--mu);font-size:14px;">{t("dash.digest_loading", norm)}</div>
       </div>
     </div>
 
@@ -10718,56 +11883,56 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <div class="overview-stack">
         <!-- 1. PROJECTS Grid -->
         <div class="panel overview-projects-panel">
-          <div class="panel-title">Projects</div>
+          <div class="panel-title">{t("dash.sec_projects", norm)}</div>
           <div class="pgrid" id="pgrid"></div>
         </div>
 
         <!-- 2. Submittals KPI Summary -->
         <div class="panel" style="padding:11px 12px;margin-bottom:0;min-width:0">
-          <div class="panel-title" style="margin-bottom:8px">Submittals KPI Summary</div>
+          <div class="panel-title" style="margin-bottom:8px">{t("dash.sec_submittals_kpi", norm)}</div>
           <div class="kpi-grid" style="margin-bottom:0">
-            <div class="kpi"><div class="kval" id="kpi-total">—</div><div class="klbl">Total Submittals</div></div>
-            <div class="kpi ok"><div class="kval" id="kpi-approved">—</div><div class="klbl">Approved</div></div>
+            <div class="kpi"><div class="kval bidi-ltr" id="kpi-total">—</div><div class="klbl">{t("dash.kpi_total_submittals", norm)}</div></div>
+            <div class="kpi ok"><div class="kval bidi-ltr" id="kpi-approved">—</div><div class="klbl">{t("dash.kpi_approved", norm)}</div></div>
             <div class="kpi wa">
-              <div class="kval" id="kpi-pending">—</div>
-              <div class="klbl">Under Review</div>
-              <div id="kpi-pending-sub" style="font-size:9.5px;color:var(--mu);margin-top:3px;font-weight:600">Active Queue</div>
+              <div class="kval bidi-ltr" id="kpi-pending">—</div>
+              <div class="klbl">{t("dash.kpi_under_review", norm)}</div>
+              <div id="kpi-pending-sub" style="font-size:9.5px;color:var(--mu);margin-top:3px;font-weight:600">{t("dash.kpi_active_queue", norm)}</div>
             </div>
             <div class="kpi er">
-              <div class="kval" id="kpi-overdue">—</div>
-              <div class="klbl">Overdue</div>
-              <div id="kpi-overdue-sub" style="font-size:9.5px;color:#ef4444;margin-top:3px;font-weight:700;background:#fef2f2;padding:1px 6px;border-radius:4px;border:1px solid #fecaca;display:inline-block">FROM PENDING</div>
+              <div class="kval bidi-ltr" id="kpi-overdue">—</div>
+              <div class="klbl">{t("dash.kpi_overdue", norm)}</div>
+              <div id="kpi-overdue-sub" style="font-size:9.5px;color:#ef4444;margin-top:3px;font-weight:700;background:#fef2f2;padding:1px 6px;border-radius:4px;border:1px solid #fecaca;display:inline-block">{t("dash.kpi_from_pending", norm)}</div>
             </div>
-            <div class="kpi pu"><div class="kval" id="kpi-rejected">—</div><div class="klbl">Rejected/Revise</div></div>
-            <div class="kpi"><div class="kval" id="kpi-pct">—</div><div class="klbl">Completion %</div></div>
-            <div class="kpi"><div class="kval" id="kpi-projs">—</div><div class="klbl">Projects</div></div>
+            <div class="kpi pu"><div class="kval bidi-ltr" id="kpi-rejected">—</div><div class="klbl">{t("dash.kpi_rejected_revise", norm)}</div></div>
+            <div class="kpi"><div class="kval bidi-ltr" id="kpi-pct">—</div><div class="klbl">{t("dash.kpi_completion_pct", norm)}</div></div>
+            <div class="kpi"><div class="kval bidi-ltr" id="kpi-projs">—</div><div class="klbl">{t("dash.kpi_projects", norm)}</div></div>
           </div>
         </div>
       </div>
 
       <!-- 3. Operational Breakdown -->
       <div class="panel overview-wide-panel">
-        <div class="panel-title">Operational Breakdown</div>
+        <div class="panel-title">{t("dash.sec_operational_breakdown", norm)}</div>
         <div class="overview-table-switch">
-          <button type="button" id="ovtab-doc-types" class="overview-table-btn active" onclick="setOverviewTableTab('docTypes')">Document Types Summary</button>
-          <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">Discipline Breakdown</button>
+          <button type="button" id="ovtab-doc-types" class="overview-table-btn active" onclick="setOverviewTableTab('docTypes')">{t("dash.tab_doc_types_summary", norm)}</button>
+          <button type="button" id="ovtab-discipline" class="overview-table-btn" onclick="setOverviewTableTab('discipline')">{t("dash.tab_discipline_breakdown", norm)}</button>
         </div>
         <div class="overview-table-shell">
           <div id="overview-pane-docTypes" class="overview-table-pane active">
             <div class="tbl-wrap">
               <table class="dt-tbl">
                 <thead><tr>
-                  <th>Project</th><th>Code</th><th>Type</th>
-                  <th style="text-align:center">Total</th>
-                  <th style="text-align:center">Approved</th>
-                  <th style="text-align:center">Pending</th>
-                  <th style="text-align:center">Rejected</th>
-                  <th style="text-align:center">Info / Closed</th>
-                  <th style="text-align:center">Overdue</th>
+                  <th>{t("dash.th_project", norm)}</th><th>{t("dash.th_code", norm)}</th><th>{t("dash.th_type", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_total", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_approved", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_pending", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_rejected", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_info_closed", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_overdue", norm)}</th>
                 </tr></thead>
                 <tbody id="dt-tbody"></tbody>
               </table>
-              <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+              <div id="dt-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">{t("dash.no_data", norm)}</div>
             </div>
           </div>
           <div id="overview-pane-discipline" class="overview-table-pane">
@@ -10786,18 +11951,18 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
                   <col style="width:52px">
                 </colgroup>
                 <thead><tr>
-                  <th>Project</th><th>Doc Type</th><th>Disciplines</th>
-                  <th style="text-align:center">Total</th>
-                  <th style="text-align:center">Approved</th>
-                  <th style="text-align:center">Pending</th>
-                  <th style="text-align:center">Rejected</th>
-                  <th style="text-align:center">Info / Closed</th>
-                  <th style="text-align:center">Overdue</th>
-                  <th style="text-align:center;width:42px">View</th>
+                  <th>{t("dash.th_project", norm)}</th><th>{t("dash.th_doc_type", norm)}</th><th>{t("dash.th_disciplines", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_total", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_approved", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_pending", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_rejected", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_info_closed", norm)}</th>
+                  <th style="text-align:center">{t("dash.th_overdue", norm)}</th>
+                  <th style="text-align:center;width:42px">{t("dash.th_view", norm)}</th>
                 </tr></thead>
                 <tbody id="disc-tbody"></tbody>
               </table>
-              <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">No data</div>
+              <div id="disc-empty" style="text-align:center;padding:24px;color:var(--mu);display:none">{t("dash.no_data", norm)}</div>
             </div>
             <div id="disc-mobile-list" class="disc-mobile-list"></div>
           </div>
@@ -10806,17 +11971,17 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 
       <!-- 4. PR Analytics -->
       <div class="panel overview-pr-panel" style="margin-bottom:10px">
-        <div class="panel-title">PR Analytics</div>
+        <div class="panel-title">{t("dash.sec_pr_analytics", norm)}</div>
         <div id="pr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
-          <div style="font-size:11px;color:var(--mu)">Loading...</div>
+          <div style="font-size:11px;color:var(--mu)">{t("common.loading", norm)}</div>
         </div>
       </div>
 
       <!-- 5. Letters Overview -->
       <div class="panel overview-wide-panel">
-        <div class="panel-title">Letters Overview</div>
+        <div class="panel-title">{t("dash.sec_letters_overview", norm)}</div>
         <div id="ltr-panel" style="display:grid;grid-template-columns:1fr;gap:10px">
-          <div style="font-size:11px;color:var(--mu)">Loading...</div>
+          <div style="font-size:11px;color:var(--mu)">{t("common.loading", norm)}</div>
         </div>
       </div>
     </div>
@@ -10825,26 +11990,26 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   <div id="tab-analytics" class="tab-pane">
     <!-- Documents by Project & Status Distribution Charts -->
     <div class="charts-grid">
-      <div class="ccard"><div class="clbl">Documents by Project</div><canvas id="cProj"></canvas></div>
-      <div class="ccard"><div class="clbl">Status Distribution</div><canvas id="cStatus"></canvas></div>
+      <div class="ccard"><div class="clbl">{t("dash.chart_docs_by_project", norm)}</div><canvas id="cProj"></canvas></div>
+      <div class="ccard"><div class="clbl">{t("dash.chart_status_dist", norm)}</div><canvas id="cStatus"></canvas></div>
     </div>
     <div class="charts-grid">
       <div class="ccard">
-        <div class="clbl">📅 Monthly Trend (last 6 months)</div>
+        <div class="clbl">{t("dash.chart_monthly_trend", norm)}</div>
         <div style="position:relative;height:200px"><canvas id="cTrend"></canvas></div>
       </div>
       <div class="ccard">
-        <div class="clbl">⏳ Aging — Pending Docs (Days Lapsed)</div>
+        <div class="clbl">{t("dash.chart_aging", norm)}</div>
         <div style="position:relative;height:200px"><canvas id="cAging"></canvas></div>
       </div>
     </div>
     <div class="charts-grid">
       <div class="ccard">
-        <div class="clbl">🔄 Document Quality (Revisions Needed)</div>
+        <div class="clbl">{t("dash.chart_quality", norm)}</div>
         <div style="position:relative;height:200px"><canvas id="cQuality"></canvas></div>
       </div>
       <div class="ccard">
-        <div class="clbl">✅ Approval Rate by Doc Type</div>
+        <div class="clbl">{t("dash.chart_approval_rate", norm)}</div>
         <div style="position:relative;height:200px"><canvas id="cApprRate"></canvas></div>
       </div>
     </div>
@@ -10853,52 +12018,52 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
   <!-- TAB: OVERDUE -->
   <div id="tab-overdue" class="tab-pane">
     <div class="panel">
-      <div class="panel-title">⚠️ Overdue Documents — Awaiting Reply</div>
+      <div class="panel-title">{t("dash.ov_title", norm)}</div>
       <div id="ov-filter" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mu);cursor:pointer;">
-          <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> Latest Revisions Only
+          <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> {t("dash.ov_latest_revs", norm)}
         </label>
-        <input id="ov-search" placeholder="🔍 Search..." oninput="filterOverdue()"
+        <input id="ov-search" placeholder="{t("dash.ov_search_ph", norm)}" oninput="filterOverdue()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;flex:1;min-width:160px">
         <select id="ov-sort" onchange="filterOverdue()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
-          <option value="days">Sort: Most Overdue</option>
-          <option value="doc">Sort: Doc No.</option>
-          <option value="disc">Sort: Discipline</option>
+          <option value="days">{t("dash.ov_sort_days", norm)}</option>
+          <option value="doc">{t("dash.ov_sort_doc", norm)}</option>
+          <option value="disc">{t("dash.ov_sort_disc", norm)}</option>
         </select>
       </div>
       <div id="ov-list" style="max-height:450px;overflow-y:auto"></div>
-      <div id="ov-count" style="font-size:11px;color:var(--mu);margin-top:8px;text-align:right"></div>
+      <div id="ov-count" style="font-size:11px;color:var(--mu);margin-top:8px;text-align:end"></div>
     </div>
   </div>
 
   <!-- TAB: EXECUTIVE SUMMARY -->
   <div id="tab-executive" class="tab-pane">
     <div id="exec-content">
-      <div style="text-align:center;padding:40px;color:var(--mu)">Loading...</div>
+      <div style="text-align:center;padding:40px;color:var(--mu)">{t("common.loading", norm)}</div>
     </div>
   </div>
 
   <!-- TAB: AUDIT LOG -->
   <div id="tab-audit" class="tab-pane">
     <div class="panel">
-      <div class="panel-title">📜 Activity Log — All Changes</div>
+      <div class="panel-title">{t("dash.aud_title", norm)}</div>
       <!-- Filters -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <select id="aud-pid" onchange="loadAudit()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none;min-width:160px">
-          <option value="">All Projects</option>
+          <option value="">{t("dash.aud_all_projects", norm)}</option>
         </select>
         <select id="aud-user" onchange="loadAudit()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
-          <option value="">All Users</option>
+          <option value="">{t("dash.aud_all_users", norm)}</option>
         </select>
         <select id="aud-action" onchange="loadAudit()"
           style="padding:6px 10px;border:1.5px solid var(--bd);border-radius:var(--rd);font-size:12px;outline:none">
-          <option value="">All Actions</option>
+          <option value="">{t("dash.aud_all_actions", norm)}</option>
         </select>
-        <button class="tbtn" onclick="resetAuditColWidths()" title="Reset column widths to default" style="font-size:11px;margin-left:auto">↺ Reset Column Widths</button>
-        <button class="tbtn" onclick="loadAudit(true)">🔄 Refresh</button>
+        <button class="tbtn" onclick="resetAuditColWidths()" title="{t("dash.aud_reset_widths_title", norm)}" style="font-size:11px;margin-inline-start:auto">{t("dash.aud_reset_widths", norm)}</button>
+        <button class="tbtn" onclick="loadAudit(true)">{t("dash.aud_refresh", norm)}</button>
       </div>
       <!-- Table -->
       <style>
@@ -10911,17 +12076,17 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <div style="overflow:auto;max-height:calc(100vh - 270px);border:1px solid var(--bd);border-radius:var(--rd)">
         <table class="dt-tbl" id="aud-tbl" style="min-width:1050px;table-layout:fixed">
           <thead><tr>
-            <th style="width:130px">Time</th>
-            <th style="width:90px">User</th>
-            <th style="width:95px">Action</th>
-            <th style="width:110px">Project</th>
-            <th style="width:110px">Document</th>
-            <th style="width:90px">Field</th>
-            <th style="width:120px">Old Value</th>
-            <th style="width:120px">New Value</th>
-            <th style="width:160px">Detail</th>
-            <th style="width:105px">IP Address</th>
-            <th style="width:125px">Device</th>
+            <th style="width:130px">{t("dash.aud_th_time", norm)}</th>
+            <th style="width:90px">{t("dash.aud_th_user", norm)}</th>
+            <th style="width:95px">{t("dash.aud_th_action", norm)}</th>
+            <th style="width:110px">{t("dash.aud_th_project", norm)}</th>
+            <th style="width:110px">{t("dash.aud_th_document", norm)}</th>
+            <th style="width:90px">{t("dash.aud_th_field", norm)}</th>
+            <th style="width:120px">{t("dash.aud_th_old", norm)}</th>
+            <th style="width:120px">{t("dash.aud_th_new", norm)}</th>
+            <th style="width:160px">{t("dash.aud_th_detail", norm)}</th>
+            <th style="width:105px">{t("dash.aud_th_ip", norm)}</th>
+            <th style="width:125px">{t("dash.aud_th_device", norm)}</th>
           </tr></thead>
           <tbody id="aud-tbody"></tbody>
         </table>
@@ -10929,9 +12094,9 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
       <div id="aud-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--mu)">
         <span id="aud-count"></span>
         <div style="display:flex;gap:8px">
-          <button id="aud-prev" class="tbtn" onclick="auditPage(-1)" disabled>← Prev</button>
-          <span id="aud-page" style="padding:5px 10px;font-size:11px">Page 1</span>
-          <button id="aud-next" class="tbtn" onclick="auditPage(1)">Next →</button>
+          <button id="aud-prev" class="tbtn" onclick="auditPage(-1)" disabled>{t("dash.aud_prev", norm)}</button>
+          <span id="aud-page" style="padding:5px 10px;font-size:11px">{t("dash.aud_page", norm, page=1)}</span>
+          <button id="aud-next" class="tbtn" onclick="auditPage(1)">{t("dash.aud_next", norm)}</button>
         </div>
       </div>
     </div>
@@ -10942,27 +12107,59 @@ body.dark .pr-items-section{{background:#1e3147;color:#dbeafe;border-color:#3042
 <!-- Modals -->
 <div class="overlay hidden" id="newproj-modal">
   <div class="modal" style="max-width:420px">
-    <div class="mhdr"><span>➕ New Project</span><button class="xbtn" onclick="closeM('newproj-modal')">✕</button></div>
+    <div class="mhdr"><span>{t("dash.modal_new_project", norm)}</span><button class="xbtn" onclick="closeM('newproj-modal')">✕</button></div>
     <div class="mbody">
       <div class="fgrid">
-        <div class="fg"><label>Project ID</label><input id="np-id" placeholder="e.g. 24CP01"></div>
-        <div class="fg"><label>Short Code</label><input id="np-code" placeholder="e.g. CP01"></div>
-        <div class="fg full"><label>Project Name</label><input id="np-name" placeholder="Full project name"></div>
+        <div class="fg"><label>{t("dash.lbl_project_id", norm)}</label><input id="np-id" class="bidi-ltr" placeholder="{t("dash.ph_project_id", norm)}"></div>
+        <div class="fg"><label>{t("dash.lbl_short_code", norm)}</label><input id="np-code" class="bidi-ltr" placeholder="{t("dash.ph_short_code", norm)}"></div>
+        <div class="fg full"><label>{t("dash.lbl_project_name", norm)}</label><input id="np-name" placeholder="{t("dash.ph_project_name", norm)}"></div>
       </div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('newproj-modal')">Cancel</button>
-      <button class="btn btn-pr" id="cpbtn" onclick="createProject()">Create</button>
+      <button class="btn btn-sc" onclick="closeM('newproj-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" id="cpbtn" onclick="createProject()">{t("common.create", norm)}</button>
     </div>
   </div>
 </div>
 
 
 
-{SHARED_JS}
+{_shared_js_html(norm)}
 <script>
 const ROLE='{role}';
 window._ACCESSIBLE_PROJECTS = {projs_json};
+const _dT = (k, v, fb) => {{
+  const res = typeof window.t === 'function' ? window.t(k, v) : '';
+  return (res && res !== k) ? res : (fb || k);
+}};
+const _dIsRtl = () => (window.DCR_DIR === 'rtl' || document.documentElement.dir === 'rtl');
+function _dDtName(code, defName) {{
+  if (typeof window.tDt === 'function') return window.tDt(code, defName);
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return defName || '';
+  const key = 'dt_name.' + c;
+  const tr = _dT(key, null, '');
+  return (tr && tr !== key && !String(tr).startsWith('dt_name.')) ? tr : (defName || c);
+}}
+function _dStatusLbl(val) {{
+  const s = String(val || '').trim();
+  if (!s) return '';
+  if (typeof window.tStatus === 'function') return window.tStatus(s);
+  const low = s.toLowerCase().replace(/\\s+/g, ' ');
+  const lowNoCommaSpace = low.replace(/\\s*,\\s*/g, ',');
+  const map = {{
+    'approved': 'status.approved', 'approved with comments': 'status.approved_with_comments',
+    'pending': 'status.pending', 'under review': 'status.under_review',
+    'open': 'status.open', 'in progress': 'status.in_progress', 'in-progress': 'status.in_progress',
+    'closed': 'status.closed', 'completed': 'status.completed',
+    'rejected': 'status.rejected', 'revise & resubmit': 'status.revise_resubmit',
+    'b,c - approved & resubmit': 'status.bc_approved_resubmit',
+    'b, c - approved & resubmit': 'status.bc_approved_resubmit',
+    'overdue': 'status.overdue', 'info / closed': 'status.info_closed', 'not closed': 'status.not_closed'
+  }};
+  const k = map[low] || map[lowNoCommaSpace];
+  return k ? _dT(k, null, s) : s;
+}}
 let STATS=[],OVERDUE_DATA=[],EXEC_DATA=null;
 let PR_ANALYTICS=null;
 let pChart,sChart,tChart,aChart,qChart,arChart,prTradeChart;
@@ -11003,14 +12200,14 @@ function showTab(name, btn){{
       if(!STATS)return;
       // Populate project filter
       document.getElementById('proj-sel').innerHTML=
-        '<option value="">All Projects</option>'+
+        `<option value="">${{escHtml(_dT('dash.all_projects',null,'All Projects'))}}</option>`+
       STATS.map(p=>`<option value="${{p.id}}">${{p.name}} (${{p.code}})</option>`).join('');
     // Populate discipline filter
     const discs=new Set();
     STATS.forEach(p=>(p.dt_stats||[]).forEach(dt=>
       (dt.disc_breakdown||[]).forEach(d=>discs.add(d.disc))));
         document.getElementById('disc-sel').innerHTML=
-          '<option value="">All Disciplines</option>'+
+          `<option value="">${{escHtml(_dT('dash.all_disciplines',null,'All Disciplines'))}}</option>`+
           [...discs].sort().map(d=>`<option value="${{d}}">${{d}}</option>`).join('');
         await refreshOverviewPanels('');
         renderAll('','');
@@ -11072,14 +12269,14 @@ function renderPrAnalytics(data){{
   const el=document.getElementById('pr-panel');
   if(!el)return;
   if(!data){{
-    el.innerHTML='<div style="font-size:11px;color:var(--mu)">Unavailable</div>';
+    el.innerHTML=`<div style="font-size:11px;color:var(--mu)">${{escHtml(_dT('dash.pr_unavailable',null,'Unavailable'))}}</div>`;
     if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
     return;
   }}
   const totalPRs=Number(data.total_pr_records||0);
   const prProjects=Array.isArray(data.top_projects)?data.top_projects:[];
   const topProj=prProjects.length?prProjects[0]:null;
-  const topProjName=topProj?(topProj.project_name||topProj.project_code||'Top Project'):'None';
+  const topProjName=topProj?(topProj.project_name||topProj.project_code||_dT('dash.pr_top_project',null,'Top Project')):_dT('dash.pr_none',null,'None');
   const topProjCode=topProj?(topProj.project_code||topProj.project_name||'Top'):'—';
   const topProjCount=topProj?Number(topProj.pr_count||0):0;
   const topProjShare=(totalPRs>0&&topProjCount>0)?Math.round((topProjCount/totalPRs)*100):0;
@@ -11090,45 +12287,46 @@ function renderPrAnalytics(data){{
   const rawTrades=Array.isArray(data.top_trades)?data.top_trades:[];
   const tradeMap=new Map();
   rawTrades.forEach(t=>{{
-    let name=(t.trade==='Unspecified'||!t.trade)?'General / Multi-Discipline':String(t.trade).trim();
+    let name=(t.trade==='Unspecified'||!t.trade)?_dT('dash.pr_general_trade',null,'General / Multi-Discipline'):String(t.trade).trim();
     if(name.toLowerCase()==='other'||name.toLowerCase()==='others'){{
-      name='Others';
+      name=_dT('dash.pr_others',null,'Others');
     }}
     tradeMap.set(name,(tradeMap.get(name)||0)+(Number(t.pr_count)||0));
   }});
   const trades=Array.from(tradeMap.entries()).map(([trade,pr_count])=>({{trade,pr_count}}));
   trades.sort((a,b)=>b.pr_count-a.pr_count);
 
-  const topTradeHeadline=(trades.length>0&&trades[0].trade)?trades[0].trade:((data.top_trade_name==='Unspecified'||!data.top_trade_name)?'General / Multi-Discipline':data.top_trade_name);
+  const topTradeHeadline=(trades.length>0&&trades[0].trade)?trades[0].trade:((data.top_trade_name==='Unspecified'||!data.top_trade_name)?_dT('dash.pr_general_trade',null,'General / Multi-Discipline'):data.top_trade_name);
   const topTradeCount=(trades.length>0)?trades[0].pr_count:(data.top_trade_count||0);
 
   const topProjects=prProjects.length
     ? prProjects.map((p,idx)=>{{
         const pCode=(p.project_code||'').trim();
         const pName=(p.project_name||'').trim();
-        let displayTitle=pName||pCode||'Project';
+        let displayTitle=pName||pCode||_dT('dash.th_project',null,'Project');
         if(pCode && pName && !pName.toLowerCase().startsWith(pCode.toLowerCase())){{
           displayTitle=`${{pCode}} — ${{pName}}`;
         }}
         return `<div style="display:flex;justify-content:space-between;gap:10px;padding:${{idx===0?'6px 0 7px':'5px 0'}};border-bottom:1px solid var(--bd);align-items:center">
         <div style="min-width:0;flex:1">
           <div style="font-size:${{idx===0?'11.5px':'11px'}};font-weight:${{idx===0?'800':'600'}};color:${{idx===0?'var(--pr)':'var(--tx)'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{displayTitle}}">${{displayTitle}}</div>
-          ${{idx===0?'<div style="font-size:9px;color:var(--mu);margin-top:1px;text-transform:uppercase;letter-spacing:.28px">Most active project</div>':''}}
+          ${{idx===0?`<div style="font-size:9px;color:var(--mu);margin-top:1px;text-transform:uppercase;letter-spacing:.28px">${{escHtml(_dT('dash.pr_most_active_project',null,'Most active project'))}}</div>`:''}}
         </div>
-        <span style="font-size:${{idx===0?'12px':'11px'}};font-weight:800;color:var(--pr);white-space:nowrap;margin-left:8px">${{p.pr_count}}</span>
+        <span class="bidi-ltr" style="font-size:${{idx===0?'12px':'11px'}};font-weight:800;color:var(--pr);white-space:nowrap;margin-inline-start:8px">${{p.pr_count}}</span>
       </div>`;
     }}).join('')
-    : `<div style="font-size:11px;color:var(--mu);padding:12px 0;text-align:center">No project data</div>`;
+    : `<div style="font-size:11px;color:var(--mu);padding:12px 0;text-align:center">${{escHtml(_dT('dash.pr_no_project_data',null,'No project data'))}}</div>`;
 
   const otherProjectsCount=Math.max(0,prProjects.length-1);
-  const otherProjectsLabel=otherProjectsCount>0?`${{otherProjectsCount}} Other Projects`:'Remaining Projects';
+  const otherProjectsLabel=otherProjectsCount>0?_dT('dash.pr_other_projects',{{count:otherProjectsCount}},`${{otherProjectsCount}} Other Projects`):_dT('dash.pr_remaining_projects',null,'Remaining Projects');
+  const prsUnit=_dT('dash.pr_prs_unit',null,'PRs');
 
   el.innerHTML=`<div class="pr-analytics-grid">
     <div class="pr-block pr-total" style="background:var(--bg);border-radius:8px;padding:12px 14px;border:1px solid #e3eaf2;border-left:4px solid #2563eb !important;box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between;min-height:165px">
       <div>
-        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Total PRs</div>
-        <div style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
-        <div style="font-size:9.5px;color:var(--mu);margin-top:2px">Total Purchase Requisitions</div>
+        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{escHtml(_dT('dash.pr_total_prs',null,'Total PRs'))}}</div>
+        <div class="bidi-ltr" style="font-size:26px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:3px">${{totalPRs}}</div>
+        <div style="font-size:9.5px;color:var(--mu);margin-top:2px">${{escHtml(_dT('dash.pr_total_subtitle',null,'Total Purchase Requisitions'))}}</div>
       </div>
       <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;margin-top:auto;background:rgba(37,99,235,.04);border:1px solid rgba(37,99,235,.12);border-radius:8px">
         <div style="position:relative;width:58px;height:58px;flex-shrink:0">
@@ -11138,47 +12336,47 @@ function renderPrAnalytics(data){{
             <path stroke="#94a3b8" stroke-dasharray="${{remainingShare}}, 100" stroke-dashoffset="-${{topProjShare}}" stroke-width="4.2" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
           </svg>
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1">
-            <span style="font-size:12.5px;font-weight:800;color:#2563eb">${{topProjShare}}%</span>
-            <span style="font-size:7px;font-weight:700;color:var(--mu);text-transform:uppercase;margin-top:2px">Share</span>
+            <span class="bidi-ltr" style="font-size:12.5px;font-weight:800;color:#2563eb">${{topProjShare}}%</span>
+            <span style="font-size:7px;font-weight:700;color:var(--mu);text-transform:uppercase;margin-top:2px">${{escHtml(_dT('dash.pr_share',null,'Share'))}}</span>
           </div>
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px">
           <div>
             <div style="display:flex;align-items:center;gap:6px">
               <span style="width:7px;height:7px;border-radius:2px;background:#2563eb;flex-shrink:0"></span>
-              <span style="font-size:11px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{topProjCode}} — ${{topProjName}}">${{topProjCode}}</span>
+              <span class="bidi-ltr" style="font-size:11px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{topProjCode}} — ${{topProjName}}">${{topProjCode}}</span>
             </div>
-            <div style="font-size:11px;font-weight:700;color:#2563eb;margin-left:13px">${{topProjCount}} PRs <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{topProjShare}}%)</span></div>
+            <div class="bidi-ltr" style="font-size:11px;font-weight:700;color:#2563eb;margin-inline-start:13px">${{topProjCount}} ${{escHtml(prsUnit)}} <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{topProjShare}}%)</span></div>
           </div>
           <div style="border-top:1px dashed var(--bd);padding-top:6px">
             <div style="display:flex;align-items:center;gap:6px">
               <span style="width:7px;height:7px;border-radius:2px;background:#94a3b8;flex-shrink:0"></span>
-              <span style="font-size:10.5px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{otherProjectsLabel}}</span>
+              <span style="font-size:10.5px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{escHtml(otherProjectsLabel)}}</span>
             </div>
-            <div style="font-size:11px;font-weight:700;color:var(--tx,#475569);margin-left:13px">${{remainingCount}} PRs <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{remainingShare}}%)</span></div>
+            <div class="bidi-ltr" style="font-size:11px;font-weight:700;color:var(--tx,#475569);margin-inline-start:13px">${{remainingCount}} ${{escHtml(prsUnit)}} <span style="font-size:9.5px;font-weight:600;color:var(--mu)">(${{remainingShare}}%)</span></div>
           </div>
         </div>
       </div>
     </div>
     <div class="pr-block pr-projects" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:165px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
-        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Projects</div>
-        <div style="font-size:10px;color:var(--mu);white-space:nowrap">${{prProjects.length}} projects</div>
+        <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">${{escHtml(_dT('dash.pr_most_active_projects',null,'Most Active Projects'))}}</div>
+        <div class="bidi-ltr" style="font-size:10px;color:var(--mu);white-space:nowrap">${{escHtml(_dT('dash.pr_projects_count',{{count:prProjects.length}},`${{prProjects.length}} projects`))}}</div>
       </div>
-      <div style="flex:1;overflow-y:auto;max-height:160px;padding-right:2px">
+      <div style="flex:1;overflow-y:auto;max-height:160px;padding-inline-end:2px">
         ${{topProjects}}
       </div>
     </div>
     <div class="pr-block pr-trades" style="background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid #e3eaf2;display:flex;flex-direction:column;min-height:165px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">Most Active Disciplines / Trades</div>
-          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{topTradeHeadline}}</div>
-          <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">Most active discipline / trade</div>
+          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px">${{escHtml(_dT('dash.pr_most_active_trades',null,'Most Active Disciplines / Trades'))}}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1.1;margin-top:5px">${{escHtml(topTradeHeadline)}}</div>
+          <div style="font-size:9px;color:var(--mu);margin-top:2px;text-transform:uppercase;letter-spacing:.28px">${{escHtml(_dT('dash.pr_most_active_trade_sub',null,'Most active discipline / trade'))}}</div>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{topTradeCount}} <span style="font-size:10.5px;font-weight:600;color:var(--mu)">PRs</span></div>
-          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{data.trade_count_total||trades.length||0}} disciplines / trades</div>
+        <div style="text-align:end">
+          <div class="bidi-ltr" style="font-size:15px;font-weight:800;color:var(--pr);line-height:1">${{topTradeCount}} <span style="font-size:10.5px;font-weight:600;color:var(--mu)">${{escHtml(prsUnit)}}</span></div>
+          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{escHtml(_dT('dash.pr_trades_count',{{count:data.trade_count_total||trades.length||0}},`${{data.trade_count_total||trades.length||0}} disciplines / trades`))}}</div>
         </div>
       </div>
       <div style="flex:1;min-height:150px;max-height:160px"><canvas id="pr-trades-chart"></canvas></div>
@@ -11188,6 +12386,7 @@ function renderPrAnalytics(data){{
   if(prTradeChart){{prTradeChart.destroy();prTradeChart=null;}}
   if(!tradeCanvas)return;
   const dark=document.body.classList.contains('dark');
+  const isRtl=_dIsRtl();
   const prTradeMax=(trades.length>0)?Number(trades[0].pr_count||0):10;
   const prScaleMax=Math.ceil(prTradeMax*1.12);
   prTradeChart=new Chart(tradeCanvas,{{
@@ -11195,7 +12394,7 @@ function renderPrAnalytics(data){{
     data:{{
       labels:trades.map(t=>t.trade),
       datasets:[{{
-        label:'PR Count',
+        label:_dT('dash.pr_chart_label',null,'PR Count'),
         data:trades.map(t=>t.pr_count),
         backgroundColor:'#2563a8',
         borderRadius:4
@@ -11206,8 +12405,10 @@ function renderPrAnalytics(data){{
       maintainAspectRatio:false,
       indexAxis:'y',
       plugins:{{
-        legend:{{display:false}},
+        legend:{{display:false,rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}},
         tooltip:{{
+          rtl:isRtl,
+          textDirection:isRtl?'rtl':'ltr',
           backgroundColor:'#0f172a',
           titleColor:'#ffffff',
           bodyColor:'#e2e8f0',
@@ -11216,7 +12417,7 @@ function renderPrAnalytics(data){{
           padding:10,
           displayColors:false,
           callbacks:{{
-            label:ctx=>` ${{ctx.parsed.x != null ? ctx.parsed.x : ctx.raw}} Purchase Requisitions`
+            label:ctx=>` ${{ctx.parsed.x != null ? ctx.parsed.x : ctx.raw}} ${{_dT('dash.pr_tooltip_unit',null,'Purchase Requisitions')}}`
           }}
         }}
       }},
@@ -11227,13 +12428,16 @@ function renderPrAnalytics(data){{
           grid:{{color:dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.06)'}},
           ticks:{{precision:0,font:{{size:10}},color:dark?'#cbd5e1':'#54657d'}}
         }},
-        y:{{grid:{{display:false}},ticks:{{font:{{size:10}},color:dark?'#dbe7f3':'#334155'}}}}
+        y:{{position:isRtl?'right':'left',grid:{{display:false}},ticks:{{font:{{size:10}},color:dark?'#dbe7f3':'#334155'}}}}
       }}
     }},
     plugins:[{{
       id:'prValueLabels',
       afterDatasetsDraw(chart){{
         const ctx=chart.ctx;
+        const isRev=!!(chart.scales&&chart.scales.x&&chart.scales.x.options&&chart.scales.x.options.reverse);
+        const chartRight=(chart.chartArea?chart.chartArea.right:300);
+        const chartLeft=(chart.chartArea?chart.chartArea.left:0);
         chart.data.datasets.forEach((dataset,i)=>{{
           const meta=chart.getDatasetMeta(i);
           if(!meta||!meta.data)return;
@@ -11243,16 +12447,26 @@ function renderPrAnalytics(data){{
               ctx.save();
               ctx.font='700 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
               ctx.fillStyle=dark?'#93c5fd':'#1e40af';
-              ctx.textAlign='left';
               ctx.textBaseline='middle';
-              const chartRight=(chart.chartArea?chart.chartArea.right:300);
               const textWidth=ctx.measureText(String(val)).width;
-              if(bar.x + 6 + textWidth > chartRight){{
-                ctx.textAlign='right';
-                ctx.fillStyle='#ffffff';
-                ctx.fillText(String(val), bar.x - 5, bar.y);
+              if(!isRev){{
+                if(bar.x + 6 + textWidth > chartRight){{
+                  ctx.textAlign='right';
+                  ctx.fillStyle='#ffffff';
+                  ctx.fillText(String(val), bar.x - 5, bar.y);
+                }}else{{
+                  ctx.textAlign='left';
+                  ctx.fillText(String(val), bar.x + 5, bar.y);
+                }}
               }}else{{
-                ctx.fillText(String(val), bar.x + 5, bar.y);
+                if(bar.x - 6 - textWidth < chartLeft){{
+                  ctx.textAlign='left';
+                  ctx.fillStyle='#ffffff';
+                  ctx.fillText(String(val), bar.x + 5, bar.y);
+                }}else{{
+                  ctx.textAlign='right';
+                  ctx.fillText(String(val), bar.x - 5, bar.y);
+                }}
               }}
               ctx.restore();
             }}
@@ -11281,13 +12495,13 @@ function updateKPIs(d){{
   const peSub=document.getElementById('kpi-pending-sub');
   if(peSub){{
     const onTime=Math.max(0,pe-ov);
-    peSub.textContent=`${{onTime}} on time · ${{ov}} overdue`;
+    peSub.textContent=_dT('dash.kpi_on_time_overdue',{{on_time:onTime,ov}},`${{onTime}} on time · ${{ov}} overdue`);
   }}
   const ovSub=document.getElementById('kpi-overdue-sub');
   if(ovSub){{
     const pct=pe>0?Math.round(ov/pe*100):0;
-    ovSub.textContent=`FROM PENDING: ${{ov}} of ${{pe}} (${{pct}}%)`;
-    ovSub.title=`${{ov}} out of ${{pe}} documents under review are overdue (${{pct}}%)`;
+    ovSub.textContent=_dT('dash.kpi_from_pending_detail',{{ov,pe,pct}},`FROM PENDING: ${{ov}} of ${{pe}} (${{pct}}%)`);
+    ovSub.title=_dT('dash.kpi_from_pending_title',{{ov,pe,pct}},`${{ov}} out of ${{pe}} documents under review are overdue (${{pct}}%)`);
   }}
 }}
 
@@ -11309,29 +12523,29 @@ function renderCards(d,pid){{
     const clientTitle=p.client?` title="${{safe(p.client)}}"`:'';
     a.innerHTML=`<div class="pchdr">
       <div>
-        <div class="pcode">${{safe(p.code)}}</div>
+        <div class="pcode bidi-ltr">${{safe(p.code)}}</div>
         <div class="pname">${{safe(p.name)}}</div>
       </div>
-      ${{p.overdue>0?`<span style="background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:10.5px;font-weight:800;white-space:nowrap" title="${{p.overdue}} Overdue Submittals">⚠ ${{p.overdue}}</span>`:''}}
+      ${{p.overdue>0?`<span class="bidi-ltr" style="background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:10.5px;font-weight:800;white-space:nowrap" title="${{safe(_dT('dash.card_overdue_title',{{count:p.overdue}},`${{p.overdue}} Overdue Submittals`))}}">⚠ ${{p.overdue}}</span>`:''}}
     </div>
     <div class="pcbody">
       ${{p.client?`<div class="pclient"${{clientTitle}}>👤 ${{safe(p.client)}}</div>`:''}}
-      <div class="prow"><span>Total</span><b>${{p.total}}</b></div>
-      <div class="prow"><span>Approved</span><b style="color:#16a34a">${{p.approved}}</b></div>
-      <div class="prow"><span>Pending</span><b style="color:#f59e0b">${{p.pending}}</b></div>
-      <div class="prow"><span>Rejected</span><b style="color:#7c3aed">${{p.rejected||0}}</b></div>
+      <div class="prow"><span>${{safe(_dT('dash.card_total',null,'Total'))}}</span><b class="bidi-ltr">${{p.total}}</b></div>
+      <div class="prow"><span>${{safe(_dT('dash.card_approved',null,'Approved'))}}</span><b class="bidi-ltr" style="color:#16a34a">${{p.approved}}</b></div>
+      <div class="prow"><span>${{safe(_dT('dash.card_pending',null,'Pending'))}}</span><b class="bidi-ltr" style="color:#f59e0b">${{p.pending}}</b></div>
+      <div class="prow"><span>${{safe(_dT('dash.card_rejected',null,'Rejected'))}}</span><b class="bidi-ltr" style="color:#7c3aed">${{p.rejected||0}}</b></div>
       <div class="prog"><div class="progf" style="width:${{p.pct}}%;background:${{col}}"></div></div>
       <div class="pcard-footer">
         <div style="font-size:11.5px;color:${{col}};font-weight:800;display:flex;align-items:center;gap:3px">
-          <span>${{p.pct}}%</span><span style="font-size:9.5px;color:var(--mu);font-weight:600">done</span>
+          <span class="bidi-ltr">${{p.pct}}%</span><span style="font-size:9.5px;color:var(--mu);font-weight:600">${{safe(_dT('dash.card_done',null,'done'))}}</span>
         </div>
         <div style="display:flex;gap:4px;align-items:center">
           ${{p.can_admin&&!pid?`
-            <button type="button" class="pcard-btn pcard-move" title="Move project up" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">▲</button>
-            <button type="button" class="pcard-btn pcard-move" title="Move project down" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">▼</button>
+            <button type="button" class="pcard-btn pcard-move" title="${{safe(_dT('dash.card_move_up',null,'Move project up'))}}" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',-1)">▲</button>
+            <button type="button" class="pcard-btn pcard-move" title="${{safe(_dT('dash.card_move_down',null,'Move project down'))}}" onclick="event.preventDefault();event.stopPropagation();moveProject('${{p.id}}',1)">▼</button>
           `:''}}
           ${{ROLE==='superadmin'?`
-            <button type="button" class="pcard-btn pcard-del" title="Delete project" onclick="event.preventDefault();event.stopPropagation();delProject('${{p.id}}','${{safe(p.name)}}')">🗑</button>
+            <button type="button" class="pcard-btn pcard-del" title="${{safe(_dT('dash.card_delete',null,'Delete project'))}}" onclick="event.preventDefault();event.stopPropagation();delProject('${{p.id}}','${{safe(p.name)}}')">🗑</button>
           `:''}}
         </div>
       </div>
@@ -11340,7 +12554,7 @@ function renderCards(d,pid){{
   }});
   if(ROLE==='superadmin'&&!pid){{
     const add=document.createElement('div');add.className='addcard';
-    add.innerHTML='<span style="font-size:32px">➕</span><span>New Project</span>';
+    add.innerHTML=`<span style="font-size:32px">➕</span><span>${{safe(_dT('dash.card_new_project',null,'New Project'))}}</span>`;
     add.onclick=()=>openM('newproj-modal');g.appendChild(add);
   }}
 }}
@@ -11367,7 +12581,7 @@ async function moveProject(id,delta){{
   moveProject._busy=true;
   try{{
     const res=await apiFetch('/api/projects/reorder',{{method:'POST',body:JSON.stringify({{order,workspace_id:wsScope}})}});
-    if(!res||res.ok===false||res.error)throw new Error((res&&res.error)||'Failed to save project order');
+    if(!res||res.ok===false||res.error)throw new Error((res&&res.error)||_dT('dash.err_reorder',null,'Failed to save project order'));
     let finalStats=nextStats;
     if(Array.isArray(res.order)&&res.order.length){{
       const rank=new Map(res.order.map((pid,i)=>[pid,i]));
@@ -11380,20 +12594,20 @@ async function moveProject(id,delta){{
     STATS=finalStats;
     const sel=document.getElementById('proj-sel');
     if(sel){{
-      sel.innerHTML='<option value="">All Projects</option>'+
+      sel.innerHTML=`<option value="">${{escHtml(_dT('dash.all_projects',null,'All Projects'))}}</option>`+
         STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
     }}
     renderAll(_currentPid,_currentDisc);
-    toast('Project order updated','ok');
+    toast(_dT('dash.toast_order_updated',null,'Project order updated'),'ok');
   }}catch(err){{
     STATS=prevStats;
     const sel=document.getElementById('proj-sel');
     if(sel){{
-      sel.innerHTML='<option value="">All Projects</option>'+
+      sel.innerHTML=`<option value="">${{escHtml(_dT('dash.all_projects',null,'All Projects'))}}</option>`+
         STATS.map(p=>`<option value="${{p.id}}" ${{p.id===_currentPid?'selected':''}}>${{p.name}} (${{p.code}})</option>`).join('');
     }}
     renderAll(_currentPid,_currentDisc);
-    toast(err&&err.message?err.message:'Failed to reorder projects','err');
+    toast(err&&err.message?err.message:_dT('dash.err_reorder',null,'Failed to reorder projects'),'err');
   }}finally{{
     moveProject._busy=false;
   }}
@@ -11409,17 +12623,18 @@ function renderCharts(d){{
     if(typeof Chart === 'undefined') return;
 
     const dark=document.body.classList.contains('dark');
+    const isRtl=_dIsRtl();
     const gridColor=dark?'rgba(159,176,198,.16)':'rgba(0,0,0,.05)';
     const tickColor=dark?'#cbd5e1':'#54657d';
     const legendColor=dark?'#dbe7f3':'#334155';
     if(pChart)pChart.destroy();
     pChart=new Chart(cProjEl,{{type:'bar',
       data:{{labels:d.map(s=>s.code),datasets:[
-        {{label:'Approved',data:d.map(s=>s.approved),backgroundColor:'#16a34a',borderRadius:4}},
-        {{label:'Pending', data:d.map(s=>s.pending), backgroundColor:'#f59e0b',borderRadius:4}},
-        {{label:'Overdue', data:d.map(s=>s.overdue), backgroundColor:'#ef4444',borderRadius:4}}]}},
-      options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}}}},
-        scales:{{y:{{beginAtZero:true,grid:{{color:gridColor}},ticks:{{color:tickColor}}}},
+        {{label:_dT('dash.th_approved',null,'Approved'),data:d.map(s=>s.approved),backgroundColor:'#16a34a',borderRadius:4}},
+        {{label:_dT('dash.th_pending',null,'Pending'), data:d.map(s=>s.pending), backgroundColor:'#f59e0b',borderRadius:4}},
+        {{label:_dT('dash.th_overdue',null,'Overdue'), data:d.map(s=>s.overdue), backgroundColor:'#ef4444',borderRadius:4}}]}},
+      options:{{responsive:true,plugins:{{legend:{{position:'bottom',rtl:isRtl,textDirection:isRtl?'rtl':'ltr',labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}}},tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}}}},
+        scales:{{y:{{beginAtZero:true,position:isRtl?'right':'left',grid:{{color:gridColor}},ticks:{{color:tickColor}}}},
           x:{{grid:{{display:false}},ticks:{{color:tickColor}}}}}}}}}});
     const ap=d.reduce((s,p)=>s+p.approved,0),
       pe=d.reduce((s,p)=>s+p.pending,0),
@@ -11429,12 +12644,17 @@ function renderCharts(d){{
     const peOnTime=Math.max(0, pe - ov);
     const t = ap + pe + rj + (ic > 0 ? ic : 0);
 
-    const statusLabels=['Approved', 'Pending (On Time)', 'Overdue', 'Rejected'];
+    const statusLabels=[
+      _dT('dash.th_approved',null,'Approved'),
+      _dT('dash.chart_pending_on_time',null,'Pending (On Time)'),
+      _dT('dash.th_overdue',null,'Overdue'),
+      _dT('dash.th_rejected',null,'Rejected')
+    ];
     const statusData=[ap, peOnTime, ov, rj];
     const statusColors=['#16a34a', '#f59e0b', '#ef4444', '#7c3aed'];
 
     if(ic > 0){{
-      statusLabels.push('Info / Closed');
+      statusLabels.push(_dT('dash.th_info_closed',null,'Info / Closed'));
       statusData.push(ic);
       statusColors.push('#60A5FA');
     }}
@@ -11458,9 +12678,13 @@ function renderCharts(d){{
         plugins:{{
           legend:{{
             position:'bottom',
+            rtl:isRtl,
+            textDirection:isRtl?'rtl':'ltr',
             labels:{{boxWidth:10,font:{{size:10}},color:legendColor}}
           }},
           tooltip:{{
+            rtl:isRtl,
+            textDirection:isRtl?'rtl':'ltr',
             callbacks:{{
               label:ctx=>` ${{ctx.label}}: ${{ctx.raw}} (${{t?Math.round(ctx.raw/t*100):0}}%)`
             }}
@@ -11501,7 +12725,7 @@ function renderLettersOverview(d){{
       return acc;
     }},{{total:0,sent:0,received:0,project_count:0}});
     if(!stats.total){{
-      el.innerHTML='<div style="font-size:11px;color:var(--mu)">No letter records in the current project scope.</div>';
+      el.innerHTML=`<div style="font-size:11px;color:var(--mu)">${{safeHtml(_dT('dash.ltr_no_records',null,'No letter records in the current project scope.'))}}</div>`;
       return;
     }}
     const topParties=Object.values(partyMap)
@@ -11513,29 +12737,31 @@ function renderLettersOverview(d){{
 
     const cards=[
       {{
-        label:'Total Letters',
+        label:_dT('dash.ltr_total',null,'Total Letters'),
         val:stats.total,
         color:'#2F4F64',
-        hint:'Across '+stats.project_count+' project'+(stats.project_count===1?'':'s'),
+        hint:stats.project_count===1
+          ?_dT('dash.ltr_across_projects_1',null,'Across 1 project')
+          :_dT('dash.ltr_across_projects_n',{{count:stats.project_count}},`Across ${{stats.project_count}} projects`),
         bar:`<div style="height:5px;width:100%;background:rgba(148,163,184,.2);border-radius:3px;overflow:hidden;display:flex;margin-top:8px">
-          <div style="width:${{sentPct}}%;background:#2563a8" title="Sent: ${{stats.sent}} (${{sentPct}}%)"></div>
-          <div style="width:${{rcvPct}}%;background:#16a34a" title="Received: ${{stats.received}} (${{rcvPct}}%)"></div>
+          <div style="width:${{sentPct}}%;background:#2563a8" title="${{safeHtml(_dT('dash.ltr_sent_colon',{{count:stats.sent}},`Sent: ${{stats.sent}}`))}} (${{sentPct}}%)"></div>
+          <div style="width:${{rcvPct}}%;background:#16a34a" title="${{safeHtml(_dT('dash.ltr_received_colon',{{count:stats.received}},`Received: ${{stats.received}}`))}} (${{rcvPct}}%)"></div>
         </div>`
       }},
       {{
-        label:'Sent',
+        label:_dT('dash.ltr_sent',null,'Sent'),
         val:stats.sent,
         color:'#2563a8',
-        hint:`Outgoing (${{sentPct}}% of total)`,
+        hint:_dT('dash.ltr_outgoing_pct',{{pct:sentPct}},`Outgoing (${{sentPct}}% of total)`),
         bar:`<div style="height:5px;width:100%;background:rgba(37,99,168,.15);border-radius:3px;overflow:hidden;margin-top:8px">
           <div style="width:${{sentPct}}%;height:100%;background:#2563a8"></div>
         </div>`
       }},
       {{
-        label:'Received',
+        label:_dT('dash.ltr_received',null,'Received'),
         val:stats.received,
         color:'#16a34a',
-        hint:`Incoming (${{rcvPct}}% of total)`,
+        hint:_dT('dash.ltr_incoming_pct',{{pct:rcvPct}},`Incoming (${{rcvPct}}% of total)`),
         bar:`<div style="height:5px;width:100%;background:rgba(22,163,74,.15);border-radius:3px;overflow:hidden;margin-top:8px">
           <div style="width:${{rcvPct}}%;height:100%;background:#16a34a"></div>
         </div>`
@@ -11543,11 +12769,11 @@ function renderLettersOverview(d){{
     ];
 
     const summaryHtml=`<div class="ltr-summary-grid">
-      ${{cards.map(c=>`<div class="ltr-summary-card" style="background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{c.color}};box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between">
+      ${{cards.map(c=>`<div class="ltr-summary-card" style="--ltr-accent:${{c.color}};background:var(--bg);border-radius:8px;padding:11px 13px;border:1px solid #e3eaf2;border-left:4px solid ${{c.color}};box-shadow:0 1px 2px rgba(0,0,0,.03);display:flex;flex-direction:column;justify-content:space-between">
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{c.label}}</div>
-          <div style="font-size:26px;font-weight:800;color:${{c.color}};line-height:1.08;margin-top:4px">${{c.val}}</div>
-          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{c.hint}}</div>
+          <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{safeHtml(c.label)}}</div>
+          <div class="bidi-ltr" style="font-size:26px;font-weight:800;color:${{c.color}};line-height:1.08;margin-top:4px">${{c.val}}</div>
+          <div style="font-size:10px;color:var(--mu);margin-top:3px">${{safeHtml(c.hint)}}</div>
         </div>
         ${{c.bar}}
       </div>`).join('')}}
@@ -11556,8 +12782,8 @@ function renderLettersOverview(d){{
     const partiesHtml=topParties.length
       ? `<div class="ltr-parties-wrap" style="background:var(--bg);border-radius:8px;padding:8px 10px;border:1px solid #e3eaf2">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px">
-            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">Most Active External Parties</div>
-            <div style="font-size:9.5px;color:var(--mu);font-weight:700;background:rgba(47,79,100,.08);padding:2px 7px;border-radius:10px">Top ${{topParties.length}} External Parties</div>
+            <div style="font-size:10px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.45px">${{safeHtml(_dT('dash.ltr_most_active_parties',null,'Most Active External Parties'))}}</div>
+            <div style="font-size:9.5px;color:var(--mu);font-weight:700;background:rgba(47,79,100,.08);padding:2px 7px;border-radius:10px">${{safeHtml(_dT('dash.ltr_top_parties',{{count:topParties.length}},`Top ${{topParties.length}} External Parties`))}}</div>
           </div>
           <div class="ltr-parties-grid">
             ${{topParties.map((row, idx)=>{{
@@ -11571,34 +12797,34 @@ function renderLettersOverview(d){{
                 <div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start">
                   <div style="min-width:0;flex:1">
                     <div style="font-size:11.5px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{safeHtml(row.party)}}">${{safeHtml(row.party)}}</div>
-                    <div style="font-size:8.5px;color:var(--mu);margin-top:1px">${{pct}}% of all (${{row.total}}/${{stats.total}})</div>
+                    <div style="font-size:8.5px;color:var(--mu);margin-top:1px">${{safeHtml(_dT('dash.ltr_pct_of_all',{{pct,count:row.total,total:stats.total}},`${{pct}}% of all (${{row.total}}/${{stats.total}})`))}}</div>
                   </div>
-                  <div style="text-align:right;flex-shrink:0;margin-left:4px">
-                    <div style="font-size:13.5px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
+                  <div style="text-align:end;flex-shrink:0;margin-inline-start:4px">
+                    <div class="bidi-ltr" style="font-size:13.5px;font-weight:800;color:#2F4F64;line-height:1">${{row.total}}</div>
                   </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px">
-                  <div class="ltr-box-sent" title="Sent (Outgoing): ${{row.sent}}" style="background:#eef4fb;border-radius:5px;padding:4px 3px;border:1px solid #dbe8f7;text-align:center">
-                    <div class="val" style="font-size:9.5px;font-weight:800;color:#2563a8;line-height:1.15">Sent: ${{row.sent}}</div>
-                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#2563a8;margin-top:1px;letter-spacing:.15px">Outgoing</div>
+                  <div class="ltr-box-sent" title="${{safeHtml(_dT('dash.ltr_sent_colon',{{count:row.sent}},`Sent: ${{row.sent}}`))}}" style="background:#eef4fb;border-radius:5px;padding:4px 3px;border:1px solid #dbe8f7;text-align:center">
+                    <div class="val" style="font-size:9.5px;font-weight:800;color:#2563a8;line-height:1.15">${{safeHtml(_dT('dash.ltr_sent_colon',{{count:row.sent}},`Sent: ${{row.sent}}`))}}</div>
+                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#2563a8;margin-top:1px;letter-spacing:.15px">${{safeHtml(_dT('dash.ltr_outgoing',null,'Outgoing'))}}</div>
                   </div>
-                  <div class="ltr-box-rcv" title="Received (Incoming): ${{row.received}}" style="background:#edf9f0;border-radius:5px;padding:4px 3px;border:1px solid #d7efdc;text-align:center">
-                    <div class="val" style="font-size:9.5px;font-weight:800;color:#16a34a;line-height:1.15">Received: ${{row.received}}</div>
-                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#16a34a;margin-top:1px;letter-spacing:.15px">Incoming</div>
+                  <div class="ltr-box-rcv" title="${{safeHtml(_dT('dash.ltr_received_colon',{{count:row.received}},`Received: ${{row.received}}`))}}" style="background:#edf9f0;border-radius:5px;padding:4px 3px;border:1px solid #d7efdc;text-align:center">
+                    <div class="val" style="font-size:9.5px;font-weight:800;color:#16a34a;line-height:1.15">${{safeHtml(_dT('dash.ltr_received_colon',{{count:row.received}},`Received: ${{row.received}}`))}}</div>
+                    <div class="lbl" style="font-size:7.5px;font-weight:600;color:#16a34a;margin-top:1px;letter-spacing:.15px">${{safeHtml(_dT('dash.ltr_incoming',null,'Incoming'))}}</div>
                   </div>
                 </div>
               </div>`;
             }}).join('')}}
           </div>
         </div>`
-      : '<div style="font-size:11px;color:var(--mu)">No external party activity available in the current project scope.</div>';
+      : `<div style="font-size:11px;color:var(--mu)">${{safeHtml(_dT('dash.ltr_no_parties',null,'No external party activity available in the current project scope.'))}}</div>`;
     el.innerHTML=`<div style="display:grid;gap:10px">
       ${{summaryHtml}}
       ${{partiesHtml}}
     </div>`;
   }}catch(err){{
     console.error('renderLettersOverview failed', err);
-    el.innerHTML='<div style="font-size:11px;color:var(--mu)">Letters overview is temporarily unavailable.</div>';
+    el.innerHTML=`<div style="font-size:11px;color:var(--mu)">${{escHtml(_dT('dash.ltr_unavailable',null,'Letters overview is temporarily unavailable.'))}}</div>`;
   }}
 }}
 
@@ -11648,17 +12874,17 @@ function renderDTTable(d){{
       tr.className=`dt-summary-row${{i%2?' alt':''}}`;
       i++;
       const ovBadge=r.overdue>0
-        ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{r.overdue}}</span>`
-        : `<span style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
+        ? `<span class="badge bidi-ltr" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{r.overdue}}</span>`
+        : `<span class="bidi-ltr" style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
 
-      tr.innerHTML=`<td style="font-size:10px;color:var(--mu)">${{safe(p.code)}}</td>
-        <td style="font-weight:700;color:var(--pr)">${{safe(r.code)}}</td>
-        <td>${{safe(r.name)}}</td>
-        <td style="text-align:center;font-weight:700">${{r.total}}</td>
-        <td style="text-align:center;color:#16a34a;font-weight:700">${{r.approved}}</td>
-        <td style="text-align:center;color:#f59e0b;font-weight:700">${{r.pending}}</td>
-        <td style="text-align:center;color:#7c3aed;font-weight:700">${{r.rejected||0}}</td>
-        <td style="text-align:center;color:#60A5FA;font-weight:700">${{r.info_closed||0}}</td>
+      tr.innerHTML=`<td style="font-size:10px;color:var(--mu)"><span class="bidi-ltr">${{safe(p.code)}}</span></td>
+        <td style="font-weight:700;color:var(--pr)"><span class="bidi-ltr">${{safe(r.code)}}</span></td>
+        <td>${{safe(_dDtName(r.code, r.name))}}</td>
+        <td class="bidi-ltr" style="text-align:center;font-weight:700">${{r.total}}</td>
+        <td class="bidi-ltr" style="text-align:center;color:#16a34a;font-weight:700">${{r.approved}}</td>
+        <td class="bidi-ltr" style="text-align:center;color:#f59e0b;font-weight:700">${{r.pending}}</td>
+        <td class="bidi-ltr" style="text-align:center;color:#7c3aed;font-weight:700">${{r.rejected||0}}</td>
+        <td class="bidi-ltr" style="text-align:center;color:#60A5FA;font-weight:700">${{r.info_closed||0}}</td>
         <td style="text-align:center">${{ovBadge}}</td>`;
       tbody.appendChild(tr);
     }});
@@ -11700,34 +12926,35 @@ function renderDiscTable(data){{
         const card=document.createElement('div');
         card.className=`disc-mobile-card${{warn?' warn':''}}`;
         card.dataset.group=groupId;
+        const discCountLbl=disc.length===1?_dT('dash.discipline_1',null,'1 discipline'):_dT('dash.discipline_n',{{count:disc.length}},`${{disc.length}} disciplines`);
         card.innerHTML=`<div class="disc-mobile-head">
           <div>
-            <div class="disc-mobile-title">${{safe(p.code)}} | ${{safe(dt.code)}}</div>
-            <div class="disc-mobile-sub">${{disc.length}} ${{disc.length===1?'discipline':'disciplines'}}</div>
+            <div class="disc-mobile-title bidi-ltr">${{safe(p.code)}} | ${{safe(dt.code)}}</div>
+            <div class="disc-mobile-sub">${{safe(discCountLbl)}}</div>
           </div>
           <button type="button" class="disc-expander" aria-expanded="false" onclick="toggleDiscMobileGroup('${{groupId}}', this)">&#9660;</button>
         </div>
         <div class="disc-mobile-grid">
-          ${{metric('Project',safe(p.code),'var(--pr)')}}
-          ${{metric('Doc Type',safe(dt.code),'var(--pr)')}}
-          ${{metric('Disciplines',disc.length,'#2f4f64')}}
-          ${{metric('Total',dt.total,'var(--pr)')}}
-          ${{metric('Approved',dt.approved,'#16a34a')}}
-          ${{metric('Pending',dt.pending,'#f59e0b')}}
-          ${{metric('Rejected',dt.rejected||0,'#7c3aed')}}
-          ${{metric('Info / Closed',dt.info_closed||0,'#60A5FA')}}
-          ${{metric('Overdue',dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
+          ${{metric(_dT('dash.th_project',null,'Project'),safe(p.code),'var(--pr)')}}
+          ${{metric(_dT('dash.th_doc_type',null,'Doc Type'),safe(dt.code),'var(--pr)')}}
+          ${{metric(_dT('dash.th_disciplines',null,'Disciplines'),disc.length,'#2f4f64')}}
+          ${{metric(_dT('dash.th_total',null,'Total'),dt.total,'var(--pr)')}}
+          ${{metric(_dT('dash.th_approved',null,'Approved'),dt.approved,'#16a34a')}}
+          ${{metric(_dT('dash.th_pending',null,'Pending'),dt.pending,'#f59e0b')}}
+          ${{metric(_dT('dash.th_rejected',null,'Rejected'),dt.rejected||0,'#7c3aed')}}
+          ${{metric(_dT('dash.th_info_closed',null,'Info / Closed'),dt.info_closed||0,'#60A5FA')}}
+          ${{metric(_dT('dash.th_overdue',null,'Overdue'),dt.overdue,Number(dt.overdue||0)>0?'#ef4444':'#94a3b8')}}
         </div>
         <div class="disc-mobile-children">
           ${{disc.map(ds=>`<div class="disc-mobile-child">
             <div class="disc-mobile-title">${{safe(ds.disc)}}</div>
             <div class="disc-mobile-grid">
-              ${{metric('Total',ds.total,'var(--pr)')}}
-              ${{metric('Approved',ds.approved,'#16a34a')}}
-              ${{metric('Pending',ds.pending,'#f59e0b')}}
-              ${{metric('Rejected',ds.rejected||0,'#7c3aed')}}
-                ${{metric('Info / Closed',ds.info_closed||0,'#60A5FA')}}
-                ${{metric('Overdue',ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
+              ${{metric(_dT('dash.th_total',null,'Total'),ds.total,'var(--pr)')}}
+              ${{metric(_dT('dash.th_approved',null,'Approved'),ds.approved,'#16a34a')}}
+              ${{metric(_dT('dash.th_pending',null,'Pending'),ds.pending,'#f59e0b')}}
+              ${{metric(_dT('dash.th_rejected',null,'Rejected'),ds.rejected||0,'#7c3aed')}}
+                ${{metric(_dT('dash.th_info_closed',null,'Info / Closed'),ds.info_closed||0,'#60A5FA')}}
+                ${{metric(_dT('dash.th_overdue',null,'Overdue'),ds.overdue,Number(ds.overdue||0)>0?'#ef4444':'#94a3b8')}}
             </div>
           </div>`).join('')}}
         </div>`;
@@ -11736,12 +12963,13 @@ function renderDiscTable(data){{
       const tr=document.createElement('tr');
       tr.className=`disc-group-row${{rows%2===0?' alt':''}}`;
       const ovBadge=Number(dt.overdue||0)>0
-        ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{dt.overdue}}</span>`
-        : `<span style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
+        ? `<span class="badge bidi-ltr" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:2px 7px;border-radius:6px;font-weight:800;font-size:11px;display:inline-block">${{dt.overdue}}</span>`
+        : `<span class="bidi-ltr" style="color:#94a3b8;font-weight:500;font-size:11px">0</span>`;
+      const discCountLblTbl=disc.length===1?_dT('dash.discipline_1',null,'1 discipline'):_dT('dash.discipline_n',{{count:disc.length}},`${{disc.length}} disciplines`);
 
-      tr.innerHTML=`<td data-label="Project" style="font-size:10px;color:var(--mu)">${{p.code}}</td>
-        <td data-label="Doc Type" style="font-weight:700;color:var(--pr)">${{dt.code}}</td>
-        <td data-label="Disciplines"><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge">${{disc.length}}</span><span class="disc-meta">${{disc.length===1?'1 discipline':`${{disc.length}} disciplines`}}</span></div></td>
+      tr.innerHTML=`<td data-label="Project" style="font-size:10px;color:var(--mu)"><span class="bidi-ltr">${{p.code}}</span></td>
+        <td data-label="Doc Type" style="font-weight:700;color:var(--pr)"><span class="bidi-ltr">${{dt.code}}</span></td>
+        <td data-label="Disciplines"><div style="display:flex;align-items:center;gap:8px"><span class="disc-badge bidi-ltr">${{disc.length}}</span><span class="disc-meta">${{safe(discCountLblTbl)}}</span></div></td>
         ${{mk('Total',dt.total,'var(--pr)')}}
         ${{mk('Approved',dt.approved,'#16a34a')}}
         ${{mk('Pending',dt.pending,'#f59e0b')}}
@@ -11755,11 +12983,11 @@ function renderDiscTable(data){{
         child.className='disc-child-row';
         child.dataset.group=groupId;
         const childOvBadge=Number(ds.overdue||0)>0
-          ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:1px 6px;border-radius:5px;font-weight:800;font-size:10.5px;display:inline-block">${{ds.overdue}}</span>`
-          : `<span style="color:#94a3b8;font-weight:500;font-size:10.5px">0</span>`;
+          ? `<span class="badge bidi-ltr" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca;padding:1px 6px;border-radius:5px;font-weight:800;font-size:10.5px;display:inline-block">${{ds.overdue}}</span>`
+          : `<span class="bidi-ltr" style="color:#94a3b8;font-weight:500;font-size:10.5px">0</span>`;
 
         child.innerHTML=`<td class="disc-child-spacer"></td>
-          <td style="font-size:10px;color:var(--mu)">${{dt.code}}</td>
+          <td style="font-size:10px;color:var(--mu)"><span class="bidi-ltr">${{dt.code}}</span></td>
           <td class="disc-child-label">${{ds.disc}}</td>
           ${{mk('Total',ds.total,'var(--pr)')}}
           ${{mk('Approved',ds.approved,'#16a34a')}}
@@ -11820,36 +13048,38 @@ async function loadAnalytics(forceReload=false){{
     apiFetch('/api/analytics/quality'+(pid?`?pid=${{pid}}`:'') ),
   ]);
 
+  const isRtl=_dIsRtl();
+
   // Monthly Trend
   if(tChart)tChart.destroy();
   tChart=new Chart(document.getElementById('cTrend'),{{type:'bar',
     data:{{labels:trend.map(t=>t.month),datasets:[
-      {{label:'Submitted',data:trend.map(t=>t.submitted),backgroundColor:'rgba(37,99,168,.25)',
+      {{label:_dT('dash.chart_submitted',null,'Submitted'),data:trend.map(t=>t.submitted),backgroundColor:'rgba(37,99,168,.25)',
         borderColor:'#2563a8',borderWidth:2,borderRadius:4,type:'bar'}},
-      {{label:'Approved',data:trend.map(t=>t.approved),backgroundColor:'#16a34a',
+      {{label:_dT('dash.th_approved',null,'Approved'),data:trend.map(t=>t.approved),backgroundColor:'#16a34a',
         borderColor:'#16a34a',borderWidth:2,borderRadius:4,type:'bar'}}]}},
-    options:{{responsive:true,plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}}}},
-      scales:{{y:{{beginAtZero:true}},x:{{grid:{{display:false}}}}}}}}}});
+    options:{{responsive:true,plugins:{{legend:{{position:'bottom',rtl:isRtl,textDirection:isRtl?'rtl':'ltr',labels:{{boxWidth:10,font:{{size:10}}}}}},tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}}}},
+      scales:{{y:{{beginAtZero:true,position:isRtl?'right':'left'}},x:{{grid:{{display:false}}}}}}}}}});
 
   // Aging
   if(aChart)aChart.destroy();
   aChart=new Chart(document.getElementById('cAging'),{{type:'bar',
-    data:{{labels:aging.map(a=>a.range+' Days'),
-      datasets:[{{label:'Pending Docs',data:aging.map(a=>a.count),
+    data:{{labels:aging.map(a=>_dT('dash.chart_days_unit',{{range:a.range}},a.range+' Days')),
+      datasets:[{{label:_dT('dash.chart_pending_docs',null,'Pending Docs'),data:aging.map(a=>a.count),
         backgroundColor:['#16a34a','#f59e0b','#f97316','#ef4444'],borderRadius:6}}]}},
-    options:{{responsive:true,plugins:{{legend:{{display:false}},
-      tooltip:{{callbacks:{{label:ctx=>`${{ctx.raw}} documents`}}}}}},
-      scales:{{y:{{beginAtZero:true}},x:{{grid:{{display:false}}}}}}}}}});
+    options:{{responsive:true,plugins:{{legend:{{display:false,rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}},
+      tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr',callbacks:{{label:ctx=>_dT('dash.chart_documents_unit',{{count:ctx.raw}},`${{ctx.raw}} documents`)}}}}}},
+      scales:{{y:{{beginAtZero:true,position:isRtl?'right':'left'}},x:{{grid:{{display:false}}}}}}}}}});
 
   // Quality
   if(qChart)qChart.destroy();
   qChart=new Chart(document.getElementById('cQuality'),{{type:'doughnut',
-    data:{{labels:quality.map(q=>'Rev '+q.revisions),
+    data:{{labels:quality.map(q=>_dT('dash.chart_rev_prefix',{{rev:q.revisions}},'Rev '+q.revisions)),
       datasets:[{{data:quality.map(q=>q.count),
         backgroundColor:['#16a34a','#f59e0b','#f97316','#ef4444'],
         borderWidth:3,borderColor:'#fff',hoverOffset:6}}]}},
     options:{{responsive:true,cutout:'60%',
-      plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:10}}}}}}}}}}}});
+      plugins:{{legend:{{position:'bottom',rtl:isRtl,textDirection:isRtl?'rtl':'ltr',labels:{{boxWidth:10,font:{{size:10}}}}}},tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}}}}}}}});
 
   // Approval Rate per Doc Type
   const d=getFiltered(_currentPid,_currentDisc);
@@ -11859,12 +13089,12 @@ async function loadAnalytics(forceReload=false){{
   }}));
   if(arChart)arChart.destroy();
   arChart=new Chart(document.getElementById('cApprRate'),{{type:'bar',
-    data:{{labels:dtLabels,datasets:[{{label:'Approval %',data:dtRates,
+    data:{{labels:dtLabels,datasets:[{{label:_dT('dash.chart_approval_pct',null,'Approval %'),data:dtRates,
       backgroundColor:dtRates.map(r=>r>=80?'#16a34a':r>=50?'#f59e0b':'#ef4444'),
       borderRadius:4}}]}},
     options:{{responsive:true,indexAxis:'y',
-      plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>`${{ctx.raw}}%`}}}}}},
-      scales:{{x:{{beginAtZero:true,max:100,ticks:{{callback:v=>v+'%'}}}},y:{{grid:{{display:false}}}}}}}}}});
+      plugins:{{legend:{{display:false,rtl:isRtl,textDirection:isRtl?'rtl':'ltr'}},tooltip:{{rtl:isRtl,textDirection:isRtl?'rtl':'ltr',callbacks:{{label:ctx=>`${{ctx.raw}}%`}}}}}},
+      scales:{{x:{{beginAtZero:true,max:100,ticks:{{callback:v=>v+'%'}}}},y:{{position:isRtl?'right':'left',grid:{{display:false}}}}}}}}}});
 }}
 
 // ── Overdue Tab ───────────────────────────────────────────
@@ -11890,7 +13120,7 @@ function filterOverdue(){{
     sort==='doc'?(a.docNo||'').localeCompare(b.docNo||''):
     (a.discipline||'').localeCompare(b.discipline||''));
   const list=document.getElementById('ov-list');
-  if(!data.length){{list.innerHTML='<div style="text-align:center;padding:32px;color:var(--mu)">✅ No overdue documents</div>';return;}}
+  if(!data.length){{list.innerHTML=`<div style="text-align:center;padding:32px;color:var(--mu)">${{escHtml(_dT('dash.ov_none',null,'✅ No overdue documents'))}}</div>`;return;}}
   const isDark = document.body.classList.contains('dark');
   list.innerHTML=data.map(r=>{{
     const bg=r.days_overdue>21?'er':r.days_overdue>14?'warn':'warn';
@@ -11898,17 +13128,19 @@ function filterOverdue(){{
       ? 'font-size:10px;background:#1e293b;color:#93c5fd;border:1px solid #334155;padding:2px 7px;border-radius:4px;white-space:nowrap'
       : 'font-size:10px;background:#f0f4f8;color:#475569;border:1px solid #cbd5e1;padding:2px 7px;border-radius:4px;white-space:nowrap';
     return `<div class="ov-row">
-      <span class="ov-badge ${{bg}}">${{r.days_overdue}}d</span>
+      <span class="ov-badge ${{bg}} bidi-ltr">${{escHtml(_dT('dash.ov_days_suffix',{{days:r.days_overdue}},`${{r.days_overdue}}d`))}}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.docNo}}</div>
-        <div class="ov-sub" style="color:var(--mu);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{r.title||'—'}}</div>
+        <div class="docno bidi-ltr" style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{escHtml(r.docNo)}}</div>
+        <div class="ov-sub" style="color:var(--mu);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{escHtml(r.title||'—')}}</div>
       </div>
-      <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{r.discipline||'—'}}</span>
-      <span class="ov-dt-code" style="${{dtStyle}}">${{r.dt_code}}</span>
-      <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{(r.issuedDate||'').slice(0,10)}}</span>
+      <span style="font-size:10px;color:var(--mu);white-space:nowrap">${{escHtml(r.discipline||'—')}}</span>
+      <span class="ov-dt-code bidi-ltr" style="${{dtStyle}}">${{escHtml(r.dt_code)}}</span>
+      <span class="bidi-ltr" style="font-size:10px;color:var(--mu);white-space:nowrap">${{escHtml((r.issuedDate||'').slice(0,10))}}</span>
     </div>`;
   }}).join('');
-  document.getElementById('ov-count').textContent=`Showing ${{data.length}} overdue document${{data.length!==1?'s':''}}`;
+  document.getElementById('ov-count').textContent=data.length===1
+    ?_dT('dash.ov_showing_1',null,'Showing 1 overdue document')
+    :_dT('dash.ov_showing_n',{{count:data.length}},`Showing ${{data.length}} overdue documents`);
 }}
 
 // ── Executive Summary ─────────────────────────────────────
@@ -11922,16 +13154,16 @@ async function loadDailyDigest() {{
     dateInput.value = today.toISOString().split('T')[0];
   }}
   const selectedDate = dateInput ? dateInput.value : '';
-  container.innerHTML = '<div style="color:var(--mu);font-size:14px;">Loading...</div>';
+  container.innerHTML = `<div style="color:var(--mu);font-size:14px;">${{escHtml(_dT('common.loading',null,'Loading...'))}}</div>`;
   try {{
     let targetPid = typeof window.PID !== 'undefined' ? window.PID : (typeof _currentPid !== 'undefined' && _currentPid ? _currentPid : 'all');
     const qs = selectedDate ? '?date=' + selectedDate : '';
     const r = await apiFetch('/api/daily_digest/' + targetPid + qs);
-    if(!r) {{ container.innerHTML = '<div style="color:red">Failed to load digest (Null response).</div>'; return; }}
+    if(!r) {{ container.innerHTML = `<div style="color:red">${{escHtml(_dT('dash.digest_failed',null,'Failed to load digest (Null response).'))}}</div>`; return; }}
     if(r.error) {{
       console.error("Daily Digest Error:", r.error, r.trace);
       container.innerHTML = '<div style="color:red;white-space:pre-wrap;font-size:12px;font-family:monospace;background:#fee2e2;padding:10px;border-radius:6px;">' + 
-        '<b>Error:</b> ' + r.error + '<br><br><b>Trace:</b><br>' + (r.trace || 'No trace available') + '</div>';
+        '<b>' + escHtml(_dT('common.error',null,'Error')) + ':</b> ' + r.error + '<br><br><b>Trace:</b><br>' + (r.trace || 'No trace available') + '</div>';
       return;
     }}
     
@@ -11939,54 +13171,54 @@ async function loadDailyDigest() {{
     
     const isDark = document.body.classList.contains('dark');
     // Received Card
-    html += '<div class="panel digest-card-rcv" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:' + (isDark ? '#60a5fa' : '#1e40af') + ';font-size:16px;">📥 Received (' + (r.received||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.received||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents received.</div>';
+    html += '<div class="panel digest-card-rcv" style="border-top:4px solid #3b82f6;"><div class="panel-title" style="color:' + (isDark ? '#60a5fa' : '#1e40af') + ';font-size:16px;">' + escHtml(_dT('dash.digest_received',{{count:(r.received||[]).length}},'📥 Received (' + (r.received||[]).length + ')')) + '</div><div style="margin-top:12px;">';
+    if((r.received||[]).length === 0) html += `<div style="color:var(--mu);font-size:13px;font-style:italic;">${{escHtml(_dT('dash.digest_no_received',null,'No documents received.'))}}</div>`;
     (r.received||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
-      html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
+      html += '<div class="docno bidi-ltr" style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+escHtml(doc.docNo)+'</div>';
       if((doc.project_name || doc.project_id)) {{
         const bStyle = isDark
           ? 'font-size:8px;background:rgba(59,130,246,0.18);color:#93c5fd;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(59,130,246,0.35);flex-shrink:0;'
           : 'font-size:8px;background:#f1f5f9;color:#475569;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #cbd5e1;flex-shrink:0;';
         html += '<div class="digest-badge-rcv" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
       }}
-      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escHtml(doc.title)+'</div></div>';
     }});
     html += '</div></div>';
 
     // Issued Card
-    html += '<div class="panel digest-card-iss" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:' + (isDark ? '#fb923c' : '#c2410c') + ';font-size:16px;">📤 Issued (' + (r.issued||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.issued||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents issued.</div>';
+    html += '<div class="panel digest-card-iss" style="border-top:4px solid #f97316;"><div class="panel-title" style="color:' + (isDark ? '#fb923c' : '#c2410c') + ';font-size:16px;">' + escHtml(_dT('dash.digest_issued',{{count:(r.issued||[]).length}},'📤 Issued (' + (r.issued||[]).length + ')')) + '</div><div style="margin-top:12px;">';
+    if((r.issued||[]).length === 0) html += `<div style="color:var(--mu);font-size:13px;font-style:italic;">${{escHtml(_dT('dash.digest_no_issued',null,'No documents issued.'))}}</div>`;
     (r.issued||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
-      html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
+      html += '<div class="docno bidi-ltr" style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+escHtml(doc.docNo)+'</div>';
       if((doc.project_name || doc.project_id)) {{
         const bStyle = isDark
           ? 'font-size:8px;background:rgba(249,115,22,0.18);color:#fdba74;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(249,115,22,0.35);flex-shrink:0;'
           : 'font-size:8px;background:#fef3c7;color:#b45309;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #fde68a;flex-shrink:0;';
         html += '<div class="digest-badge-iss" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
       }}
-      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div></div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escHtml(doc.title)+'</div></div>';
     }});
     html += '</div></div>';
 
     // Replied Card
-    html += '<div class="panel digest-card-rep" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:' + (isDark ? '#4ade80' : '#166534') + ';font-size:16px;">✅ Replied (' + (r.replied||[]).length + ')</div><div style="margin-top:12px;">';
-    if((r.replied||[]).length === 0) html += '<div style="color:var(--mu);font-size:13px;font-style:italic;">No documents replied.</div>';
+    html += '<div class="panel digest-card-rep" style="border-top:4px solid #22c55e;"><div class="panel-title" style="color:' + (isDark ? '#4ade80' : '#166534') + ';font-size:16px;">' + escHtml(_dT('dash.digest_replied',{{count:(r.replied||[]).length}},'✅ Replied (' + (r.replied||[]).length + ')')) + '</div><div style="margin-top:12px;">';
+    if((r.replied||[]).length === 0) html += `<div style="color:var(--mu);font-size:13px;font-style:italic;">${{escHtml(_dT('dash.digest_no_replied',null,'No documents replied.'))}}</div>`;
     (r.replied||[]).forEach(doc => {{
       html += '<div style="padding:4px 8px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:2px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">';
-      html += '<div style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+doc.docNo+'</div>';
+      html += '<div class="docno bidi-ltr" style="font-weight:700;color:var(--tx);font-size:11px;word-break:break-all;line-height:1;">'+escHtml(doc.docNo)+'</div>';
       if((doc.project_name || doc.project_id)) {{
         const bStyle = isDark
           ? 'font-size:8px;background:rgba(34,197,94,0.18);color:#86efac;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid rgba(34,197,94,0.35);flex-shrink:0;'
           : 'font-size:8px;background:#dcfce7;color:#15803d;padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #bbf7d0;flex-shrink:0;';
         html += '<div class="digest-badge-rep" style="' + bStyle + '">'+(doc.project_name||doc.project_id)+'</div>';
       }}
-      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+doc.title+'</div>';
-      if(doc.status) html += '<div style="font-size:9px;font-weight:700;color:var(--tx2);">Status: ' + doc.status + '</div>';
+      html += '</div><div title="' + escHtml(doc.title||'') + '" style="color:var(--mu);font-size:10px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escHtml(doc.title)+'</div>';
+      if(doc.status) html += '<div style="font-size:9px;font-weight:700;color:var(--tx2);">' + escHtml(_dT('dash.digest_status_prefix',{{status:_dStatusLbl(doc.status)}},'Status: ' + doc.status)) + '</div>';
       html += '</div>';
     }});
     html += '</div></div>';
@@ -12006,53 +13238,53 @@ async function loadExecutive(){{
   const col=s.completion_pct>=80?'#16a34a':s.completion_pct>=50?'#f59e0b':'#ef4444';
   document.getElementById('exec-content').innerHTML=`
     <div class="panel">
-      <div class="panel-title">📋 Executive Summary — Generated ${{EXEC_DATA.generated_at}}</div>
+      <div class="panel-title">${{escHtml(_dT('dash.exec_title',{{ts:EXEC_DATA.generated_at}},`📋 Executive Summary — Generated ${{EXEC_DATA.generated_at}}`))}}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:16px">
-        ${{[['Total Submittals',s.total,'var(--pr)'],['Approved',s.approved,'#16a34a'],
-           ['Pending',s.pending,'#f59e0b'],['Rejected',s.rejected,'#7c3aed'],
-           ['Overdue',s.overdue,'#ef4444'],['Completion',s.completion_pct+'%',col]]
+        ${{[[_dT('dash.kpi_total_submittals',null,'Total Submittals'),s.total,'var(--pr)'],[_dT('dash.kpi_approved',null,'Approved'),s.approved,'#16a34a'],
+           [_dT('dash.th_pending',null,'Pending'),s.pending,'#f59e0b'],[_dT('dash.th_rejected',null,'Rejected'),s.rejected,'#7c3aed'],
+           [_dT('dash.th_overdue',null,'Overdue'),s.overdue,'#ef4444'],[_dT('dash.kpi_completion_pct',null,'Completion'),s.completion_pct+'%',col]]
           .map(([l,v,c])=>`<div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center">
-            <div style="font-size:22px;font-weight:800;color:${{c}}">${{v}}</div>
-            <div style="font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase">${{l}}</div>
+            <div class="bidi-ltr" style="font-size:22px;font-weight:800;color:${{c}}">${{v}}</div>
+            <div style="font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase">${{escHtml(l)}}</div>
           </div>`).join('')}}
       </div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:16px"><table class="dt-tbl" style="margin-bottom:0;min-width:500px">
-        <thead><tr><th>Project</th><th>Code</th>
-          <th style="text-align:center">Total</th>
-          <th style="text-align:center">Approved</th>
-          <th style="text-align:center">%</th>
-          <th style="text-align:center">Overdue</th></tr></thead>
+        <thead><tr><th>${{escHtml(_dT('dash.th_project',null,'Project'))}}</th><th>${{escHtml(_dT('dash.th_code',null,'Code'))}}</th>
+          <th style="text-align:center">${{escHtml(_dT('dash.th_total',null,'Total'))}}</th>
+          <th style="text-align:center">${{escHtml(_dT('dash.th_approved',null,'Approved'))}}</th>
+          <th style="text-align:center">${{escHtml(_dT('dash.exec_pct_col',null,'%'))}}</th>
+          <th style="text-align:center">${{escHtml(_dT('dash.th_overdue',null,'Overdue'))}}</th></tr></thead>
         <tbody>
           ${{EXEC_DATA.projects.map((p,i)=>{{
             const col2=p.pct>=80?'#16a34a':p.pct>=50?'#f59e0b':'#ef4444';
             return `<tr class="${{i%2?'alt':''}}">
-              <td style="font-weight:600">${{p.name}}</td>
-              <td style="color:var(--pr);font-weight:700">${{p.code}}</td>
-              <td style="text-align:center;font-weight:700">${{p.total}}</td>
-              <td style="text-align:center;color:#16a34a;font-weight:700">${{p.approved}}</td>
-              <td style="text-align:center;font-weight:700;color:${{col2}}">${{p.pct}}%</td>
-              <td style="text-align:center;color:#ef4444;font-weight:700">${{p.overdue||0}}</td>
+              <td style="font-weight:600">${{escHtml(p.name)}}</td>
+              <td style="color:var(--pr);font-weight:700"><span class="bidi-ltr">${{escHtml(p.code)}}</span></td>
+              <td class="bidi-ltr" style="text-align:center;font-weight:700">${{p.total}}</td>
+              <td class="bidi-ltr" style="text-align:center;color:#16a34a;font-weight:700">${{p.approved}}</td>
+              <td class="bidi-ltr" style="text-align:center;font-weight:700;color:${{col2}}">${{p.pct}}%</td>
+              <td class="bidi-ltr" style="text-align:center;color:#ef4444;font-weight:700">${{p.overdue||0}}</td>
             </tr>`;
           }}).join('')}}
         </tbody>
       </table></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
         <div>
-          <div class="panel-title" style="margin-top:0">⏳ Aging Summary</div>
+          <div class="panel-title" style="margin-top:0">${{escHtml(_dT('dash.exec_aging_title',null,'⏳ Aging Summary'))}}</div>
           ${{EXEC_DATA.aging.map(a=>`
             <div style="display:flex;justify-content:space-between;align-items:center;
               padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px">
-              <span>${{a.range}} Days</span>
-              <span style="font-weight:700;color:${{a.range==='>21'?'#ef4444':'#f59e0b'}}">${{a.count}} docs</span>
+              <span class="bidi-ltr">${{escHtml(_dT('dash.chart_days_unit',{{range:a.range}},`${{a.range}} Days`))}}</span>
+              <span style="font-weight:700;color:${{a.range==='>21'?'#ef4444':'#f59e0b'}}">${{escHtml(_dT('dash.exec_docs_unit',{{count:a.count}},`${{a.count}} docs`))}}</span>
             </div>`).join('')}}
         </div>
         <div>
-          <div class="panel-title" style="margin-top:0">⚠️ Top Overdue</div>
+          <div class="panel-title" style="margin-top:0">${{escHtml(_dT('dash.exec_top_overdue_title',null,'⚠️ Top Overdue'))}}</div>
           ${{EXEC_DATA.top_overdue.slice(0,5).map(r=>`
             <div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11px">
-              <div style="font-weight:700">${{r.docNo}}</div>
-              <div style="color:var(--mu)">${{r.discipline||'—'}} · <span style="color:#ef4444;font-weight:700">${{r.days_overdue}}d overdue</span></div>
-            </div>`).join('')||'<div style="color:var(--mu);padding:10px 0">No overdue documents ✅</div>'}}
+              <div class="docno bidi-ltr" style="font-weight:700">${{escHtml(r.docNo)}}</div>
+              <div style="color:var(--mu)">${{escHtml(r.discipline||'—')}} · <span style="color:#ef4444;font-weight:700">${{escHtml(_dT('dash.exec_days_overdue',{{days:r.days_overdue}},`${{r.days_overdue}}d overdue`))}}</span></div>
+            </div>`).join('')||`<div style="color:var(--mu);padding:10px 0">${{escHtml(_dT('dash.exec_no_overdue',null,'No overdue documents ✅'))}}</div>`}}
         </div>
       </div>
     </div>`;
@@ -12063,26 +13295,26 @@ async function createProject(){{
   const id=document.getElementById('np-id')?.value.trim();
   const code=document.getElementById('np-code')?.value.trim();
   const name=document.getElementById('np-name')?.value.trim();
-  if(!id||!name){{toast('Fill in Project ID and Name','er');return;}}
+  if(!id||!name){{toast(_dT('dash.err_fill_id_name',null,'Fill in Project ID and Name'),'er');return;}}
   const btn=document.getElementById('cpbtn');
-  btn.disabled=true;btn.textContent='Creating...';
+  btn.disabled=true;btn.textContent=_dT('dash.btn_creating',null,'Creating...');
   try{{
     const r=await fetch('/api/projects/create',{{method:'POST',credentials:'include',
       headers:{{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}},
       body:JSON.stringify({{id,code:code||id,name}})}});
     const d=await r.json();
-    if(d.ok){{toast('✔ Project created','ok');closeM('newproj-modal');
+    if(d.ok){{toast(_dT('dash.toast_project_created',null,'✔ Project created'),'ok');closeM('newproj-modal');
       setTimeout(()=>location.reload(),800);}}
-    else toast(d.error||'Error','er');
-  }}catch(e){{toast('Network error','er');}}
-  finally{{btn.disabled=false;btn.textContent='Create';}}
+    else toast(d.error||_dT('common.error',null,'Error'),'er');
+  }}catch(e){{toast(_dT('dash.err_network',null,'Network error'),'er');}}
+  finally{{btn.disabled=false;btn.textContent=_dT('common.create',null,'Create');}}
 }}
 
 async function delProject(pid,name){{
-  if(!confirm(`Delete project "${{name}}"?\nThis will delete ALL records, documents and settings. This cannot be undone.`))return;
+  if(!confirm(_dT('dash.confirm_del_project',{{name}},`Delete project "${{name}}"?\nThis will delete ALL records, documents and settings. This cannot be undone.`)))return;
   const r=await apiFetch('/api/projects/delete/'+pid,{{method:'POST'}});
-  if(r&&r.ok){{toast('Project deleted','ok');setTimeout(()=>location.reload(),800);}}
-  else toast((r&&r.error)||'Error','er');
+  if(r&&r.ok){{toast(_dT('dash.toast_project_deleted',null,'Project deleted'),'ok');setTimeout(()=>location.reload(),800);}}
+  else toast((r&&r.error)||_dT('common.error',null,'Error'),'er');
 }}
 
 // Admin functions loaded from SHARED_JS
@@ -12136,7 +13368,7 @@ function applyAuditColWidths(widths){{
 function resetAuditColWidths(){{
   try{{localStorage.removeItem(AUD_COL_KEY);}}catch(e){{}}
   applyAuditColWidths(AUD_DEFAULT_WIDTHS);
-  if(typeof toast==='function')toast('Audit column widths reset','ok');
+  if(typeof toast==='function')toast(_dT('dash.aud_widths_reset_toast',null,'Audit column widths reset'),'ok');
 }}
 
 let _audRzInit=false;
@@ -12167,7 +13399,9 @@ function initAuditColResize(){{
   document.addEventListener('mousemove',e=>{{
     if(!_audRzDrag)return;
     const minW=AUD_MIN_WIDTHS[_audRzDrag.idx]||60;
-    const newW=Math.max(minW,_audRzDrag.startW+(e.clientX-_audRzDrag.startX));
+    const isRtl=(document.documentElement.dir==='rtl');
+    const delta=isRtl?(_audRzDrag.startX-e.clientX):(e.clientX-_audRzDrag.startX);
+    const newW=Math.max(minW,_audRzDrag.startW+delta);
     _audRzDrag.th.style.width=newW+'px';
     const curThs=document.querySelectorAll('#aud-tbl thead th');
     let totalW=0;
@@ -12211,17 +13445,17 @@ async function loadAudit(reset=false){{
 
     const pSel=document.getElementById('aud-pid');
     const curPid=pSel.value;
-    pSel.innerHTML='<option value="">All Projects</option>'+
+    pSel.innerHTML=`<option value="">${{escHtml(_dT('dash.aud_all_projects',null,'All Projects'))}}</option>`+
       (data.projects||[]).map(p=>`<option value="${{p.id}}"${{p.id===curPid?' selected':''}}>${{p.code}} — ${{p.name}}</option>`).join('');
 
     const uSel=document.getElementById('aud-user');
     const curU=uSel.value;
-    uSel.innerHTML='<option value="">All Users</option>'+
+    uSel.innerHTML=`<option value="">${{escHtml(_dT('dash.aud_all_users',null,'All Users'))}}</option>`+
       (data.users||[]).map(u=>`<option value="${{u}}"${{u===curU?' selected':''}}>${{u}}</option>`).join('');
 
     const aSel=document.getElementById('aud-action');
     const curA=aSel.value;
-    aSel.innerHTML='<option value="">All Actions</option>'+
+    aSel.innerHTML=`<option value="">${{escHtml(_dT('dash.aud_all_actions',null,'All Actions'))}}</option>`+
       (data.actions||[]).map(a=>`<option value="${{a}}"${{a===curA?' selected':''}}>${{a}}</option>`).join('');
   }}else if(data.projects){{
     (data.projects||[]).forEach(p=>{{ _auditProjMap[p.id]=p.name||p.code||p.id; }});
@@ -12233,7 +13467,7 @@ async function loadAudit(reset=false){{
   _auditHasMore=rows.length===100;
 
   if(!rows.length){{
-    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">No activity found</td></tr>';
+    tbody.innerHTML=`<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--mu)">${{escHtml(_dT('dash.aud_no_activity',null,'No activity found'))}}</td></tr>`;
   }}else{{
     const _dash='<span style="color:var(--mu);opacity:0.4">—</span>';
     const _val=(v)=>{{
@@ -12279,18 +13513,18 @@ async function loadAudit(reset=false){{
 
       const projRaw=_auditProjMap[r.project_id]||r.project_id||'';
       const projDisplay=_val(projRaw);
-      const docDisplay=r.doc_no?`<span style="color:var(--pr);font-weight:600">${{r.doc_no}}</span>`:_dash;
+      const docDisplay=r.doc_no?`<span class="docno bidi-ltr" style="color:var(--pr);font-weight:600">${{r.doc_no}}</span>`:_dash;
       const oldColor = isDark ? '#f87171' : '#dc2626';
       const newColor = isDark ? '#4ade80' : '#166534';
       const oldDisplay=r.old_value?`<span class="aud-old-val" style="color:${{oldColor}};font-weight:600;">${{r.old_value}}</span>`:_dash;
       const newDisplay=r.new_value?`<span class="aud-new-val" style="color:${{newColor}};font-weight:600;">${{r.new_value}}</span>`:_dash;
-      const ipDisplay=r.ip_address?`<span style="font-family:monospace;color:var(--mu);font-size:9.5px">${{r.ip_address}}</span>`:_dash;
-      const devDisplay=r.device?`<span style="color:var(--tx);font-size:9.5px">${{r.device}}</span>`:_dash;
+      const ipDisplay=r.ip_address?`<span class="bidi-ltr" style="font-family:monospace;color:var(--mu);font-size:9.5px">${{r.ip_address}}</span>`:_dash;
+      const devDisplay=r.device?`<span class="bidi-ltr" style="color:var(--tx);font-size:9.5px">${{r.device}}</span>`:_dash;
 
       tr.innerHTML=`
-        <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap">${{tsStr}}</td>
-        <td style="font-weight:600;font-size:11px">${{r.username||''}}</td>
-        <td><span style="background:${{actionBg}};color:${{actionColor}};border:1px solid ${{isDark?actionColor+'40':'transparent'}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
+        <td class="aud-ts" style="font-size:10px;color:var(--mu);white-space:nowrap"><span class="bidi-ltr">${{tsStr}}</span></td>
+        <td style="font-weight:600;font-size:11px"><span class="bidi-ltr">${{r.username||''}}</span></td>
+        <td><span class="bidi-ltr" style="background:${{actionBg}};color:${{actionColor}};border:1px solid ${{isDark?actionColor+'40':'transparent'}};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">${{r.action||''}}</span></td>
         <td style="font-size:10px;color:var(--mu)" title="${{r.project_id||''}}">${{projDisplay}}</td>
         <td style="font-size:11px" title="${{r.doc_no||''}}">${{docDisplay}}</td>
         <td style="font-size:10px;color:var(--mu)" title="${{r.field_name||''}}">${{_val(r.field_name)}}</td>
@@ -12304,8 +13538,8 @@ async function loadAudit(reset=false){{
   }}
 
   const page=Math.floor(_auditOffset/100)+1;
-  document.getElementById('aud-count').textContent=`Showing ${{rows.length}} entries`;
-  document.getElementById('aud-page').textContent=`Page ${{page}}`;
+  document.getElementById('aud-count').textContent=_dT('dash.aud_showing',{{count:rows.length}},`Showing ${{rows.length}} entries`);
+  document.getElementById('aud-page').textContent=_dT('dash.aud_page',{{page}},`Page ${{page}}`);
   document.getElementById('aud-prev').disabled=_auditOffset===0;
   document.getElementById('aud-next').disabled=!_auditHasMore;
 }}
@@ -12318,15 +13552,17 @@ function auditPage(dir){{
 
 init();
 </script>
-{ABOUT_MODAL_HTML}
-{GLOBAL_FOOTER_HTML}
-{SPOTLIGHT_MODAL_COMPONENT}
-{AI_DRAWER_COMPONENT}
+{_about_modal_html(norm)}
+{_global_footer_html(norm)}
+{_spotlight_modal_html(norm)}
+{_ai_drawer_html(norm)}
 </body></html>"""
 
 
 
-def render_register(u, proj, active_ws_id=None):
+def render_register(u, proj, active_ws_id=None, lang=None):
+    norm     = normalize_lang(lang or get_lang())
+    dir_attr = html_dir(norm)
     pid      = proj["id"]
     pcode    = (proj.get("code") or pid) if proj else pid
     pname    = (proj.get("name") or "") if proj else ""
@@ -12334,7 +13570,7 @@ def render_register(u, proj, active_ws_id=None):
     role     = u["role"]     if u else "guest"
     editable = can_edit(pid)
     can_dl   = bool(editable or (hasattr(db, "can_user_download") and db.can_user_download(uname, pid)))
-    btns, _, rlbl, rbg = _user_info_html(u)
+    btns, _, rlbl, rbg = _user_info_html(u, lang=norm)
     sc_json  = json.dumps(STATUS_COLORS)
     custom_sc_json = json.dumps(proj.get("status_colors", {}))
     active_ws = active_ws_id or proj.get("workspace_id", "ENG") if proj else "ENG"
@@ -12343,7 +13579,7 @@ def render_register(u, proj, active_ws_id=None):
     except Exception:
         accessible_projs = []
     projs_json = json.dumps([{"id": p["id"], "name": p["name"], "code": p.get("code", "")} for p in accessible_projs])
-    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws)
+    ws_switcher_html = _workspace_switcher_html(u, active_ws_id=active_ws, lang=norm)
 
     dts       = db.get_doc_types(pid)
     try:
@@ -12360,49 +13596,76 @@ def render_register(u, proj, active_ws_id=None):
     if logo_l: logo_html += f'<img src="/api/logo/{pid}/logo_left" style="height:48px;object-fit:contain;flex-shrink:0">'
     if logo_r: logo_html += f'<img src="/api/logo/{pid}/logo_right" style="height:48px;object-fit:contain;flex-shrink:0;margin-left:8px">'
 
-    DEFAULT_PROJ_FIELDS = [("code","Code"),("name","Project Name"),("startDate","Start"),("endDate","End"),
-                   ("client","Client"),("landlord","Landlord"),("pmo","PMO"),
-                   ("mainConsultant","Consultant"),("mepConsultant","MEP"),("contractor","Contractor")]
+    DEFAULT_PROJ_FIELDS = [("code", t("reg.pf_code", norm)), ("name", t("reg.pf_name", norm)),
+                           ("startDate", t("reg.pf_startDate", norm)), ("endDate", t("reg.pf_endDate", norm)),
+                           ("client", t("reg.pf_client", norm)), ("landlord", t("reg.pf_landlord", norm)),
+                           ("pmo", t("reg.pf_pmo", norm)), ("mainConsultant", t("reg.pf_mainConsultant", norm)),
+                           ("mepConsultant", t("reg.pf_mepConsultant", norm)), ("contractor", t("reg.pf_contractor", norm))]
     custom_labels = proj.get("_labels") or {}
     PROJ_FIELDS = [(k, custom_labels.get(k, lbl)) for k, lbl in DEFAULT_PROJ_FIELDS]
 
     primary_keys = {"code", "name"}
+    def _pf_extra(k, is_primary):
+        if is_primary:
+            return (' dir="auto" title="' + _html_escape(str(proj.get(k, "") or ""), quote=True) + '"') if k == "name" else ""
+        return "" if k in ("startDate", "endDate") else ' dir="auto"'
     projbar_primary = "".join(
-        f'<div class="pf primary"><span class="pf-lbl">{lbl}</span>'
-        f'<span class="pf-val" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
-        for key,lbl in PROJ_FIELDS
-        if key in primary_keys and proj.get(key,"").strip())
+        f'<div class="pf primary pf-{key}"><span class="pf-lbl">{lbl}</span>'
+        f'<span class="pf-val{" bidi-ltr" if key == "code" else ""}"'
+        f'{_pf_extra(key, True)}'
+        f' data-key="{key}">{_html_escape(str(proj.get(key, "") or "")) or "—"}</span></div>'
+        for key, lbl in PROJ_FIELDS
+        if key in primary_keys and proj.get(key, "").strip())
     projbar_secondary = "".join(
         f'<div class="pf secondary"><span class="pf-lbl">{lbl}</span>'
-        f'<span class="pf-val" data-key="{key}">{proj.get(key,"") or "—"}</span></div>'
-        for key,lbl in PROJ_FIELDS
-        if key not in primary_keys and proj.get(key,"").strip())
+        f'<span class="pf-val{" bidi-ltr" if key in ("startDate", "endDate") else ""}"'
+        f'{_pf_extra(key, False)}'
+        f' data-key="{key}">{_html_escape(str(proj.get(key, "") or "")) or "—"}</span></div>'
+        for key, lbl in PROJ_FIELDS
+        if key not in primary_keys and proj.get(key, "").strip())
     projbar_toggle = ('<button id="projbar-toggle" class="tool-btn" type="button" '
-                      'onclick="toggleProjectInfo()">Project Info</button>') if projbar_secondary else ''
+                      f'onclick="toggleProjectInfo()">{t("reg.project_info_btn", norm)}</button>') if projbar_secondary else ''
+    edit_proj_inline_btn = (
+        f'<button type="button" class="proj-edit-btn topbar-proj-edit-btn" '
+        f'onclick="event.stopPropagation();editProject()">'
+        f'{t("reg.btn_edit_project", norm)}</button>'
+    ) if editable else ''
+    projbar_html = (
+        f'<div id="projbar">\n'
+        f'  {logo_html}\n'
+        f'  <div id="projbar-main">\n'
+        f'    {projbar_toggle}\n'
+        f'    <div id="projbar-extra" style="display:flex;gap:20px;flex:1 1 auto;overflow-x:auto">{projbar_secondary}</div>\n'
+        f'  </div>\n'
+        f'</div>'
+    ) if (logo_html or projbar_secondary) else ''
 
     tabs_html = "".join(
-        f'<button class="tab-btn" data-id="{dt["id"]}" onclick="switchTab(\'{dt["id"]}\')">'
-        f'<span>{dt["code"]}</span><span class="tcnt" id="cnt-{dt["id"]}">0</span></button>'
+        f'<button class="tab-btn" data-id="{dt["id"]}" title="{t_dt(dt["code"], dt.get("name", ""), norm)}" onclick="switchTab(\'{dt["id"]}\')">'
+        f'<span class="bidi-ltr">{dt["code"]}</span><span class="tcnt bidi-ltr" id="cnt-{dt["id"]}">0</span></button>'
         for dt in dts)
 
-    _can_manage_proj = bool(u and is_project_admin(pid, u))
-    _hol_btn = " <button class='tool-btn purple' onclick='openSettings()'>🗓 Holidays</button>" if _can_manage_proj else ''
-    _col_btn = "<button class='tool-btn purple' onclick='manageColumns()'>⚙ Columns</button>" if _can_manage_proj else ''
-    _lst_btn = "<button class='tool-btn' onclick='openLists()'>📋 Lists</button>" if _can_manage_proj else ''
-    _color_btn = "<button class='tool-btn purple' onclick='openProjectSettings()'>🎨 Status Colors</button>" if _can_manage_proj else ''
-    edit_btns = (f'<button class="tool-btn" onclick="addRecord()">➕ Add</button>'
+    try:
+        _can_manage_proj = bool(u and is_project_admin(pid, u))
+    except Exception:
+        _can_manage_proj = bool(u and u.get("role") in ("superadmin", "admin"))
+    _hol_btn = f" <button class='tool-btn purple' onclick='openSettings()'>{t('reg.btn_holidays', norm)}</button>" if _can_manage_proj else ''
+    _col_btn = f"<button class='tool-btn purple' onclick='manageColumns()'>{t('reg.btn_columns', norm)}</button>" if _can_manage_proj else ''
+    _lst_btn = f"<button class='tool-btn' onclick='openLists()'>{t('reg.btn_lists', norm)}</button>" if _can_manage_proj else ''
+    _color_btn = f"<button class='tool-btn purple' onclick='openProjectSettings()'>{t('reg.btn_status_colors', norm)}</button>" if _can_manage_proj else ''
+    edit_btns = (f'<button class="tool-btn" onclick="addRecord()">{t("reg.btn_add", norm)}</button>'
                  f'{_col_btn}'
                  f'{_hol_btn}'
                  f'{_lst_btn}'
                  f'{_color_btn}'
-                 f'<button class="tool-btn" onclick="editProject()">🏗 Project</button>'
+                 f'<button class="tool-btn" onclick="editProject()">{t("reg.btn_project", norm)}</button>'
                  if editable else
-                 '<span style="font-size:11px;color:rgba(255,255,255,.5);padding:4px 8px">'
-                 '👁 Read-only — <a href="/login" style="color:#f0a500">login to edit</a></span>')
+                 f'<span style="font-size:11px;color:rgba(255,255,255,.5);padding:4px 8px">'
+                 f'{t("reg.readonly_notice", norm)} <a href="/login" style="color:#f0a500">{t("reg.login_to_edit", norm)}</a></span>')
 
-    return f"""<!DOCTYPE html><html lang="en"><head>
+    return f"""<!DOCTYPE html><html lang="{norm}" dir="{dir_attr}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DCR — {proj.get("name","Register")}</title>
+<title>{t("reg.page_title", norm, name=proj.get("name", t("reg.page_title_default", norm)))}</title>
 {_head_icon_tags()}
 {BASE_CSS}
 <style>
@@ -12480,6 +13743,15 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 .tool-btn:hover{{background:var(--pr);color:#fff;border-color:var(--pr)}}
 .tool-btn.purple:hover{{background:#7c3aed;border-color:#7c3aed}}
 .tool-btn.teal:hover{{background:#0891b2;border-color:#0891b2}}
+.ltr-date-filter{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-inline-start:6px;padding-inline-start:10px;border-inline-start:1px solid var(--bd)}}
+.ltr-df-lbl{{font-size:10.5px;font-weight:700;color:var(--mu);white-space:nowrap}}
+.ltr-df-select,.ltr-df-input{{height:25px;padding:2px 6px;border:1px solid var(--bd);border-radius:var(--rd);background:#fff;color:var(--tx);font-family:inherit;font-size:11px;outline:none}}
+.ltr-df-select:focus,.ltr-df-input:focus{{border-color:var(--pr)}}
+.ltr-df-input{{min-width:118px;direction:ltr;unicode-bidi:isolate}}
+.ltr-df-clear{{padding:2px 8px;min-height:25px;font-size:10.5px;flex:0 0 auto!important}}
+body.dark .ltr-date-filter{{border-inline-start-color:#304257}}
+body.dark .ltr-df-select,body.dark .ltr-df-input{{background:#0f1a29;border-color:#314558;color:#e2e8f0;color-scheme:dark}}
+body.dark .ltr-df-lbl{{color:#94a3b8}}
 .tool-dd{{position:relative}}
 .tool-dd-menu{{position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1.5px solid var(--bd);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:300;min-width:210px;overflow:hidden}}
 .tool-dd-menu button{{display:block;width:100%;text-align:left;padding:9px 14px;border:none;background:none;cursor:pointer;font-size:12px;font-family:inherit;color:#1e2a3a;white-space:nowrap}}
@@ -12596,6 +13868,17 @@ body.dark .ms-opt input{{accent-color:#60a5fa}}
 .letter-branch-cue{{color:#7d8a95;font-weight:800;margin-right:8px}}
 .letter-connector{{position:absolute;left:-24px;top:0;bottom:22px;width:2px;background:#cbd5df;border-radius:2px}}
 .letter-connector-arm{{position:absolute;left:-24px;top:24px;width:18px;height:2px;background:#cbd5df;border-radius:2px}}
+html[dir="rtl"] .letter-flow{{padding-left:0;padding-right:10px}}
+html[dir="rtl"] .letter-flow-line{{left:auto;right:13px}}
+html[dir="rtl"] .letter-node{{padding-left:0;padding-right:30px}}
+html[dir="rtl"] .letter-dot{{left:auto;right:8px}}
+html[dir="rtl"] .letter-card{{border-left:1px solid #d7e0e6;border-right:4px solid #d7e0e6}}
+html[dir="rtl"] .letter-card.current{{border-left-color:#8BC34A;border-right-color:#8BC34A}}
+html[dir="rtl"] .letter-branch-cue{{margin-right:0;margin-left:8px}}
+html[dir="rtl"] .letter-connector{{left:auto;right:-24px}}
+html[dir="rtl"] .letter-connector-arm{{left:auto;right:-24px}}
+html[dir="rtl"] body.dark .letter-card{{border-left-color:#304257;border-right-color:#496780}}
+html[dir="rtl"] body.dark .letter-card.current{{border-left-color:#8BC34A;border-right-color:#8BC34A}}
 body.dark .letter-flow-line{{background:linear-gradient(180deg,#3a526d,#253648)}}
 body.dark .letter-dot{{background:#60a5fa;border-color:#101a29;box-shadow:0 0 0 2px rgba(96,165,250,.28)}}
 body.dark .letter-dot.current{{background:#8BC34A;box-shadow:0 0 0 2px rgba(139,195,74,.42)}}
@@ -12739,6 +14022,10 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
   #sbar{{padding:2px 8px;font-size:9px;gap:9px;line-height:1.2;justify-content:space-between}}
   #ltr-quickbar{{padding:4px 8px!important;gap:4px!important;flex-direction:row!important}}
   #ltr-quickbar .tool-btn{{min-height:22px!important;font-size:8.5px!important;padding:2px 6px!important;flex:1 1 0!important}}
+  #ltr-quickbar .ltr-date-filter{{flex:1 1 100%;margin-inline-start:0;padding-inline-start:0;border-inline-start:none;padding-top:4px;border-top:1px solid var(--bd)}}
+  body.dark #ltr-quickbar .ltr-date-filter{{border-top-color:#304257}}
+  #ltr-quickbar .ltr-df-select,#ltr-quickbar .ltr-df-input{{height:22px;font-size:9.5px;min-width:0}}
+  #ltr-quickbar .ltr-df-clear{{flex:0 0 auto!important;min-height:22px!important;font-size:9px!important;padding:1px 6px!important}}
 }}
 @media(max-width:640px){{
   #topbar{{height:32px;padding:0 5px;gap:3px}}
@@ -12874,80 +14161,99 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
   #sbar {{ padding: 1px 8px !important; font-size: 8px !important; line-height: 1.1 !important; }}
   #sbar-center {{ display: none !important; }}
 }}
+html[dir="rtl"] .pf{{border-right:none;border-left:1px solid var(--bd)}}
+html[dir="rtl"] .pf:last-of-type{{border-left:none}}
+html[dir="rtl"] .tab-add{{margin-left:0;margin-right:6px}}
+html[dir="rtl"] .tool-dd-menu{{left:auto;right:0}}
+html[dir="rtl"] .tool-dd-menu button{{text-align:right}}
+html[dir="rtl"] #srchbox{{padding:4px 28px 4px 10px;background-position:calc(100% - 7px) center}}
+@media(max-width:768px){{html[dir="rtl"] #srchbox{{padding:3px 27px 3px 8px}}}}
+html[dir="rtl"] #regtbl th{{text-align:right;border-right:none;border-left:1px solid rgba(255,255,255,.1)}}
+html[dir="rtl"] #regtbl td{{border-right:none;border-left:1px solid #f3f4f6}}
+html[dir="rtl"] .rz{{right:auto;left:0}}
+html[dir="rtl"] #regtbl tbody tr.row-selected td:first-child{{box-shadow:inset -4px 0 0 #2563a8,inset 0 1px 0 rgba(37,99,168,.18),inset 0 -1px 0 rgba(37,99,168,.18)}}
+html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shadow:inset -4px 0 0 #93c5fd,inset 0 1px 0 rgba(147,197,253,.2),inset 0 -1px 0 rgba(147,197,253,.2)}}
 </style></head><body data-workspace="{active_ws}">
 
 <div id="topbar">
   <span class="topbar-mark" style="font-size:20px">📋</span>
-  <span class="topbar-title-full" style="font-weight:700;font-size:14px;letter-spacing:.3px">Document Control Register</span>
-  <span class="topbar-title-short" style="font-weight:800;font-size:13px;letter-spacing:.35px">DCR</span>
+  <span class="topbar-title-full" style="font-weight:700;font-size:14px;letter-spacing:.3px">{t("app.title_full", norm)}</span>
+  <span class="topbar-title-short" style="font-weight:800;font-size:13px;letter-spacing:.35px">{t("app.title_short", norm)}</span>
   
-  {GLOBAL_SEARCH_TRIGGER_HTML}
+  {_global_search_trigger_html(norm)}
 
   <div style="flex:1"></div>
   
-  <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:24px;cursor:pointer;padding:4px 16px;border-radius:8px;transition:all 0.2s" title="Edit Project Information">
+  <div id="topbar-proj-info" onclick="if(typeof editProject === 'function') editProject()" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:3px 8px;border-radius:8px;transition:all 0.2s;min-width:0;flex-shrink:1" title="{t("reg.edit_project_info_title", norm)}">
     {projbar_primary}
+    {edit_proj_inline_btn}
   </div>
 
   <div style="flex:1"></div>
 
-  <a href="/?ws={active_ws}" class="tb-btn">📊<span class="tb-btn-text"> Dashboard</span></a>
-  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="DCR AI Assistant (Gemini Flash)" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">AI</span></button>
-  <button class="tb-btn" onclick="openM('about-modal')" title="About System">ℹ️<span class="tb-btn-text"> About</span></button>
-  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="Toggle dark mode">🌙</button>
+  <a href="/?ws={active_ws}" class="tb-btn">📊<span class="tb-btn-text">{t("topbar.dashboard_btn", norm)}</span></a>
+  <button class="tb-btn ai-btn ai-topbar-btn" onclick="toggleAiDrawer()" title="{t("topbar.ai_title", norm)}" aria-label="AI Assistant"><span class="ai-topbar-sparkle">✨</span><span class="ai-topbar-text">{t("topbar.ai_btn", norm)}</span></button>
+  <button class="tb-btn tb-about-btn" onclick="openM('about-modal')" title="{t("topbar.about_btn", norm)}" aria-label="{t("topbar.about_btn", norm)}">ℹ️<span class="tb-btn-text sr-only">{t("topbar.about_btn", norm)}</span></button>
+  <button class="tb-btn" onclick="toggleDark()" id="darkBtn" title="{t("topbar.dark_title", norm)}">🌙</button>
+  {_lang_switcher_btn_html(norm)}
   {btns}
   <span style="color:rgba(255,255,255,.45);padding:0 4px">|</span>
-  <span class="topbar-user"><span class="topbar-user-name">👤 {uname}</span>
-    <span style="background:{rbg};border-radius:3px;padding:1px 7px;font-size:9px;font-weight:700">{rlbl}</span>
+  <span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">{uname}</span></span>
+    <span class="topbar-user-role" style="background:{rbg};border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700">{rlbl}</span>
   </span>
 </div>
 
-<div id="projbar">
-  {logo_html}
-  <div id="projbar-main">
-    {projbar_toggle}
-    <div id="projbar-extra" style="display:flex;gap:20px;flex:1 1 auto;overflow-x:auto">{projbar_secondary}</div>
-  </div>
-  {'<button class="proj-edit-btn" onclick="editProject()" style="margin-left:auto;background:var(--pr);color:#fff;border:none;padding:5px 12px;border-radius:var(--rd);cursor:pointer;font-size:11px;font-family:inherit;flex-shrink:0">✏ Edit</button>' if editable else ''}
-</div>
+{projbar_html}
 
 <div id="tabsbar">
   {tabs_html}
-  {'<button class="tab-add" onclick="addDocType()" title="Add Type">＋</button>' if editable else ''}
+  {'<button class="tab-add" onclick="addDocType()" title="' + t("reg.add_type_title", norm) + '">＋</button>' if editable else ''}
 </div>
 
   <div id="toolbar">
     <div id="toolbar-actions">
       {edit_btns}
-      <button id="btn-bulk-dl" class="tool-btn" style="display:none;background:#2563eb;border-color:#1d4ed8;color:#fff" onclick="bulkDownload()">⬇️ Download Selected</button>
-      <button id="btn-batch-inspect" class="tool-btn" style="display:none;background:#0f766e;border-color:#0d9488;color:#fff" disabled onclick="openFeiBatchInspectModal()">🧯 Batch Inspect (<span id="fei-batch-cnt">0</span>)</button>
-      <button class="tool-btn teal" onclick="openExportCenter()">📥 Export ▾</button>
-    <button class="tool-btn teal" onclick="doPrint()">🖨 Print</button>
-      {'<button class="tool-btn teal" onclick="openImport()">📤 Import</button>' if editable else ''}
-      {'<button class="tool-btn teal" onclick="openBatchDriveUpload()">☁ Upload Files</button>' if editable else ''}
+      <button id="btn-bulk-dl" class="tool-btn" style="display:none;background:#2563eb;border-color:#1d4ed8;color:#fff" onclick="bulkDownload()">{t("reg.btn_bulk_dl", norm)}</button>
+      <button id="btn-batch-inspect" class="tool-btn" style="display:none;background:#0f766e;border-color:#0d9488;color:#fff" disabled onclick="openFeiBatchInspectModal()">{t("reg.btn_batch_inspect", norm)} (<span id="fei-batch-cnt">0</span>)</button>
+      <button class="tool-btn teal" onclick="openExportCenter()">{t("reg.btn_export", norm)}</button>
+    <button class="tool-btn teal" onclick="doPrint()">{t("reg.btn_print", norm)}</button>
+      {'<button class="tool-btn teal" onclick="openImport()">' + t("reg.btn_import", norm) + '</button>' if editable else ''}
+      {'<button class="tool-btn teal" onclick="openBatchDriveUpload()">' + t("reg.btn_upload_files", norm) + '</button>' if editable else ''}
     </div>
     <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text);cursor:pointer;margin-right:12px;font-weight:500;">
-      <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> Latest Revisions Only
+      <input type="checkbox" onchange="state.latestRevisionsOnly=this.checked; renderRows();"> {t("reg.latest_revs_only", norm)}
     </label>
-    <input type="text" id="srchbox" placeholder="Search..." oninput="doSearch()">
+    <input type="text" id="srchbox" placeholder="{t("reg.search_placeholder", norm)}" oninput="doSearch()">
   </div>
   <div id="ltr-quickbar" style="display:none;padding:8px 10px;border-bottom:1px solid var(--bd);background:#f8fafc;gap:6px;align-items:center;flex-wrap:wrap">
-    <span style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Letter Views</span>
-    <button class="tool-btn" type="button" data-ltr-view="" onclick="setLTRQuickView('')">All</button>
-    <button class="tool-btn" type="button" data-ltr-view="sent" onclick="setLTRQuickView('sent')">Sent Letters</button>
-    <button class="tool-btn" type="button" data-ltr-view="received" onclick="setLTRQuickView('received')">Received Letters</button>
+    <span style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">{t("reg.ltr_views", norm)}</span>
+    <button class="tool-btn" type="button" data-ltr-view="" onclick="setLTRQuickView('')">{t("reg.ltr_all", norm)}</button>
+    <button class="tool-btn" type="button" data-ltr-view="sent" onclick="setLTRQuickView('sent')">{t("reg.ltr_sent", norm)}</button>
+    <button class="tool-btn" type="button" data-ltr-view="received" onclick="setLTRQuickView('received')">{t("reg.ltr_received", norm)}</button>
+    <div id="ltr-date-filter" class="ltr-date-filter">
+      <span class="ltr-df-lbl">{t("reg.ltr_date_label", norm)}</span>
+      <select id="ltr-date-field" class="ltr-df-select" onchange="setLTRDateFilter()" aria-label="{t('reg.ltr_date_label', norm)}">
+        <option value="issuedDate">{t("reg.ltr_date_issued", norm)}</option>
+        <option value="receivedDate">{t("reg.ltr_date_received", norm)}</option>
+      </select>
+      <label class="ltr-df-lbl" for="ltr-date-from">{t("reg.ltr_date_from", norm)}</label>
+      <input type="date" id="ltr-date-from" class="ltr-df-input bidi-ltr" onchange="setLTRDateFilter()" oninput="setLTRDateFilter()">
+      <label class="ltr-df-lbl" for="ltr-date-to">{t("reg.ltr_date_to", norm)}</label>
+      <input type="date" id="ltr-date-to" class="ltr-df-input bidi-ltr" onchange="setLTRDateFilter()" oninput="setLTRDateFilter()">
+      <button type="button" id="ltr-date-clear" class="tool-btn ltr-df-clear" style="display:none" onclick="clearLTRDateFilter()" title="{t('reg.ltr_date_clear', norm)}">&times; {t("reg.ltr_date_clear", norm)}</button>
+    </div>
   </div>
   
   <div id="bulkbar">
-  <span id="bulkcnt">0 selected</span>
-  <button class="btn btn-er btn-sm" onclick="bulkDel()">🗑 Delete</button>
-  <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="clearSel()">✕ Cancel</button>
+  <span id="bulkcnt">{t("reg.bulk_selected", norm, count=0)}</span>
+  <button class="btn btn-er btn-sm" onclick="bulkDel()">{t("reg.bulk_delete", norm)}</button>
+  <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="clearSel()">{t("reg.bulk_cancel", norm)}</button>
 </div>
 
 <div id="main">
   <div id="tblwrap">
     <table id="regtbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
-    <div class="empty hidden" id="empty" style="display:none"><div style="font-size:48px;margin-bottom:10px">📁</div><p style="color:var(--mu)">No records yet — click ➕ Add to create one</p></div>
+    <div class="empty hidden" id="empty" style="display:none"><div style="font-size:48px;margin-bottom:10px">📁</div><p style="color:var(--mu)">{t("reg.empty_initial", norm)}</p></div>
   </div>
   <div id="noc-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);">
     <div id="noc-summary-inner" style="display:flex;flex-wrap:wrap;gap:10px"></div>
@@ -12956,27 +14262,27 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 
 <div id="sbar">
   <div id="sbar-left">
-    <span id="s-total">Total: 0</span>
-    <span id="s-show">Showing: 0</span>
-    <span id="s-ov">Overdue: 0</span>
+    <span id="s-total">{t("reg.sbar_total", norm, count=0)}</span>
+    <span id="s-show">{t("reg.sbar_showing", norm, count=0)}</span>
+    <span id="s-ov">{t("reg.sbar_overdue", norm, count=0)}</span>
   </div>
   <div id="sbar-center">
-    Designed &amp; Developed by <strong style="color:#f8fafc;">Mohamed Metwaly</strong> &mdash; Document Control Department
+    {t("footer.designed_by", norm)} <strong style="color:#f8fafc;">{t("footer.developer_name", norm)}</strong> &mdash; {t("footer.department", norm)}
   </div>
   <div id="sbar-right">
-    <span id="s-clock"></span>
+    <span id="s-clock" class="bidi-ltr"></span>
   </div>
 </div>
 
 <!-- ADD/EDIT RECORD -->
 <div class="overlay hidden" id="rec-modal">
   <div class="modal record-modal">
-    <div class="mhdr"><span id="rec-title">Add Document</span>
+    <div class="mhdr"><span id="rec-title">{t("form.add_title", norm)}</span>
       <button class="xbtn" onclick="closeM('rec-modal')">✕</button></div>
     <div class="mbody"><div class="record-form-shell" id="rec-form"></div></div>
     <div class="mfoot record-modal-actions">
-      <button class="btn btn-sc" id="rec-cancel-btn" onclick="closeM('rec-modal')">Cancel</button>
-      <button class="btn btn-pr" id="rec-save-btn" onclick="saveRecord()">Save</button>
+      <button class="btn btn-sc" id="rec-cancel-btn" onclick="closeM('rec-modal')">{t("form.cancel", norm)}</button>
+      <button class="btn btn-pr" id="rec-save-btn" onclick="saveRecord()">{t("form.save", norm)}</button>
     </div>
   </div>
 </div>
@@ -12984,11 +14290,11 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- LETTER THREAD -->
 <div class="overlay hidden" id="thread-modal">
   <div class="modal" style="max-width:760px">
-    <div class="mhdr"><span id="thread-title">Letter Thread</span>
+    <div class="mhdr"><span id="thread-title">{t("ltr.thread_title", norm)}</span>
       <button class="xbtn" onclick="closeM('thread-modal')">✕</button></div>
     <div class="mbody" id="thread-body"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('thread-modal')">Close</button>
+      <button class="btn btn-sc" onclick="closeM('thread-modal')">{t("form.close", norm)}</button>
     </div>
   </div>
 </div>
@@ -12996,11 +14302,11 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- LETTER TIMELINE -->
 <div class="overlay hidden" id="timeline-modal">
   <div class="modal" style="max-width:760px">
-    <div class="mhdr"><span id="timeline-title">Letter Timeline</span>
+    <div class="mhdr"><span id="timeline-title">{t("ltr.timeline_title", norm)}</span>
       <button class="xbtn" onclick="closeM('timeline-modal')">✕</button></div>
     <div class="mbody" id="timeline-body"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('timeline-modal')">Close</button>
+      <button class="btn btn-sc" onclick="closeM('timeline-modal')">{t("form.close", norm)}</button>
     </div>
   </div>
 </div>
@@ -13008,12 +14314,12 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- PROJECT MODAL -->
 <div class="overlay hidden" id="proj-modal">
   <div class="modal" style="max-width:820px">
-    <div class="mhdr"><span>🏗 Project Information</span>
+    <div class="mhdr"><span>{t("reg.proj_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('proj-modal')">✕</button></div>
     <div class="mbody" id="proj-body"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('proj-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="saveProject()">💾 Save Project</button>
+      <button class="btn btn-sc" onclick="closeM('proj-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" onclick="saveProject()">{t("reg.proj_save_btn", norm)}</button>
     </div>
   </div>
 </div>
@@ -13021,11 +14327,11 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- DISTRIBUTION MATRIX MODAL -->
 <div class="overlay hidden" id="dist-modal">
   <div class="modal" style="max-width:900px;max-height:90vh">
-    <div class="mhdr"><span>📇 Distribution Matrix</span>
+    <div class="mhdr"><span>{t("reg.dist_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('dist-modal')">✕</button></div>
     <div class="mbody" id="dist-body" style="overflow-y:auto;max-height:calc(90vh - 130px)"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('dist-modal')">Close</button>
+      <button class="btn btn-sc" onclick="closeM('dist-modal')">{t("common.close", norm)}</button>
     </div>
   </div>
 </div>
@@ -13033,48 +14339,48 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- EXPORT MODAL -->
 <div class="overlay hidden" id="export-modal">
   <div class="modal" style="max-width:500px;">
-    <div class="mhdr"><span>📊 Export Center</span>
+    <div class="mhdr"><span>{t("reg.exp_title", norm)}</span>
       <button class="xbtn" onclick="closeM('export-modal')">✕</button></div>
     <div class="mbody" style="padding:20px;">
       <div style="margin-bottom:15px;">
-        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Format</label>
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">{t("reg.exp_format", norm)}</label>
         <select id="export-format" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
-          <option value="excel">Excel (.xlsx)</option>
-          <option value="pdf">PDF Document (.pdf)</option>
+          <option value="excel">{t("reg.exp_excel", norm)}</option>
+          <option value="pdf">{t("reg.exp_pdf", norm)}</option>
         </select>
       </div>
       <div id="export-scope-wrap" style="margin-bottom:15px;">
-        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Scope</label>
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">{t("reg.exp_scope", norm)}</label>
         <select id="export-scope" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
-          <option value="all">All Documents (All Tabs)</option>
-          <option value="current">Current Tab</option>
+          <option value="all">{t("reg.exp_scope_all", norm)}</option>
+          <option value="current">{t("reg.exp_scope_cur", norm)}</option>
         </select>
       </div>
       <div style="margin-bottom:15px;">
-        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Time Range</label>
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">{t("reg.exp_time", norm)}</label>
         <select id="export-time" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
-          <option value="all">All Time</option>
-          <option value="30">Last 30 Days</option>
-          <option value="7">Last 7 Days</option>
+          <option value="all">{t("reg.exp_time_all", norm)}</option>
+          <option value="30">{t("reg.exp_time_30", norm)}</option>
+          <option value="7">{t("reg.exp_time_7", norm)}</option>
         </select>
       </div>
       <div style="margin-bottom:15px;">
-        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">Status</label>
+        <label style="display:block;font-weight:600;margin-bottom:5px;font-size:13px;">{t("reg.exp_status", norm)}</label>
         <select id="export-status" class="inp" style="width:100%;" onchange="updateExportPreviewCount()">
-          <option value="all">All Statuses</option>
-          <option value="approved">Approved / Accepted Only</option>
-          <option value="rejected">Rejected / Revise Only</option>
-          <option value="overdue">Overdue Only</option>
+          <option value="all">{t("reg.exp_status_all", norm)}</option>
+          <option value="approved">{t("reg.exp_status_appr", norm)}</option>
+          <option value="rejected">{t("reg.exp_status_rej", norm)}</option>
+          <option value="overdue">{t("reg.exp_status_ov", norm)}</option>
         </select>
       </div>
       <div id="export-preview-count" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg);border-radius:var(--rd);border:1px solid var(--bd);margin-top:5px;">
-        <span style="font-size:12px;color:var(--mu);font-weight:500;">Ready to export:</span>
-        <span style="font-size:13px;font-weight:700;color:var(--brand-teal);"><span id="exp-cnt">...</span> records</span>
+        <span style="font-size:12px;color:var(--mu);font-weight:500;">{t("reg.exp_ready", norm)}</span>
+        <span style="font-size:13px;font-weight:700;color:var(--brand-teal);"><span id="exp-cnt" class="bidi-ltr">...</span> {t("reg.exp_records", norm)}</span>
       </div>
     </div>
     <div class="mfoot" style="justify-content:space-between;">
-      <button class="btn btn-sc" onclick="closeM('export-modal')">Cancel</button>
-      <button class="btn btn-pr" id="export-submit-btn" style="background:#2563eb;" onclick="executeAdvancedExport()">📥 Generate Export</button>
+      <button class="btn btn-sc" onclick="closeM('export-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" id="export-submit-btn" style="background:#2563eb;" onclick="executeAdvancedExport()">{t("reg.exp_submit", norm)}</button>
     </div>
   </div>
 </div>
@@ -13082,40 +14388,40 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- LISTS -->
 <div class="overlay hidden" id="lists-modal">
   <div class="modal">
-    <div class="mhdr"><span>📋 Dropdown Lists</span>
+    <div class="mhdr"><span>{t("reg.lists_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('lists-modal')">✕</button></div>
     <div class="mbody" id="lists-body"></div>
-    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('lists-modal')">Close</button></div>
+    <div class="mfoot"><button class="btn btn-sc" onclick="closeM('lists-modal')">{t("common.close", norm)}</button></div>
   </div>
 </div>
 
 <!-- ADD DOC TYPE -->
 <div class="overlay hidden" id="dt-modal">
   <div class="modal" style="max-width:420px">
-    <div class="mhdr"><span id="dt-modal-title">Add Document Type</span>
+    <div class="mhdr"><span id="dt-modal-title">{t("reg.dt_modal_add_title", norm)}</span>
       <button class="xbtn" onclick="closeM('dt-modal')">✕</button></div>
     <div class="mbody">
       <input type="hidden" id="dt-edit-id">
       <div class="fgrid">
-        <div class="fg"><label>Code</label><input id="dt-code" placeholder="e.g. MS"></div>
-        <div class="fg"><label>Name</label><input id="dt-name" placeholder="e.g. Method Statement"></div>
+        <div class="fg"><label>{t("reg.dt_code", norm)}</label><input id="dt-code" placeholder="{t("reg.dt_code_ph", norm)}"></div>
+        <div class="fg"><label>{t("reg.dt_name", norm)}</label><input id="dt-name" placeholder="{t("reg.dt_name_ph", norm)}"></div>
       </div>
-      <div class="stitle" style="margin-top:12px">Expected Reply Override</div>
+      <div class="stitle" style="margin-top:12px">{t("reg.dt_er_override", norm)}</div>
       <div style="font-size:10px;color:var(--mu);margin:-4px 0 8px;padding:6px 8px;background:var(--bg);border-radius:4px">
-        Optional day-count override for this document type only. Calculation mode, weekend rule, and holidays still inherit from the project.
+        {t("reg.dt_er_note", norm)}
       </div>
       <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;margin-bottom:8px">
         <input type="checkbox" id="dt-er-use" onchange="toggleDocTypeReplyOverride()">
-        Use Custom Reply Days For This Document Type
+        {t("reg.dt_er_use", norm)}
       </label>
       <div class="fgrid" id="dt-er-fields" style="display:none">
-        <div class="fg"><label>REV00 Reply Days</label><input id="dt-er-rev0" type="number" min="0" step="1" value="14"></div>
-        <div class="fg"><label>REV&gt;00 Reply Days</label><input id="dt-er-rev" type="number" min="0" step="1" value="7"></div>
+        <div class="fg"><label>{t("reg.dt_er_rev0", norm)}</label><input id="dt-er-rev0" type="number" min="0" step="1" value="14"></div>
+        <div class="fg"><label>{t("reg.dt_er_rev", norm)}</label><input id="dt-er-rev" type="number" min="0" step="1" value="7"></div>
       </div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('dt-modal')">Cancel</button>
-      <button class="btn btn-pr" id="dt-save-btn" onclick="saveDocType()">Add</button>
+      <button class="btn btn-sc" onclick="closeM('dt-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" id="dt-save-btn" onclick="saveDocType()">{t("common.add", norm)}</button>
     </div>
   </div>
 </div>
@@ -13123,12 +14429,12 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- COLUMNS -->
 <div class="overlay hidden" id="col-modal">
   <div class="modal">
-    <div class="mhdr"><span>⚙ Manage Columns</span>
+    <div class="mhdr"><span>{t("reg.col_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('col-modal')">✕</button></div>
     <div class="mbody" id="col-body"></div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="openAddCol()">+ Add Column</button>
-      <button class="btn btn-pr" onclick="closeM('col-modal');loadRecords()">Done</button>
+      <button class="btn btn-sc" onclick="openAddCol()">{t("reg.col_add_btn", norm)}</button>
+      <button class="btn btn-pr" onclick="closeM('col-modal');loadRecords()">{t("common.done", norm)}</button>
     </div>
   </div>
 </div>
@@ -13136,37 +14442,37 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- ADD COLUMN -->
 <div class="overlay hidden" id="addcol-modal">
   <div class="modal" style="max-width:460px">
-    <div class="mhdr"><span>Add Column</span>
+    <div class="mhdr"><span>{t("reg.addcol_title", norm)}</span>
       <button class="xbtn" onclick="closeM('addcol-modal')">✕</button></div>
     <div class="mbody">
       <div class="fgrid">
-        <div class="fg full"><label>Column Name</label><input id="col-name" placeholder="e.g. Review Duration"></div>
-        <div class="fg full"><label>Type</label>
+        <div class="fg full"><label>{t("reg.addcol_name", norm)}</label><input id="col-name" placeholder="{t("reg.addcol_name_ph", norm)}"></div>
+        <div class="fg full"><label>{t("reg.addcol_type", norm)}</label>
           <select id="col-type" onchange="onColType(this.value)">
-            <option value="text">📝 Text</option>
-            <option value="number">🔢 Number</option>
-            <option value="date">📅 Date</option>
-            <option value="dropdown">📋 Dropdown</option>
-            <option value="link">🔗 Hyperlink</option>
-            <option value="duration_calc">⏱ Duration (working days)</option>
+            <option value="text">{t("reg.addcol_type_text", norm)}</option>
+            <option value="number">{t("reg.addcol_type_number", norm)}</option>
+            <option value="date">{t("reg.addcol_type_date", norm)}</option>
+            <option value="dropdown">{t("reg.addcol_type_dropdown", norm)}</option>
+            <option value="link">{t("reg.addcol_type_link", norm)}</option>
+            <option value="duration_calc">{t("reg.addcol_type_duration", norm)}</option>
           </select>
         </div>
         <div class="fg full" id="cg-list" style="display:none">
-          <label>Dropdown Source</label><select id="col-list"></select></div>
+          <label>{t("reg.addcol_list_src", norm)}</label><select id="col-list"></select></div>
         <div class="fg full" id="cg-ds" style="display:none">
-          <label>Start Date Column</label><select id="col-ds"></select></div>
+          <label>{t("reg.addcol_start_date", norm)}</label><select id="col-ds"></select></div>
         <div class="fg full" id="cg-de" style="display:none">
-          <label>End Date Column</label><select id="col-de"></select></div>
+          <label>{t("reg.addcol_end_date", norm)}</label><select id="col-de"></select></div>
         <div class="fg full" id="cg-info" style="display:none">
           <div style="background:#f0f4fa;border-radius:6px;padding:9px 12px;font-size:11px;color:#1a3a5c">
-            ⏱ Working days between two date columns — excludes Fridays + Egyptian holidays
+            {t("reg.addcol_dur_info", norm)}
           </div>
         </div>
       </div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('addcol-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="saveAddCol()">Add</button>
+      <button class="btn btn-sc" onclick="closeM('addcol-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" onclick="saveAddCol()">{t("common.add", norm)}</button>
     </div>
   </div>
 </div>
@@ -13174,16 +14480,16 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- IMPORT -->
 <div class="overlay hidden" id="import-modal">
   <div class="modal" style="max-width:480px">
-    <div class="mhdr"><span>📤 Import Excel / CSV</span>
+    <div class="mhdr"><span>{t("reg.imp_title", norm)}</span>
       <button class="xbtn" onclick="closeM('import-modal')">✕</button></div>
     <div class="mbody">
-      <p style="font-size:12px;color:var(--mu);margin-bottom:12px">Select .xlsx or .csv file. Headers must match register columns. For full-workbook import, Excel sheets will be matched to document types automatically.</p>
+      <p style="font-size:12px;color:var(--mu);margin-bottom:12px">{t("reg.imp_desc", norm)}</p>
       <input type="file" id="imp-file" accept=".csv,.xlsx,.xls" style="font-size:12px">
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('import-modal')">Cancel</button>
-      <button class="btn btn-sc" id="imp-project-btn" onclick="doImportProject()">Import Full Workbook</button>
-      <button class="btn btn-pr" onclick="doImport()">Import</button>
+      <button class="btn btn-sc" onclick="closeM('import-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-sc" id="imp-project-btn" onclick="doImportProject()">{t("reg.imp_full_btn", norm)}</button>
+      <button class="btn btn-pr" onclick="doImport()">{t("reg.imp_btn", norm)}</button>
     </div>
   </div>
 </div>
@@ -13191,59 +14497,59 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- BATCH DRIVE UPLOAD MODAL -->
 <div class="overlay hidden" id="batch-drive-modal">
   <div class="modal" style="max-width:780px;width:95vw">
-    <div class="mhdr"><span>☁ Batch Upload Files to Google Drive</span>
+    <div class="mhdr"><span>{t("drive.batch_title", norm)}</span>
       <button class="xbtn" onclick="closeBatchDriveUpload()">✕</button></div>
     <div class="mbody" style="display:flex;flex-direction:column;gap:12px">
       <div id="batch-drv-slot-wrap" style="display:flex;flex-direction:column;gap:8px;background:#f8fafc;padding:10px 12px;border:1px solid var(--bd);border-radius:8px">
-        <div style="font-size:11px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px">Upload Target Slot</div>
+        <div style="font-size:11px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px">{t("drive.batch_slot_hdr", norm)}</div>
         <div id="batch-drv-slot-cards-dual" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
           <label id="batch-slot-card-submission" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">
             <input type="radio" name="batch-drv-slot" value="submission" checked onchange="onBatchSlotChange(this.value)" style="accent-color:#2563eb">
-            <span>📤 Submission Files (ملفات التقديم الأصلي)</span>
+            <span>{t("drive.batch_slot_subm", norm)}</span>
           </label>
           <label id="batch-slot-card-approval" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">
             <input type="radio" name="batch-drv-slot" value="approval" onchange="onBatchSlotChange(this.value)" style="accent-color:#0f766e">
-            <span>📋 Consultant Replies (ردود الاستشاري)</span>
+            <span>{t("drive.batch_slot_reply", norm)}</span>
           </label>
         </div>
         <div id="batch-drv-slot-cards-noc" style="display:none;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
-          <label id="batch-slot-card-part_a" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part A: Notice of Change">
+          <label id="batch-slot-card-part_a" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{t("noc.part_a_title", norm)}">
             <input type="radio" name="batch-drv-slot" value="part_a" onchange="onBatchSlotChange(this.value)" style="accent-color:#2563eb">
-            <span style="overflow:hidden;text-overflow:ellipsis">🅰️ Part A: Notice of Change</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅰️ {t("noc.part_a_title", norm)}</span>
           </label>
-          <label id="batch-slot-card-part_b" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part B: Consultant Reply">
+          <label id="batch-slot-card-part_b" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{t("noc.part_b_title", norm)}">
             <input type="radio" name="batch-drv-slot" value="part_b" onchange="onBatchSlotChange(this.value)" style="accent-color:#0f766e">
-            <span style="overflow:hidden;text-overflow:ellipsis">🅱️ Part B: Consultant Reply</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅱️ {t("noc.part_b_title", norm)}</span>
           </label>
-          <label id="batch-slot-card-part_c" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part C: Cost Claim">
+          <label id="batch-slot-card-part_c" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{t("noc.part_c_title", norm)}">
             <input type="radio" name="batch-drv-slot" value="part_c" onchange="onBatchSlotChange(this.value)" style="accent-color:#0284c7">
-            <span style="overflow:hidden;text-overflow:ellipsis">🅲 Part C: Cost Claim</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅲 {t("noc.part_c_title", norm)}</span>
           </label>
-          <label id="batch-slot-card-part_d" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Part D: Final Approval / VO">
+          <label id="batch-slot-card-part_d" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{t("noc.part_d_title", norm)}">
             <input type="radio" name="batch-drv-slot" value="part_d" onchange="onBatchSlotChange(this.value)" style="accent-color:#16a34a">
-            <span style="overflow:hidden;text-overflow:ellipsis">🅳 Part D: Final Approval</span>
+            <span style="overflow:hidden;text-overflow:ellipsis">🅳 {t("noc.part_d_title", norm)}</span>
           </label>
         </div>
         <div id="batch-drv-target-path" style="font-size:11px;color:#0f766e;font-weight:600;display:flex;align-items:center;gap:6px;background:#f0fdfa;border:1px solid #ccfbf1;padding:6px 10px;border-radius:6px">
           <span style="font-size:12px">📁</span>
-          <span>Target Drive Folder: <strong id="batch-drv-target-path-txt">...</strong></span>
+          <span>{t("drive.batch_target_folder", norm)} <strong id="batch-drv-target-path-txt" class="bidi-ltr">...</strong></span>
         </div>
         <label id="batch-noc-rev-wrap" style="display:none;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;padding:6px 10px;border-radius:6px;cursor:pointer">
           <input type="checkbox" id="batch-noc-new-rev" checked style="accent-color:#2563eb">
-          <span>↻ Archive existing Part attachment as previous revision (New Rev) instead of overwriting</span>
+          <span>{t("drive.batch_noc_new_rev", norm)}</span>
         </label>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input type="file" id="batch-drv-input" multiple style="display:none" onchange="onBatchFilesSelected(this.files)">
-        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-input').click()">📄 Select Files (PDF / ZIP / DWG)</button>
+        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-input').click()">{t("drive.batch_select_files", norm)}</button>
         <input type="file" id="batch-drv-folder-input" webkitdirectory directory multiple style="display:none" onchange="onBatchFolderSelected(this.files)">
-        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-folder-input').click()" style="border-color:#0f766e;color:#0f766e">📁 Select Folder (مجلد كامل للمستند)</button>
-        <span id="batch-drv-summary" style="font-size:11px;color:var(--mu)">Files or Folders are matched to records automatically by Document No.</span>
+        <button type="button" class="btn btn-sc" onclick="document.getElementById('batch-drv-folder-input').click()" style="border-color:#0f766e;color:#0f766e">{t("drive.batch_select_folder", norm)}</button>
+        <span id="batch-drv-summary" style="font-size:11px;color:var(--mu)">{t("drive.batch_summary_empty", norm)}</span>
       </div>
       <div id="batch-drv-overall" style="display:none;flex-direction:column;gap:4px;background:#f1f5f9;padding:8px 10px;border-radius:6px">
         <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--pr)">
-          <span id="batch-drv-overall-txt">Queue Progress: 0 / 0</span>
-          <span id="batch-drv-overall-pct">0%</span>
+          <span id="batch-drv-overall-txt">0 / 0</span>
+          <span id="batch-drv-overall-pct" class="bidi-ltr">0%</span>
         </div>
         <div style="width:100%;height:8px;background:#cbd5e1;border-radius:4px;overflow:hidden">
           <div id="batch-drv-overall-bar" style="width:0%;height:100%;background:#0284c7;transition:width .2s"></div>
@@ -13252,26 +14558,26 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
       <div style="max-height:340px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px">
         <table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead>
-            <tr class="batch-drv-th-row" style="border-bottom:1px solid var(--bd);text-align:left;color:var(--mu)">
+            <tr class="batch-drv-th-row" style="border-bottom:1px solid var(--bd);text-align:start;color:var(--mu)">
               <th style="padding:7px 8px">#</th>
-              <th style="padding:7px 8px">File Name</th>
-              <th style="padding:7px 8px;width:75px">Size</th>
-              <th style="padding:7px 8px;width:230px">Matched Record (Doc No.)</th>
-              <th style="padding:7px 8px;width:170px">Status / Progress</th>
+              <th style="padding:7px 8px">{t("drive.batch_th_file", norm)}</th>
+              <th style="padding:7px 8px;width:75px">{t("drive.batch_th_size", norm)}</th>
+              <th style="padding:7px 8px;width:230px">{t("drive.batch_th_record", norm)}</th>
+              <th style="padding:7px 8px;width:170px">{t("drive.batch_th_status", norm)}</th>
               <th style="padding:7px 4px;width:32px;text-align:center"></th>
             </tr>
           </thead>
           <tbody id="batch-drv-tbody">
-            <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" above to queue files.</td></tr>
+            <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">{t("drive.batch_empty_tbl", norm)}</td></tr>
           </tbody>
         </table>
       </div>
     </div>
     <div class="mfoot" style="justify-content:space-between">
-      <button type="button" class="btn btn-sc hidden" id="batch-drv-stop-btn" style="color:#dc2626;border-color:#fca5a5" onclick="stopBatchDriveUpload()">⏹ Stop Queue</button>
-      <div style="display:flex;gap:8px;margin-left:auto">
-        <button type="button" class="btn btn-sc" onclick="closeBatchDriveUpload()">Close</button>
-        <button type="button" class="btn btn-pr" id="batch-drv-start-btn" onclick="startBatchDriveUpload()" disabled>🚀 Start Sequential Upload</button>
+      <button type="button" class="btn btn-sc hidden" id="batch-drv-stop-btn" style="color:#dc2626;border-color:#fca5a5" onclick="stopBatchDriveUpload()">{t("drive.batch_stop", norm)}</button>
+      <div style="display:flex;gap:8px;margin-inline-start:auto">
+        <button type="button" class="btn btn-sc" onclick="closeBatchDriveUpload()">{t("form.close", norm)}</button>
+        <button type="button" class="btn btn-pr" id="batch-drv-start-btn" onclick="startBatchDriveUpload()" disabled>{t("drive.batch_start", norm)}</button>
       </div>
     </div>
   </div>
@@ -13280,17 +14586,17 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- HSE QR BADGE MODAL -->
 <div class="overlay hidden" id="hse-qr-modal" onclick="if(event.target===this)closeM('hse-qr-modal')">
   <div class="modal" style="max-width:440px;width:94vw">
-    <div class="mhdr"><span>📱 HSE Field QR Verification Label</span>
+    <div class="mhdr"><span>{t("hse_form.qr_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('hse-qr-modal')">✕</button></div>
     <div class="mbody" style="padding:18px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px">
-      <div id="hse-qr-meta" style="font-size:12px;color:var(--tx);font-weight:700;">Loading QR Badge...</div>
+      <div id="hse-qr-meta" style="font-size:12px;color:var(--tx);font-weight:700;">{t("hse_form.qr_loading", norm)}</div>
       <div id="hse-qr-svg-wrap" style="background:#fff;padding:12px;border:1px solid #cbd5e1;border-radius:10px;display:inline-flex;justify-content:center;align-items:center;min-height:180px;"></div>
       <div id="hse-qr-sub" style="font-size:11px;color:var(--mu);"></div>
-      <a id="hse-qr-link" href="#" target="_blank" rel="noopener" style="font-size:11px;color:var(--pr);font-weight:600;word-break:break-all;">Open Public Verification Card ↗</a>
+      <a id="hse-qr-link" href="#" target="_blank" rel="noopener" style="font-size:11px;color:var(--pr);font-weight:600;word-break:break-all;">{t("hse_form.qr_open_link", norm)}</a>
     </div>
     <div class="mfoot" style="justify-content:flex-end;gap:8px">
-      <button type="button" class="btn btn-sc" onclick="closeM('hse-qr-modal')">Close</button>
-      <button type="button" class="btn btn-pr" onclick="printHseQrLabel()">🖨 Print Label</button>
+      <button type="button" class="btn btn-sc" onclick="closeM('hse-qr-modal')">{t("form.close", norm)}</button>
+      <button type="button" class="btn btn-pr" onclick="printHseQrLabel()">{t("hse_form.qr_print", norm)}</button>
     </div>
   </div>
 </div>
@@ -13298,36 +14604,36 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- HSE FEI BATCH INSPECT MODAL -->
 <div class="overlay hidden" id="fei-batch-inspect-modal" onclick="if(event.target===this)closeM('fei-batch-inspect-modal')">
   <div class="modal" style="max-width:460px;width:94vw">
-    <div class="mhdr"><span>🧯 Batch Extinguisher / Equipment Inspection</span>
+    <div class="mhdr"><span>{t("hse_form.fei_modal_title", norm)}</span>
       <button class="xbtn" onclick="closeM('fei-batch-inspect-modal')">✕</button></div>
     <div class="mbody" style="padding:16px 18px;display:flex;flex-direction:column;gap:10px">
-      <div id="fei-batch-summary" style="font-size:12px;font-weight:700;color:var(--brand-teal);background:rgba(16,185,129,0.1);padding:7px 10px;border-radius:6px;">0 selected FEI record(s)</div>
+      <div id="fei-batch-summary" style="font-size:12px;font-weight:700;color:var(--brand-teal);background:rgba(16,185,129,0.1);padding:7px 10px;border-radius:6px;">{t("hse_form.fei_selected_count", norm, count=0)}</div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Last Inspection Date *</label>
-        <input type="date" id="fei-batch-last" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">{t("hse_form.fei_last_date", norm)}</label>
+        <input type="date" id="fei-batch-last" class="bidi-ltr" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Next Expiry Date</label>
-        <input type="date" id="fei-batch-expiry" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">{t("hse_form.fei_expiry_date", norm)}</label>
+        <input type="date" id="fei-batch-expiry" class="bidi-ltr" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Inspection Status</label>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">{t("hse_form.fei_status", norm)}</label>
         <select id="fei-batch-status" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">
-          <option value="Valid">Valid</option>
-          <option value="Needs Maintenance">Needs Maintenance</option>
-          <option value="Expired">Expired</option>
-          <option value="Under Refill">Under Refill</option>
-          <option value="Out of Service">Out of Service</option>
+          <option value="Valid">{t("status.valid", norm)}</option>
+          <option value="Needs Maintenance">{t("status.needs_maintenance", norm)}</option>
+          <option value="Expired">{t("status.expired", norm)}</option>
+          <option value="Under Refill">{t("status.under_refill", norm)}</option>
+          <option value="Out of Service">{t("status.out_of_service", norm)}</option>
         </select>
       </div>
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Condition / Inspection Notes</label>
-        <textarea id="fei-batch-notes" rows="2" placeholder="Optional inspection remarks..." style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;font-family:inherit;"></textarea>
+        <label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">{t("hse_form.fei_notes", norm)}</label>
+        <textarea id="fei-batch-notes" rows="2" placeholder="{t("hse_form.fei_notes_ph", norm)}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;font-family:inherit;"></textarea>
       </div>
     </div>
     <div class="mfoot" style="justify-content:flex-end;gap:8px">
-      <button type="button" class="btn btn-sc" onclick="closeM('fei-batch-inspect-modal')">Cancel</button>
-      <button type="button" class="btn btn-pr" id="fei-batch-save-btn" onclick="submitFeiBatchInspect()">✔ Save Inspection</button>
+      <button type="button" class="btn btn-sc" onclick="closeM('fei-batch-inspect-modal')">{t("form.cancel", norm)}</button>
+      <button type="button" class="btn btn-pr" id="fei-batch-save-btn" onclick="submitFeiBatchInspect()">{t("hse_form.fei_save_btn", norm)}</button>
     </div>
   </div>
 </div>
@@ -13347,6 +14653,9 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
   .dv-scroll::-webkit-scrollbar-corner {{ background:#e2e8f0; }}
   .dv-mob-bar {{ display:none; }}
   .dv-mob-back {{ display:none; }}
+  html[dir="rtl"] #dv-side {{ border-right: none !important; border-left: 1px solid var(--bd) !important; }}
+  html[dir="rtl"] .dv-mob-back {{ margin-right: 0; margin-left: 6px; }}
+  html[dir="rtl"] #doc-viewer-modal.mob-view-list #dv-side {{ border-left: none !important; }}
 
   @media (max-width: 768px) {{
     #doc-viewer-modal.hidden {{
@@ -13548,25 +14857,25 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 </style>
 <div class="overlay hidden" id="doc-viewer-modal" style="z-index:10600">
   <div class="modal" style="max-width:1180px;width:96vw;height:88vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
-    <div class="mhdr" style="gap:8px"><span id="dv-title" style="min-width:0;flex:1;word-break:break-word">Document</span>
+    <div class="mhdr" style="gap:8px"><span id="dv-title" style="min-width:0;flex:1;word-break:break-word">{t("drive.dv_document", norm)}</span>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-        <button type="button" id="dv-fs-btn" class="btn btn-sc btn-sm" onclick="dvToggleModalFullscreen()" title="Toggle Fullscreen Window" style="padding:3px 9px;font-size:11px">⛶ Fullscreen</button>
+        <button type="button" id="dv-fs-btn" class="btn btn-sc btn-sm" onclick="dvToggleModalFullscreen()" title="{t("drive.dv_fullscreen", norm)}" style="padding:3px 9px;font-size:11px">{t("drive.dv_fullscreen", norm)}</button>
         <button class="xbtn" onclick="dvCloseModal()">✕</button>
       </div>
     </div>
     <div id="dv-rev-bar" style="display:none;padding:6px 14px;background:#f8fafc;border-bottom:1px solid var(--bd);align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0"></div>
     <div id="dv-mob-bar" class="dv-mob-bar" style="display:none">
       <button type="button" id="dv-mob-tab-list" class="dv-mob-tab active" onclick="dvMobTab(0)">
-        📁 Files (<span id="dv-mob-cnt">0</span>)
+        {t("drive.dv_files_tab", norm)} (<span id="dv-mob-cnt" class="bidi-ltr">0</span>)
       </button>
       <button type="button" id="dv-mob-tab-view" class="dv-mob-tab" onclick="dvMobTab(1)">
-        👁️ Preview
+        {t("drive.dv_preview_tab", norm)}
       </button>
     </div>
     <div id="dv-body-wrap" style="flex:1;min-height:0;height:100%;overflow:hidden;display:flex;flex-direction:row">
       <div id="dv-side" style="width:310px;flex-shrink:0;height:100%;max-height:100%;min-height:0;border-right:1px solid var(--bd);display:none;flex-direction:column;background:#fff;overflow:hidden">
         <div style="padding:8px;border-bottom:1px solid var(--bd);flex-shrink:0">
-          <input id="dv-search" type="text" placeholder="🔍 Search files in folder..." oninput="dvFilter(this.value)" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--bd);border-radius:6px">
+          <input id="dv-search" type="text" placeholder="{t("drive.dv_search_ph", norm)}" oninput="dvFilter(this.value)" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--bd);border-radius:6px">
           <div id="dv-list-count" style="font-size:10.5px;color:#64748b;margin-top:4px;font-weight:600;display:flex;justify-content:space-between"></div>
         </div>
         <div id="dv-list" class="dv-scroll" style="flex:1;min-height:0;overflow-y:scroll;overflow-x:hidden"></div>
@@ -13575,7 +14884,7 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
     </div>
     <div class="mfoot" style="justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0">
       <div id="dv-foot-left" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>
-      <button type="button" class="btn btn-sc" onclick="dvCloseModal()">Close</button>
+      <button type="button" class="btn btn-sc" onclick="dvCloseModal()">{t("form.close", norm)}</button>
     </div>
   </div>
 </div>
@@ -13583,15 +14892,15 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 <!-- PROJECT SETTINGS MODAL -->
 <div class="overlay hidden" id="project-settings-modal">
   <div class="modal" style="max-width:600px">
-    <div class="mhdr"><span>⚙ Project Settings</span><button class="xbtn" onclick="closeM('project-settings-modal')">✕</button></div>
+    <div class="mhdr"><span>{t("reg.sc_modal_title", norm)}</span><button class="xbtn" onclick="closeM('project-settings-modal')">✕</button></div>
     <div class="mbody">
-      <div class="stitle">🎨 Status Colors</div>
-      <div style="font-size:11px;color:var(--mu);margin-bottom:12px">Configure custom background and text colors for document statuses.</div>
+      <div class="stitle">{t("reg.sc_title", norm)}</div>
+      <div style="font-size:11px;color:var(--mu);margin-bottom:12px">{t("reg.sc_desc", norm)}</div>
       <div id="status-colors-list" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-sc" onclick="closeM('project-settings-modal')">Cancel</button>
-      <button class="btn btn-pr" onclick="saveProjectSettings()">Save Settings</button>
+      <button class="btn btn-sc" onclick="closeM('project-settings-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" onclick="saveProjectSettings()">{t("reg.sc_save", norm)}</button>
     </div>
   </div>
 </div>
@@ -13599,7 +14908,7 @@ body.dark .inc-body-pill.active{{background:rgba(239,68,68,0.25);border-color:#f
 
 </div>
 
-{SHARED_JS}
+{_shared_js_html(norm)}
 <script>
 window._ACCESSIBLE_PROJECTS = {projs_json};
 const PID='{pid}', PROJ_CODE='{pcode}', PROJ_NAME='{pname}', WS_ID='{active_ws}', ROLE='{role}', CAN_EDIT={'true' if editable else 'false'}, CAN_DOWNLOAD={'true' if can_dl else 'false'};
@@ -13623,6 +14932,18 @@ const SC_DEFAULTS={{...{sc_json},
   'Revised':['e0e7ff','3730a3']
 }};
 const SC={{...SC_DEFAULTS, ...{custom_sc_json}}};
+function splitStatusValues(rawVal){{
+  const txt=String(rawVal||'').trim();
+  if(!txt)return [];
+  const norm=(v)=>String(v||'').trim().toLowerCase().replace(/\\s+/g,' ').replace(/\\s*,\\s*/g,',');
+  const txtNorm=norm(txt);
+  if(/^[A-Za-z]\\s*,\\s*[A-Za-z]\\s*-\\s*.+$/.test(txt))return [txt];
+  if(Object.keys(SC).some(k=>norm(k)===txtNorm))return [txt];
+  if(typeof state!=='undefined'&&state?.lists?.status&&Array.isArray(state.lists.status)&&state.lists.status.some(o=>norm(o)===txtNorm))return [txt];
+  const ph='\\u0000';
+  const safe=txt.replace(/\\b([A-Za-z])(\\s*),(\\s*[A-Za-z]\\s*-)/g,'$1$2'+ph+'$3');
+  return safe.split(',').map(s=>s.replaceAll(ph,',').trim()).filter(Boolean);
+}}
 const PROJ_FIELDS=[['code','Code'],['name','Project Name'],['startDate','Start Date'],['endDate','End Date'],
   ['client','Client'],['landlord','Landlord'],['pmo','PMO'],['mainConsultant','Consultant'],
   ['mepConsultant','MEP'],['contractor','Contractor']];
@@ -13868,22 +15189,79 @@ function getLTRFormColsFallback(cols, roles){{
   return picked.length?picked:(cols||[]).filter(c=>!isLTRInternalField(c)&&!isLTRExcludedField(c));
 }}
 
+function parseLTRDateKey(val){{
+  if(val===undefined||val===null)return '';
+  const s=String(val).trim();
+  if(!s)return '';
+  let y=0,m=0,d=0;
+  let match=s.match(/^(\\d{{4}})[-/.](\\d{{1,2}})[-/.](\\d{{1,2}})(?:$|T|\\s)/);
+  if(match){{
+    y=parseInt(match[1],10);m=parseInt(match[2],10);d=parseInt(match[3],10);
+  }}else{{
+    match=s.match(/^(\\d{{1,2}})[-/.](\\d{{1,2}})[-/.](\\d{{4}})(?:$|\\s)/);
+    if(!match)return '';
+    d=parseInt(match[1],10);m=parseInt(match[2],10);y=parseInt(match[3],10);
+  }}
+  if(y<1900||y>2100||m<1||m>12||d<1||d>31)return '';
+  const dt=new Date(Date.UTC(y,m-1,d));
+  if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==m-1||dt.getUTCDate()!==d)return '';
+  return String(y).padStart(4,'0')+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+}}
+
 function updateLTRQuickBar(){{
   const bar=document.getElementById('ltr-quickbar');
   if(!bar)return;
   const on=isLTRTab();
   bar.style.display=on?'flex':'none';
-  if(!on)delete state.filters._ltrQuick;
+  if(!on){{
+    delete state.filters._ltrQuick;
+    delete state.filters._ltrDateField;
+    delete state.filters._ltrDateFrom;
+    delete state.filters._ltrDateTo;
+    const fSel=document.getElementById('ltr-date-field');
+    const fFrom=document.getElementById('ltr-date-from');
+    const fTo=document.getElementById('ltr-date-to');
+    if(fSel)fSel.value='issuedDate';
+    if(fFrom)fFrom.value='';
+    if(fTo)fTo.value='';
+  }}
   bar.querySelectorAll('[data-ltr-view]').forEach(btn=>{{
     const active=(state.filters._ltrQuick||'')===btn.dataset.ltrView;
     btn.style.background=active?'var(--pr)':'';
     btn.style.color=active?'#fff':'';
     btn.style.borderColor=active?'var(--pr)':'';
   }});
+  const clr=document.getElementById('ltr-date-clear');
+  if(clr){{
+    const hasDates=!!(state.filters._ltrDateFrom||state.filters._ltrDateTo);
+    clr.style.display=hasDates?'inline-flex':'none';
+  }}
 }}
 
 function setLTRQuickView(view){{
   state.filters._ltrQuick=view||'';
+  updateLTRQuickBar();
+  renderRows();
+}}
+
+function setLTRDateFilter(){{
+  const fSel=document.getElementById('ltr-date-field');
+  const fFrom=document.getElementById('ltr-date-from');
+  const fTo=document.getElementById('ltr-date-to');
+  state.filters._ltrDateField=(fSel&&fSel.value==='receivedDate')?'receivedDate':'issuedDate';
+  state.filters._ltrDateFrom=(fFrom&&fFrom.value)?String(fFrom.value).trim():'';
+  state.filters._ltrDateTo=(fTo&&fTo.value)?String(fTo.value).trim():'';
+  updateLTRQuickBar();
+  renderRows();
+}}
+
+function clearLTRDateFilter(){{
+  const fFrom=document.getElementById('ltr-date-from');
+  const fTo=document.getElementById('ltr-date-to');
+  if(fFrom)fFrom.value='';
+  if(fTo)fTo.value='';
+  delete state.filters._ltrDateFrom;
+  delete state.filters._ltrDateTo;
   updateLTRQuickBar();
   renderRows();
 }}
@@ -13997,8 +15375,8 @@ function renderTabs(dts){{
   dts.forEach(dt=>{{
     const btn=document.createElement('button');
     btn.className='tab-btn'+(dt.id===state.tab?' active':'');
-    btn.dataset.id=dt.id; btn.title=dt.name;
-    btn.innerHTML=`<span>${{dt.code}}</span><span class="tcnt" id="cnt-${{dt.id}}">0</span>`;
+    btn.dataset.id=dt.id; btn.title=window.tDt(dt.code, dt.name);
+    btn.innerHTML=`<span class="bidi-ltr">${{dt.code}}</span><span class="tcnt bidi-ltr" id="cnt-${{dt.id}}">0</span>`;
     btn.onclick=()=>switchTab(dt.id);
     if(CAN_EDIT) btn.oncontextmenu=e=>{{e.preventDefault();tabMenu(dt.id,e);}};
     bar.insertBefore(btn,addBtn||null);
@@ -14080,13 +15458,13 @@ function tabMenu(id,e){{
   m.innerHTML=`
     <div onclick="renameDT('${{id}}','${{dt.code||id}}','${{(dt.name||'').replace(/'/g,\"\\\\'\")}}')"
       style="padding:8px 14px;cursor:pointer;font-size:12px"
-      onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''">✏ Type Settings</div>
+      onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''">${{escHtml(window.t('reg.tab_type_settings'))}}</div>
     <div onclick="moveDT('${{id}}',-1)" style="padding:8px 14px;cursor:${{idx>0?'pointer':'not-allowed'}};font-size:12px;opacity:${{idx>0?'1':'.45'}}"
-      onmouseover="if(${{idx>0}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">⬅ Move Left</div>
+      onmouseover="if(${{idx>0}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">${{escHtml(window.t('reg.tab_move_left'))}}</div>
     <div onclick="moveDT('${{id}}',1)" style="padding:8px 14px;cursor:${{idx>=0&&idx<(state.dtList||[]).length-1?'pointer':'not-allowed'}};font-size:12px;opacity:${{idx>=0&&idx<(state.dtList||[]).length-1?'1':'.45'}}"
-      onmouseover="if(${{idx>=0&&idx<(state.dtList||[]).length-1}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">➡ Move Right</div>
+      onmouseover="if(${{idx>=0&&idx<(state.dtList||[]).length-1}})this.style.background='#f0f4f8'" onmouseout="this.style.background=''">${{escHtml(window.t('reg.tab_move_right'))}}</div>
     <div onclick="delDT('${{id}}')" style="padding:8px 14px;cursor:pointer;font-size:12px;color:#ef4444"
-      onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">🗑 Delete Type</div>`;
+      onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">${{escHtml(window.t('reg.tab_delete_type'))}}</div>`;
   document.body.appendChild(m);
   setTimeout(()=>document.addEventListener('click',()=>m.remove(),{{once:true}}),10);
 }}
@@ -14098,10 +15476,10 @@ function renameDT(id,oldCode,oldName){{
 }}
 
 async function delDT(id){{
-  if(!confirm('Delete type and ALL its records?'))return;
+  if(!confirm(window.t('reg.tab_confirm_delete')))return;
   await apiFetch('/api/doc_types/'+PID+'/'+id,{{method:'DELETE'}});
   if(state.tab===id)state.tab=null;
-  await loadDTs(); toast('Deleted','wa');
+  await loadDTs(); toast(window.t('reg.tab_deleted'),'wa');
 }}
 
 async function moveDT(id,delta){{
@@ -14112,7 +15490,7 @@ async function moveDT(id,delta){{
   [order[idx],order[next]]=[order[next],order[idx]];
   await apiFetch('/api/doc_types/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{order}})}});
   await loadDTs(true);
-  toast('✔ Tab order updated','ok');
+  toast(window.t('reg.tab_order_updated'),'ok');
 }}
 
 async function loadRecords(){{
@@ -14155,13 +15533,14 @@ function buildHead(){{
   const srArrow = srIsActive
     ? (state.sortDir==='asc' ? '<span class="sort-arrow active" style="color:#38bdf8;font-size:9.5px;margin-left:3px;display:inline-block;">▲</span>' : '<span class="sort-arrow active" style="color:#38bdf8;font-size:9.5px;margin-left:3px;display:inline-block;">▼</span>')
     : '<span class="sort-arrow muted" style="opacity:0.35;font-size:9px;margin-left:3px;display:inline-block;">↕</span>';
-  sr.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:center;width:100%;">Sr.'+srArrow+'</span>';
-  sr.title='Click to reverse document order (Oldest / Newest)';
+  sr.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:center;width:100%;">'+escHtml(window.t('reg.th_sr'))+srArrow+'</span>';
+  sr.title=window.t('reg.th_sr_title');
   sr.onclick=()=>sortBy('_sr');
   hr.appendChild(sr);
 
   state.cols.forEach(col=>{{
     const th=document.createElement('th');th.dataset.key=col.col_key;
+    const dispLbl=window.tCol(col.col_key, col.label);
     const w=state.colWidths&&state.colWidths[col.col_key];
     const labelTxt=String(col.label||'').toLowerCase();
     const minW=labelTxt.includes('sub-trade')?150:
@@ -14185,15 +15564,15 @@ function buildHead(){{
         sortArrow = '<span class="sort-arrow muted" style="opacity:0.35;font-size:9.5px;margin-left:5px;display:inline-block;flex-shrink:0;">↕</span>';
       }}
       th.style.cursor='pointer';
-      th.title='Click to sort / reverse order by '+col.label;
+      th.title=window.t('reg.th_sort_title', {{col: dispLbl}});
       th.onclick=()=>sortBy(col.col_key);
     }}else{{
       th.style.cursor='default';
     }}
-    th.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:space-between;width:100%;"><span>'+escHtml(col.label)+'</span>'+sortArrow+'</span>';
+    th.innerHTML='<span class="th-lbl" style="display:inline-flex;align-items:center;justify-content:space-between;width:100%;"><span>'+escHtml(dispLbl)+'</span>'+sortArrow+'</span>';
     hr.appendChild(th);
   }});
-  const at=document.createElement('th');at.textContent='Actions';at.style.cssText='width:64px;cursor:default';hr.appendChild(at);
+  const at=document.createElement('th');at.textContent=window.t('reg.th_actions');at.style.cssText='width:64px;cursor:default';hr.appendChild(at);
   head.appendChild(hr);
   const fr=document.createElement('tr');fr.className='frow';
   fr.appendChild(document.createElement('th'));fr.appendChild(document.createElement('th'));
@@ -14208,7 +15587,8 @@ function buildHead(){{
       const listName=ltrRole==='fromParty'||ltrRole==='toParty'
         ? 'correspondence_parties'
         : (ltrRole==='direction' ? 'letter_direction' : (ltrRole==='status' ? 'letter_status' : col.list_name));
-      sel.innerHTML='<option value="">All</option>'+(state.lists[listName]||[]).map(o=>`<option ${{state.filters[col.col_key]===o?'selected':''}}>${{o}}</option>`).join('');
+      const isStCol=(col.col_key==='status'||isStatusLikeField(col));
+      sel.innerHTML='<option value="">'+escHtml(window.t('reg.filter_all'))+'</option>'+(state.lists[listName]||[]).map(o=>`<option value="${{escHtml(o)}}" ${{state.filters[col.col_key]===o?'selected':''}}>${{escHtml(isStCol?window.tStatus(o):o)}}</option>`).join('');
       sel.onchange=()=>{{state.filters[col.col_key]=sel.value;renderRows();}};
       th.appendChild(sel);
     }}else{{
@@ -14456,6 +15836,16 @@ function renderRows(){{
       const direction=String(getLTRValue(r,state.allTabCols,'direction')||'').toLowerCase();
       if(quick==='sent'&&direction!=='sent')return false;
       if(quick==='received'&&direction!=='received')return false;
+      const dfFrom=String(state.filters._ltrDateFrom||'').trim();
+      const dfTo=String(state.filters._ltrDateTo||'').trim();
+      if(dfFrom||dfTo){{
+        const dfField=state.filters._ltrDateField==='receivedDate'?'receivedDate':'issuedDate';
+        const rawDate=getLTRValue(r,state.allTabCols,dfField)||r[dfField]||'';
+        const rowDate=parseLTRDateKey(rawDate);
+        if(!rowDate)return false;
+        if(dfFrom&&rowDate<dfFrom)return false;
+        if(dfTo&&rowDate>dfTo)return false;
+      }}
     }}
     return true;
   }});
@@ -14502,7 +15892,7 @@ function renderRows(){{
     const td=document.createElement('td');
     td.colSpan=state.cols.length+3;
     td.style.cssText='padding:28px 12px;text-align:center;color:var(--mu);font-size:12px';
-    td.textContent=(state.recs&&state.recs.length)?'No records found':'No records found';
+    td.textContent=window.t('reg.empty_filtered');
     tr.appendChild(td);
     body.appendChild(tr);
   }}else{{
@@ -14511,9 +15901,9 @@ function renderRows(){{
   }}
   if(rows.length===0){{
     const ov=state.recs.filter(r=>r._overdue).length;
-    document.getElementById('s-total').textContent='Total: '+state.recs.length;
-    document.getElementById('s-show').textContent='Showing: 0';
-    document.getElementById('s-ov').textContent='Overdue: '+ov;
+    document.getElementById('s-total').textContent=window.t('reg.sbar_total',{{count:state.recs.length}});
+    document.getElementById('s-show').textContent=window.t('reg.sbar_showing',{{count:0}});
+    document.getElementById('s-ov').textContent=window.t('reg.sbar_overdue',{{count:ov}});
     renderNocSummary(rows);
     return;
   }}
@@ -14527,7 +15917,7 @@ function renderRows(){{
     const tc=document.createElement('td');tc.className='chkcell';
     if(CAN_EDIT){{const cb=document.createElement('input');cb.type='checkbox';cb.dataset.id=row._id;cb.onchange=updBulk;tc.appendChild(cb);}}
     tr.appendChild(tc);
-    const tsr=document.createElement('td');tsr.className='sr';
+    const tsr=document.createElement('td');tsr.className='sr bidi-ltr';
     const _srTdW=state.colWidths&&state.colWidths['_sr'];
     if(isMobileRegister())tsr.style.cssText='width:34px;min-width:34px;max-width:34px;white-space:nowrap;';
     else if(_srTdW)tsr.style.cssText='width:'+_srTdW+'px;min-width:'+_srTdW+'px;max-width:'+_srTdW+'px;white-space:nowrap;';
@@ -14568,6 +15958,7 @@ function renderRows(){{
             lbl.textContent=label;
             if(revNum!==null && revNum!==undefined){{
               const rBadge=document.createElement('span');
+              rBadge.className='bidi-ltr';
               rBadge.textContent='R'+revNum;
               rBadge.style.cssText=revNum>0
                 ? 'font-size:8.5px;font-weight:800;padding:0 3px;border-radius:3px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd'
@@ -14599,46 +15990,51 @@ function renderRows(){{
           if(isNoc && (hasPartA || hasPartB || hasPartC || hasPartD)){{
             if(hasPartA){{
               const _revA=getNocPartRev(norm.part_a);
-              box.appendChild(_chip('A','part_a',norm.part_a,'#2563eb','#eff6ff','Part A - Notice of Change ('+formatNocRevLabel(_revA)+')',null,_revA));
+              box.appendChild(_chip('A','part_a',norm.part_a,'#2563eb','#eff6ff',window.t('noc.chip_part_a',{{rev:formatNocRevLabel(_revA)}}),null,_revA));
             }}
             if(hasPartB){{
               const _stB=_getNocPartStatus(row,'B')||norm.part_b.consultant_status||'';
+              const _stBDisp=_stB?(window.tStatus?_stB: _stB):'';
+              const _stBLbl=_stB?(window.tStatus?window.tStatus(_stB):_stB):'';
               const _thB=_getReplyStatusTheme(_stB);
               const _revB=getNocPartRev(norm.part_b);
-              const _nmB='Part B - Consultant Reply ('+formatNocRevLabel(_revB)+')'+(_stB?' ('+_stB+')':'');
+              const _nmB=window.t('noc.chip_part_b',{{rev:formatNocRevLabel(_revB)}})+(_stBLbl?' ('+_stBLbl+')':'');
               box.appendChild(_chip('B','part_b',norm.part_b,_thB.color,_thB.bg,_nmB,_thB,_revB));
             }}
             if(hasPartC){{
               const _revC=getNocPartRev(norm.part_c);
-              box.appendChild(_chip('C','part_c',norm.part_c,'#0284c7','#f0f9ff','Part C - Cost & Time Claim ('+formatNocRevLabel(_revC)+')',null,_revC));
+              box.appendChild(_chip('C','part_c',norm.part_c,'#0284c7','#f0f9ff',window.t('noc.chip_part_c',{{rev:formatNocRevLabel(_revC)}}),null,_revC));
             }}
             if(hasPartD){{
               const _stD=_getNocPartStatus(row,'D')||norm.part_d.consultant_status||'';
+              const _stDLbl=_stD?(window.tStatus?window.tStatus(_stD):_stD):'';
               const _thD=_getReplyStatusTheme(_stD);
               const _revD=getNocPartRev(norm.part_d);
-              const _nmD='Part D - Final Approval ('+formatNocRevLabel(_revD)+')'+(_stD?' ('+_stD+')':'');
+              const _nmD=window.t('noc.chip_part_d',{{rev:formatNocRevLabel(_revD)}})+(_stDLbl?' ('+_stDLbl+')':'');
               box.appendChild(_chip('D','part_d',norm.part_d,_thD.color,_thD.bg,_nmD,_thD,_revD));
             }}
           }}else if(hasSubm && hasAppr){{
             const _isHseCo = isHseCloseoutTab();
+            const _stLbl = row.status ? (window.tStatus ? window.tStatus(row.status) : row.status) : '';
             const _rTheme=_getReplyStatusTheme(row.status||(_isHseCo?norm.approval.closeout_status:norm.approval.consultant_status));
-            const _rName=_isHseCo?('2. Close-Out Document'+(row.status?' ('+row.status+')':'')):('Consultant Reply'+(row.status?' ('+row.status+')':''));
-            box.appendChild(_chip(_isHseCo?'1. Submission':'Subm','submission',norm.submission,'#2563eb','#eff6ff',_isHseCo?'1. Submission Document':'Submission',null));
-            box.appendChild(_chip(_isHseCo?'2. Close-Out':'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+            const _rName=_isHseCo?(window.t('form.slot_closeout_title')+(_stLbl?' ('+_stLbl+')':'')):(window.t('form.slot_reply_title')+(_stLbl?' ('+_stLbl+')':''));
+            box.appendChild(_chip(_isHseCo?window.t('form.slot_subm_title'):'Subm','submission',norm.submission,'#2563eb','#eff6ff',_isHseCo?window.t('form.slot_subm_title'):window.t('form.slot_subm_title'),null));
+            box.appendChild(_chip(_isHseCo?window.t('form.slot_closeout_title'):'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasAppr){{
             const _isHseCo = isHseCloseoutTab();
+            const _stLbl = row.status ? (window.tStatus ? window.tStatus(row.status) : row.status) : '';
             const _rTheme=_getReplyStatusTheme(row.status||(_isHseCo?norm.approval.closeout_status:norm.approval.consultant_status));
-            const _rName=_isHseCo?('2. Close-Out Document'+(row.status?' ('+row.status+')':'')):('Consultant Reply'+(row.status?' ('+row.status+')':''));
-            box.appendChild(_chip(_isHseCo?'2. Close-Out':'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
+            const _rName=_isHseCo?(window.t('form.slot_closeout_title')+(_stLbl?' ('+_stLbl+')':'')):(window.t('form.slot_reply_title')+(_stLbl?' ('+_stLbl+')':''));
+            box.appendChild(_chip(_isHseCo?window.t('form.slot_closeout_title'):'Reply','approval',norm.approval,_rTheme.color,_rTheme.bg,_rName,_rTheme));
           }}else if(hasSubm){{
             const _isHseCo = isHseCloseoutTab();
             const isFlatDoc = Boolean(norm.is_flat_doc || (norm.submission && norm.submission.is_flat_doc));
             if(_isHseCo){{
-              box.appendChild(_chip('1. Submission','submission',norm.submission,'#2563eb','#eff6ff','1. Submission Document',null));
+              box.appendChild(_chip(window.t('form.slot_subm_title'),'submission',norm.submission,'#2563eb','#eff6ff',window.t('form.slot_subm_title'),null));
             }}else if(_cyc && !isFlatDoc){{
-              box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff','Submission',null));
+              box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff',window.t('form.slot_subm_title'),null));
             }}else{{
-              box.appendChild(_chip('Doc','submission',norm.submission,'#0f766e','#f0fdfa','Document'));
+              box.appendChild(_chip('Doc','submission',norm.submission,'#0f766e','#f0fdfa',window.t('form.slot_doc_title')));
             }}
           }}
           td.appendChild(box);
@@ -14647,7 +16043,7 @@ function renderRows(){{
         }}
         else {{
           let eyeOffSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
-          td.innerHTML=`<span title="No File Attached" style="color:#cbd5e1;cursor:not-allowed;opacity:0.5;display:inline-flex;align-items:center;justify-content:center;">${{eyeOffSvg}}</span>`;
+          td.innerHTML=`<span title="${{escHtml(window.t('reg.no_file_attached'))}}" style="color:#cbd5e1;cursor:not-allowed;opacity:0.5;display:inline-flex;align-items:center;justify-content:center;">${{eyeOffSvg}}</span>`;
         }}
         td.style.textAlign='center';
         tr.appendChild(td);return;
@@ -14656,45 +16052,49 @@ function renderRows(){{
       const k=key.toLowerCase();
       const longTextMeta=getLongTextMeta(col);
       if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
-      if(col.col_type==='docno'||key==='docNo')td.classList.add('docno-cell');
-      if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';if(row._overdue&&val)td.classList.add('ovdate');}}
-      else if(key==='duration')val=row._duration||'';
+      if(col.col_type==='docno'||key==='docNo'){{td.classList.add('docno-cell');td.classList.add('bidi-ltr');}}
+      if(key==='expectedReplyDate'){{val=row._expectedReplyDate||'';td.classList.add('bidi-ltr','reg-date-cell');if(row._overdue&&val)td.classList.add('ovdate');}}
+      else if(key==='duration'){{val=row._duration||'';td.classList.add('bidi-ltr','reg-dur-cell');}}
       else if(col.col_type==='duration_calc'){{
         const[ds,de]=String(col.list_name||'issuedDate,actualReplyDate').split(',');
         val=calcWD(row[ds.trim()]||'',row[de.trim()]||'');
+        td.classList.add('bidi-ltr','reg-dur-cell');
       }}
-      else if(key==='issuedDate')val=row._issuedFmt||'';
-      else if(key==='actualReplyDate')val=row._replyFmt||'';
+      else if(key==='issuedDate'){{val=row._issuedFmt||'';td.classList.add('bidi-ltr','reg-date-cell');}}
+      else if(key==='actualReplyDate'){{val=row._replyFmt||'';td.classList.add('bidi-ltr','reg-date-cell');}}
       else if(col.col_type==='date'||col.col_type==='auto_date'){{
         val=row['_fmt_'+key]||row[key]||'';  // use pre-formatted version
+        td.classList.add('bidi-ltr','reg-date-cell');
       }}
       else if(key==='status'||isStatusLikeField(col)){{
         val=row[key]||((isLtrTab&&ltrRole)?getLTRValue(row,state.allTabCols,ltrRole):'');
         if(val){{
-          td.innerHTML=String(val).split(',').map(s=>{{
+          td.innerHTML=splitStatusValues(val).map(s=>{{
             s=s.trim();
-            const scKey=Object.keys(SC).find(k=>k.toLowerCase()===s.toLowerCase());
+            const sNorm=s.toLowerCase().replace(/\\s+/g,' ').replace(/\\s*,\\s*/g,',');
+            const scKey=Object.keys(SC).find(k=>k.toLowerCase().replace(/\\s+/g,' ').replace(/\\s*,\\s*/g,',')===sNorm);
             let [bg,fg]=(scKey?SC[scKey]:null)||['e5e7eb','374151'];
             if(!scKey){{
               const up=s.toUpperCase();
               if(up.includes('CANCELLED')) [bg,fg]=['6c757d','ffffff'];
               else if(/^A(-|\\s|$)/.test(up) || up.includes('APPROVED') || up === 'CLOSED' || up.includes('CLOSED') || up.includes('COMPLETE')) [bg,fg]=['bbf7d0','166534'];
-              else if(/^B(-|\\s|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
+              else if(/^B(-|\\s|,|$)/.test(up) || up.includes('NOTED')) [bg,fg]=['dcfce7','166534'];
               else if(/^C(-|\\s|$)/.test(up) || up.includes('REVISE')) [bg,fg]=['fed7aa','9a3412'];
               else if(/^D(-|\\s|$)/.test(up) || up.includes('REJECTED')) [bg,fg]=['fecaca','7f1d1d'];
               else if(up === 'OPEN' || up.includes('PENDING') || up.includes('UNDER REVIEW')) [bg,fg]=['fed7aa','7c2d12'];
             }}
-            return `<span class="sbadge" style="background:#${{bg}};color:#${{fg}}">${{s}}</span>`;
+            return `<span class="sbadge" style="background:#${{bg}};color:#${{fg}}">${{escHtml(window.tStatus(s))}}</span>`;
           }}).join('');
           tr.appendChild(td);return;
         }}
       }}
       else if(col.col_type==='url' || key==='fileLocation'){{
         const url=row[key]||'';
-        if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">View File</a>`;tr.appendChild(td);return;}}
+        if(url){{td.innerHTML=`<a class="flink" href="${{url}}" target="_blank">${{escHtml(window.t('reg.view_file'))}}</a>`;tr.appendChild(td);return;}}
       }}
       else if(isPrTab&&prDetailsKey&&key===prDetailsKey)val=getPrSummary(row);
       else val=row[key]!==undefined ? row[key] : '';
+      if(col.col_type==='number'||col.col_type==='currency'||col.col_type==='auto_num'||isCurrencyField(col))td.classList.add('bidi-ltr');
       if(isLtrTab&&ltrRole&&!String(val||'').trim())val=String(getLTRValue(row,state.allTabCols,ltrRole)||'');
       
       const parsedItemRefs = isItemRefField(col) ? parseItemRefItems(val) : null;
@@ -14740,7 +16140,7 @@ function renderRows(){{
          }}).join('');
          td.innerHTML = lines;
          if(longTextMeta||isFloorField(col))td.classList.add('mlcell');
-         applyDisplayDirection(td, "");
+         td.classList.add('bidi-ltr','item-ref-cell');
          tr.appendChild(td);
          return;
       }}
@@ -14755,33 +16155,37 @@ function renderRows(){{
       }}
       if ((key === 'docNo' || col.col_type === 'docno') && row._has_newer_revision) {{
           const escapedVal = String(displayVal).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-          td.innerHTML = escapedVal + ' <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px;vertical-align:middle;color:#9ca3af;cursor:help;" title="Superseded"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
+          td.innerHTML = escapedVal + ' <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px;vertical-align:middle;color:#9ca3af;cursor:help;" title="' + escHtml(window.t('reg.superseded')) + '"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
       }} else {{
           td.textContent=displayVal;
       }}
       if (key === 'docNo' || col.col_type === 'docno') {{
           td.style.cursor = 'pointer';
-          td.title = CAN_EDIT ? 'Click to view/edit document' : 'Click to view document';
+          td.title = CAN_EDIT ? window.t('reg.docno_click_edit') : window.t('reg.docno_click_view');
           td.onclick = () => {{ CAN_EDIT ? editRec(row._id) : viewRec(row._id); }};
       }}
-      applyDisplayDirection(td,displayVal);
+      if(!td.classList.contains('bidi-ltr')){{
+        td.setAttribute('dir','auto');
+      }}else{{
+        applyDisplayDirection(td,displayVal);
+      }}
       tr.appendChild(td);
     }});
     const ta=document.createElement('td');ta.className='acts';
     let acts='';
-    if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">Items</button> `;
-    if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">Thread</button> <button class="pr-toggle" onclick="openLetterTimeline('${{row._id}}')">Timeline</button> `;
-    if(isHseQrTab())acts+=`<button class="act" onclick="openQrBadgeModal('${{row._id}}')" title="QR Badge">📱</button> `;
-    if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')" title="Edit">✏</button> <button class="act del" onclick="delRec('${{row._id}}')" title="Delete">🗑</button>`;
-    else acts+=`<button class="act" onclick="viewRec('${{row._id}}')" title="View details">👁</button>`;
+    if(isPrTab)acts+=`<button class="pr-toggle" onclick="togglePrItems('${{row._id}}', this)">${{escHtml(window.t('reg.act_items'))}}</button> `;
+    if(isLtrTab)acts+=`<button class="pr-toggle" onclick="openLetterThread('${{row._id}}')">${{escHtml(window.t('reg.act_thread'))}}</button> <button class="pr-toggle" onclick="openLetterTimeline('${{row._id}}')">${{escHtml(window.t('reg.act_timeline'))}}</button> `;
+    if(isHseQrTab())acts+=`<button class="act" onclick="openQrBadgeModal('${{row._id}}')" title="${{escHtml(window.t('reg.act_qr_title'))}}">📱</button> `;
+    if(CAN_EDIT)acts+=`<button class="act" onclick="editRec('${{row._id}}')" title="${{escHtml(window.t('reg.act_edit_title'))}}">✏</button> <button class="act del" onclick="delRec('${{row._id}}')" title="${{escHtml(window.t('reg.act_delete_title'))}}">🗑</button>`;
+    else acts+=`<button class="act" onclick="viewRec('${{row._id}}')" title="${{escHtml(window.t('reg.act_view_title'))}}">👁</button>`;
     ta.innerHTML=acts;
     tr.appendChild(ta);body.appendChild(tr);
     if(!row._isRev)sr++;
   }});
   const ov=state.recs.filter(r=>r._overdue).length;
-  document.getElementById('s-total').textContent='Total: '+state.recs.length;
-  document.getElementById('s-show').textContent='Showing: '+rows.length;
-  document.getElementById('s-ov').textContent='Overdue: '+ov;
+  document.getElementById('s-total').textContent=window.t('reg.sbar_total',{{count:state.recs.length}});
+  document.getElementById('s-show').textContent=window.t('reg.sbar_showing',{{count:rows.length}});
+  document.getElementById('s-ov').textContent=window.t('reg.sbar_overdue',{{count:ov}});
   syncFeiBatchInspectBtn();
   renderNocSummary(rows);
   if(isPrTab && rows.length > 0) {{
@@ -14799,7 +16203,7 @@ function renderRows(){{
             const rowTr = document.querySelector(`tr[data-rec-id="${{CSS.escape(r._id)}}"]`);
             if(rowTr) {{
               const btn = rowTr.querySelector('.pr-toggle');
-              if(btn && btn.textContent === 'Items') {{
+              if(btn && btn.textContent === window.t('reg.act_items')) {{
                 btn.click();
               }}
             }}
@@ -14901,17 +16305,26 @@ async function openLetterTimeline(id){{
   openM('timeline-modal');
 }}
 
+function tLtrDirection(dir){{
+  const d=String(dir||'').trim().toLowerCase();
+  if(d==='sent')return window.t('ltr.dir_sent');
+  if(d==='received')return window.t('ltr.dir_received');
+  return String(dir||'');
+}}
+
 function renderLetterThread(data){{
   const body=document.getElementById('thread-body');
   const title=document.getElementById('thread-title');
   const items=Array.isArray(data?.items)?data.items:[];
   const currentId=String(data?.current_id||'').trim();
   const current=items.find(it=>it.id===currentId)||items[0]||null;
-  title.textContent=current?.doc_no?('Letter Thread — '+current.doc_no):'Letter Thread';
+  const isRtl=document.documentElement.dir==='rtl';
+  title.textContent=current?.doc_no?window.t('ltr.thread_title_doc',{{docNo:current.doc_no}}):window.t('ltr.thread_title');
   if(!items.length){{
-    body.innerHTML='<div style="padding:12px;color:var(--mu);font-size:12px">This letter has no linked thread yet.</div>';
+    body.innerHTML=`<div style="padding:12px;color:var(--mu);font-size:12px">${{escHtml(window.t('ltr.thread_empty'))}}</div>`;
     return;
   }}
+  const connectorColor='#cbd5df';
   body.innerHTML=items.map(it=>{{
     const isCurrent=it.id===currentId;
     const margin=it.level*42;
@@ -14919,27 +16332,30 @@ function renderLetterThread(data){{
     const bg=isCurrent?'#f6fbef':'#fff';
     const shadow=isCurrent?'0 10px 26px rgba(139,195,74,.14)':'0 6px 18px rgba(15,23,42,.05)';
     const titleText=escHtml(it.subject||'');
-    const refText=escHtml(it.doc_no||'Untitled');
+    const refText=escHtml(it.doc_no||window.t('ltr.untitled'));
     const metaParts=[
-      it.direction?escHtml(it.direction):'',
-      it.from_party?('From: '+escHtml(it.from_party)):'',
-      it.to_party?('To: '+escHtml(it.to_party)):'',
-      it.date?escHtml(it.date):''
+      it.direction?escHtml(tLtrDirection(it.direction)):'',
+      it.from_party?escHtml(window.t('ltr.from_prefix',{{party:it.from_party}})):'',
+      it.to_party?escHtml(window.t('ltr.to_prefix',{{party:it.to_party}})):'',
+      it.date?`<span class="bidi-ltr">${{escHtml(it.date)}}</span>`:''
     ].filter(Boolean);
-    const currentBadge=isCurrent?'<span class="letter-current-badge">Current</span>':'';
-    const subjectHtml=titleText||'<span style="color:var(--mu)">No subject</span>';
-    const branchCue=it.level>0?'<span style="color:#7d8a95;font-weight:800;margin-right:8px">↳</span>':'';
-    const levelLabel=it.level>0?('Reply level '+it.level):'Root letter';
-    const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
-    return `<div style="margin-left:${{margin}}px;margin-bottom:10px;position:relative">
-      ${{it.level>0?`<div style="position:absolute;left:-24px;top:0;bottom:22px;width:2px;background:${{connectorColor}};border-radius:2px"></div>
-      <div style="position:absolute;left:-24px;top:24px;width:18px;height:2px;background:${{connectorColor}};border-radius:2px"></div>`:''}}
-      <div style="background:${{bg}};border:1px solid ${{border}};border-left:6px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
-        <div style="font-size:9px;color:#7d8a95;text-transform:uppercase;letter-spacing:.35px;margin-bottom:6px">${{levelLabel}}</div>
+    const currentBadge=isCurrent?`<span class="letter-current-badge">${{escHtml(window.t('ltr.current_badge'))}}</span>`:'';
+    const subjectHtml=titleText||`<span style="color:var(--mu)">${{escHtml(window.t('ltr.no_subject'))}}</span>`;
+    const branchCue=it.level>0?`<span class="letter-branch-cue">${{isRtl?'↵':'↳'}}</span>`:'';
+    const levelLabel=it.level>0?window.t('ltr.reply_level',{{level:it.level}}):window.t('ltr.root_letter');
+    const metaHtml=metaParts.length?'<div class="letter-card-meta">'+metaParts.join(' • ')+'</div>':'';
+    const indentStyle=isRtl?`margin-right:${{margin}}px`:`margin-left:${{margin}}px`;
+    const connSide=isRtl?'right:-24px':'left:-24px';
+    const cardBorderSide=isRtl?`border-right:6px solid ${{border}}`:`border-left:6px solid ${{border}}`;
+    return `<div style="${{indentStyle}};margin-bottom:10px;position:relative">
+      ${{it.level>0?`<div style="position:absolute;${{connSide}};top:0;bottom:22px;width:2px;background:${{connectorColor}};border-radius:2px"></div>
+      <div style="position:absolute;${{connSide}};top:24px;width:18px;height:2px;background:${{connectorColor}};border-radius:2px"></div>`:''}}
+      <div style="background:${{bg}};border:1px solid ${{border}};${{cardBorderSide}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
+        <div class="letter-card-kicker">${{escHtml(levelLabel)}}</div>
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
           <div style="min-width:0">
-            <div style="font-size:12px;font-weight:800;color:var(--pr);display:flex;align-items:center" dir="auto">${{branchCue}}<span>${{refText}}</span></div>
-            <div style="font-size:12px;color:var(--tx);margin-top:4px;line-height:1.45" dir="auto">${{subjectHtml}}</div>
+            <div class="letter-card-ref bidi-ltr" style="display:flex;align-items:center">${{branchCue}}<span>${{refText}}</span></div>
+            <div class="letter-card-subject" dir="auto">${{subjectHtml}}</div>
           </div>
           ${{currentBadge}}
         </div>
@@ -14955,35 +16371,32 @@ function renderLetterTimeline(data){{
   const items=Array.isArray(data?.items)?data.items:[];
   const currentId=String(data?.current_id||'').trim();
   const current=items.find(it=>it.id===currentId)||items[0]||null;
-  title.textContent=current?.doc_no?('Letter Timeline — '+current.doc_no):'Letter Timeline';
+  title.textContent=current?.doc_no?window.t('ltr.timeline_title_doc',{{docNo:current.doc_no}}):window.t('ltr.timeline_title');
   if(!items.length){{
-    body.innerHTML='<div style="padding:12px;color:var(--mu);font-size:12px">This letter has no linked timeline yet.</div>';
+    body.innerHTML=`<div style="padding:12px;color:var(--mu);font-size:12px">${{escHtml(window.t('ltr.timeline_empty'))}}</div>`;
     return;
   }}
   const cards=items.map(it=>{{
     const isCurrent=String(it.id||'')===currentId;
-    const border=isCurrent?'#8BC34A':'#d7e0e6';
-    const bg=isCurrent?'#f6fbef':'#fff';
-    const shadow=isCurrent?'0 10px 26px rgba(139,195,74,.14)':'0 6px 18px rgba(15,23,42,.05)';
-    const refText=escHtml(it.doc_no||'Untitled');
-    const subjectHtml=escHtml(it.subject||'')||'<span style="color:var(--mu)">No subject</span>';
+    const refText=escHtml(it.doc_no||window.t('ltr.untitled'));
+    const subjectHtml=escHtml(it.subject||'')||`<span style="color:var(--mu)">${{escHtml(window.t('ltr.no_subject'))}}</span>`;
     const dateText=escHtml(it.date||it.created_at||'');
     const metaParts=[
-      it.direction?escHtml(it.direction):'',
-      it.from_party?('From: '+escHtml(it.from_party)):'',
-      it.to_party?('To: '+escHtml(it.to_party)):''
+      it.direction?escHtml(tLtrDirection(it.direction)):'',
+      it.from_party?escHtml(window.t('ltr.from_prefix',{{party:it.from_party}})):'',
+      it.to_party?escHtml(window.t('ltr.to_prefix',{{party:it.to_party}})):''
     ].filter(Boolean);
-    const metaHtml=metaParts.length?'<div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.5">'+metaParts.join(' • ')+'</div>':'';
-    const badge=isCurrent?'<span style="flex-shrink:0;background:#8BC34A;color:#17351b;border-radius:999px;padding:3px 8px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase">Current</span>':'';
-    const dateBadge=dateText?'<div style="display:inline-flex;align-items:center;background:#eef4f8;color:#2F4F64;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:800;letter-spacing:.2px">'+dateText+'</div>':'';
-    return `<div style="position:relative;padding-left:30px;margin-bottom:14px">
-      <div style="position:absolute;left:8px;top:14px;width:12px;height:12px;border-radius:999px;background:${{isCurrent?'#8BC34A':'#2F4F64'}};border:3px solid #fff;box-shadow:0 0 0 2px ${{isCurrent?'rgba(139,195,74,.35)':'rgba(47,79,100,.18)'}}"></div>
-      <div style="background:${{bg}};border:1px solid ${{border}};border-left:4px solid ${{border}};border-radius:12px;padding:12px 14px;box-shadow:${{shadow}}">
+    const metaHtml=metaParts.length?'<div class="letter-card-meta">'+metaParts.join(' • ')+'</div>':'';
+    const badge=isCurrent?`<span class="letter-current-badge">${{escHtml(window.t('ltr.current_badge'))}}</span>`:'';
+    const dateBadge=dateText?`<div class="letter-date-badge bidi-ltr">${{dateText}}</div>`:'';
+    return `<div class="letter-node">
+      <div class="letter-dot${{isCurrent?' current':''}}"></div>
+      <div class="letter-card${{isCurrent?' current':''}}">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
           <div style="min-width:0">
-            <div style="font-size:12px;font-weight:800;color:var(--pr)" dir="auto">${{refText}}</div>
+            <div class="letter-card-ref bidi-ltr">${{refText}}</div>
             <div style="margin-top:5px">${{dateBadge}}</div>
-            <div style="font-size:12px;color:var(--tx);margin-top:6px;line-height:1.45" dir="auto">${{subjectHtml}}</div>
+            <div class="letter-card-subject" dir="auto">${{subjectHtml}}</div>
           </div>
           ${{badge}}
         </div>
@@ -14991,8 +16404,8 @@ function renderLetterTimeline(data){{
       </div>
     </div>`;
   }}).join('');
-  body.innerHTML=`<div style="position:relative;padding-left:10px">
-    <div style="position:absolute;left:13px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,#d7e0e6,#c7d2da)"></div>
+  body.innerHTML=`<div class="letter-flow">
+    <div class="letter-flow-line"></div>
     ${{cards}}
   </div>`;
 }}
@@ -15020,11 +16433,11 @@ function parseSafeNumber(val){{
 
 function getNocStageProgress(data){{
   const d=data||{{}};
-  if(d.partDReturnDate||d.partDStatus||d.finalApprovedCost||d.voNo||d.voIssueDate||d.voValueWithSIAndVAT)return 'Stage D';
-  if(d.partCIssueDate||d.submittedCost)return 'Stage C';
-  if(d.partBReturnDate||d.partBStatus)return 'Stage B';
-  if(d.partAIssueDate||d.docNo||d.title||d.nocDescription||d.originatingDocument)return 'Stage A';
-  return 'Not Started';
+  if(d.partDReturnDate||d.partDStatus||d.finalApprovedCost||d.voNo||d.voIssueDate||d.voValueWithSIAndVAT)return window.t('noc.stage_d');
+  if(d.partCIssueDate||d.submittedCost)return window.t('noc.stage_c');
+  if(d.partBReturnDate||d.partBStatus)return window.t('noc.stage_b');
+  if(d.partAIssueDate||d.docNo||d.title||d.nocDescription||d.originatingDocument)return window.t('noc.stage_a');
+  return window.t('noc.stage_not_started');
 }}
 
 function getNocAutoBaseValue(data){{
@@ -15124,13 +16537,13 @@ function highlightText(text, search) {{
     const pr = parseFloat(prQty) || 0;
     const po = parseFloat(poQty) || 0;
     const del = parseFloat(delQty) || 0;
-    if (po === 0) return `<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">🔴 Pending PO</span>`;
-    if (po > 0 && po < pr) return `<span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #facc15;">🟡 Short by ${{pr - po}}</span>`;
-    if (po >= pr && del < po) return `<span class="badge" style="background:#ffedd5;color:#9a3412;border:1px solid #fb923c;">🟠 Awaiting ${{po - del}}</span>`;
-    if (del > po) return `<span class="badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #c084fc;">🟣 Over-delivered: +${{del - po}}</span>`;
-    if (po > pr && del >= po) return `<span class="badge" style="background:#e0f2fe;color:#075985;border:1px solid #38bdf8;">🔵 Over-ordered: +${{po - pr}}</span>`;
-    if (del === po && po === pr) return `<span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #4ade80;">🟢 Completed</span>`;
-    return `<span class="badge" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;">Unknown</span>`;
+    if (po === 0) return `<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">${{escHtml(window.t('pr.badge_pending_po'))}}</span>`;
+    if (po > 0 && po < pr) return `<span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #facc15;">${{escHtml(window.t('pr.badge_short',{{n:pr - po}}))}}</span>`;
+    if (po >= pr && del < po) return `<span class="badge" style="background:#ffedd5;color:#9a3412;border:1px solid #fb923c;">${{escHtml(window.t('pr.badge_awaiting',{{n:po - del}}))}}</span>`;
+    if (del > po) return `<span class="badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #c084fc;">${{escHtml(window.t('pr.badge_over_del',{{n:del - po}}))}}</span>`;
+    if (po > pr && del >= po) return `<span class="badge" style="background:#e0f2fe;color:#075985;border:1px solid #38bdf8;">${{escHtml(window.t('pr.badge_over_ord',{{n:po - pr}}))}}</span>`;
+    if (del === po && po === pr) return `<span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #4ade80;">${{escHtml(window.t('pr.badge_completed'))}}</span>`;
+    return `<span class="badge" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;">${{escHtml(window.t('pr.badge_unknown'))}}</span>`;
   }}
 
 function formatPrQty(val){{
@@ -15144,8 +16557,8 @@ function formatPrQty(val){{
 
 function renderPrItemsTable(items, legacyText, search){{
     if(!items||!items.length){{
-      const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
-      return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div><div class="pr-items-empty">No items added</div>${{legacy}}`;
+      const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${{escHtml(window.t('pr.legacy_details'))}}</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
+      return `<div class="pr-items-title">${{escHtml(window.t('pr.tracking_title'))}}</div><div class="pr-items-empty">${{escHtml(window.t('pr.no_items'))}}</div>${{legacy}}`;
     }}
     let itemNum=0;
     const rows=items.map(it=>{{
@@ -15156,25 +16569,25 @@ function renderPrItemsTable(items, legacyText, search){{
       return `<div class="pr-items-cell num">${{itemNum}}</div>
          <div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
          <div class="pr-items-cell unit">${{highlightText(it.unit||'', search)}}</div>
-         <div class="pr-items-cell qty">${{escHtml(formatPrQty(it.quantity))}}</div>
-         <div class="pr-items-cell po-ref">${{highlightText(it.po_ref||'', search)}}</div>
-         <div class="pr-items-cell po-qty">${{escHtml(formatPrQty(it.po_qty))}}</div>
-         <div class="pr-items-cell del-qty">${{escHtml(formatPrQty(it.delivered_qty))}}</div>
+         <div class="pr-items-cell qty bidi-ltr">${{escHtml(formatPrQty(it.quantity))}}</div>
+         <div class="pr-items-cell po-ref bidi-ltr">${{highlightText(it.po_ref||'', search)}}</div>
+         <div class="pr-items-cell po-qty bidi-ltr">${{escHtml(formatPrQty(it.po_qty))}}</div>
+         <div class="pr-items-cell del-qty bidi-ltr">${{escHtml(formatPrQty(it.delivered_qty))}}</div>
          <div class="pr-items-cell status">${{getPrVarianceBadge(it.quantity, it.po_qty, it.delivered_qty)}}</div>
          <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`;
     }}).join('');
-    return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div>
+    return `<div class="pr-items-title">${{escHtml(window.t('pr.tracking_title'))}}</div>
       <div class="pr-items-grid-wrap">
         <div class="pr-items-grid">
           <div class="pr-items-grid-head" style="text-align:center">#</div>
-          <div class="pr-items-grid-head">Item</div>
-          <div class="pr-items-grid-head">Unit</div>
-          <div class="pr-items-grid-head">PR Qty</div>
-          <div class="pr-items-grid-head">PO Ref</div>
-          <div class="pr-items-grid-head">PO Qty</div>
-          <div class="pr-items-grid-head">Delivered</div>
-          <div class="pr-items-grid-head">Status</div>
-          <div class="pr-items-grid-head">Remarks</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_item'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_unit'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_pr_qty'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_po_ref'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_po_qty'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_delivered'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_status'))}}</div>
+          <div class="pr-items-grid-head">${{escHtml(window.t('pr.th_remarks'))}}</div>
           ${{rows}}
         </div>
       </div>`;
@@ -15228,18 +16641,19 @@ async function togglePrItems(recordId, btn){{
     }}
     nxt.style.display='table-row';
     nxt.classList.add('open');
-    btn.textContent='Hide';
+    btn.textContent=window.t('reg.act_hide');
   }}else{{
     nxt.classList.remove('open');
     nxt.style.display='none';
-    btn.textContent='Items';
+    btn.textContent=window.t('reg.act_items');
   }}
 }}
 
 let _rzDrag=null;
 document.addEventListener('mousemove',e=>{{
   if(!_rzDrag)return;
-  const w=Math.max(40,_rzDrag.sw+e.clientX-_rzDrag.sx);
+  const isRtl=document.documentElement.dir==='rtl';
+  const w=Math.max(40,isRtl?_rzDrag.sw-(e.clientX-_rzDrag.sx):_rzDrag.sw+(e.clientX-_rzDrag.sx));
   _rzDrag.th.style.width=w+'px';_rzDrag.th.style.minWidth=w+'px';
 }});
 document.addEventListener('mouseup',()=>{{
@@ -15264,7 +16678,8 @@ function initRz(){{
 }}
 document.addEventListener('mousemove',e=>{{
   if(!_rzActive)return;
-  const w=Math.max(40,_rzActive.sw+(e.clientX-_rzActive.sx));
+  const isRtl=document.documentElement.dir==='rtl';
+  const w=Math.max(40,isRtl?_rzActive.sw-(e.clientX-_rzActive.sx):_rzActive.sw+(e.clientX-_rzActive.sx));
   _rzActive.th.style.width=w+'px';
   _rzActive.th.style.minWidth=w+'px';
   _rzActive.th.style.maxWidth=w+'px';
@@ -15297,7 +16712,7 @@ function buildRevisionDraftFromSelected(){{
   if(isLTRTab())return null;
   const selectedRows=getCheckedRecordRows();
   if(selectedRows.length>1){{
-    alert('Please select only one document to create a new revision.');
+    alert(window.t('form.err_one_rev_only'));
     return false;
   }}
   const selected=selectedRows[0]||null;
@@ -15316,15 +16731,15 @@ function addRecord(){{
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
-  if(cBtn) cBtn.textContent='Cancel';
+  if(cBtn) cBtn.textContent=window.t('form.cancel');
   const draft=buildRevisionDraftFromSelected();
   if(draft===false)return;
   if(draft){{
     state.revisionDraftActive=true;
-    document.getElementById('rec-title').textContent='Add Revision Draft';
+    document.getElementById('rec-title').textContent=window.t('form.add_rev_title');
     buildForm(draft,{{mode:'revisionDraft'}});
   }}else{{
-    document.getElementById('rec-title').textContent='Add Document';
+    document.getElementById('rec-title').textContent=window.t('form.add_title');
     buildForm(null,{{suggestedDocNo:suggestNextDocNoFromVisibleRows()}});
   }}
   openM('rec-modal');
@@ -15340,7 +16755,7 @@ async function editRec(id){{
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
-  if(cBtn) cBtn.textContent='Cancel';
+  if(cBtn) cBtn.textContent=window.t('form.cancel');
   const row=state.recs.find(r=>r._id===id);
   if(!row)return;
   const docNo=row.docNo||row.nocNo||'';
@@ -15358,7 +16773,7 @@ async function editRec(id){{
       }})
     }});
   }} catch(e) {{}}
-  document.getElementById('rec-title').textContent='Edit Document';
+  document.getElementById('rec-title').textContent=window.t('form.edit_title');
   await buildForm(row);
   if(saveBtn){{ saveBtn.style.display=''; saveBtn.classList.remove('hidden'); }}
   openM('rec-modal');
@@ -15373,7 +16788,7 @@ async function viewRec(id){{
   const saveBtn=document.getElementById('rec-save-btn');
   if(saveBtn){{ saveBtn.style.setProperty('display', 'none', 'important'); saveBtn.classList.add('hidden'); }}
   const cBtn=document.getElementById('rec-cancel-btn');
-  if(cBtn) cBtn.textContent='Close';
+  if(cBtn) cBtn.textContent=window.t('form.close');
   const row=state.recs.find(r=>r._id===id);
   if(!row)return;
   const docNo=row.docNo||row.nocNo||'';
@@ -15391,7 +16806,7 @@ async function viewRec(id){{
       }})
     }});
   }} catch(e) {{}}
-  document.getElementById('rec-title').textContent='Document Details (View Only)';
+  document.getElementById('rec-title').textContent=window.t('form.view_title');
   await buildForm(row, {{readonly: true}});
   if(saveBtn){{ saveBtn.style.setProperty('display', 'none', 'important'); saveBtn.classList.add('hidden'); }}
   openM('rec-modal');
@@ -15401,7 +16816,7 @@ function setRecordSaveState(isSaving){{
   const btn=document.getElementById('rec-save-btn');
   if(!btn)return;
   btn.disabled=!!isSaving;
-  btn.textContent=isSaving?'Saving...':'Save';
+  btn.textContent=isSaving?window.t('form.saving'):window.t('form.save');
   btn.style.opacity=isSaving?'.72':'';
   btn.style.cursor=isSaving?'wait':'';
 }}
@@ -15540,7 +16955,7 @@ async function buildForm(row,opts={{}}){{
 
   let nocStageInp=null,nocBaseInp=null,nocTotalInp=null;
   if(isNocTab){{
-    const sf=makeReadOnlyField('Stage Progress',getNocStageProgress(row||{{}}));
+    const sf=makeReadOnlyField(window.t('noc.stage_progress'),getNocStageProgress(row||{{}}));
     nocStageInp=sf.inp;
     if(!isAddMode)getOrCreateFormSection(formRoot,sectionBodies,'Calculated / System Fields').appendChild(sf.grp);
   }}
@@ -15558,7 +16973,7 @@ async function buildForm(row,opts={{}}){{
     const span=getDynamicFieldSpan(col,ctx);
     const grp=document.createElement('div');grp.className='fg'+(span==='full'?' full':(span==='span-2'?' span-2':''));
     const targetSection=getDynamicFormSection(col,{{isPrTab,isLtrTab,isNocTab}});
-    const lbl=document.createElement('label');lbl.textContent=col.label;grp.appendChild(lbl);
+    const lbl=document.createElement('label');lbl.textContent=window.tCol?window.tCol(col.col_key,col.label):col.label;grp.appendChild(lbl);
     const ltrRole=isLtrTab?getLTRFieldRole(col):'';
     const val=(isLtrTab&&ltrRole)?(row?.[key]||getLTRValue(row,allCols,ltrRole)||''):(row?.[key]||'');
     if(AUTO.has(col.col_key)||isCalculatedFormField(col)){{
@@ -15566,6 +16981,7 @@ async function buildForm(row,opts={{}}){{
       const inp=document.createElement('input');inp.id='f-'+key;inp.value=getCalculatedDisplayValue(col,row);
       inp.readOnly=true;
       inp.placeholder='';
+      inp.className='bidi-ltr';
       inp.style.cssText='background:var(--bg);font-weight:700;color:var(--mu)';
       grp.appendChild(inp);
       getOrCreateFormSection(formRoot,sectionBodies,getDynamicFormSection(col,ctx)).appendChild(grp);
@@ -15575,18 +16991,18 @@ async function buildForm(row,opts={{}}){{
       const ta=document.createElement('textarea');ta.id='f-'+key;ta.value=val;
       ta.rows=2;
       ta.style.cssText='resize:vertical;min-height:52px;overflow:hidden';
-      ta.placeholder='Leave blank to auto-generate from items';
+      ta.placeholder=window.t('form.pr_details_ph');
       bindSmartTextarea(ta);
       grp.appendChild(ta);
       const hint=document.createElement('div');
       hint.style.cssText='font-size:10px;color:var(--mu);margin-top:4px';
-      hint.textContent='Leave blank to auto-generate from PR items.';
+      hint.textContent=window.t('form.pr_details_hint');
       grp.appendChild(hint);
       getOrCreateFormSection(formRoot,sectionBodies,targetSection).appendChild(grp);
       continue;
     }}
     if(isLtrTab&&getLTRFieldRole(col)==='parentLetterRef'){{
-      lbl.textContent='Parent Letter';
+      lbl.textContent=window.t('ltr.parent_label');
       const currentParentId=String(ltrParentIdCol?(row?.[ltrParentIdCol.col_key]||''):(getLTRValue(row,allCols,'parentLetterId')||'')).trim();
       const currentParentRef=String(val||'').trim();
       const options=[...ltrParentOptions];
@@ -15602,7 +17018,7 @@ async function buildForm(row,opts={{}}){{
         }});
       }}
       const sel=document.createElement('select');sel.id='f-'+key+'-selector';
-      sel.innerHTML='<option value="">No parent letter</option>'+options.map(o=>`<option value="${{escHtml(o.id)}}">${{escHtml(formatLTRParentLabel(o))}}</option>`).join('');
+      sel.innerHTML=`<option value="">${{escHtml(window.t('ltr.no_parent'))}}</option>`+options.map(o=>`<option value="${{escHtml(o.id)}}">${{escHtml(formatLTRParentLabel(o))}}</option>`).join('');
       sel.value=currentParentId||'';
       grp.appendChild(sel);
       const meta=document.createElement('div');
@@ -15619,7 +17035,7 @@ async function buildForm(row,opts={{}}){{
       getOrCreateFormSection(formRoot,sectionBodies,targetSection).appendChild(grp);
       continue;
     }}
-    if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.value=val;grp.appendChild(inp);}}
+    if(col.col_type==='date'){{const inp=document.createElement('input');inp.type='date';inp.id='f-'+key;inp.className='bidi-ltr';inp.value=val;grp.appendChild(inp);}}
     else if(isLtrTab&&col.col_type==='dropdown'&&col.list_name){{
       const sel=document.createElement('select');sel.id='f-'+key;
       const ltrRole=getLTRFieldRole(col);
@@ -15628,7 +17044,10 @@ async function buildForm(row,opts={{}}){{
         : (ltrRole==='direction' ? 'letter_direction' : (ltrRole==='status' ? 'letter_status' : col.list_name));
       const opts=[...(state.lists[listName]||[])];
       if(val&&!opts.includes(val))opts.push(val);
-      sel.innerHTML='<option value=""></option>'+opts.map(o=>`<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
+      sel.innerHTML='<option value=""></option>'+opts.map(o=>{{
+        const disp = ltrRole==='status' ? window.tStatus(o) : (ltrRole==='direction' ? tLtrDirection(o) : o);
+        return `<option value="${{escHtml(o)}}">${{escHtml(disp)}}</option>`;
+      }}).join('');
       sel.value=val||'';
       grp.appendChild(sel);
     }}
@@ -15637,18 +17056,19 @@ async function buildForm(row,opts={{}}){{
       const role=getLTRFieldRole(col);
       ta.rows=2;
       ta.style.cssText=role==='description'?'resize:vertical; min-height:58px; overflow:hidden':'resize:vertical; min-height:52px; overflow:hidden';
-      ta.placeholder=role==='title'?'Use Enter for a multiline subject':'Use Enter for multiline text';
+      ta.placeholder=role==='title'?window.t('form.ltr_subject_ph'):window.t('form.ltr_text_ph');
       bindSmartTextarea(ta);
       grp.appendChild(ta);
     }}
     else if(col.col_type==='dropdown'&&col.list_name){{
       // Add free-text input below multiselect
       const wrapper=document.createElement('div');
-      wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],val));
+      const isStatusCol = key==='status' || isStatusLikeField(col) || String(col.list_name||'').toLowerCase().includes('status');
+      wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],val,isStatusCol));
       const freeInp=document.createElement('input');
-      freeInp.id='f-free-'+key;freeInp.placeholder='Or type custom value...';
+      freeInp.id='f-free-'+key;freeInp.placeholder=window.t('form.custom_val_ph');
       freeInp.style.cssText='margin-top:4px;width:100%;padding:5px 8px;border:1px dashed var(--bd);border-radius:var(--rd);font-size:11px;color:var(--mu);outline:none';
-      freeInp.title='Type a custom value not in the list';
+      freeInp.title=window.t('form.custom_val_title');
       bindDirectionalInput(freeInp);
       freeInp.onchange=()=>{{
         const v=freeInp.value.trim();
@@ -15668,7 +17088,7 @@ async function buildForm(row,opts={{}}){{
       grp.appendChild(wrapper);
     }}
     else if(col.col_type==='docno'){{
-      const inp=document.createElement('input');inp.id='f-'+key;
+      const inp=document.createElement('input');inp.id='f-'+key;inp.className='bidi-ltr';
       if(row){{inp.value=val;}}
       else{{inp.value=nextNo;inp.placeholder=nextNo?'':state.tab+'-001 REV00';}}
       inp.style.cssText='font-family:Consolas,monospace;font-weight:600';
@@ -15676,7 +17096,7 @@ async function buildForm(row,opts={{}}){{
       grp.appendChild(inp);
     }}
     else if(col.col_type==='number'){{
-      const inp=document.createElement('input');inp.type='number';inp.step='0.01';inp.id='f-'+key;inp.value=val;
+      const inp=document.createElement('input');inp.type='number';inp.step='0.01';inp.id='f-'+key;inp.className='bidi-ltr';inp.value=val;
       if(isCurrencyField(col))inp.placeholder='0.00';
       grp.appendChild(inp);
       if(key==='voBaseValue')nocBaseInp=inp;
@@ -15696,16 +17116,16 @@ async function buildForm(row,opts={{}}){{
       wrap.innerHTML=`
         <table class="sd-table" style="width:100%;border-collapse:collapse;margin-top:4px">
           <thead>
-            <tr style="border-bottom:1px solid var(--bd);text-align:left;font-size:11px;color:var(--mu)">
-              <th style="padding:4px">Item Ref. / DWG No.</th>
-              <th style="padding:4px;width:140px">Status</th>
+            <tr style="border-bottom:1px solid var(--bd);text-align:start;font-size:11px;color:var(--mu)">
+              <th style="padding:4px">${{escHtml(window.t('form.sd_item_ref_hdr'))}}</th>
+              <th style="padding:4px;width:140px">${{escHtml(window.t('form.sd_status_hdr'))}}</th>
               <th style="padding:4px;width:30px"></th>
             </tr>
           </thead>
           <tbody id="sd-items-body-${{key}}"></tbody>
         </table>
         <div style="margin-top:6px">
-          <button type="button" class="btn btn-sc btn-sm" onclick="addSdItemRow('${{key}}')" style="font-size:11px;padding:3px 8px">+ Add Item</button>
+          <button type="button" class="btn btn-sc btn-sm" onclick="addSdItemRow('${{key}}')" style="font-size:11px;padding:3px 8px">${{escHtml(window.t('form.sd_add_item'))}}</button>
         </div>`;
       grp.appendChild(wrap);
       setTimeout(() => initSdItemsEditor(key, val), 0);
@@ -15740,13 +17160,13 @@ async function buildForm(row,opts={{}}){{
   if(isPrTab){{
     const prSection=getOrCreateFormSection(formRoot,sectionBodies,'PR Items');
     const grp=document.createElement('div');grp.className='fg full pr-items-editor';
-    const lbl=document.createElement('label');lbl.textContent='PR Items';grp.appendChild(lbl);
+    const lbl=document.createElement('label');lbl.textContent=window.t('pr.items_label');grp.appendChild(lbl);
     const wrap=document.createElement('div');wrap.id='pr-items-editor';wrap.className='pr-po-hidden';
     wrap.innerHTML=`
       <style>
         #pr-items-editor table input {{ width: 100%; box-sizing: border-box; }}
         #pr-items-editor.pr-po-hidden .pr-po-col {{ display: none; }}
-        #pr-items-editor thead th {{ position: sticky; top: 0; z-index: 2; background: var(--bg, #f8fafc); border-bottom: 1px solid var(--bd, #cbd5e1); padding: 6px 4px; font-size: 11px; text-align: left; }}
+        #pr-items-editor thead th {{ position: sticky; top: 0; z-index: 2; background: var(--bg, #f8fafc); border-bottom: 1px solid var(--bd, #cbd5e1); padding: 6px 4px; font-size: 11px; text-align: start; }}
         #pr-items-editor .pr-row-num {{ width: 34px; text-align: center; color: var(--mu); font-size: 11px; font-weight: 600; user-select: none; }}
       </style>
       <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
@@ -15754,13 +17174,13 @@ async function buildForm(row,opts={{}}){{
       </div>
       <div id="pr-items-scroll" style="max-height:360px;overflow-y:auto;border:1px solid var(--bd,#e2e8f0);border-radius:6px">
         <table style="width: 100%; border-collapse: collapse;">
-          <thead><tr><th style="width: 34px; text-align: center;">#</th><th style="min-width: 240px;">Item Name</th><th style="width: 72px;">Unit</th><th style="width: 78px;">PR Qty</th><th class="pr-po-col" style="width: 105px;">PO Ref</th><th class="pr-po-col" style="width: 74px;">PO Qty</th><th class="pr-po-col" style="width: 74px;">Del. Qty</th><th style="width: 150px;">Remarks</th><th style="width: 92px; text-align: center;"></th></tr></thead>
+          <thead><tr><th style="width: 34px; text-align: center;">#</th><th style="min-width: 240px;">${{escHtml(window.t('pr.th_item_name'))}}</th><th style="width: 72px;">${{escHtml(window.t('pr.th_unit'))}}</th><th style="width: 78px;">${{escHtml(window.t('pr.th_pr_qty'))}}</th><th class="pr-po-col" style="width: 105px;">${{escHtml(window.t('pr.th_po_ref'))}}</th><th class="pr-po-col" style="width: 74px;">${{escHtml(window.t('pr.th_po_qty'))}}</th><th class="pr-po-col" style="width: 74px;">${{escHtml(window.t('pr.th_del_qty'))}}</th><th style="width: 150px;">${{escHtml(window.t('pr.th_remarks'))}}</th><th style="width: 92px; text-align: center;"></th></tr></thead>
           <tbody id="pr-items-body"></tbody>
         </table>
       </div>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button type="button" class="btn btn-sc btn-sm" onclick="addPrItemRow()">+ Add Item</button>
-        <button type="button" class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">+ Add Section Header</button>
+        <button type="button" class="btn btn-sc btn-sm" onclick="addPrItemRow()">${{escHtml(window.t('pr.add_item'))}}</button>
+        <button type="button" class="btn btn-sc btn-sm" onclick="addPrHeaderRow()">${{escHtml(window.t('pr.add_section_header'))}}</button>
         <button type="button" class="btn btn-sc btn-sm" id="pr-import-docx-btn" onclick="triggerPrDocxImport()">&#128196; Import Word (.docx)</button>
         <input type="file" id="pr-docx-file-input" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="handlePrDocxSelected(this)">
         <button type="button" class="btn btn-sc btn-sm" id="pr-quick-paste-btn" onclick="togglePrQuickPaste()">&#128203; Quick Paste</button>
@@ -15927,17 +17347,17 @@ function addPrItemRow(item={{}}){{
     tr.dataset.rowType='item';
     tr.innerHTML=`
       <td class="pr-row-num"></td>
-      <td><input class="pri-item" placeholder="Item Name"></td>
-      <td><input class="pri-unit" placeholder="Unit"></td>
-      <td><input class="pri-qty" type="number" min="0" step="any" placeholder="PR Qty"></td>
-      <td class="pr-po-col"><input class="pri-po-ref" placeholder="PO Ref"></td>
-      <td class="pr-po-col"><input class="pri-po-qty" type="number" min="0" step="any" placeholder="PO Qty"></td>
-      <td class="pr-po-col"><input class="pri-del-qty" type="number" min="0" step="any" placeholder="Delivered"></td>
-      <td><input class="pri-remarks" placeholder="Remarks"></td>
-      <td style="white-space:nowrap; text-align:right;">
-        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
-        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
-        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="removePrRow(this)" title="Delete">&times;</button>
+      <td><input class="pri-item" placeholder="${{escHtml(window.t('pr.th_item_name'))}}"></td>
+      <td><input class="pri-unit" placeholder="${{escHtml(window.t('pr.th_unit'))}}"></td>
+      <td><input class="pri-qty bidi-ltr" type="number" min="0" step="any" placeholder="${{escHtml(window.t('pr.th_pr_qty'))}}"></td>
+      <td class="pr-po-col"><input class="pri-po-ref bidi-ltr" placeholder="${{escHtml(window.t('pr.th_po_ref'))}}"></td>
+      <td class="pr-po-col"><input class="pri-po-qty bidi-ltr" type="number" min="0" step="any" placeholder="${{escHtml(window.t('pr.th_po_qty'))}}"></td>
+      <td class="pr-po-col"><input class="pri-del-qty bidi-ltr" type="number" min="0" step="any" placeholder="${{escHtml(window.t('pr.th_delivered'))}}"></td>
+      <td><input class="pri-remarks" placeholder="${{escHtml(window.t('pr.th_remarks'))}}"></td>
+      <td style="white-space:nowrap; text-align:end;">
+        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="${{escHtml(window.t('pr.move_up'))}}">&#9650;</button>
+        <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="${{escHtml(window.t('pr.move_down'))}}">&#9660;</button>
+        <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-inline-start:4px;" onclick="removePrRow(this)" title="${{escHtml(window.t('reg.act_delete_title'))}}">&times;</button>
       </td>`;
     const itemInp=tr.querySelector('.pri-item');
     itemInp.value=item.item_name||'';
@@ -15965,13 +17385,13 @@ function addPrHeaderRow(item={{}}){{
     tr.innerHTML=`
       <td class="pr-row-num">—</td>
       <td class="pr-header-span" colspan="${{span}}">
-        <div class="pr-head-label">Section Header</div>
-      <input class="pri-header" placeholder="Section title / description" style="width:100%; box-sizing:border-box;">
+        <div class="pr-head-label">${{escHtml(window.t('pr.section_header_lbl'))}}</div>
+      <input class="pri-header" placeholder="${{escHtml(window.t('pr.section_header_ph'))}}" style="width:100%; box-sizing:border-box;">
     </td>
-    <td style="white-space:nowrap; text-align:right; width:92px;">
-      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="Move Up">&#9650;</button>
-      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="Move Down">&#9660;</button>
-      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-left:4px;" onclick="removePrRow(this)" title="Delete">✕</button>
+    <td style="white-space:nowrap; text-align:end; width:92px;">
+      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowUp(this)" title="${{escHtml(window.t('pr.move_up'))}}">&#9650;</button>
+      <button type="button" class="btn btn-sc btn-sm" style="padding:4px 6px;" onclick="moveRowDown(this)" title="${{escHtml(window.t('pr.move_down'))}}">&#9660;</button>
+      <button type="button" class="btn btn-er btn-sm" style="padding:4px 8px; margin-inline-start:4px;" onclick="removePrRow(this)" title="${{escHtml(window.t('reg.act_delete_title'))}}">✕</button>
     </td>`;
   tr.querySelector('.pri-header').value=item.item_name||'';
   bindDirectionalInput(tr.querySelector('.pri-header'));
@@ -16255,9 +17675,9 @@ function addSdItemRow(key, item={{}}) {{
   const tr = document.createElement('tr');
   const baseStatuses = [...(state.lists['status'] || [])];
   if (item.item_status && !baseStatuses.includes(item.item_status)) baseStatuses.push(item.item_status);
-  const statusOptions = baseStatuses.map(o => `<option value="${{escHtml(o)}}">${{escHtml(o)}}</option>`).join('');
+  const statusOptions = baseStatuses.map(o => `<option value="${{escHtml(o)}}">${{escHtml(window.tStatus ? window.tStatus(o) : o)}}</option>`).join('');
   tr.innerHTML = `
-    <td style="padding:2px"><input class="sd-ref" placeholder="DWG-0001" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"></td>
+    <td style="padding:2px"><input class="sd-ref bidi-ltr" placeholder="DWG-0001" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"></td>
     <td style="padding:2px"><select class="sd-status" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--bd);border-radius:var(--rd)"><option value=""></option>${{statusOptions}}</select></td>
     <td style="padding:2px"><button type="button" class="btn btn-er btn-sm" onclick="this.closest('tr').remove(); syncSdItems('${{key}}')" style="padding:2px 6px;font-size:10px">✕</button></td>
   `;
@@ -16327,23 +17747,25 @@ function getPrItemsFromEditor(){{
     }}).filter(it=>it.row_type==='header'?it.item_name:(it.item_name||it.unit||it.quantity||it.remarks));
   }}
 
-function buildMS(key,options,init){{
-  let sel=init?init.split(',').map(s=>s.trim()).filter(Boolean):[];
+function buildMS(key,options,init,isStatus){{
+  const parseMS=(raw)=>isStatus?splitStatusValues(raw):(raw?String(raw).split(',').map(s=>s.trim()).filter(Boolean):[]);
+  let sel=parseMS(init);
   const con=document.createElement('div');con.className='ms-con';con.id='f-'+key;con.dataset.value=init||'';
+  const disp=(v)=>isStatus&&window.tStatus?window.tStatus(v):v;
   function render(){{
     con.innerHTML='';
     sel.forEach(v=>{{
       const t=document.createElement('span');t.className='ms-tag';
-      t.innerHTML=`${{escHtml(v)}} <span class="ms-rm" data-v="${{escHtml(v)}}">✕</span>`;
+      t.innerHTML=`${{escHtml(disp(v))}} <span class="ms-rm" data-v="${{escHtml(v)}}">✕</span>`;
       t.querySelector('.ms-rm').onclick=e=>{{e.stopPropagation();sel.splice(sel.indexOf(v),1);con.dataset.value=sel.join(', ');render();con.dispatchEvent(new Event('change'));}};
       con.appendChild(t);
     }});
-    if(!sel.length)con.innerHTML='<span class="ms-ph">Select or type below...</span>';
+    if(!sel.length)con.innerHTML=`<span class="ms-ph">${{escHtml(window.t('form.ms_placeholder'))}}</span>`;
     con.dataset.value=sel.join(', ');
   }}
   con.addEventListener('_update',()=>{{
     const nextVal=String(con.dataset.value||'');
-    sel=nextVal?nextVal.split(',').map(s=>s.trim()).filter(Boolean):[];
+    sel=parseMS(nextVal);
     render();
     con.dispatchEvent(new Event('change'));
   }});
@@ -16356,7 +17778,7 @@ function buildMS(key,options,init){{
       const it=document.createElement('div');
       it.className='ms-opt'+(sel.includes(opt)?' sel':'');
       const chk=document.createElement('input');chk.type='checkbox';chk.checked=sel.includes(opt);chk.style.cssText='flex-shrink:0;width:14px;height:14px;pointer-events:none';
-      const lbl=document.createElement('span');lbl.textContent=opt;lbl.style.flex='1';
+      const lbl=document.createElement('span');lbl.textContent=disp(opt);lbl.style.flex='1';
       it.appendChild(chk);it.appendChild(lbl);
       it.onclick=ev=>{{
         ev.stopPropagation();
@@ -16374,29 +17796,54 @@ function buildMS(key,options,init){{
   render();return con;
 }}
 
+function tFormSectionTitle(title){{
+  const map={{
+    'Core Register Fields':'form.sec_core',
+    'Interactive Injury Body Map':'form.sec_bodymap',
+    'References / Technical Fields':'form.sec_refs',
+    'Dates / Timeline':'form.sec_dates',
+    'Status / Workflow':'form.sec_status',
+    'Files / Notes':'form.sec_files',
+    'Calculated / System Fields':'form.sec_calc',
+    'Other Dynamic Fields':'form.sec_other',
+    'Commercial & Quantities':'form.sec_commercial',
+    'PR Items':'form.sec_pr_items',
+    'NOC Basic Info':'form.sec_noc_basic',
+    'Part A / B Tracking':'form.sec_noc_ab',
+    'Part C / D & Cost Tracking':'form.sec_noc_cd',
+    'VO Details':'form.sec_vo',
+    'Remarks / Files':'form.sec_remarks_files',
+    'Other NOC Fields':'form.sec_other_noc',
+    'Letter Information':'form.sec_ltr_info',
+    'Correspondence Routing':'form.sec_ltr_routing',
+    'Additional Details':'form.sec_add_details'
+  }};
+  return map[title]?window.t(map[title]):title;
+}}
+
 function getFormSectionHint(title){{
   const hints={{
-    'Core Register Fields':'Primary register identity and classification fields',
-    'Interactive Injury Body Map':'Click Front or Back anatomical regions to populate the injured body part and coordinates',
-    'References / Technical Fields':'Drawing, MS, parent, and technical reference details',
-    'Dates / Timeline':'Submission, issue, received, reply, and timeline dates',
-    'Status / Workflow':'Status, direction, review, approval, and response controls',
-    'Files / Notes':'Attachments, file links, remarks, comments, and descriptions',
-    'Calculated / System Fields':'Readonly calculated values shown for context',
-    'Other Dynamic Fields':'Additional fields configured for this document type',
-    'Commercial & Quantities':'Values, quantities, and related numeric fields',
-    'PR Items':'Line items and grouped procurement details',
-    'NOC Basic Info':'NOC number, subject, description, and originating document',
-    'Part A / B Tracking':'Part A issue and Part B return/status tracking',
-    'Part C / D & Cost Tracking':'Part C/D tracking with submitted and final approved costs',
-    'VO Details':'Variation order references, dates, and values',
-    'Remarks / Files':'Remarks, original files, links, and attachments',
-    'Other NOC Fields':'Additional NOC fields configured for this project',
-    'Letter Information':'Reference and headline details for the letter',
-    'Correspondence Routing':'Direction, parties, and linked parent correspondence',
-    'Additional Details':'Remaining project-specific fields'
+    'Core Register Fields':'form.hint_core',
+    'Interactive Injury Body Map':'form.hint_bodymap',
+    'References / Technical Fields':'form.hint_refs',
+    'Dates / Timeline':'form.hint_dates',
+    'Status / Workflow':'form.hint_status',
+    'Files / Notes':'form.hint_files',
+    'Calculated / System Fields':'form.hint_calc',
+    'Other Dynamic Fields':'form.hint_other',
+    'Commercial & Quantities':'form.hint_commercial',
+    'PR Items':'form.hint_pr_items',
+    'NOC Basic Info':'form.hint_noc_basic',
+    'Part A / B Tracking':'form.hint_noc_ab',
+    'Part C / D & Cost Tracking':'form.hint_noc_cd',
+    'VO Details':'form.hint_vo',
+    'Remarks / Files':'form.hint_remarks_files',
+    'Other NOC Fields':'form.hint_other_noc',
+    'Letter Information':'form.hint_ltr_info',
+    'Correspondence Routing':'form.hint_ltr_routing',
+    'Additional Details':'form.hint_add_details'
   }};
-  return hints[title]||'Structured fields for this document section';
+  return window.t(hints[title]||'form.hint_default');
 }}
 
 const FORM_SECTION_ORDER=[
@@ -16548,7 +17995,7 @@ function getOrCreateFormSection(root, sectionMap, title){{
   sec.dataset.sectionOrder=String(getFormSectionOrder(title));
   const hdr=document.createElement('div');
   hdr.className='form-section-header';
-  hdr.innerHTML=`<div><div class="form-section-title">${{escHtml(title)}}</div><div class="form-section-sub">${{escHtml(getFormSectionHint(title))}}</div></div>`;
+  hdr.innerHTML=`<div><div class="form-section-title">${{escHtml(tFormSectionTitle(title))}}</div><div class="form-section-sub">${{escHtml(getFormSectionHint(title))}}</div></div>`;
   const body=document.createElement('div');
   body.className='form-section-grid';
   sec.appendChild(hdr);
@@ -16606,31 +18053,31 @@ function renderNocSummary(rows){{
   
   const h=[];
   const mkCard=(lbl,val,sub)=>`<div style="flex:1;min-width:140px;background:var(--wh,#fff);border:1px solid var(--bd);border-radius:8px;padding:10px 12px" class="noc-kpi-card">
-    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{lbl}}</div>
-    <div style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${{val}}</div>
-    <div style="font-size:10px;color:var(--mu);margin-top:3px">${{sub}}</div>
+    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{escHtml(lbl)}}</div>
+    <div class="bidi-ltr" style="font-size:18px;font-weight:800;color:var(--pr);margin-top:4px;line-height:1.2">${{escHtml(val)}}</div>
+    <div style="font-size:10px;color:var(--mu);margin-top:3px">${{escHtml(sub)}}</div>
   </div>`;
   
-  h.push(mkCard('Visible NOCs', String((rows||[]).length), 'Filtered rows'));
-  h.push(mkCard('Submitted Cost', formatCurrencyValue(totals.submittedCost), 'Visible total'));
+  h.push(mkCard(window.t('reg.noc_visible'), String((rows||[]).length), window.t('reg.noc_filtered_rows')));
+  h.push(mkCard(window.t('reg.noc_submitted_cost'), formatCurrencyValue(totals.submittedCost), window.t('reg.noc_visible_total')));
   
   h.push(`<div style="flex:2.5;min-width:280px;background:var(--wh,#fff);border:1px solid var(--bd);border-radius:8px;padding:10px 12px" class="noc-kpi-card;display:flex;flex-direction:column;justify-content:center;">
-    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;text-align:center;">Final Approval</div>
+    <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;text-align:center;">${{escHtml(window.t('reg.noc_final_approval'))}}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;">
       <div style="flex:1;text-align:center">
-        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Request value</div>
-        <div style="font-size:14px;font-weight:600;color:var(--tx-mu,#64748b);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{escHtml(window.t('reg.noc_request_value'))}}</div>
+        <div class="bidi-ltr" style="font-size:14px;font-weight:600;color:var(--tx-mu,#64748b);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedSubmitted)}}</div>
       </div>
       <div style="width:1px;background:var(--bd);align-self:stretch;margin:0 12px;"></div>
       <div style="flex:1;text-align:center">
-        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Agreed Value</div>
-        <div style="font-size:18px;font-weight:800;color:var(--ok);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedAgreed)}}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">${{escHtml(window.t('reg.noc_agreed_value'))}}</div>
+        <div class="bidi-ltr" style="font-size:18px;font-weight:800;color:var(--ok);margin-top:4px;line-height:1.2">${{formatCurrencyValue(sumApprovedAgreed)}}</div>
       </div>
     </div>
   </div>`);
   
-  h.push(mkCard('VO Base Value', formatCurrencyValue(totals.voBaseValue), 'Visible total'));
-  h.push(mkCard('VO Value Incl. SI & VAT', formatCurrencyValue(totals.voValueWithSIAndVAT), 'Visible total'));
+  h.push(mkCard(window.t('reg.noc_vo_base'), formatCurrencyValue(totals.voBaseValue), window.t('reg.noc_visible_total')));
+  h.push(mkCard(window.t('reg.noc_vo_incl'), formatCurrencyValue(totals.voValueWithSIAndVAT), window.t('reg.noc_visible_total')));
   
   inner.innerHTML=h.join('');
   wrap.style.display='';
@@ -16640,12 +18087,12 @@ function durChoice(docNo){{
   return new Promise(resolve=>{{
     const ov=document.createElement('div');ov.className='overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
     ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:28px 24px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-      <div style="font-size:16px;font-weight:700;margin-bottom:8px">⏱ Duration</div>
-      <p style="font-size:13px;color:#64748b;margin-bottom:20px">Issue date is set but no reply date yet.<br>How should Duration be shown?</p>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px">${{escHtml(window.t('form.dur_title'))}}</div>
+      <p style="font-size:13px;color:#64748b;margin-bottom:20px;white-space:pre-line">${{escHtml(window.t('form.dur_prompt'))}}</p>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button id="dur-today" style="padding:10px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">📅 Calculate from issue date → Today</button>
-        <button id="dur-empty" style="padding:10px 16px;background:#f1f5f9;color:#374151;border:none;border-radius:6px;cursor:pointer;font-size:13px">— Leave Duration empty</button>
-        <button id="dur-cancel" style="padding:8px;background:none;border:none;cursor:pointer;font-size:12px;color:#94a3b8">Cancel</button>
+        <button id="dur-today" style="padding:10px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">${{escHtml(window.t('form.dur_today'))}}</button>
+        <button id="dur-empty" style="padding:10px 16px;background:#f1f5f9;color:#374151;border:none;border-radius:6px;cursor:pointer;font-size:13px">${{escHtml(window.t('form.dur_empty'))}}</button>
+        <button id="dur-cancel" style="padding:8px;background:none;border:none;cursor:pointer;font-size:12px;color:#94a3b8">${{escHtml(window.t('form.cancel'))}}</button>
       </div></div>`;
     document.body.appendChild(ov);
     ov.querySelector('#dur-today').onclick=()=>{{document.body.removeChild(ov);resolve('today');}};
@@ -16801,6 +18248,11 @@ function _highlightIncBodyUi(regionId, px, py){{
     b.classList.toggle('active', Boolean(regionId && b.dataset.region === regionId));
   }});
 }}
+function tBodyRegionLabel(regionId, fallbackLabel){{
+  const k='hse_form.region_'+String(regionId||'').trim();
+  const tr=window.t?window.t(k):k;
+  return (tr&&tr!==k)?tr:(fallbackLabel||regionId||'');
+}}
 function selectIncBodyRegion(regionId, clickX, clickY, skipFieldSync){{
   const meta = INC_BODY_REGIONS.find(r => r.id === regionId) || null;
   const regEl = document.getElementById('f-bodyRegion');
@@ -16809,7 +18261,7 @@ function selectIncBodyRegion(regionId, clickX, clickY, skipFieldSync){{
   if(!meta){{
     if(regEl) regEl.value = '';
     if(coordEl) coordEl.value = '';
-    if(readEl) readEl.textContent = 'Selected Region: None (click Front or Back diagram)';
+    if(readEl) readEl.textContent = window.t('hse_form.selected_none');
     _highlightIncBodyUi('', NaN, NaN);
     if(!skipFieldSync) setDynamicFieldValue('bodyPart', '');
     return;
@@ -16819,7 +18271,9 @@ function selectIncBodyRegion(regionId, clickX, clickY, skipFieldSync){{
   const viewSide = px >= 220 ? 'back' : meta.view;
   if(regEl) regEl.value = meta.id;
   if(coordEl) coordEl.value = `${{viewSide}}:${{px}},${{py}}`;
-  if(readEl) readEl.textContent = `Selected Region: ${{meta.label}} (${{viewSide.toUpperCase()}} @ ${{px}}, ${{py}})`;
+  const dispLabel = tBodyRegionLabel(meta.id, meta.label);
+  const sideDisp = viewSide === 'back' ? window.t('hse_form.back_view') : window.t('hse_form.front_view');
+  if(readEl) readEl.textContent = window.t('hse_form.selected_region_coords', {{label: dispLabel, side: sideDisp, x: px, y: py}});
   _highlightIncBodyUi(meta.id, px, py);
   if(!skipFieldSync){{
     setDynamicFieldValue('bodyPart', meta.label);
@@ -16833,7 +18287,7 @@ function syncIncBodyMapFromField(){{
   if(!firstToken){{
     _highlightIncBodyUi('', NaN, NaN);
     const readEl = document.getElementById('inc-body-readout');
-    if(readEl) readEl.textContent = 'Selected Region: None (click Front or Back diagram)';
+    if(readEl) readEl.textContent = window.t('hse_form.selected_none');
     return;
   }}
   const matched = INC_BODY_REGIONS.find(r => r.label.toLowerCase() === firstToken || r.id.toLowerCase() === firstToken);
@@ -16849,7 +18303,7 @@ function syncIncBodyMapFromField(){{
     const regEl = document.getElementById('f-bodyRegion');
     if(regEl) regEl.value = matched.id;
     const readEl = document.getElementById('inc-body-readout');
-    if(readEl) readEl.textContent = `Selected Region: ${{matched.label}}`;
+    if(readEl) readEl.textContent = window.t('hse_form.selected_region', {{label: tBodyRegionLabel(matched.id, matched.label)}});
     _highlightIncBodyUi(matched.id, px, py);
   }}
 }}
@@ -16869,9 +18323,9 @@ function mountIncBodyMapSection(formRoot, sectionBodies, row, opts){{
     <div id="inc-body-missing-fallback"></div>
     <div class="inc-bodymap-wrap">
       <div class="inc-bodymap-stage">
-        <svg id="inc-body-map-svg" viewBox="0 0 440 340" role="img" aria-label="Interactive Human Injury Body Map (Front and Back)">
-          <text x="110" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">FRONT VIEW</text>
-          <text x="330" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">BACK VIEW</text>
+        <svg id="inc-body-map-svg" viewBox="0 0 440 340" role="img" aria-label="${{escHtml(window.t('hse_form.bodymap_aria'))}}">
+          <text x="110" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">${{escHtml(window.t('hse_form.front_view'))}}</text>
+          <text x="330" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#64748b">${{escHtml(window.t('hse_form.back_view'))}}</text>
           <text x="26" y="76" font-size="9" font-weight="700" fill="#94a3b8">R</text>
           <text x="190" y="76" font-size="9" font-weight="700" fill="#94a3b8">L</text>
           <text x="246" y="76" font-size="9" font-weight="700" fill="#94a3b8">L</text>
@@ -16923,19 +18377,31 @@ function mountIncBodyMapSection(formRoot, sectionBodies, row, opts){{
         </svg>
       </div>
       <div class="inc-body-panel">
-        <div class="inc-body-readout" id="inc-body-readout">Selected Region: None (click Front or Back diagram)</div>
-        <div style="font-size:11px;font-weight:700;color:var(--mu);">Anatomical Regions:</div>
-        <div class="inc-body-pills-wrap" id="inc-body-pills">${{INC_BODY_REGIONS.map(r => `<button type="button" class="inc-body-pill" data-region="${{r.id}}"${{readonly ? ' disabled' : ''}}>${{escHtml(r.label)}}</button>`).join('')}}</div>
-        ${{readonly ? '' : '<div><button type="button" class="btn btn-sc btn-sm" id="inc-body-clear" style="font-size:11px;padding:3px 9px;">Clear Region</button></div>'}}
+        <div class="inc-body-readout" id="inc-body-readout">${{escHtml(window.t('hse_form.selected_none'))}}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--mu);">${{escHtml(window.t('hse_form.anatomical_regions'))}}</div>
+        <div class="inc-body-pills-wrap" id="inc-body-pills">${{INC_BODY_REGIONS.map(r => `<button type="button" class="inc-body-pill" data-region="${{r.id}}"${{readonly ? ' disabled' : ''}}>${{escHtml(tBodyRegionLabel(r.id, r.label))}}</button>`).join('')}}</div>
+        ${{readonly ? '' : `<div><button type="button" class="btn btn-sc btn-sm" id="inc-body-clear" style="font-size:11px;padding:3px 9px;">${{escHtml(window.t('hse_form.clear_region'))}}</button></div>`}}
       </div>
     </div>`;
   secBody.appendChild(fg);
+
+  const svgZones = fg.querySelector('#inc-body-map-svg');
+  if(svgZones){{
+    svgZones.querySelectorAll('.inc-body-zone').forEach(z => {{
+      const tEl = z.querySelector('title');
+      if(tEl && z.dataset.region){{
+        const isBack = tEl.textContent.includes('(Back)');
+        const lbl = tBodyRegionLabel(z.dataset.region, z.dataset.label);
+        tEl.textContent = isBack ? `${{lbl}} (${{window.t('hse_form.back_view')}})` : lbl;
+      }}
+    }});
+  }}
 
   if(!document.getElementById('f-bodyPart')){{
     const fbWrap = fg.querySelector('#inc-body-missing-fallback');
     if(fbWrap){{
       fbWrap.style.marginBottom = '8px';
-      fbWrap.innerHTML = '<label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">Injured Body Part</label><input id="f-bodyPart" type="text" placeholder="Click diagram or enter body part..." style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">';
+      fbWrap.innerHTML = `<label style="font-size:11px;font-weight:700;color:var(--mu);display:block;margin-bottom:3px">${{escHtml(window.t('hse_form.injured_body_part'))}}</label><input id="f-bodyPart" type="text" placeholder="${{escHtml(window.t('hse_form.body_part_ph'))}}" style="width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);box-sizing:border-box;">`;
       const fbInp = fbWrap.querySelector('#f-bodyPart');
       if(fbInp){{
         fbInp.value = initPart;
@@ -17054,7 +18520,7 @@ function printHseQrLabel(){{
 function openFeiBatchInspectModal(){{
   if(!CAN_EDIT || !isHseFeiTab()) return;
   const ids = [...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb => cb.dataset.id);
-  if(!ids.length) return toast('Select at least one FEI record first', 'wa');
+  if(!ids.length) return toast(window.t('hse_form.fei_select_first'), 'wa');
   const today = new Date();
   const nextYr = new Date(today); nextYr.setFullYear(today.getFullYear() + 1);
   const sumEl = document.getElementById('fei-batch-summary');
@@ -17062,7 +18528,7 @@ function openFeiBatchInspectModal(){{
   const expEl = document.getElementById('fei-batch-expiry');
   const stEl = document.getElementById('fei-batch-status');
   const notesEl = document.getElementById('fei-batch-notes');
-  if(sumEl) sumEl.textContent = `${{ids.length}} selected extinguisher / equipment record(s)`;
+  if(sumEl) sumEl.textContent = window.t('hse_form.fei_selected_count', {{count: ids.length}});
   if(lastEl && !lastEl.value) lastEl.value = today.toISOString().slice(0, 10);
   if(expEl && !expEl.value) expEl.value = nextYr.toISOString().slice(0, 10);
   if(stEl) stEl.value = 'Valid';
@@ -17071,7 +18537,7 @@ function openFeiBatchInspectModal(){{
 }}
 async function submitFeiBatchInspect(){{
   const ids = [...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb => cb.dataset.id);
-  if(!ids.length) return toast('No records selected', 'wa');
+  if(!ids.length) return toast(window.t('hse_form.fei_none_selected'), 'wa');
   const last_inspection = document.getElementById('fei-batch-last')?.value || '';
   const expiry_date = document.getElementById('fei-batch-expiry')?.value || '';
   const status = document.getElementById('fei-batch-status')?.value || '';
@@ -17087,12 +18553,12 @@ async function submitFeiBatchInspect(){{
       closeM('fei-batch-inspect-modal');
       clearSel();
       await loadRecords();
-      toast(`✔ Batch inspected ${{res.updated || ids.length}} record(s)`, 'ok');
+      toast(window.t('hse_form.fei_success', {{count: res.updated || ids.length}}), 'ok');
     }} else {{
-      toast((res && res.error) || 'Batch inspection failed', 'er');
+      toast((res && res.error) || window.t('hse_form.fei_failed'), 'er');
     }}
   }} catch(e) {{
-    toast('Error: ' + e.message, 'er');
+    toast(window.t('form.err_save_detail', {{err: e.message}}), 'er');
   }} finally {{
     if(btn) btn.disabled = false;
   }}
@@ -17123,7 +18589,7 @@ function dvCloseModal(){{
     m.classList.remove('dv-fs','mob-view-list','mob-view-preview','dv-single');
   }}
   const b=_dvEl('dv-fs-btn');
-  if(b)b.textContent='⛶ Fullscreen';
+  if(b)b.textContent=window.t('drive.dv_fullscreen');
   const rb=_dvEl('dv-rev-bar');
   if(rb){{rb.style.display='none';rb.innerHTML='';}}
   if(document.fullscreenElement){{try{{document.exitFullscreen();}}catch(_e){{}}}}
@@ -17163,7 +18629,7 @@ function dvToggleModalFullscreen(){{
   if(!m)return;
   const isFs=m.classList.toggle('dv-fs');
   const b=_dvEl('dv-fs-btn');
-  if(b)b.textContent=isFs?'🗗 Exit Fullscreen':'⛶ Fullscreen';
+  if(b)b.textContent=isFs?window.t('drive.dv_exit_fullscreen'):window.t('drive.dv_fullscreen');
 }}
 function dvFullscreenPane(targetId){{
   const el=(targetId&&_dvEl(targetId))||_dvEl('dv-pane');
@@ -17190,7 +18656,7 @@ function _dvPreviewBadge(f){{
   if(f.preview==='excel')return '<span style="color:#16a34a;font-weight:600">Excel</span>';
   if(f.preview==='word')return '<span style="color:#2563eb;font-weight:600">Word</span>';
   if(f.preview==='text')return '<span style="color:#475569;font-weight:600">Text</span>';
-  return '<span style="color:#94a3b8">Download only</span>';
+  return `<span style="color:#94a3b8">${{escHtml(window.t('drive.dv_dl_only'))}}</span>`;
 }}
 function _dvSetBusy(msg){{
   const pane=_dvEl('dv-pane');
@@ -17201,9 +18667,9 @@ function _dvError(j,status){{
   const pane=_dvEl('dv-pane');
   let html='<div style="margin:auto;max-width:440px;text-align:center;padding:24px;color:#334155">'
     +'<div style="font-size:34px">⚠️</div>'
-    +'<div style="font-weight:700;margin:8px 0">Could not open this document</div>'
+    +'<div style="font-weight:700;margin:8px 0">'+escHtml(window.t('drive.dv_open_error'))+'</div>'
     +'<div style="font-size:12px;color:#64748b;line-height:1.6">'+escHtml((j&&(j.hint||j.error))||('Error '+status))+'</div>';
-  if(j&&j.fallback_url)html+='<a class="btn btn-sc" style="margin-top:14px;display:inline-block" target="_blank" rel="noopener" href="'+escHtml(j.fallback_url)+'">🔗 Open original link</a>';
+  if(j&&j.fallback_url)html+='<a class="btn btn-sc" style="margin-top:14px;display:inline-block" target="_blank" rel="noopener" href="'+escHtml(j.fallback_url)+'">'+escHtml(window.t('drive.dv_open_original'))+'</a>';
   pane.innerHTML=html+'</div>';
   _dvEl('dv-foot-left').innerHTML='';
 }}
@@ -17211,12 +18677,12 @@ async function openDocViewer(rid,slot,opts){{
   opts=opts||{{}};
   const reqRev=(opts.rev!==undefined && opts.rev!==null && String(opts.rev).trim()!=='')?opts.rev:null;
   DV.rid=rid;DV.slot=slot;DV.rev=reqRev;DV.info=null;DV.cur=-1;DV.filter='';DV.label=opts.label||'';
-  _dvEl('dv-title').textContent='Loading document...';
+  _dvEl('dv-title').textContent=window.t('drive.dv_loading_doc');
   _dvEl('dv-side').style.display='none';
   const rb=_dvEl('dv-rev-bar');
   if(rb){{rb.style.display='none';rb.innerHTML='';}}
   _dvEl('dv-foot-left').innerHTML='';
-  _dvSetBusy('Loading...');
+  _dvSetBusy(window.t('drive.dv_loading'));
   const fab=_dvEl('ai-fab-btn');
   if(fab){{fab.style.opacity='0';fab.style.pointerEvents='none';fab.style.visibility='hidden';}}
   openM('doc-viewer-modal');
@@ -17224,7 +18690,7 @@ async function openDocViewer(rid,slot,opts){{
     const qs=reqRev!==null?('?rev='+encodeURIComponent(reqRev)):'';
     const r=await fetch('/api/drive/view-info/'+encodeURIComponent(rid)+'/'+slot+qs);
     const j=await r.json().catch(()=>({{}}));
-    if(!r.ok||!j.ok){{_dvError(j,r.status);_dvEl('dv-title').textContent='Document';return;}}
+    if(!r.ok||!j.ok){{_dvError(j,r.status);_dvEl('dv-title').textContent=window.t('drive.dv_document');return;}}
     DV.info=j;
     _dvRender();
   }}catch(e){{_dvError({{error:e.message||String(e)}},0);}}
@@ -17237,10 +18703,10 @@ function _dvRender(){{
   const total=_dvFmt(j.total_size||0);
   const isNocPart=String(DV.slot||'').startsWith('part_');
   const docHead=isNocPart?(parseDocNo(docNo).base||docNo):docNo;
-  const rawLabel=String(DV.label||j.name||'Document').replace(/\\s*\\(REV\\d+\\)/ig,'').trim();
+  const rawLabel=String(DV.label||j.name||window.t('drive.dv_document')).replace(/\\s*\\(REV\\d+\\)/ig,'').trim();
   const revLabel=(j.rev_label&&(isNocPart||(Array.isArray(j.revisions)&&j.revisions.length>1)))?(' — '+j.rev_label):'';
   const head=(isFolder?'📁 ':'📄 ')+(docHead?docHead+' — ':'')+rawLabel+revLabel;
-  _dvEl('dv-title').innerHTML=escHtml(head)+' <span style="font-weight:500;color:var(--mu);font-size:11px;margin-left:6px">'
+  _dvEl('dv-title').innerHTML=`<span class="bidi-ltr">${{escHtml(head)}}</span> <span class="bidi-ltr" style="font-weight:500;color:var(--mu);font-size:11px;margin-inline-start:6px">`
     +(isFolder?(j.files.length+' file'+(j.files.length===1?'':'s')+' · '):'')+total+'</span>';
   const revBar=_dvEl('dv-rev-bar');
   if(revBar){{
@@ -17249,13 +18715,13 @@ function _dvRender(){{
       revBar.innerHTML='';
       const tag=document.createElement('span');
       tag.style.cssText='font-size:10.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.3px';
-      tag.textContent=revs.length>1?'Revisions:':'Revision:';
+      tag.textContent=revs.length>1?window.t('drive.dv_revisions'):window.t('drive.dv_revision');
       revBar.appendChild(tag);
       (revs.length?revs:[{{rev:j.rev||0,rev_label:j.rev_label||'REV00',current:true}}]).forEach(rv=>{{
         const active=Number(rv.rev)===Number(j.rev||0);
         const btn=document.createElement('button');
         btn.type='button';
-        btn.textContent=String(rv.rev_label||formatNocRevLabel(rv.rev))+(rv.current?' (Current)':' (Archived)');
+        btn.innerHTML=`<span class="bidi-ltr">${{escHtml(String(rv.rev_label||formatNocRevLabel(rv.rev)))}}</span> ${{escHtml(rv.current?window.t('drive.dv_current'):window.t('drive.dv_archived'))}}`;
         btn.style.cssText=active
           ? 'padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:default'
           : 'padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer';
@@ -17289,12 +18755,13 @@ function _dvRender(){{
   _dvRenderList();
   const first=j.files.findIndex(f=>f.preview!=='other');
   if(j.files.length)dvSelect(first>-1?first:0);
-  else _dvSetBusy('This folder is empty.');
+  else _dvSetBusy(window.t('drive.dv_empty_folder'));
   _dvRenderFooter();
 }}
 function _dvRenderList(){{
   const j=DV.info;const box=_dvEl('dv-list');if(!j||!box)return;
   const q=DV.filter.trim().toLowerCase();
+  const isRtl=document.documentElement.dir==='rtl';
   box.innerHTML='';
   let shown=0;
   let activeRowEl=null;
@@ -17306,14 +18773,15 @@ function _dvRenderList(){{
     row.dataset.idx=i;
     const active=(i===DV.cur);
     if(active)activeRowEl=row;
-    row.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--bd);'+(active?'background:#eff6ff;border-left:3px solid #2563eb':'border-left:3px solid transparent');
-    const subBadge=sub?`<span style="display:inline-block;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:600;margin-right:4px">📁 ${{escHtml(sub)}}</span>`:'';
-    row.innerHTML='<span style="font-size:10px;font-weight:700;color:#94a3b8;min-width:16px;text-align:right">'+(i+1)+'.</span>'
+    const activeBorder=isRtl?(active?'background:#eff6ff;border-right:3px solid #2563eb':'border-right:3px solid transparent'):(active?'background:#eff6ff;border-left:3px solid #2563eb':'border-left:3px solid transparent');
+    row.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--bd);'+activeBorder;
+    const subBadge=sub?`<span class="bidi-ltr" style="display:inline-block;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:600;margin-inline-end:4px">📁 ${{escHtml(sub)}}</span>`:'';
+    row.innerHTML='<span class="bidi-ltr" style="font-size:10px;font-weight:700;color:#94a3b8;min-width:16px;text-align:end">'+(i+1)+'.</span>'
       +'<span style="font-size:17px">'+_dvIcon(f)+'</span>'
-      +'<span style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;word-break:break-all;line-height:1.3">'+escHtml(f.name)+'</div>'
-      +'<div style="font-size:10px;color:var(--mu);margin-top:2px">'+subBadge+_dvFmt(f.size)+' · '+_dvPreviewBadge(f)+'</div></span>';
+      +'<span style="flex:1;min-width:0"><div class="bidi-ltr" style="font-size:12px;font-weight:600;word-break:break-all;line-height:1.3">'+escHtml(f.name)+'</div>'
+      +'<div style="font-size:10px;color:var(--mu);margin-top:2px">'+subBadge+'<span class="bidi-ltr">'+_dvFmt(f.size)+'</span> · '+_dvPreviewBadge(f)+'</div></span>';
     if(f.download_url){{
-      const a=document.createElement('a');a.href=f.download_url;a.title='Download';a.textContent='⬇';
+      const a=document.createElement('a');a.href=f.download_url;a.title=window.t('drive.dv_dl');a.textContent='⬇';
       a.style.cssText='font-size:13px;text-decoration:none;color:#475569;padding:2px 4px';
       a.onclick=(ev)=>ev.stopPropagation();
       row.appendChild(a);
@@ -17323,9 +18791,9 @@ function _dvRenderList(){{
   }});
   const cntEl=_dvEl('dv-list-count');
   if(cntEl){{
-    cntEl.innerHTML=`<span>Showing ${{shown}} of ${{j.files.length}} files</span><span style="color:#94a3b8">↕ Scroll</span>`;
+    cntEl.innerHTML=`<span>${{escHtml(window.t('drive.dv_showing_files',{{shown,total:j.files.length}}))}}</span><span style="color:#94a3b8">${{escHtml(window.t('drive.dv_scroll'))}}</span>`;
   }}
-  if(!shown)box.innerHTML='<div style="padding:16px;font-size:12px;color:var(--mu);text-align:center">No matching files</div>';
+  if(!shown)box.innerHTML=`<div style="padding:16px;font-size:12px;color:var(--mu);text-align:center">${{escHtml(window.t('drive.dv_no_matching'))}}</div>`;
   if(activeRowEl){{try{{activeRowEl.scrollIntoView({{block:'nearest'}});}}catch(_e){{}}}}
 }}
 function dvFilter(v){{DV.filter=v||'';_dvRenderList();}}
@@ -17641,12 +19109,12 @@ async function _dvLoadOfficePreview(f){{
     else _dvRenderWordView(f);
     return;
   }}
-  box.innerHTML='<div style="margin:auto;color:var(--mu);font-size:13px">⏳ Rendering Office document inside DCR...</div>';
+  box.innerHTML=`<div style="margin:auto;color:var(--mu);font-size:13px">${{escHtml(window.t('drive.dv_office_rendering'))}}</div>`;
   try{{
     const r=await fetch(f.office_url);
     const j=await r.json().catch(()=>({{}}));
     if(!r.ok||!j.ok){{
-      box.innerHTML='<div style="margin:auto;text-align:center;padding:24px;color:#dc2626;max-width:400px"><div style="font-size:28px">⚠️</div><div style="font-weight:700;margin:6px 0">Could not render Office preview</div><div style="font-size:12px;color:#64748b">'+escHtml(j.error||('HTTP '+r.status))+'</div>'+(f.download_url?'<a class="btn btn-pr" style="margin-top:12px;display:inline-block" href="'+f.download_url+'">⬇ Download file</a>':'')+'</div>';
+      box.innerHTML=`<div style="margin:auto;text-align:center;padding:24px;color:#dc2626;max-width:400px"><div style="font-size:28px">⚠️</div><div style="font-weight:700;margin:6px 0">${{escHtml(window.t('drive.dv_office_err'))}}</div><div style="font-size:12px;color:#64748b">`+escHtml(j.error||('HTTP '+r.status))+'</div>'+(f.download_url?`<a class="btn btn-pr" style="margin-top:12px;display:inline-block" href="${{f.download_url}}">${{escHtml(window.t('drive.dv_dl_file'))}}</a>`:'')+'</div>';
       return;
     }}
     f._officeData=j;
@@ -17671,21 +19139,21 @@ function dvSelect(i){{
   }}
   const pane=_dvEl('dv-pane');
   const noCopy=!j.can_download;
-  const mobBack=(j.kind==='folder'&&j.files.length>1)?'<button type="button" class="dv-mob-back" onclick="dvMobTab(0)">← Files</button>':'';
+  const mobBack=(j.kind==='folder'&&j.files.length>1)?`<button type="button" class="dv-mob-back" onclick="dvMobTab(0)">${{escHtml(window.t('drive.dv_back_files'))}}</button>`:'';
   let body='';
   if(f.preview==='pdf'){{
     const isMob=window.innerWidth<=768||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     DV.pdfMode=DV.pdfMode||{{}};
     const pdfMode=DV.pdfMode[f.id]||(isMob&&f.drive_embed_url?'cloud':'direct');
     const pdfSrc=(pdfMode==='cloud'&&f.drive_embed_url)?f.drive_embed_url:(f.stream_url+(noCopy?'#toolbar=0&navpanes=0&view=FitH':'#view=FitH'));
-    const toggleBtn=f.drive_embed_url?`<button type="button" class="btn btn-sc btn-sm" onclick="dvTogglePdfMode('${{f.id}}')" style="padding:2px 8px;font-size:11px;font-weight:600" title="Switch PDF View Mode">${{pdfMode==='cloud'?'📄 Direct Stream':'☁️ Cloud Preview'}}</button>`:'';
-    const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:4px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
+    const toggleBtn=f.drive_embed_url?`<button type="button" class="btn btn-sc btn-sm" onclick="dvTogglePdfMode('${{f.id}}')" style="padding:2px 8px;font-size:11px;font-weight:600">${{escHtml(pdfMode==='cloud'?window.t('drive.dv_direct_stream'):window.t('drive.dv_cloud_preview'))}}</button>`:'';
+    const subLabel=f.subfolder?` <span class="bidi-ltr" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-inline-start:4px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
     const pdfTools = `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">`
       +toggleBtn
-      +(!noCopy?`<a href="${{f.stream_url}}" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:11px;text-decoration:none">🔗 Open</a>`:'')
+      +(!noCopy?`<a href="${{f.stream_url}}" target="_blank" rel="noopener" class="btn btn-sc btn-sm" style="padding:2px 8px;font-size:11px;text-decoration:none">${{escHtml(window.t('drive.dv_open_pdf'))}}</a>`:'')
       +`</div>`;
     pane.innerHTML='<div style="padding:4px 10px;border-bottom:1px solid var(--bd);background:#fff;font-size:11.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0;min-height:30px">'
-      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px;min-width:0">'+mobBack+_dvIcon(f)+' <span style="color:#0f172a">'+escHtml(f.name)+'</span>'+subLabel+' <span style="color:var(--mu);font-weight:500;white-space:nowrap;font-size:10.5px">('+_dvFmt(f.size)+')</span></span>'+pdfTools+'</div>'
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px;min-width:0">'+mobBack+_dvIcon(f)+' <span class="bidi-ltr" style="color:#0f172a">'+escHtml(f.name)+'</span>'+subLabel+' <span class="bidi-ltr" style="color:var(--mu);font-weight:500;white-space:nowrap;font-size:10.5px">('+_dvFmt(f.size)+')</span></span>'+pdfTools+'</div>'
       +'<iframe id="dv-pdf-frame" allowfullscreen title="'+escHtml(f.name)+'" src="'+pdfSrc+'" style="border:0;width:100%;height:100%;flex:1;min-height:0;background:#fff"></iframe>';
     pane.style.display='flex';pane.style.flexDirection='column';
     _dvRenderFooter();
@@ -17693,15 +19161,15 @@ function dvSelect(i){{
   }}else if(f.preview==='image'){{
     body='<div style="padding:6px 12px;background:#f8fafc;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0">'
       +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(-0.25)" title="Zoom Out" style="padding:3px 9px;font-weight:700">🔍−</button>'
-      +'<span id="dv-img-zoom-lbl" style="font-size:11px;font-weight:700;min-width:44px;text-align:center;color:#0f172a">100%</span>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(0.25)" title="Zoom In" style="padding:3px 9px;font-weight:700">🔍+</button>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgReset()" title="Reset 100%" style="padding:3px 9px">↺ Reset</button>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(-90)" title="Rotate Left 90°" style="padding:3px 9px">⟲ 90°</button>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(90)" title="Rotate Right 90°" style="padding:3px 9px">⟳ 90°</button>'
-      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgFullscreen()" title="Fullscreen" style="padding:3px 9px">⛶ Fullscreen</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(-0.25)" style="padding:3px 9px;font-weight:700">🔍−</button>'
+      +'<span id="dv-img-zoom-lbl" class="bidi-ltr" style="font-size:11px;font-weight:700;min-width:44px;text-align:center;color:#0f172a">100%</span>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgZoom(0.25)" style="padding:3px 9px;font-weight:700">🔍+</button>'
+      +`<button type="button" class="btn btn-sc btn-sm" onclick="dvImgReset()" style="padding:3px 9px">${{escHtml(window.t('drive.dv_reset'))}}</button>`
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(-90)" style="padding:3px 9px">⟲ 90°</button>'
+      +'<button type="button" class="btn btn-sc btn-sm" onclick="dvImgRotate(90)" style="padding:3px 9px">⟳ 90°</button>'
+      +`<button type="button" class="btn btn-sc btn-sm" onclick="dvImgFullscreen()" style="padding:3px 9px">${{escHtml(window.t('drive.dv_fullscreen'))}}</button>`
       +'</div>'
-      +'<span style="font-size:10.5px;color:#64748b">🖱️ Scroll to zoom · Drag to pan · Double-click to 200%</span>'
+      +`<span style="font-size:10.5px;color:#64748b">${{escHtml(window.t('drive.dv_img_hint'))}}</span>`
       +'</div>'
       +'<div id="dv-img-stage" style="flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:12px;background:#1e293b;position:relative;user-select:none">'
       +'<img id="dv-img-el" alt="'+escHtml(f.name)+'" src="'+f.stream_url+'" draggable="false" '+(noCopy?'oncontextmenu="return false" ':'')+'style="max-width:94%;max-height:94%;object-fit:contain;box-shadow:0 8px 28px rgba(0,0,0,.45);background:#fff;transition:transform .08s ease-out;transform-origin:center center">'
@@ -17713,15 +19181,15 @@ function dvSelect(i){{
   }}else{{
     body='<div style="margin:auto;text-align:center;padding:24px;color:#334155;max-width:380px">'
       +'<div style="font-size:48px">'+_dvIcon(f)+'</div>'
-      +'<div style="font-weight:700;margin:10px 0 4px;word-break:break-all">'+escHtml(f.name)+'</div>'
-      +'<div style="font-size:12px;color:#64748b;line-height:1.6">This file type (CAD / archive) cannot be previewed directly inside the browser.'
-      +(f.download_url?'':'<br>You do not have download permission - ask the Document Controller.')+'</div>'
-      +(f.download_url?'<a class="btn btn-pr" style="margin-top:14px;display:inline-block" href="'+f.download_url+'">⬇ Download file</a>':'')
+      +'<div class="bidi-ltr" style="font-weight:700;margin:10px 0 4px;word-break:break-all">'+escHtml(f.name)+'</div>'
+      +`<div style="font-size:12px;color:#64748b;line-height:1.6">${{escHtml(window.t('drive.dv_cannot_preview'))}}`
+      +(f.download_url?'':`<br>${{escHtml(window.t('drive.dv_no_dl_perm'))}}`)+'</div>'
+      +(f.download_url?`<a class="btn btn-pr" style="margin-top:14px;display:inline-block" href="${{f.download_url}}">${{escHtml(window.t('drive.dv_dl_file'))}}</a>`:'')
       +'</div>';
   }}
-  const subLabel=f.subfolder?` <span style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
+  const subLabel=f.subfolder?` <span class="bidi-ltr" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin-inline-start:6px">📁 ${{escHtml(f.subfolder)}}</span>`:'';
   pane.innerHTML='<div style="padding:6px 12px;border-bottom:1px solid var(--bd);background:#fff;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0">'
-    +'<span style="word-break:break-all;display:flex;align-items:center;gap:4px">'+mobBack+_dvIcon(f)+' '+escHtml(f.name)+subLabel+'</span><span style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
+    +'<span style="word-break:break-all;display:flex;align-items:center;gap:4px">'+mobBack+_dvIcon(f)+' <span class="bidi-ltr">'+escHtml(f.name)+'</span>'+subLabel+'</span><span class="bidi-ltr" style="color:var(--mu);font-weight:500;white-space:nowrap">'+_dvFmt(f.size)+'</span></div>'+body;
   pane.style.display='flex';pane.style.flexDirection='column';
   if(f.preview==='image')_dvBindImgStage();
   if(f.preview==='excel'||f.preview==='word')_dvLoadOfficePreview(f);
@@ -17735,14 +19203,14 @@ function _dvRenderFooter(){{
     if(newTab){{a.target='_blank';a.rel='noopener';}}
     box.appendChild(a);
   }};
-  if(j.zip_url)mk('⬇ Download All (ZIP)',j.zip_url,'btn-pr',false);
+  if(j.zip_url)mk(window.t('drive.dv_dl_all_zip'),j.zip_url,'btn-pr',false);
   const f=j.files[DV.cur];
-  if(f&&f.download_url&&j.files.length>1)mk('⬇ This file',f.download_url,'btn-sc',false);
-  if(f&&f.download_url&&j.files.length===1)mk('⬇ Download',f.download_url,'btn-pr',false);
-  if(j.can_open_drive&&j.drive_url)mk('🔗 Open in Google Drive',j.drive_url,'btn-sc',true);
+  if(f&&f.download_url&&j.files.length>1)mk(window.t('drive.dv_dl_this'),f.download_url,'btn-sc',false);
+  if(f&&f.download_url&&j.files.length===1)mk(window.t('drive.dv_dl'),f.download_url,'btn-pr',false);
+  if(j.can_open_drive&&j.drive_url)mk(window.t('drive.dv_open_drive'),j.drive_url,'btn-sc',true);
   if(!j.can_download){{
     const n=document.createElement('span');n.style.cssText='font-size:11px;color:var(--mu)';
-    n.textContent='View only - download is restricted for your account';box.appendChild(n);
+    n.textContent=window.t('drive.dv_view_only_note');box.appendChild(n);
   }}
 }}
 document.addEventListener('keydown',function(ev){{
@@ -17994,7 +19462,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const flInput=formRoot.querySelector('#f-fileLocation');
   if(flInput && flInput.parentElement){{
     const flLbl=flInput.parentElement.querySelector('label');
-    if(flLbl)flLbl.textContent='Drive Link (Legacy / Manual Override)';
+    if(flLbl)flLbl.textContent=window.t('form.drive_link_legacy');
   }}
 
   const wrap=document.createElement('div');
@@ -18025,17 +19493,17 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const isHseCo=isHseCloseoutTab();
   const hasDual=hasReply||isHseCo;
   const slots=isNoc
-    ? [{{key:'part_a',title:'Part A: Notice of Change',pathSub:'Part A',emptyText:'No Part A attached',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
-       {{key:'part_b',title:'Part B: Consultant Reply',pathSub:'Part B',emptyText:'No Part B attached',color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
-       {{key:'part_c',title:'Part C: Cost Claim',pathSub:'Part C',emptyText:'No Part C attached',color:isDark?'#38bdf8':'#0284c7',bg:isDark?'rgba(2,132,199,0.15)':'#f0f9ff',bd:isDark?'rgba(56,189,248,0.35)':'#bae6fd'}},
-       {{key:'part_d',title:'Part D: Final Approval',pathSub:'Part D',emptyText:'No Part D attached',color:initPartDTheme.color,bg:initPartDTheme.bg,bd:initPartDTheme.bd}}]
+    ? [{{key:'part_a',title:window.t('noc.part_a_title'),pathSub:'Part A',emptyText:window.t('noc.part_a_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
+       {{key:'part_b',title:window.t('noc.part_b_title'),pathSub:'Part B',emptyText:window.t('noc.part_b_empty'),color:initPartBTheme.color,bg:initPartBTheme.bg,bd:initPartBTheme.bd}},
+       {{key:'part_c',title:window.t('noc.part_c_title'),pathSub:'Part C',emptyText:window.t('noc.part_c_empty'),color:isDark?'#38bdf8':'#0284c7',bg:isDark?'rgba(2,132,199,0.15)':'#f0f9ff',bd:isDark?'rgba(56,189,248,0.35)':'#bae6fd'}},
+       {{key:'part_d',title:window.t('noc.part_d_title'),pathSub:'Part D',emptyText:window.t('noc.part_d_empty'),color:initPartDTheme.color,bg:initPartDTheme.bg,bd:initPartDTheme.bd}}]
     : (hasReply
-      ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
-         {{key:'approval',title:'2. Consultant Reply',pathSub:'Replied',emptyText:'No consultant reply attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
+      ? [{{key:'submission',title:window.t('form.slot_subm_title'),pathSub:'Submit',emptyText:window.t('form.slot_subm_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
+         {{key:'approval',title:window.t('form.slot_reply_title'),pathSub:'Replied',emptyText:window.t('form.slot_reply_empty'),color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
       : (isHseCo
-        ? [{{key:'submission',title:'1. Submission Document',pathSub:'Submit',emptyText:'No submission file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
-           {{key:'approval',title:'2. Close-Out Document',pathSub:'Replied',emptyText:'No close-out file attached yet',color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
-        : [{{key:'submission',title:'Document Attachment',pathSub:'',emptyText:'No file attached yet',color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}]));
+        ? [{{key:'submission',title:window.t('form.slot_subm_title'),pathSub:'Submit',emptyText:window.t('form.slot_subm_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}},
+           {{key:'approval',title:window.t('form.slot_closeout_title'),pathSub:'Replied',emptyText:window.t('form.slot_closeout_empty'),color:initReplyTheme.color,bg:initReplyTheme.bg,bd:initReplyTheme.bd}}]
+        : [{{key:'submission',title:window.t('form.slot_doc_title'),pathSub:'',emptyText:window.t('form.slot_doc_empty'),color:isDark?'#60a5fa':'#2563eb',bg:isDark?'rgba(37,99,235,0.15)':'#eff6ff',bd:isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}]));
   const grid=document.createElement('div');
   grid.style.cssText=isNoc
     ? 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:6px'
@@ -18059,7 +19527,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     hdrTitle.style.cssText='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
     hdrTitle.textContent=s.title;
     const revBadge=document.createElement('span');
-    revBadge.style.cssText='display:none;flex-shrink:0;font-size:9px;font-weight:800;padding:1px 5px;border-radius:999px;background:#1e3a8a;color:#fff;margin-left:4px';
+    revBadge.className='bidi-ltr';
+    revBadge.style.cssText='display:none;flex-shrink:0;font-size:9px;font-weight:800;padding:1px 5px;border-radius:999px;background:#1e3a8a;color:#fff;margin-inline-start:4px';
     hdr.appendChild(hdrTitle);
     hdr.appendChild(revBadge);
     hdr.title=s.title;
@@ -18114,21 +19583,21 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(isNoc && entry && !entry.legacy && !pending){{
         const nextLbl=formatNocRevLabel(getNocPartRev(entry)+1);
         const activeMode=revModeWrap.dataset.revMode||slotRevMode||'new_revision';
-        if(upBtn)upBtn.textContent=(activeMode==='new_revision')?('📄 File ('+nextLbl+')'):'🔄 Replace File';
-        if(fldBtn)fldBtn.textContent=(activeMode==='new_revision')?('📁 Folder ('+nextLbl+')'):'🔄 Replace Folder';
+        if(upBtn)upBtn.textContent=(activeMode==='new_revision')?window.t('noc.btn_file_rev',{{rev:nextLbl}}):window.t('form.replace_file');
+        if(fldBtn)fldBtn.textContent=(activeMode==='new_revision')?window.t('noc.btn_folder_rev',{{rev:nextLbl}}):window.t('form.replace_folder');
         return;
       }}
       if(upBtn){{
         if(pending || (entry && !entry.legacy)){{
-          upBtn.textContent=isNoc?'📤 File':'🔄 Replace File';
+          upBtn.textContent=isNoc?window.t('noc.btn_file'):window.t('form.replace_file');
         }}else if(entry && entry.legacy){{
-          upBtn.textContent=isNoc?'📤 File':'🔄 Replace File';
+          upBtn.textContent=isNoc?window.t('noc.btn_file'):window.t('form.replace_file');
         }}else{{
-          upBtn.textContent=isNoc?'📤 File':'📤 Upload File';
+          upBtn.textContent=isNoc?window.t('noc.btn_file'):window.t('form.upload_file');
         }}
       }}
       if(fldBtn){{
-        fldBtn.textContent=isNoc?'📁 Folder':'📁 Upload Folder';
+        fldBtn.textContent=isNoc?window.t('noc.btn_folder'):window.t('form.upload_folder');
       }}
     }};
 
@@ -18177,8 +19646,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           }};
           return b;
         }};
-        revModeWrap.appendChild(mkSegBtn('new_revision',`↻ New ${{nextLbl}}`,'#2563eb'));
-        revModeWrap.appendChild(mkSegBtn('overwrite',`🔄 Overwrite ${{curLbl}}`,'#d97706'));
+        revModeWrap.appendChild(mkSegBtn('new_revision',window.t('noc.new_rev',{{rev:nextLbl}}),'#2563eb'));
+        revModeWrap.appendChild(mkSegBtn('overwrite',window.t('noc.overwrite_rev',{{rev:curLbl}}),'#d97706'));
         revModeWrap.style.display='grid';
       }}else{{
         revModeWrap.style.display='none';
@@ -18189,7 +19658,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(rawHist.length>0){{
         const hTitle=document.createElement('div');
         hTitle.style.cssText='font-weight:700;color:var(--mu);font-size:9px;text-transform:uppercase;letter-spacing:.3px';
-        hTitle.textContent=`🕒 History (${{rawHist.length}})`;
+        hTitle.textContent=window.t('noc.history_title',{{count:rawHist.length}});
         histWrap.appendChild(hTitle);
         const sorted=[...rawHist].sort((a,b)=>getNocPartRev(b)-getNocPartRev(a));
         const _recId=row&&row._id?row._id:(state.editId||'');
@@ -18201,10 +19670,12 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           const hRow=document.createElement('div');
           hRow.style.cssText='display:flex;align-items:center;gap:4px;min-width:0';
           const hPill=document.createElement('span');
+          hPill.className='bidi-ltr';
           hPill.style.cssText='font-weight:800;font-size:8.5px;padding:1px 4px;border-radius:4px;background:'+(isDark?'#334155':'#e2e8f0')+';color:'+(isDark?'#e2e8f0':'#334155')+';flex-shrink:0';
           hPill.textContent=hLbl;
           hRow.appendChild(hPill);
           const hName=document.createElement('span');
+          hName.className='bidi-ltr';
           hName.style.cssText='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;color:'+(isDark?'#cbd5e1':'#475569');
           const dLabel=h.is_folder?('📁 '+(h.folder_name||h.file_name||'Folder')):(h.file_name||hLbl);
           hName.textContent=dLabel;
@@ -18239,9 +19710,9 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             hx.type='button';
             hx.style.cssText='padding:0 4px;border-radius:3px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:8.5px;cursor:pointer;flex-shrink:0';
             hx.textContent='✕';
-            hx.title='Remove archived '+hLbl+' and move to Google Drive Trash';
+            hx.title=window.t('noc.remove_archived_title',{{rev:hLbl}});
             hx.onclick=async()=>{{
-              if(!confirm('Remove archived '+s.key+' '+hLbl+' and move its file/folder to Google Drive Trash?'))return;
+              if(!confirm(window.t('noc.confirm_remove_archived',{{slot:s.key,rev:hLbl}})))return;
               hx.disabled=true;
               try{{
                 const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?rev='+encodeURIComponent(String(hRev)),{{method:'DELETE'}});
@@ -18251,10 +19722,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
                 if(row){{row.attachments=j.attachments||{{}};}}
                 renderSlotInfo(cur[s.key],null);
                 renderRows();
-                toast('Archived revision '+hLbl+' removed','ok');
+                toast(window.t('noc.archived_removed',{{rev:hLbl}}),'ok');
               }}catch(e){{
                 hx.disabled=false;
-                toast('Could not remove archived revision: '+(e.message||e),'er');
+                toast(window.t('noc.archived_remove_failed',{{err:e.message||e}}),'er');
               }}
             }};
             hRow.appendChild(hx);
@@ -18279,14 +19750,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           ? (`${{pending.file_count||1}} file(s) in ${{pending.folder_name||'folder'}}`)
           : (pending.file_name||'file');
         const pRevTxt=(isNoc && pending.part_rev!==undefined)?(` [${{formatNocRevLabel(pending.part_rev)}}]`):'';
-        b.textContent='✓ Uploaded ('+pDesc+')'+pRevTxt+' — will link on Save';
+        b.textContent=window.t('form.uploaded_pending',{{desc:pDesc,rev:pRevTxt}});
         statusLine.appendChild(b);
         if(CAN_EDIT && !(opts&&opts.readonly)){{
           const clrBtn=document.createElement('button');
           clrBtn.type='button';
           clrBtn.style.cssText='padding:1px 6px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
           clrBtn.textContent='✕';
-          clrBtn.title='Cancel pending attachment';
+          clrBtn.title=window.t('form.cancel_pending');
           clrBtn.onclick=()=>{{
             delete state.pendingDriveAttachments[s.key];
             renderSlotInfo(cur[s.key],null);
@@ -18301,13 +19772,14 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       if(!vUrl){{
         const empty=document.createElement('span');
         empty.style.cssText='color:#64748b;font-style:italic';
-        empty.textContent=s.emptyText||(s.key==='approval'?'No consultant reply attached yet':'No submission file attached yet');
+        empty.textContent=s.emptyText||(s.key==='approval'?window.t('form.slot_reply_empty'):window.t('form.slot_subm_empty'));
         statusLine.appendChild(empty);
         renderRevControls(null,null);
         syncUploadButtonLabel(null,null);
         return;
       }}
       const nameSpan=document.createElement('span');
+      nameSpan.className='bidi-ltr';
       nameSpan.style.cssText='font-weight:600;max-width:'+(isNoc?'110px':'190px')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       if(entry.is_folder || vUrl.includes('/folders/')){{
         const fCount=entry.file_count?` (${{entry.file_count}})`:'';
@@ -18326,7 +19798,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       vA.href=_recId?'#':vUrl;
       if(!_recId){{vA.target='_blank';vA.rel='noopener';}}
       vA.style.cssText=`padding:2px 5px;border-radius:4px;background:${{isDark?'#1e293b':'#fff'}};border:1px solid ${{s.color}};color:${{s.color}};text-decoration:none;font-weight:600;font-size:9.5px;cursor:pointer;white-space:nowrap`;
-      vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'👁 Folder':'👁 View';
+      vA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?window.t('form.view_folder_btn'):window.t('form.view_btn');
       vA.onclick=(ev)=>{{
         if(_recId){{ev.preventDefault();openDocViewer(_recId,_slotKey,{{label:s.title,rev:_curRev}});}}
         else logFileAction('DRIVE_LINK_CLICK',row?.docNo||row?.nocNo||'',vUrl);
@@ -18339,7 +19811,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         dA.href=_dlHref;
         if(!_recId){{dA.target='_blank';dA.rel='noopener';}}
         dA.style.cssText=`padding:2px 5px;border-radius:4px;background:${{isDark?'#1e293b':'#fff'}};border:1px solid ${{isDark?'#475569':'#64748b'}};color:${{isDark?'#cbd5e1':'#334155'}};text-decoration:none;font-weight:600;font-size:9.5px;white-space:nowrap`;
-        dA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?'⬇ ZIP':'⬇ DL';
+        dA.textContent=(entry.is_folder||vUrl.includes('/folders/'))?window.t('form.dl_zip_btn'):window.t('form.dl_btn');
         dA.onclick=()=>{{if(!_recId)logFileAction('FILE_DOWNLOAD',row?.docNo||row?.nocNo||'',_dlHref);}};
         statusLine.appendChild(dA);
       }}
@@ -18350,11 +19822,11 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         unBtn.style.cssText='padding:1px 5px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
         unBtn.textContent='✕';
         const hasHist=Array.isArray(entry.history)&&entry.history.length>0;
-        unBtn.title=hasHist?'Remove active revision (restores previous archived revision)':'Remove this attachment and move it to Google Drive Trash';
+        unBtn.title=hasHist?window.t('form.confirm_unlink_rev',{{slot:s.key,rev:formatNocRevLabel(_curRev)}}):window.t('form.confirm_unlink',{{slot:s.key}});
         unBtn.onclick=async()=>{{
           const msg=hasHist
-            ? 'Remove active '+s.key+' ('+formatNocRevLabel(_curRev)+') and move it to Drive Trash? The previous revision will be restored as active.'
-            : 'Remove this '+s.key+' attachment from the record and move the old file/folder to Google Drive Trash?';
+            ? window.t('form.confirm_unlink_rev',{{slot:s.key,rev:formatNocRevLabel(_curRev)}})
+            : window.t('form.confirm_unlink',{{slot:s.key}});
           if(!confirm(msg))return;
           unBtn.disabled=true;
           try{{
@@ -18370,10 +19842,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             if(flInp&&typeof j.fileLocation==='string')flInp.value=j.fileLocation;
             renderSlotInfo(cur[s.key],null);
             renderRows();
-            toast(cur[s.key]?'Active revision removed; previous revision restored ('+s.key+')':'Attachment removed and moved to Drive Trash ('+s.key+')','ok');
+            toast(cur[s.key]?window.t('form.unlinked_restored',{{slot:s.key}}):window.t('form.unlinked_trashed',{{slot:s.key}}),'ok');
           }}catch(e){{
             unBtn.disabled=false;
-            toast('Could not unlink attachment: '+(e.message||e),'er');
+            toast(window.t('form.unlink_failed',{{err:e.message||e}}),'er');
           }}
         }};
         statusLine.appendChild(unBtn);
@@ -18410,7 +19882,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const f=fileInp.files&&fileInp.files[0];
         if(!f)return;
         if(isIgnoredUploadJunkFile(f)){{
-          toast('Skipped OS/Office junk file: '+f.name,'wa');
+          toast(window.t('form.skipped_junk',{{name:f.name}}),'wa');
           fileInp.value='';
           return;
         }}
@@ -18418,7 +19890,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         progWrap.style.display='flex';
         progBarInner.style.width='0%';
         progTxt.style.color='#475569';
-        progTxt.textContent='Starting upload session...';
+        progTxt.textContent=window.t('form.starting_upload');
         state.activeDriveUploads=(state.activeDriveUploads||0)+1;
         const dirEl=formRoot.querySelector('#f-direction')||formRoot.querySelector('[name="direction"]');
         const formDir=(dirEl&&dirEl.value)?dirEl.value:(row?.direction||'');
@@ -18438,7 +19910,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           if(res&&res.pending){{
             state.pendingDriveAttachments[s.key]=res;
             renderSlotInfo(cur[s.key],res);
-            progTxt.textContent='✓ Uploaded 100% — click Save to finish';
+            progTxt.textContent=window.t('form.uploaded_click_save');
           }}else if(res&&res.attachment){{
             cur[s.key]=res.attachment;
             if(row){{
@@ -18453,9 +19925,9 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const flInp=document.getElementById('f-fileLocation');
             if(flInp&&!flInp.value.trim()&&res.attachment.url)flInp.value=res.attachment.url;
             renderSlotInfo(res.attachment,null);
-            progTxt.textContent='✓ Attached & saved';
+            progTxt.textContent=window.t('form.attached_saved');
             renderRows();
-            toast('File uploaded and linked ('+s.key+')','ok');
+            toast(window.t('form.file_uploaded_linked',{{slot:s.key}}),'ok');
           }}
         }}catch(e){{
           progTxt.style.color='#dc2626';
@@ -18463,8 +19935,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
             ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
             : (e.message || e);
-          progTxt.textContent='✕ Upload failed: ' + friendly;
-          toast('Upload failed: ' + friendly, 'er');
+          progTxt.textContent=window.t('form.upload_failed',{{err:friendly}});
+          toast(window.t('form.upload_failed_toast',{{err:friendly}}), 'er');
         }}finally{{
           state.activeDriveUploads=Math.max(0,(state.activeDriveUploads||1)-1);
           upBtn.disabled=false;
@@ -18478,8 +19950,8 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       fldBtn.type='button';
       fldBtn.className='btn btn-sc btn-sm';
       fldBtn.style.cssText=`font-size:${{isNoc?'10px':'11px'}};padding:${{isNoc?'3px 5px':'4px 8px'}};border-color:#0f766e;color:${{isDark?'#2dd4bf':'#0f766e'}};background:${{isDark?'#1e293b':'#fff'}};white-space:nowrap;flex:${{isNoc?'1':'initial'}}`;
-      fldBtn.textContent=isNoc?'📁 Folder':'📁 Upload Folder';
-      fldBtn.title='Upload an uncompressed folder of files for this document';
+      fldBtn.textContent=isNoc?window.t('noc.btn_folder'):window.t('form.upload_folder');
+      fldBtn.title=window.t('form.upload_folder_title');
       fldBtn.onclick=()=>folderInp.click();
 
       progWrap.style.cssText='width:100%;display:none;flex-direction:column;gap:5px;background:#f8fafc;padding:8px 10px;border-radius:6px;border:1px solid #cbd5e1;box-sizing:border-box;margin-top:4px';
@@ -18924,9 +20396,11 @@ function updateBatchControlsState(){{
   const sumEl=document.getElementById('batch-drv-summary');
   if(sumEl){{
     if(!q.length){{
-      sumEl.textContent='Files or folders are matched to records automatically by Document No.';
+      sumEl.textContent=window.t('drive.batch_summary_empty');
     }}else{{
-      sumEl.textContent=`Queued ${{q.length}} item(s) — ${{matched}} matched (${{done}} done, ${{pending}} pending${{err?`, ${{err}} failed`:''}}${{cancelled?`, ${{cancelled}} cancelled`:''}}).`;
+      const errTxt=err?`, ${{err}} failed`:'';
+      const canTxt=cancelled?`, ${{cancelled}} cancelled`:'';
+      sumEl.textContent=window.t('drive.batch_summary_counts',{{total:q.length,matched,done,pending,err:errTxt,cancelled:canTxt}});
     }}
   }}
 
@@ -18934,16 +20408,16 @@ function updateBatchControlsState(){{
   if(stBtn){{
     if(state.batchRunning){{
       stBtn.disabled=true;
-      stBtn.textContent='⏳ Uploading in progress...';
+      stBtn.textContent=window.t('drive.batch_uploading');
     }}else if(pending>0){{
       stBtn.disabled=false;
-      stBtn.textContent=(done>0)?`🚀 Upload Remaining (${{pending}} item${{pending>1?'s':''}})`:'🚀 Start Sequential Upload';
+      stBtn.textContent=(done>0)?window.t('drive.batch_upload_rem',{{count:pending}}):window.t('drive.batch_start');
     }}else if(done>0&&done===matched&&matched>0){{
       stBtn.disabled=true;
-      stBtn.textContent='✓ All Done';
+      stBtn.textContent=window.t('drive.batch_all_done');
     }}else{{
       stBtn.disabled=true;
-      stBtn.textContent='🚀 Start Sequential Upload';
+      stBtn.textContent=window.t('drive.batch_start');
     }}
   }}
 }}
@@ -18959,11 +20433,11 @@ function updateBatchOverallProgress(){{
   const pct=Math.min(100,Math.round((done/total)*100));
   if(ovBar)ovBar.style.width=pct+'%';
   if(ovPct)ovPct.textContent=pct+'%';
-  if(ovTxt)ovTxt.textContent=`Completed ${{done}} of ${{total}} item(s)`;
+  if(ovTxt)ovTxt.textContent=window.t('drive.batch_completed_n',{{done,total}});
 }}
 
 function openBatchDriveUpload(){{
-  if(!CAN_EDIT){{toast('Edit permission required','wa');return;}}
+  if(!CAN_EDIT){{toast(window.t('form.err_view_only'),'wa');return;}}
   state.batchQueue=[];
   state.batchRunning=false;
   state.batchCancel=false;
@@ -18975,8 +20449,8 @@ function openBatchDriveUpload(){{
   const isEng=tabHasReplyCycle()||isHseCo||isNoc;
   const subSpan=document.querySelector('#batch-slot-card-submission span');
   const appSpan=document.querySelector('#batch-slot-card-approval span');
-  if(subSpan)subSpan.textContent=isHseCo?'📤 1. Submission Documents':'📤 Submission Files (ملفات التقديم الأصلي)';
-  if(appSpan)appSpan.textContent=isHseCo?'📋 2. Close-Out Documents':'📋 Consultant Replies (ردود الاستشاري)';
+  if(subSpan)subSpan.textContent=isHseCo?window.t('drive.batch_slot_hse_subm'):window.t('drive.batch_slot_subm');
+  if(appSpan)appSpan.textContent=isHseCo?window.t('drive.batch_slot_hse_co'):window.t('drive.batch_slot_reply');
   const slotWrap=document.getElementById('batch-drv-slot-wrap');
   if(slotWrap)slotWrap.style.display=isEng?'flex':'none';
   const dualCards=document.getElementById('batch-drv-slot-cards-dual');
@@ -19007,7 +20481,7 @@ function openBatchDriveUpload(){{
 
 function closeBatchDriveUpload(){{
   if(state.batchRunning){{
-    if(!confirm('Uploads are currently in progress. Stop the queue and close?'))return;
+    if(!confirm(window.t('drive.batch_confirm_close')))return;
     state.batchCancel=true;
     if(state.batchCurrentAbort)try{{state.batchCurrentAbort.abort();}}catch(_e){{}}
   }}
@@ -19056,7 +20530,7 @@ function onBatchFilesSelected(fileList){{
     recordId:extractDocNoFromFilename(file.name,recs),
     status:'ready',
     pct:0,
-    msg:'Ready'
+    msg:window.t('drive.batch_ready')
   }}));
   state.batchQueue = [...curQ, ...newItems];
   renderBatchDriveTable();
@@ -19097,7 +20571,7 @@ function onBatchFolderSelected(fileList){{
       recordId:recId,
       status:'ready',
       pct:0,
-      msg:`Ready (${{files.length}} files)`
+      msg:window.t('drive.batch_ready_files',{{count:files.length}})
     }};
   }});
   state.batchQueue = [...curQ, ...newItems];
@@ -19111,7 +20585,7 @@ function renderBatchDriveTable(){{
   if(!tbody)return;
   const q=state.batchQueue||[];
   if(!q.length){{
-    tbody.innerHTML='<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">No files selected yet. Click "Select Files" or "Select Folder" above to queue items.</td></tr>';
+    tbody.innerHTML=`<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mu)">${{escHtml(window.t('drive.batch_empty_tbl'))}}</td></tr>`;
     return;
   }}
   const recs=state.recs||[];
@@ -19120,9 +20594,9 @@ function renderBatchDriveTable(){{
     const tr=document.createElement('tr');
     tr.id='batch-drv-tr-'+item.id;
     tr.style.borderBottom='1px solid var(--bd)';
-    const tdIdx=document.createElement('td');tdIdx.style.padding='6px 8px';tdIdx.textContent=String(i+1);
-    const tdName=document.createElement('td');tdName.style.cssText='padding:6px 8px;font-weight:600;word-break:break-all';tdName.textContent=item.file.name;
-    const tdSize=document.createElement('td');tdSize.style.cssText='padding:6px 8px;color:var(--mu);white-space:nowrap';tdSize.textContent=_fmtBytes(item.file.size);
+    const tdIdx=document.createElement('td');tdIdx.className='bidi-ltr';tdIdx.style.padding='6px 8px';tdIdx.textContent=String(i+1);
+    const tdName=document.createElement('td');tdName.className='bidi-ltr';tdName.style.cssText='padding:6px 8px;font-weight:600;word-break:break-all';tdName.textContent=item.file.name;
+    const tdSize=document.createElement('td');tdSize.className='bidi-ltr';tdSize.style.cssText='padding:6px 8px;color:var(--mu);white-space:nowrap';tdSize.textContent=_fmtBytes(item.file.size);
 
     const tdRec=document.createElement('td');tdRec.style.padding='6px 8px';
     const recWrap=document.createElement('div');
@@ -19133,7 +20607,7 @@ function renderBatchDriveTable(){{
     inp.setAttribute('list','batch-drv-datalist');
     inp.setAttribute('autocomplete','off');
     inp.style.cssText='width:100%;padding:4px 22px 4px 6px;font-size:11px;border-radius:4px;outline:none;transition:all .15s;border:1px solid '+(item.recordId?'#16a34a':'#f59e0b')+';background:'+(item.recordId?'#f0fdf4':'#fff');
-    inp.placeholder='🔍 Search Doc No or Title...';
+    inp.placeholder=window.t('drive.batch_search_ph');
     // CRITICAL: Only disable input for the active uploading item or finished items!
     // Waiting, error, or cancelled items REMAIN FULLY EDITABLE even when queue is running!
     inp.disabled=(item.status==='uploading'||item.status==='done');
@@ -19312,20 +20786,20 @@ function stopBatchDriveUpload(){{
   state.batchCancel=true;
   if(state.batchCurrentAbort)try{{state.batchCurrentAbort.abort();}}catch(_e){{}}
   const spBtn=document.getElementById('batch-drv-stop-btn');
-  if(spBtn){{spBtn.disabled=true;spBtn.textContent='Stopping queue...';}}
+  if(spBtn){{spBtn.disabled=true;spBtn.textContent=window.t('drive.batch_stopping');}}
 }}
 
 async function startBatchDriveUpload(){{
   if(state.batchRunning)return;
   const q=(state.batchQueue||[]).filter(it=>it.recordId&&it.status!=='done');
-  if(!q.length){{toast('Please match at least one file to a record first.','wa');return;}}
+  if(!q.length){{toast(window.t('drive.batch_match_first'),'wa');return;}}
 
   // Reset any cancelled or failed items with records back to 'ready'
   (state.batchQueue||[]).forEach(it=>{{
     if(it.recordId&&it.status!=='done'){{
       it.status='ready';
       it.pct=0;
-      it.msg='Ready';
+      it.msg=window.t('drive.batch_ready');
       const cell=document.getElementById('batch-drv-st-'+it.id);
       if(cell)updateBatchRowStatusCell(cell,it);
       const actCell=document.getElementById('batch-drv-act-'+it.id);
@@ -19337,9 +20811,9 @@ async function startBatchDriveUpload(){{
   state.batchCancel=false;
   const slot=state.batchSlot||'submission';
   const stBtn=document.getElementById('batch-drv-start-btn');
-  if(stBtn){{stBtn.disabled=true;stBtn.textContent='⏳ Uploading in progress...';}}
+  if(stBtn){{stBtn.disabled=true;stBtn.textContent=window.t('drive.batch_uploading');}}
   const spBtn=document.getElementById('batch-drv-stop-btn');
-  if(spBtn){{spBtn.classList.remove('hidden');spBtn.disabled=false;spBtn.textContent='⏹ Stop Queue';}}
+  if(spBtn){{spBtn.classList.remove('hidden');spBtn.disabled=false;spBtn.textContent=window.t('drive.batch_stop');}}
   const ov=document.getElementById('batch-drv-overall');
   if(ov)ov.style.display='flex';
   updateBatchOverallProgress();
@@ -19468,16 +20942,16 @@ async function startBatchDriveUpload(){{
     updateBatchControlsState();
     renderRows();
     if(newlyDone>0){{
-      toast(`Batch upload completed (${{newlyDone}} linked)`,'ok');
+      toast(window.t('drive.batch_done_toast',{{count:newlyDone}}),'ok');
     }}else if(state.batchCancel){{
-      toast('Upload queue stopped','wa');
+      toast(window.t('drive.batch_stopped_toast'),'wa');
     }}
   }}
 }}
 
 async function saveRecord(){{
-  if(!CAN_EDIT){{toast('You have view-only permissions.', 'wa');return;}}
-  if(state.activeDriveUploads>0){{toast('Please wait for the active file upload to finish.','wa');return;}}
+  if(!CAN_EDIT){{toast(window.t('form.err_view_only'), 'wa');return;}}
+  if(state.activeDriveUploads>0){{toast(window.t('form.err_upload_active'),'wa');return;}}
   if(state.savingRecord)return;
   state.savingRecord=true;setRecordSaveState(true);
   try{{
@@ -19508,23 +20982,23 @@ async function saveRecord(){{
     const issued=String(getLTRValue(data,allCols,'issuedDate')||'').trim();
     const received=String(getLTRValue(data,allCols,'receivedDate')||'').trim();
     const parentId=String(getLTRValue(data,allCols,'parentLetterId')||'').trim();
-    if(direction==='sent'&&!issued){{toast('Issue Date is required for Sent letters','er');releaseRecordSave();return;}}
-    if(direction==='received'&&!received){{toast('Received Date is required for Received letters','er');releaseRecordSave();return;}}
-    if(state.editId&&parentId&&parentId===state.editId){{toast('A letter cannot reference itself as parent','er');releaseRecordSave();return;}}
+    if(direction==='sent'&&!issued){{toast(window.t('ltr.err_sent_date'),'er');releaseRecordSave();return;}}
+    if(direction==='received'&&!received){{toast(window.t('ltr.err_received_date'),'er');releaseRecordSave();return;}}
+    if(state.editId&&parentId&&parentId===state.editId){{toast(window.t('ltr.err_self_parent'),'er');releaseRecordSave();return;}}
   }}
   if(isNOCTab()&&!String(data.voBaseValue||'').trim()&&String(data.voValueWithSIAndVAT||'').trim()){{
     const autoBase=getNocAutoBaseValue(data);
     if(autoBase)data.voBaseValue=autoBase;
   }}
-  if(!data.docNo){{toast('Document No. required','er');releaseRecordSave();return;}}
+  if(!data.docNo){{toast(window.t('form.err_doc_no_required'),'er');releaseRecordSave();return;}}
   for(const [k,v] of Object.entries(data)){{
     if(typeof v==='string' && /\\[object Object\\]/i.test(v)){{
-      toast('Invalid "[object Object]" value detected in field "'+k+'". Please refresh or re-enter items before saving.','er');
+      toast(window.t('form.err_invalid_obj',{{field:k}}),'er');
       releaseRecordSave();
       return;
     }}
     if(Array.isArray(v) && v.some(it=>it&&typeof it==='object'&&Object.values(it).some(x=>typeof x==='string'&&/\\[object Object\\]/i.test(x)))){{
-      toast('Invalid "[object Object]" value detected in structured list "'+k+'". Please correct it before saving.','er');
+      toast(window.t('form.err_invalid_list',{{field:k}}),'er');
       releaseRecordSave();
       return;
     }}
@@ -19532,11 +21006,11 @@ async function saveRecord(){{
     // Duration is computed server-side automatically
   let valErr=validateDocNo(data.docNo,state.recs||[],state.editId);
   if(valErr&&valErr.startsWith('GAP')){{
-    const ok=confirm('Sequence gap detected: '+valErr.replace('GAP:','')+'. Continue anyway?');
+    const ok=confirm(window.t('form.confirm_seq_gap',{{gap:valErr.replace('GAP:','')}}));
     if(!ok){{releaseRecordSave();return;}}
     valErr=null;
   }}
-  if(valErr){{toast('Validation error: '+valErr,'er');releaseRecordSave();return;}}
+  if(valErr){{toast(window.t('form.err_validation',{{err:valErr}}),'er');releaseRecordSave();return;}}
   if(state.editId)data._id=state.editId;
   const r=await apiFetch('/api/records/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify(data)}});
   if(r&&r.ok){{
@@ -19548,32 +21022,32 @@ async function saveRecord(){{
       try{{
         const prRes=await apiFetch('/api/pr_items/'+recId,{{method:'POST',body:JSON.stringify({{items}})}});
         if(prRes&&prRes.ok)state.prItemsCache[recId]=items;
-        else {{toast('Items save failed','er');releaseRecordSave();return;}}
+        else {{toast(window.t('pr.items_save_failed'),'er');releaseRecordSave();return;}}
       }}catch(e){{
-        toast('Items save failed: '+e.message,'er');releaseRecordSave();return;
+        toast(window.t('pr.items_save_failed_err',{{err:e.message}}),'er');releaseRecordSave();return;
       }}
     }}
     if(wasRevisionDraft)clearSel();
     state.revisionDraftActive=false;
-    closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?'Updated':'Added','ok');releaseRecordSave();
+    closeM('rec-modal');const savedTab=state.tab;await loadRecords();await refreshCounts();toast(state.editId?window.t('form.updated'):window.t('form.added'),'ok');releaseRecordSave();
   }}
-  else {{toast('Error saving','er');releaseRecordSave();}}
+  else {{toast(window.t('form.err_save'),'er');releaseRecordSave();}}
   }}catch(e){{
-    toast('Error saving: '+e.message,'er');
+    toast(window.t('form.err_save_detail',{{err:e.message}}),'er');
     releaseRecordSave();
   }}
 }}
 
 async function delRec(id){{
-  if(!confirm('Delete this record?'))return;
+  if(!confirm(window.t('form.confirm_delete')))return;
   await apiFetch('/api/records/'+id,{{method:'DELETE'}});
-  await loadRecords();await refreshCounts();toast('Deleted','wa');
+  await loadRecords();await refreshCounts();toast(window.t('form.deleted'),'wa');
 }}
 
 // Bulk
 function updBulk(){{
   const checked=document.querySelectorAll('.chkcell input[data-id]:checked');
-  document.getElementById('bulkcnt').textContent=checked.length+' selected';
+  document.getElementById('bulkcnt').textContent=window.t('reg.bulk_selected',{{count:checked.length}});
   document.getElementById('bulkbar').classList.toggle('show',checked.length>0);
   const dlBtn = document.getElementById('btn-bulk-dl');
   if(dlBtn) dlBtn.style.display = checked.length>0 ? 'inline-block' : 'none';
@@ -19586,10 +21060,10 @@ function selAll(v){{document.querySelectorAll('.chkcell input[data-id]').forEach
 function clearSel(){{document.querySelectorAll('.chkcell input').forEach(cb=>cb.checked=false);updBulk();}}
 async function bulkDel(){{
   const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
-  if(!ids.length||!confirm('Delete '+ids.length+' records?'))return;
+  if(!ids.length||!confirm(window.t('reg.bulk_confirm_del',{{count:ids.length}})))return;
   const r=await apiFetch('/api/records/bulk_delete',{{method:'POST',body:JSON.stringify({{ids}})}});
   if(r&&r.ok){{
-    clearSel();await loadRecords();await refreshCounts();toast('✔ Deleted '+(r.deleted||0),'ok');
+    clearSel();await loadRecords();await refreshCounts();toast(window.t('reg.bulk_deleted',{{count:r.deleted||0}}),'ok');
   }}
 }}
 
@@ -19598,7 +21072,7 @@ async function bulkDownload(){{
   if(!ids.length)return;
   
   const drvCol = state.cols.find(c => c.col_type === 'url' || c.col_key === 'fileLocation');
-  if(!drvCol) return toast('Drive Link column not found', 'er');
+  if(!drvCol) return toast(window.t('reg.bulk_dl_no_col'), 'er');
   const key = drvCol.col_key;
   
   const links = [];
@@ -19628,11 +21102,11 @@ async function bulkDownload(){{
     }}
   }});
   
-  if(!links.length) return toast('No valid documents found in selected rows', 'wa');
+  if(!links.length) return toast(window.t('reg.bulk_dl_none'), 'wa');
   
   const folders = links.filter(l => l.type === 'folder');
-  if(folders.length) toast(`Opening ${{folders.length}} folder(s) in new tabs...`, 'wa');
-  else toast(`Starting download of ${{links.length}} file(s)...`, 'ok');
+  if(folders.length) toast(window.t('reg.bulk_dl_folders', {{count: folders.length}}), 'wa');
+  else toast(window.t('reg.bulk_dl_files', {{count: links.length}}), 'ok');
   
   links.forEach((linkObj, idx) => {{
     setTimeout(() => {{
@@ -19663,36 +21137,37 @@ async function editProject(){{
   // Field visibility toggles
   const visNote=document.createElement('div');
   visNote.style.cssText='font-size:10px;color:var(--mu);margin-bottom:8px;padding:6px 8px;background:var(--bg);border-radius:4px';
-  visNote.textContent='💡 Leave any field empty to hide it from the project bar';
+  visNote.textContent=window.t('reg.proj_vis_note');
   body.appendChild(visNote);
   const grid=document.createElement('div');grid.className='fgrid';
   PROJ_FIELDS.forEach(([key,defaultLbl])=>{{
-    const curLbl=customLabels[key]||defaultLbl;
+    const locDefault = (key==='startDate'||key==='endDate') ? window.t('reg.pf_'+key+'_full') : window.t('reg.pf_'+key);
+    const curLbl=customLabels[key]||locDefault||defaultLbl;
     const grp=document.createElement('div');grp.className='fg';
     // Label row: custom label input + value input
     const lblRow=document.createElement('div');lblRow.style.cssText='display:flex;gap:4px;margin-bottom:3px;align-items:center';
     const lblInp=document.createElement('input');
     lblInp.id='lbl-'+key;lblInp.value=curLbl;
-    lblInp.placeholder='Field label';
-    lblInp.title='Edit field label';
+    lblInp.placeholder=window.t('reg.proj_field_lbl_ph');
+    lblInp.title=window.t('reg.proj_field_lbl_title');
     lblInp.style.cssText='font-size:9px;font-weight:700;color:var(--pr);text-transform:uppercase;letter-spacing:.4px;border:1px dashed var(--bd);border-radius:3px;padding:2px 5px;width:100%;background:transparent;outline:none';
     lblRow.appendChild(lblInp);
     const valInp=document.createElement('input');valInp.id='pf-'+key;valInp.value=proj[key]||'';
-    valInp.placeholder='(leave empty to hide)';
+    valInp.placeholder=window.t('reg.proj_field_val_ph');
     grp.appendChild(lblRow);grp.appendChild(valInp);
     grid.appendChild(grp);
   }});
   body.appendChild(grid);
   
   // Google Drive
-  const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent='Google Drive Integration';body.appendChild(drvTitle);
+  const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent=window.t('reg.proj_drv_title');body.appendChild(drvTitle);
   const drvGrid=document.createElement('div');drvGrid.className='fgrid';
   drvGrid.innerHTML=`
-    <div class="fg"><label>Drive Root Folder ID</label><input id="proj-drive-id" placeholder="ID from URL" value="${{proj.drive_folder_id||''}}"></div>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_drv_root_id'))}}</label><input id="proj-drive-id" class="bidi-ltr" placeholder="${{escHtml(window.t('reg.proj_drv_root_ph'))}}" value="${{proj.drive_folder_id||''}}"></div>
     <div class="fg" style="display:flex;align-items:flex-end">
       <button class="btn btn-sc" type="button" onclick="syncDriveLinks(this)" style="width:100%;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;background:var(--bg)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
-        Sync Drive Links
+        ${{escHtml(window.t('reg.proj_sync_btn'))}}
       </button>
     </div>
   `;
@@ -19704,77 +21179,77 @@ async function editProject(){{
     const isDCOrAdmin = _WHOAMI && (_WHOAMI.role==='superadmin'||_WHOAMI.role==='admin'||(_WHOAMI.dc_projects||[]).includes(PID));
     if(isDCOrAdmin) {{
       const distTitle=document.createElement('div');distTitle.className='stitle';distTitle.style.marginTop='18px';
-      distTitle.innerHTML='📇 Distribution Matrix & Master Link';body.appendChild(distTitle);
+      distTitle.innerHTML=escHtml(window.t('reg.proj_dist_title'));body.appendChild(distTitle);
       const distNote=document.createElement('div');
       distNote.style.cssText='font-size:10px;color:var(--mu);margin:-4px 0 10px;padding:6px 8px;background:var(--bg);border-radius:4px';
-      distNote.textContent='Map Disciplines to internal team members to drive the Smart Project Digest.';
+      distNote.textContent=window.t('reg.proj_dist_note');
       body.appendChild(distNote);
       const distBtn=document.createElement('button');
       distBtn.className='btn btn-sc';
       distBtn.style.cssText='width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;margin-bottom:8px';
-      distBtn.innerHTML='📇 Open Distribution Matrix';
+      distBtn.innerHTML=escHtml(window.t('reg.proj_dist_open'));
       distBtn.onclick=()=>openDistributionMatrix(PID);
       body.appendChild(distBtn);
 
       const masterLinkBtn=document.createElement('button');
       masterLinkBtn.className='btn btn-ok';
       masterLinkBtn.style.cssText='width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px';
-      masterLinkBtn.innerHTML='🔗 Generate Master Magic Link';
+      masterLinkBtn.innerHTML=escHtml(window.t('reg.proj_master_link'));
       masterLinkBtn.onclick=async ()=>{{
         masterLinkBtn.disabled = true;
-        masterLinkBtn.innerHTML = 'Generating...';
+        masterLinkBtn.innerHTML = escHtml(window.t('reg.proj_master_gen'));
         try {{
           const r = await apiFetch(`/api/magic/generate_master/${{PID}}`, {{method:'POST'}});
           if(r && r.ok) {{
             navigator.clipboard.writeText(r.link);
-            toast('Master Link copied to clipboard!','ok');
-          }} else toast('Failed to generate link', 'er');
-        }} catch(e){{ toast('Error generating link','er'); }}
+            toast(window.t('reg.proj_master_copied'),'ok');
+          }} else toast(window.t('reg.proj_master_fail'), 'er');
+        }} catch(e){{ toast(window.t('reg.proj_master_err'),'er'); }}
         masterLinkBtn.disabled = false;
-        masterLinkBtn.innerHTML = '🔗 Generate Master Magic Link';
+        masterLinkBtn.innerHTML = escHtml(window.t('reg.proj_master_link'));
       }};
       body.appendChild(masterLinkBtn);
     }}
   }} catch(e){{ console.error('[DistMatrix UI]',e); }}
 
   const er={{...DEFAULT_EXPECTED_REPLY_RULE,...(proj.expected_reply_rule||{{}})}};
-  const erTitle=document.createElement('div');erTitle.className='stitle';erTitle.textContent='Expected Reply Rule';body.appendChild(erTitle);
+  const erTitle=document.createElement('div');erTitle.className='stitle';erTitle.textContent=window.t('reg.proj_er_title');body.appendChild(erTitle);
   const erNote=document.createElement('div');
   erNote.style.cssText='font-size:10px;color:var(--mu);margin:-4px 0 8px;padding:6px 8px;background:var(--bg);border-radius:4px';
-  erNote.textContent='Project-specific rule for calculated Expected Reply dates. Existing saved records are not modified.';
+  erNote.textContent=window.t('reg.proj_er_note');
   body.appendChild(erNote);
   const erGrid=document.createElement('div');erGrid.className='fgrid';
   erGrid.innerHTML=`
-    <div class="fg"><label>REV00 Reply Days</label><input id="er-rev0-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev0_reply_days))?Number(er.rev0_reply_days):14}}"></div>
-    <div class="fg"><label>REV&gt;00 Reply Days</label><input id="er-rev-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev_reply_days))?Number(er.rev_reply_days):7}}"></div>
-    <div class="fg"><label>Calculation Mode</label><select id="er-calc-mode">
-      <option value="calendar_days" ${{er.calculation_mode==='calendar_days'?'selected':''}}>Calendar Days</option>
-      <option value="working_days" ${{er.calculation_mode!=='calendar_days'?'selected':''}}>Working Days</option>
+    <div class="fg"><label>${{escHtml(window.t('reg.dt_er_rev0'))}}</label><input id="er-rev0-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev0_reply_days))?Number(er.rev0_reply_days):14}}"></div>
+    <div class="fg"><label>${{escHtml(window.t('reg.dt_er_rev'))}}</label><input id="er-rev-days" type="number" min="0" step="1" value="${{Number.isFinite(Number(er.rev_reply_days))?Number(er.rev_reply_days):7}}"></div>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_er_calc_mode'))}}</label><select id="er-calc-mode">
+      <option value="calendar_days" ${{er.calculation_mode==='calendar_days'?'selected':''}}>${{escHtml(window.t('reg.proj_er_cal_days'))}}</option>
+      <option value="working_days" ${{er.calculation_mode!=='calendar_days'?'selected':''}}>${{escHtml(window.t('reg.proj_er_work_days'))}}</option>
     </select></div>
-    <div class="fg"><label>Weekend Rule</label><select id="er-weekend-mode">
-      <option value="friday_only" ${{er.weekend_mode==='friday_only'?'selected':''}}>Friday Only</option>
-      <option value="friday_saturday" ${{er.weekend_mode==='friday_saturday'?'selected':''}}>Friday + Saturday</option>
-      <option value="none" ${{er.weekend_mode==='none'?'selected':''}}>None</option>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_er_weekend'))}}</label><select id="er-weekend-mode">
+      <option value="friday_only" ${{er.weekend_mode==='friday_only'?'selected':''}}>${{escHtml(window.t('reg.proj_er_fri'))}}</option>
+      <option value="friday_saturday" ${{er.weekend_mode==='friday_saturday'?'selected':''}}>${{escHtml(window.t('reg.proj_er_fri_sat'))}}</option>
+      <option value="none" ${{er.weekend_mode==='none'?'selected':''}}>${{escHtml(window.t('reg.proj_er_none'))}}</option>
     </select></div>
-    <div class="fg"><label>Exclude Official Holidays</label><select id="er-exclude-holidays">
-      <option value="yes" ${{er.exclude_official_holidays!==false?'selected':''}}>Yes</option>
-      <option value="no" ${{er.exclude_official_holidays===false?'selected':''}}>No</option>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_er_excl_hol'))}}</label><select id="er-exclude-holidays">
+      <option value="yes" ${{er.exclude_official_holidays!==false?'selected':''}}>${{escHtml(window.t('common.yes'))}}</option>
+      <option value="no" ${{er.exclude_official_holidays===false?'selected':''}}>${{escHtml(window.t('common.no'))}}</option>
     </select></div>
   `;
   body.appendChild(erGrid);
   // Logo section
-  const lt=document.createElement('div');lt.className='stitle';lt.textContent='Company Logos';body.appendChild(lt);
+  const lt=document.createElement('div');lt.className='stitle';lt.textContent=window.t('reg.proj_logos_title');body.appendChild(lt);
   const lg=document.createElement('div');lg.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:12px';
-  for(const[k,lbl]of[['logo_left','Left Logo'],['logo_right','Right Logo']]){{
+  for(const[k,lbl]of[['logo_left',window.t('reg.proj_logo_left')],['logo_right',window.t('reg.proj_logo_right')]]){{
     const d=document.createElement('div');d.style.cssText='border:1px solid var(--bd);border-radius:6px;padding:10px;text-align:center;background:var(--bg)';
     const lbel=document.createElement('div');lbel.style.cssText='font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;margin-bottom:6px';lbel.textContent=lbl;d.appendChild(lbel);
     const img=document.createElement('img');img.id='lp-'+k;img.style.cssText='max-height:52px;max-width:100%;object-fit:contain;display:block;margin:0 auto 6px';d.appendChild(img);
     fetch('/api/logo/'+PID+'/'+k).then(r=>r.ok?r.blob():null).then(b=>{{if(b)img.src=URL.createObjectURL(b);}});
     const fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.style.cssText='width:100%;font-size:10px;margin-bottom:4px';
-    fi.onchange=async e=>{{const f=e.target.files[0];if(!f)return;const b64=await new Promise(res=>{{const fr=new FileReader();fr.onload=e2=>res(e2.target.result);fr.readAsDataURL(f);}});img.src=b64;await apiFetch('/api/logo/'+PID+'/'+k,{{method:'POST',body:JSON.stringify({{data:b64.split(',')[1]}})}});toast('Logo saved','ok');}};
+    fi.onchange=async e=>{{const f=e.target.files[0];if(!f)return;const b64=await new Promise(res=>{{const fr=new FileReader();fr.onload=e2=>res(e2.target.result);fr.readAsDataURL(f);}});img.src=b64;await apiFetch('/api/logo/'+PID+'/'+k,{{method:'POST',body:JSON.stringify({{data:b64.split(',')[1]}})}});toast(window.t('reg.proj_logo_saved'),'ok');}};
     d.appendChild(fi);
-    const clr=document.createElement('button');clr.className='btn btn-sc btn-sm';clr.textContent='Remove';clr.style.fontSize='9px';
-    clr.onclick=async()=>{{await apiFetch('/api/logo/'+PID+'/'+k,{{method:'POST',body:JSON.stringify({{data:''}})}});img.src='';toast('Removed','wa');}};
+    const clr=document.createElement('button');clr.className='btn btn-sc btn-sm';clr.textContent=window.t('reg.proj_logo_remove');clr.style.fontSize='9px';
+    clr.onclick=async()=>{{await apiFetch('/api/logo/'+PID+'/'+k,{{method:'POST',body:JSON.stringify({{data:''}})}});img.src='';toast(window.t('reg.proj_logo_removed'),'wa');}};
     d.appendChild(clr);lg.appendChild(d);
   }}
   body.appendChild(lg);
@@ -19788,8 +21263,10 @@ async function saveProject(){{
     const el=document.getElementById('pf-'+key);
     if(el)data[key]=el.value.trim();
     const lblEl=document.getElementById('lbl-'+key);
-    if(lblEl&&lblEl.value.trim()&&lblEl.value.trim()!==defaultLbl)
-      labels[key]=lblEl.value.trim();
+    const locDefault = (key==='startDate'||key==='endDate') ? window.t('reg.pf_'+key+'_full') : window.t('reg.pf_'+key);
+    const val = lblEl ? lblEl.value.trim() : '';
+    if(val && val!==defaultLbl && val!==locDefault)
+      labels[key]=val;
   }});
   data._labels=labels;
   const rev0Days=parseInt(document.getElementById('er-rev0-days')?.value||'14',10);
@@ -19810,14 +21287,14 @@ async function saveProject(){{
   const r=await apiFetch('/api/project/'+PID,{{method:'POST',body:JSON.stringify(data)}});
   if(r===null)return;
   if(r.ok){{
-    closeM('proj-modal');toast('✔ Project saved!','ok');
+    closeM('proj-modal');toast(window.t('reg.proj_saved'),'ok');
     setTimeout(()=>location.reload(),400);
-  }}else toast('Save failed','er');
+  }}else toast(window.t('reg.proj_save_fail'),'er');
 }}
 
 // ── Distribution Matrix ──────────────────────────────────────
 async function openDistributionMatrix(pid) {{
-  if(!pid){{ toast('No project selected','er'); return; }}
+  if(!pid){{ toast(window.t('reg.dist_no_proj'),'er'); return; }}
 
   try {{
     const [projects, projUsers] = await Promise.all([
@@ -19837,7 +21314,7 @@ async function openDistributionMatrix(pid) {{
     
     const note = document.createElement('div');
     note.style.cssText = 'padding: 10px; background: #eff6ff; color: #1e3a8a; font-size: 12px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #bfdbfe;';
-    note.innerHTML = 'Define Role-Based distribution here. Add Disciplines and assign users. Users assigned to <b>Project Management</b> will bypass filters and see all documents.';
+    note.innerHTML = window.t('reg.dist_note');
     body.appendChild(note);
 
     function makeUserSelector(discipline, initialUsers) {{
@@ -19857,7 +21334,7 @@ async function openDistributionMatrix(pid) {{
         
         const sel=document.createElement('select');
         sel.style.cssText='border:none;outline:none;background:transparent;font-size:12px;min-width:180px;flex:1;color:var(--tx)';
-        sel.innerHTML = '<option value="">+ Add User...</option>';
+        sel.innerHTML = '<option value="">'+escHtml(window.t('reg.dist_add_user'))+'</option>';
         projUsers.forEach(u => {{
           if(!users.includes(u.username)) {{
             sel.innerHTML += `<option value="${{u.username}}">${{u.username}} (${{u.role}})</option>`;
@@ -19897,7 +21374,7 @@ async function openDistributionMatrix(pid) {{
         const title = document.createElement('div');
         title.style.cssText = 'font-weight: bold; font-size: 14px; color: #0f172a;';
         title.textContent = discipline;
-        if (discipline === "Project Management") title.innerHTML += ' <span style="font-size:10px; background:#fef08a; padding:2px 6px; border-radius:4px; margin-left:4px;">BYPASS FILTER</span>';
+        if (discipline === "Project Management") title.innerHTML += ' <span style="font-size:10px; background:#fef08a; padding:2px 6px; border-radius:4px; margin-left:4px;">'+escHtml(window.t('reg.dist_bypass_badge'))+'</span>';
         
         const delBtn = document.createElement('button');
         delBtn.innerHTML = '🗑️';
@@ -19924,13 +21401,13 @@ async function openDistributionMatrix(pid) {{
     const addWrap = document.createElement('div');
     addWrap.style.cssText = 'display: flex; gap: 8px; margin-top: 15px;';
     const discInput = document.createElement('input');
-    discInput.placeholder = 'New Discipline Name...';
+    discInput.placeholder = window.t('reg.dist_new_disc_ph');
     discInput.className = 'inp';
     discInput.style.flex = '1';
     
     const addBtn = document.createElement('button');
     addBtn.className = 'btn btn-ok';
-    addBtn.textContent = 'Add Discipline';
+    addBtn.textContent = window.t('reg.dist_add_disc');
     addBtn.onclick = () => {{
       const v = discInput.value.trim();
       if(v && !matrix[v]) {{
@@ -19948,10 +21425,10 @@ async function openDistributionMatrix(pid) {{
     saveWrap.style.cssText = 'margin-top: 20px; text-align: right; border-top: 1px solid var(--bd); padding-top: 15px;';
     const finalSaveBtn = document.createElement('button');
     finalSaveBtn.className = 'btn btn-pr';
-    finalSaveBtn.textContent = '💾 Save Matrix';
+    finalSaveBtn.textContent = window.t('reg.dist_save_btn');
     finalSaveBtn.onclick = async () => {{
       finalSaveBtn.disabled = true;
-      finalSaveBtn.textContent = 'Saving...';
+      finalSaveBtn.textContent = window.t('reg.dist_saving');
       try {{
         const r = await apiFetch(`/api/project/${{pid}}/settings`, {{
           method: 'POST',
@@ -19959,16 +21436,16 @@ async function openDistributionMatrix(pid) {{
           body: JSON.stringify({{ distribution_matrix: matrix }})
         }});
         if(r && r.ok) {{
-          toast('Matrix saved successfully', 'ok');
+          toast(window.t('reg.dist_saved'), 'ok');
           closeM('dist-modal');
         }} else {{
-          toast((r && r.error) || 'Failed to save', 'er');
+          toast((r && r.error) || window.t('reg.dist_save_fail'), 'er');
         }}
       }} catch(e) {{
-        toast('Network Error', 'er');
+        toast(window.t('reg.dist_net_err'), 'er');
       }}
       finalSaveBtn.disabled = false;
-      finalSaveBtn.textContent = '💾 Save Matrix';
+      finalSaveBtn.textContent = window.t('reg.dist_save_btn');
     }};
     saveWrap.appendChild(finalSaveBtn);
     body.appendChild(saveWrap);
@@ -19976,16 +21453,16 @@ async function openDistributionMatrix(pid) {{
     openM('dist-modal');
   }} catch(e){{
     console.error('[DistMatrix]', e);
-    toast('Error loading distribution matrix','er');
+    toast(window.t('reg.dist_err'),'er');
   }}
 }}
 
 async function syncDriveLinks(btn) {{
   const folderId = document.getElementById('proj-drive-id')?.value.trim();
-  if (!folderId) {{ toast('Please enter a Drive Folder ID first.', 'er'); return; }}
+  if (!folderId) {{ toast(window.t('reg.proj_sync_need_id'), 'er'); return; }}
   
   const originalHtml = btn.innerHTML;
-  btn.innerHTML = '⏳ Syncing in background...';
+  btn.innerHTML = escHtml(window.t('reg.proj_sync_ing'));
   btn.disabled = true;
   
   const r = await apiFetch('/api/drive/sync/'+PID, {{
@@ -19997,9 +21474,9 @@ async function syncDriveLinks(btn) {{
   btn.disabled = false;
   
   if (r && r.ok) {{
-    toast('✔ Drive Sync completed in background', 'ok');
+    toast(window.t('reg.proj_sync_ok'), 'ok');
   }} else {{
-    toast('Sync request failed', 'er');
+    toast(window.t('reg.proj_sync_err'), 'er');
   }}
 }}
 
@@ -20019,8 +21496,8 @@ function toggleDocTypeReplyOverride(){{
 }}
 function setDocTypeModalMode(dt=null){{
   const edit=!!dt;
-  document.getElementById('dt-modal-title').textContent=edit?'Document Type Settings':'Add Document Type';
-  document.getElementById('dt-save-btn').textContent=edit?'Save':'Add';
+  document.getElementById('dt-modal-title').textContent=edit?window.t('reg.dt_modal_edit_title'):window.t('reg.dt_modal_add_title');
+  document.getElementById('dt-save-btn').textContent=edit?window.t('common.save'):window.t('common.add');
   document.getElementById('dt-edit-id').value=edit?dt.id:'';
   document.getElementById('dt-code').value=edit?(dt.code||dt.id||''):'';
   document.getElementById('dt-name').value=edit?(dt.name||''):'';
@@ -20045,14 +21522,14 @@ async function saveDocType(){{
   const editId=document.getElementById('dt-edit-id').value.trim();
   const code=document.getElementById('dt-code').value.trim().toUpperCase();
   const name=document.getElementById('dt-name').value.trim();
-  if(!code||!name){{toast('Code and name required','er');return;}}
+  if(!code||!name){{toast(window.t('reg.dt_req'),'er');return;}}
   const payload={{code,name,expected_reply_override:collectDocTypeReplyOverride()}};
   if(editId){{
     await apiFetch('/api/doc_types/'+PID+'/'+editId,{{method:'PATCH',body:JSON.stringify(payload)}});
-    closeM('dt-modal');await loadDTs(true);toast('Type settings saved','ok');
+    closeM('dt-modal');await loadDTs(true);toast(window.t('reg.dt_saved'),'ok');
   }}else{{
     await apiFetch('/api/doc_types/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
-    closeM('dt-modal');await loadDTs();switchTab(code);toast('Type added','ok');
+    closeM('dt-modal');await loadDTs();switchTab(code);toast(window.t('reg.dt_added'),'ok');
   }}
 }}
 
@@ -20061,7 +21538,7 @@ async function openLists(){{
   await loadLists(true);
   ensureLTRProjectLists();
   const metaData=await apiFetch('/api/lists_meta/'+PID)||{{}};
-  const META_LABELS={{approved:{{lbl:'Approved',bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:'Rejected',bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:'Pending',bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:'Cancelled',bg:'#f1f5f9',fg:'#94a3b8'}},info_closed:{{lbl:'Info / Closed',bg:'#e0e7ff',fg:'#3730a3'}}}};
+  const META_LABELS={{approved:{{lbl:window.t('reg.lists_meta_approved'),bg:'#bbf7d0',fg:'#166534'}},rejected:{{lbl:window.t('reg.lists_meta_rejected'),bg:'#fce7f3',fg:'#831843'}},pending:{{lbl:window.t('reg.lists_meta_pending'),bg:'#fef9c3',fg:'#713f12'}},cancelled:{{lbl:window.t('reg.lists_meta_cancelled'),bg:'#f1f5f9',fg:'#94a3b8'}},info_closed:{{lbl:window.t('reg.lists_meta_info_closed'),bg:'#e0e7ff',fg:'#3730a3'}}}};
   const body=document.getElementById('lists-body');body.innerHTML='';
   for(const[ln,items]of Object.entries(state.lists).filter(([ln])=>!isHiddenSystemListName(ln))){{
     const isStatus=ln.toLowerCase().startsWith('status');
@@ -20094,12 +21571,12 @@ async function openLists(){{
           const nm2=META_LABELS[sel.value];
           badge.style.background=nm2.bg;badge.style.color=nm2.fg;badge.textContent=nm2.lbl;
           await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:item,meta:sel.value}})}});
-          toast('✔ Saved','ok');
+          toast(window.t('reg.lists_saved'),'ok');
         }};
         li.appendChild(badge);li.appendChild(sel);
       }}
       const idx=items.indexOf(item);
-      const ren=document.createElement('button');ren.textContent='Rename';
+      const ren=document.createElement('button');ren.textContent=window.t('reg.lists_rename');
       ren.onclick=()=>renameItem(ln,item);li.appendChild(ren);
       const up=document.createElement('button');up.textContent='↑';
       up.disabled=idx===0;
@@ -20109,26 +21586,26 @@ async function openLists(){{
       down.disabled=idx===items.length-1;
       down.style.opacity=idx===items.length-1?'.45':'1';
       down.onclick=()=>moveListItem(ln,item,1);li.appendChild(down);
-      const rb=document.createElement('button');rb.textContent='Remove';
+      const rb=document.createElement('button');rb.textContent=window.t('reg.lists_remove');
       rb.onclick=()=>rmItem(ln,item,rb);li.appendChild(rb);
       ul.appendChild(li);
     }});
     body.appendChild(ul);
     const ar=document.createElement('div');ar.className='addrow';
-    const ni=document.createElement('input');ni.id='new-'+ln;ni.placeholder='New item...';
-    const ab=document.createElement('button');ab.className='btn btn-ok btn-sm';ab.textContent='Add';ab.onclick=()=>addItem(ln);
+    const ni=document.createElement('input');ni.id='new-'+ln;ni.placeholder=window.t('reg.lists_new_item_ph');
+    const ab=document.createElement('button');ab.className='btn btn-ok btn-sm';ab.textContent=window.t('common.add');ab.onclick=()=>addItem(ln);
     ar.appendChild(ni);ar.appendChild(ab);
     if(isStatus){{
       const hint=document.createElement('div');
       hint.style.cssText='font-size:10px;color:#94a3b8;margin-top:4px';
-      hint.textContent='🏷 Set category for each status — affects Dashboard counts';
+      hint.textContent=window.t('reg.lists_status_hint');
       ar.appendChild(hint);
     }}
     body.appendChild(ar);
   }}
-  const nl=document.createElement('div');nl.className='stitle';nl.textContent='New List';
+  const nl=document.createElement('div');nl.className='stitle';nl.textContent=window.t('reg.lists_new_list');
   const nar=document.createElement('div');nar.className='addrow';
-  nar.innerHTML=`<input id="new-list" placeholder="List name"><button class="btn btn-pr btn-sm" onclick="mkList()">Create</button>`;
+  nar.innerHTML=`<input id="new-list" placeholder="${{escHtml(window.t('reg.lists_new_list_ph'))}}"><button class="btn btn-pr btn-sm" onclick="mkList()">${{escHtml(window.t('reg.lists_create'))}}</button>`;
   body.appendChild(nl);body.appendChild(nar);
   openM('lists-modal');
 }}
@@ -20143,12 +21620,12 @@ async function addItem(ln){{
   await loadLists(true);openLists();
 }}
 async function renameItem(ln,item){{
-  const next=prompt('Rename list item:',item);
+  const next=prompt(window.t('reg.lists_rename_prompt'),item);
   if(next===null)return;
   const new_item=next.trim();
   if(!new_item||new_item===item)return;
   await apiFetch('/api/lists/'+PID,{{method:'PATCH',body:JSON.stringify({{list_name:ln,old_item:item,new_item}})}});
-  await loadLists(true);openLists();toast('✔ Item renamed','ok');
+  await loadLists(true);openLists();toast(window.t('reg.lists_item_renamed'),'ok');
 }}
 async function moveListItem(ln,item,delta){{
   const items=[...(state.lists[ln]||[])];
@@ -20156,7 +21633,7 @@ async function moveListItem(ln,item,delta){{
   if(idx<0||next<0||next>=items.length)return;
   [items[idx],items[next]]=[items[next],items[idx]];
   await apiFetch('/api/lists/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{list_name:ln,order:items}})}});
-  await loadLists(true);openLists();toast('✔ List order updated','ok');
+  await loadLists(true);openLists();toast(window.t('reg.lists_order_updated'),'ok');
 }}
 async function rmItem(ln,item,btn){{
   await apiFetch('/api/lists/'+PID,{{method:'DELETE',body:JSON.stringify({{list_name:ln,item}})}});
@@ -20188,7 +21665,7 @@ function initColDrag(ul){{
 async function saveColOrder(){{
   const ids=[...document.querySelectorAll('#col-sortable li')].map(li=>parseInt(li.dataset.id));
   await apiFetch('/api/columns/reorder/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify({{order:ids}})}});
-  toast('✔ Order saved','ok');
+  toast(window.t('reg.col_order_saved'),'ok');
 }}
 
 // Columns
@@ -20202,24 +21679,24 @@ async function manageColumns(){{
     li.style.cssText='cursor:default;align-items:center;gap:7px';
     const grip=document.createElement('span');grip.textContent='⠿';
     grip.style.cssText='cursor:grab;color:var(--mu);font-size:16px;flex-shrink:0';
-    grip.title='Drag to reorder';
+    grip.title=window.t('reg.col_drag_title');
     const chk=document.createElement('input');chk.type='checkbox';chk.checked=col.visible;
     chk.onchange=()=>toggleCol(col.id,chk.checked);
-    const nm=document.createElement('span');nm.textContent=col.label;nm.style.cssText='flex:1;font-size:12px';
+    const nm=document.createElement('span');nm.textContent=window.tCol(col.col_key, col.label);nm.style.cssText='flex:1;font-size:12px';
     const tp=document.createElement('span');tp.textContent=col.col_type;
     tp.style.cssText='font-size:9px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:3px;flex-shrink:0';
     const ren_btn=document.createElement('button');ren_btn.textContent='✏';
-    ren_btn.title='Rename';ren_btn.className='btn btn-sc btn-sm';
+    ren_btn.title=window.t('reg.col_rename_title');ren_btn.className='btn btn-sc btn-sm';
     ren_btn.style.cssText='flex-shrink:0;padding:2px 6px;font-size:11px';
     ren_btn.onclick=async()=>{{
-      const newLbl=prompt('New label for column:',col.label);
+      const newLbl=prompt(window.t('reg.col_rename_prompt'),col.label);
       if(!newLbl||!newLbl.trim())return;
       const r=await apiFetch('/api/columns/rename/'+col.id,{{method:'POST',body:JSON.stringify({{label:newLbl.trim()}})}});
-      if(r&&r.ok){{nm.textContent=newLbl.trim();toast('✔ Renamed','ok');}}
-      else toast('Error','er');
+      if(r&&r.ok){{nm.textContent=newLbl.trim();toast(window.t('reg.col_renamed'),'ok');}}
+      else toast(window.t('common.error'),'er');
     }};
     const db_btn=document.createElement('button');db_btn.textContent='🗑';
-    db_btn.title='Delete';db_btn.className='btn btn-er btn-sm';
+    db_btn.title=window.t('reg.col_delete_title');db_btn.className='btn btn-er btn-sm';
     db_btn.style.cssText='flex-shrink:0;padding:2px 6px;font-size:11px';
     db_btn.onclick=()=>deleteCol(col.id,col.col_key,db_btn);
     li.appendChild(grip);li.appendChild(chk);li.appendChild(nm);li.appendChild(tp);li.appendChild(ren_btn);li.appendChild(db_btn);
@@ -20229,7 +21706,7 @@ async function manageColumns(){{
   body.appendChild(ul);openM('col-modal');
 }}
 async function toggleCol(id,v){{await apiFetch('/api/columns/visibility/'+id,{{method:'POST',body:JSON.stringify({{visible:v}})}});}}
-async function deleteCol(id,key,btn){{const warn=key==='docNo'?'⚠ WARNING: Deleting Document No. column will break the register! Are you sure?':'Delete this column?';if(!confirm(warn))return;await apiFetch('/api/columns/'+id,{{method:'DELETE'}});btn.closest('li').remove();}}
+async function deleteCol(id,key,btn){{const warn=key==='docNo'?window.t('reg.col_del_docno_warn'):window.t('reg.col_del_confirm');if(!confirm(warn))return;await apiFetch('/api/columns/'+id,{{method:'DELETE'}});btn.closest('li').remove();}}
 
 function onColType(v){{
   document.getElementById('cg-list').style.display=v==='dropdown'?'flex':'none';
@@ -20244,7 +21721,7 @@ async function openAddCol(){{
   ls.innerHTML=Object.keys(state.lists).filter(k=>!isHiddenSystemListName(k)).map(k=>`<option value="${{k}}">${{k}}</option>`).join('');
   const all=await apiFetch('/api/columns/'+PID+'/'+state.tab);
   const dates=(all||[]).filter(c=>['date','auto_date'].includes(c.col_type));
-  const dopts=dates.map(c=>`<option value="${{c.col_key}}">${{c.label}}</option>`).join('')||'<option value="issuedDate">Issued Date</option>';
+  const dopts=dates.map(c=>`<option value="${{c.col_key}}">${{escHtml(window.tCol(c.col_key, c.label))}}</option>`).join('')||`<option value="issuedDate">${{escHtml(window.tCol('issuedDate','Issued Date'))}}</option>`;
   document.getElementById('col-ds').innerHTML=dopts;
   document.getElementById('col-de').innerHTML=dopts;
   document.getElementById('col-name').value='';document.getElementById('col-type').value='text';onColType('text');
@@ -20256,10 +21733,10 @@ async function saveAddCol(){{
   const list=type==='dropdown'?document.getElementById('col-list').value:null;
   const ds=type==='duration_calc'?document.getElementById('col-ds').value:null;
   const de=type==='duration_calc'?document.getElementById('col-de').value:null;
-  if(!name){{toast('Name required','er');return;}}
-  if(type==='duration_calc'&&ds===de){{toast('Start and end must differ','er');return;}}
+  if(!name){{toast(window.t('reg.addcol_name_req'),'er');return;}}
+  if(type==='duration_calc'&&ds===de){{toast(window.t('reg.addcol_dates_diff'),'er');return;}}
   await apiFetch('/api/columns/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify({{label:name,col_type:type,list_name:type==='duration_calc'?(ds+','+de):list}})}});
-  closeM('addcol-modal');closeM('col-modal');await loadRecords();toast('✔ Column added','ok');
+  closeM('addcol-modal');closeM('col-modal');await loadRecords();toast(window.t('reg.addcol_added'),'ok');
 }}
 
 // Admin functions loaded from SHARED_JS
@@ -20267,12 +21744,12 @@ function populateExportScope(){{
   const sel=document.getElementById('export-scope');
   if(!sel)return;
   const curVal=sel.value||'all';
-  let html='<option value="all">All Documents (All Tabs)</option>';
-  html+=`<option value="current">Current Tab (${{state.tab||'None'}})</option>`;
+  let html=`<option value="all">${{escHtml(window.t('reg.exp_scope_all'))}}</option>`;
+  html+=`<option value="current">${{escHtml(window.t('reg.exp_scope_cur_name', {{tab: state.tab||'-'}}))}}</option>`;
   if(state.dtList&&state.dtList.length){{
-    html+='<optgroup label="Specific Document Type">';
+    html+=`<optgroup label="${{escHtml(window.t('reg.exp_scope_specific'))}}">`;
     state.dtList.forEach(d=>{{
-      html+=`<option value="${{d.id}}">${{d.name||d.id}} (${{d.code||d.id}})</option>`;
+      html+=`<option value="${{d.id}}">${{escHtml(window.tDt(d.code||d.id, d.name||d.id))}} (${{d.code||d.id}})</option>`;
     }});
     html+='</optgroup>';
   }}
@@ -20311,10 +21788,10 @@ function openExportCenter(){{
 
 async function executeAdvancedExport(){{
   const btn=document.getElementById('export-submit-btn');
-  const origText=btn?btn.innerHTML:'📥 Generate Export';
+  const origText=btn?btn.innerHTML:escHtml(window.t('reg.exp_submit'));
   if(btn){{
     btn.disabled=true;
-    btn.innerHTML='<span style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px">⏳</span> Generating...';
+    btn.innerHTML=`<span style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px">⏳</span> ${{escHtml(window.t('reg.exp_generating'))}}`;
   }}
   try{{
     const format=document.getElementById('export-format')?.value||'excel';
@@ -20356,7 +21833,7 @@ async function executeAdvancedExport(){{
     }},1200);
   }}catch(e){{
     if(btn){{btn.disabled=false;btn.innerHTML=origText;}}
-    toast('Export failed: '+e.message,'er');
+    toast(window.t('reg.exp_failed',{{error:e.message}}),'er');
   }}
 }}
 function doPrint(){{
@@ -20374,39 +21851,39 @@ async function openSettings(){{
   function buildUI(){{
     ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:520px;width:95%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:800;color:#1a3a5c">🗓 Public Holidays</div>
+        <div style="font-size:16px;font-weight:800;color:#1a3a5c">${{escHtml(window.t('reg.hol_title'))}}</div>
         <button id="hol-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748b">✕</button>
       </div>
-      <p style="font-size:12px;color:#64748b;margin-bottom:12px">These dates are excluded from Duration and Expected Reply calculations (along with Fridays).</p>
+      <p style="font-size:12px;color:#64748b;margin-bottom:12px">${{escHtml(window.t('reg.hol_desc'))}}</p>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <input type="date" id="hol-inp" style="flex:1;padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-family:inherit;font-size:12px">
-        <button id="hol-add-btn" style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">+ Add</button>
+        <button id="hol-add-btn" style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">${{escHtml(window.t('reg.hol_add'))}}</button>
       </div>
       <div id="hol-list" style="flex:1;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:8px;min-height:180px;max-height:340px"></div>
-      <div style="margin-top:12px;font-size:11px;color:#94a3b8">${{hols.length}} holidays total</div>
+      <div style="margin-top:12px;font-size:11px;color:#94a3b8">${{escHtml(window.t('reg.hol_total',{{count:hols.length}}))}}</div>
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
-        <button id="hol-cancel" style="padding:7px 16px;border:1.5px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px">Cancel</button>
-        <button id="hol-save" style="padding:7px 16px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">💾 Save Holidays</button>
+        <button id="hol-cancel" style="padding:7px 16px;border:1.5px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px">${{escHtml(window.t('common.cancel'))}}</button>
+        <button id="hol-save" style="padding:7px 16px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">${{escHtml(window.t('reg.hol_save'))}}</button>
       </div></div>`;
     renderHL();
     ov.querySelector('#hol-close').onclick=()=>ov.remove();
     ov.querySelector('#hol-cancel').onclick=()=>ov.remove();
     ov.querySelector('#hol-add-btn').onclick=()=>{{
       const v=ov.querySelector('#hol-inp').value;
-      if(!v)return;if(hols.includes(v)){{toast('Already added','wa');return;}}
+      if(!v)return;if(hols.includes(v)){{toast(window.t('reg.hol_dup'),'wa');return;}}
       hols.push(v);renderHL();ov.querySelector('#hol-inp').value='';
     }};
     ov.querySelector('#hol-save').onclick=async()=>{{
-      const btn=ov.querySelector('#hol-save');btn.disabled=true;btn.textContent='Saving...';
+      const btn=ov.querySelector('#hol-save');btn.disabled=true;btn.textContent=window.t('reg.hol_saving');
       const res=await apiFetch('/api/settings/holidays',{{method:'POST',body:JSON.stringify({{holidays:hols}})}});
-      btn.disabled=false;btn.textContent='💾 Save Holidays';
-      if(res&&res.ok){{toast('✔ '+res.count+' holidays saved','ok');ov.remove();}}
-      else toast('Error','er');
+      btn.disabled=false;btn.textContent=window.t('reg.hol_save');
+      if(res&&res.ok){{toast(window.t('reg.hol_saved',{{count:res.count}}),'ok');ov.remove();}}
+      else toast(window.t('common.error'),'er');
     }};
   }}
   function renderHL(){{
     const ul=ov.querySelector('#hol-list');if(!ul)return;ul.innerHTML='';
-    if(!hols.length){{ul.innerHTML='<div style="color:#94a3b8;text-align:center;padding:30px;font-size:12px">No holidays — click + Add to add dates</div>';return;}}
+    if(!hols.length){{ul.innerHTML=`<div style="color:#94a3b8;text-align:center;padding:30px;font-size:12px">${{escHtml(window.t('reg.hol_empty'))}}</div>`;return;}}
     [...hols].sort().forEach(d=>{{
       const row=document.createElement('div');
       row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;margin-bottom:3px;background:#f8fafc;font-size:12px';
@@ -20414,7 +21891,7 @@ async function openSettings(){{
       const fmt=dt.getDate().toString().padStart(2,'0')+'-'+(dt.getMonth()+1).toString().padStart(2,'0')+'-'+dt.getFullYear();
       const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
       const day=days[dt.getDay()];
-      row.innerHTML=`<span style="color:#1e293b">${{fmt}} <span style="color:#94a3b8;font-size:10px">(${{day}})</span></span>
+      row.innerHTML=`<span style="color:#1e293b"><span class="bidi-ltr">${{fmt}}</span> <span style="color:#94a3b8;font-size:10px">(${{day}})</span></span>
         <button data-d="${{d}}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:15px;line-height:1;padding:2px 6px">✕</button>`;
       row.querySelector('button').onclick=e=>{{const dv=e.currentTarget.dataset.d;hols=hols.filter(h=>h!==dv);renderHL();}};
       ul.appendChild(row);
@@ -20430,33 +21907,33 @@ async function doImport(){{
   const file=document.getElementById('imp-file').files[0];if(!file)return;
   const ext=file.name.split('.').pop().toLowerCase();
   const btn=document.querySelector('#import-modal .btn-pr');
-  btn.disabled=true;btn.textContent='⏳ Importing...';
+  btn.disabled=true;btn.textContent=window.t('reg.imp_ing');
   try{{
     const b64=await new Promise((res,rej)=>{{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(file);}});
     const r=await apiFetch('/api/import/'+PID+'/'+state.tab,{{method:'POST',body:JSON.stringify({{file_b64:b64,ext}})}});
     if(r===null)return;
-    closeM('import-modal');switchTab(state.tab);await loadDTs();toast('✔ Imported '+r.imported+' records','ok');
-  }}catch(e){{toast('Error: '+e.message,'er');}}
-  finally{{btn.disabled=false;btn.textContent='Import';}}
+    closeM('import-modal');switchTab(state.tab);await loadDTs();toast(window.t('reg.imp_ok',{{count:r.imported}}),'ok');
+  }}catch(e){{toast(window.t('common.error')+': '+e.message,'er');}}
+  finally{{btn.disabled=false;btn.textContent=window.t('reg.imp_btn');}}
 }}
 async function doImportProject(){{
   const file=document.getElementById('imp-file').files[0];if(!file)return;
   const ext=file.name.split('.').pop().toLowerCase();
-  if(!['xlsx','xls'].includes(ext)){{toast('Full workbook import supports Excel only','er');return;}}
+  if(!['xlsx','xls'].includes(ext)){{toast(window.t('reg.imp_excel_only'),'er');return;}}
   const btn=document.getElementById('imp-project-btn');
-  btn.disabled=true;btn.textContent='⏳ Importing...';
+  btn.disabled=true;btn.textContent=window.t('reg.imp_ing');
   try{{
     const b64=await new Promise((res,rej)=>{{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(file);}});
     const r=await apiFetch('/api/import_project/'+PID,{{method:'POST',body:JSON.stringify({{file_b64:b64,ext}})}});
     if(r===null)return;
     closeM('import-modal');switchTab(state.tab);await loadDTs();
-    toast('✔ Imported '+r.imported_total+' records from '+(r.matched_sheets||[]).length+' sheet(s)','ok');
-  }}catch(e){{toast('Error: '+e.message,'er');}}
-  finally{{btn.disabled=false;btn.textContent='Import Full Workbook';}}
+    toast(window.t('reg.imp_full_ok',{{count:r.imported_total,sheets:(r.matched_sheets||[]).length}}),'ok');
+  }}catch(e){{toast(window.t('common.error')+': '+e.message,'er');}}
+  finally{{btn.disabled=false;btn.textContent=window.t('reg.imp_full_btn');}}
 }}
 
 async function openProjectSettings() {{
-  if(!CAN_EDIT || !['admin','superadmin'].includes(ROLE)) return toast('Forbidden', 'er');
+  if(!CAN_EDIT || !['admin','superadmin'].includes(ROLE)) return toast(window.t('common.forbidden'), 'er');
   const lst = document.getElementById('status-colors-list');
   lst.innerHTML = '';
   
@@ -20471,7 +21948,7 @@ async function openProjectSettings() {{
   }} else if(state.recs) {{
     state.recs.forEach(r => {{
       if(r.status) {{
-        String(r.status).split(',').forEach(s => {{
+        splitStatusValues(r.status).forEach(s => {{
           const st = s.trim();
           if(st) statuses.add(st);
         }});
@@ -20480,7 +21957,7 @@ async function openProjectSettings() {{
   }}
   
   if(statuses.size === 0) {{
-    lst.innerHTML = '<div style="color:var(--mu);font-size:11px;padding:10px">No statuses found in any records yet.</div>';
+    lst.innerHTML = `<div style="color:var(--mu);font-size:11px;padding:10px">${{escHtml(window.t('reg.sc_none'))}}</div>`;
   }} else {{
     [...statuses].sort().forEach(s => {{
       let [bg, fg] = SC[s] || ['e5e7eb', '374151'];
@@ -20492,30 +21969,30 @@ async function openProjectSettings() {{
       
       const lbl = document.createElement('div');
       lbl.style.cssText = 'flex:1;font-weight:600;font-size:12px;color:var(--tx)';
-      lbl.textContent = s;
+      lbl.textContent = window.tStatus(s);
       
       const bgLbl = document.createElement('div');
       bgLbl.style.cssText = 'font-size:10px;color:var(--mu)';
-      bgLbl.textContent = 'Background:';
+      bgLbl.textContent = window.t('reg.sc_bg');
       
       const bgInp = document.createElement('input');
       bgInp.type = 'color';
       bgInp.value = bg;
       bgInp.dataset.status = s;
       bgInp.dataset.type = 'bg';
-      bgInp.title = 'Background Color';
+      bgInp.title = window.t('reg.sc_bg_title');
       bgInp.style.cssText = 'width:28px;height:24px;padding:0;border:none;cursor:pointer;background:none';
       
       const fgLbl = document.createElement('div');
       fgLbl.style.cssText = 'font-size:10px;color:var(--mu);margin-left:10px';
-      fgLbl.textContent = 'Text:';
+      fgLbl.textContent = window.t('reg.sc_fg');
       
       const fgInp = document.createElement('input');
       fgInp.type = 'color';
       fgInp.value = fg;
       fgInp.dataset.status = s;
       fgInp.dataset.type = 'fg';
-      fgInp.title = 'Text Color';
+      fgInp.title = window.t('reg.sc_fg_title');
       fgInp.style.cssText = 'width:28px;height:24px;padding:0;border:none;cursor:pointer;background:none';
       
       row.appendChild(lbl);
@@ -20531,7 +22008,7 @@ async function openProjectSettings() {{
 
 async function saveProjectSettings() {{
   const btn = document.querySelector('#project-settings-modal .btn-pr');
-  btn.disabled = true; btn.textContent = 'Saving...';
+  btn.disabled = true; btn.textContent = window.t('reg.sc_saving');
   
   try {{
     const lst = document.getElementById('status-colors-list');
@@ -20557,21 +22034,21 @@ async function saveProjectSettings() {{
     
     const r = await apiFetch('/api/project/'+PID+'/settings', {{method:'POST', body:JSON.stringify({{status_colors}})}});
     if(r && r.ok) {{
-      toast('✔ Settings saved successfully','ok');
+      toast(window.t('reg.sc_saved'),'ok');
       setTimeout(() => location.reload(), 600);
     }} else {{
-      toast(r?.error || 'Error saving settings','er');
+      toast(r?.error || window.t('reg.sc_save_err'),'er');
     }}
   }} catch(e) {{
-    toast('Error: ' + e.message, 'er');
+    toast(window.t('common.error') + ': ' + e.message, 'er');
   }} finally {{
-    btn.disabled = false; btn.textContent = 'Save Settings';
+    btn.disabled = false; btn.textContent = window.t('reg.sc_save');
   }}
 }}
 </script>
-{ABOUT_MODAL_HTML}
-{SPOTLIGHT_MODAL_COMPONENT}
-{AI_DRAWER_COMPONENT}
+{_about_modal_html(norm)}
+{_spotlight_modal_html(norm)}
+{_ai_drawer_html(norm)}
 </body></html>"""
 
 
