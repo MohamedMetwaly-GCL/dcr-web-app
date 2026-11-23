@@ -10542,14 +10542,15 @@ body.dark .disc-mobile-val{{color:#e2e8f0}}
 .pr-items-row.open{{display:table-row}}
 .pr-items-row>td{{padding:0!important;border-bottom:1px solid #d9e2ec!important;border-right:none!important;max-width:none!important;background:transparent!important}}
 .pr-items-panel{{display:block;width:100%;box-sizing:border-box;padding:16px;background:#f8fafc;border-top:1px solid #d9e2ec;border-bottom:1px solid #d9e2ec;position:relative;z-index:1}}
-.pr-items-grid-wrap{{display:block;width:100%;max-width:100%;overflow-x:auto;padding-bottom:2px}}
+.pr-items-grid-wrap{{display:block;width:100%;max-width:100%;max-height:360px;overflow:auto;padding-bottom:2px}}
 .pr-items-title{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}}
 .pr-items-title:before{{content:"";width:4px;height:16px;border-radius:999px;background:var(--ac);display:inline-block}}
-.pr-items-grid{{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden;background:#fff;font-size:11px}}
-.pr-items-grid-head{{background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
+.pr-items-grid{{display:grid;grid-template-columns:44px 2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:visible;background:#fff;font-size:11px}}
+.pr-items-grid-head{{position:sticky;top:0;z-index:2;background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
 .pr-items-grid-head:last-child{{border-right:none}}
 .pr-items-cell{{padding:10px 12px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff;color:#10233a;white-space:normal;word-break:normal;line-height:1.35}}
 .pr-items-cell:nth-child(4n){{border-right:none}}
+.pr-items-cell.num{{text-align:center;color:var(--mu);font-weight:700;font-variant-numeric:tabular-nums}}
 .pr-items-cell.qty{{text-align:center;font-variant-numeric:tabular-nums}}
 .pr-items-cell.unit{{white-space:nowrap}}
 .pr-items-section{{grid-column:1/-1;background:#e8eef6;color:var(--pr);font-weight:800;text-transform:uppercase;letter-spacing:.35px;padding:9px 12px;border-top:1px solid #d7dee8}}
@@ -12527,14 +12528,15 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 .pr-items-row.open{{display:table-row}}
 .pr-items-row>td{{padding:0!important;border-bottom:1px solid #d9e2ec!important;border-right:none!important;max-width:none!important;background:transparent!important}}
 .pr-items-panel{{display:block;width:100%;box-sizing:border-box;padding:16px;background:#f8fafc;border-top:1px solid #d9e2ec;border-bottom:1px solid #d9e2ec;position:relative;z-index:1}}
-.pr-items-grid-wrap{{display:block;width:100%;max-width:100%;overflow-x:auto;padding-bottom:2px}}
+.pr-items-grid-wrap{{display:block;width:100%;max-width:100%;max-height:360px;overflow:auto;padding-bottom:2px}}
 .pr-items-title{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--pr);text-transform:uppercase;letter-spacing:.45px}}
 .pr-items-title:before{{content:"";width:4px;height:16px;border-radius:999px;background:var(--ac);display:inline-block}}
-.pr-items-grid{{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:hidden;background:#fff;font-size:11px}}
-.pr-items-grid-head{{background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
+.pr-items-grid{{display:grid;grid-template-columns:44px 2fr 1fr 1fr 1.5fr 1fr 1fr 1.5fr 2fr;min-width:1300px;width:100%;border:1px solid #dbe3ed;border-radius:6px;overflow:visible;background:#fff;font-size:11px}}
+.pr-items-grid-head{{position:sticky;top:0;z-index:2;background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
 .pr-items-grid-head:last-child{{border-right:none}}
 .pr-items-cell{{padding:10px 12px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff;color:#10233a;white-space:normal;word-break:normal;line-height:1.35}}
 .pr-items-cell:nth-child(4n){{border-right:none}}
+.pr-items-cell.num{{text-align:center;color:var(--mu);font-weight:700;font-variant-numeric:tabular-nums}}
 .pr-items-cell.qty{{text-align:center;font-variant-numeric:tabular-nums}}
 .pr-items-cell.unit{{white-space:nowrap}}
 .pr-items-section{{grid-column:1/-1;background:#e8eef6;color:var(--pr);font-weight:800;text-transform:uppercase;letter-spacing:.35px;padding:9px 12px;border-top:1px solid #d7dee8}}
@@ -15133,24 +15135,40 @@ function highlightText(text, search) {{
     return `<span class="badge" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;">Unknown</span>`;
   }}
 
+function formatPrQty(val){{
+  if(val===null||val===undefined||val==='')return '';
+  const s=String(val).trim();
+  if(!s)return '';
+  const n=Number(s);
+  if(Number.isFinite(n))return String(parseFloat(n.toFixed(6)));
+  return s;
+}}
+
 function renderPrItemsTable(items, legacyText, search){{
     if(!items||!items.length){{
       const legacy=legacyText?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Legacy PR Details</div><div style="color:var(--mu);font-size:11px;white-space:pre-line">${{escHtml(legacyText)}}</div></div>`:'';
       return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div><div class="pr-items-empty">No items added</div>${{legacy}}`;
     }}
-    const rows=items.map(it=>String(it?.row_type||'item').toLowerCase()==='header'
-      ? `<div class="pr-items-section" style="grid-column: 1 / -1">${{highlightText(it.item_name||'', search)}}</div>`
-      : `<div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
+    let itemNum=0;
+    const rows=items.map(it=>{{
+      if(String(it?.row_type||'item').toLowerCase()==='header'){{
+        return `<div class="pr-items-section" style="grid-column: 1 / -1">${{highlightText(it.item_name||'', search)}}</div>`;
+      }}
+      itemNum+=1;
+      return `<div class="pr-items-cell num">${{itemNum}}</div>
+         <div class="pr-items-cell item">${{highlightText(it.item_name||'', search)}}</div>
          <div class="pr-items-cell unit">${{highlightText(it.unit||'', search)}}</div>
-         <div class="pr-items-cell qty">${{escHtml(it.quantity??'')}}</div>
+         <div class="pr-items-cell qty">${{escHtml(formatPrQty(it.quantity))}}</div>
          <div class="pr-items-cell po-ref">${{highlightText(it.po_ref||'', search)}}</div>
-         <div class="pr-items-cell po-qty">${{escHtml(it.po_qty??'')}}</div>
-         <div class="pr-items-cell del-qty">${{escHtml(it.delivered_qty??'')}}</div>
+         <div class="pr-items-cell po-qty">${{escHtml(formatPrQty(it.po_qty))}}</div>
+         <div class="pr-items-cell del-qty">${{escHtml(formatPrQty(it.delivered_qty))}}</div>
          <div class="pr-items-cell status">${{getPrVarianceBadge(it.quantity, it.po_qty, it.delivered_qty)}}</div>
-         <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`).join('');
+         <div class="pr-items-cell remarks">${{highlightText(it.remarks||'', search)}}</div>`;
+    }}).join('');
     return `<div class="pr-items-title">Procurement Tracking (PR ➔ PO ➔ Delivery)</div>
       <div class="pr-items-grid-wrap">
         <div class="pr-items-grid">
+          <div class="pr-items-grid-head" style="text-align:center">#</div>
           <div class="pr-items-grid-head">Item</div>
           <div class="pr-items-grid-head">Unit</div>
           <div class="pr-items-grid-head">PR Qty</div>

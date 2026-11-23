@@ -475,6 +475,11 @@ class PrModalUiWiringTests(unittest.TestCase):
             "function renumberPrItemRows()",
             "function bindPrTableKeyboardNav(",
             "function removePrRow(",
+            "function formatPrQty(",
+            "pr-items-cell num",
+            "max-height:360px;overflow:auto",
+            "position:sticky;top:0;z-index:2",
+            "grid-template-columns:44px 2fr",
         ):
             self.assertIn(marker, html)
 
