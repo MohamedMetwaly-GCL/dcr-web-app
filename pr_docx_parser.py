@@ -416,13 +416,25 @@ def parse_pr_docx(raw_bytes: bytes) -> Dict[str, Any]:
     if not raw_bytes:
         raise ValueError("Empty DOCX payload")
 
+    MAX_XML_BYTES = 15 * 1024 * 1024  # 15 MB uncompressed cap for word/document.xml
     try:
         with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as zf:
-            if "word/document.xml" not in zf.namelist():
-                raise ValueError("Missing word/document.xml in DOCX archive")
-            xml_bytes = zf.read("word/document.xml")
+            try:
+                info = zf.getinfo("word/document.xml")
+            except KeyError as exc:
+                raise ValueError("Missing word/document.xml in DOCX archive") from exc
+            if info.file_size > MAX_XML_BYTES:
+                raise ValueError("word/document.xml exceeds maximum allowed size")
+            with zf.open(info, "r") as xml_fp:
+                xml_bytes = xml_fp.read(MAX_XML_BYTES + 1)
+            if len(xml_bytes) > MAX_XML_BYTES:
+                raise ValueError("word/document.xml exceeds maximum allowed size")
     except zipfile.BadZipFile as exc:
         raise ValueError("Invalid DOCX archive") from exc
+
+    xml_lower = xml_bytes.lower()
+    if b"<!doctype" in xml_lower or b"<!entity" in xml_lower:
+        raise ValueError("XML DOCTYPE/ENTITY declarations are not allowed")
 
     try:
         root = ET.fromstring(xml_bytes)

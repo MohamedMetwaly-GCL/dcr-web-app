@@ -712,6 +712,18 @@ def api_parse_pr_docx(pid, dt_id):
     if not _is_pr_doc_type(pid, dt_id):
         return jsonify(ok=False, error="Not a PR document"), 400
 
+    MAX_DOCX_BYTES = 10 * 1024 * 1024
+    MAX_MULTIPART_CONTENT_BYTES = 11 * 1024 * 1024
+    MAX_JSON_CONTENT_BYTES = 15 * 1024 * 1024
+    MAX_B64_CHARS = 14 * 1024 * 1024
+
+    ct = (request.content_type or "").lower()
+    cl = request.content_length
+    if cl is not None:
+        limit = MAX_MULTIPART_CONTENT_BYTES if ct.startswith("multipart/form-data") else MAX_JSON_CONTENT_BYTES
+        if cl > limit:
+            return jsonify(ok=False, error="Request payload exceeds maximum allowed size (10 MB)"), 413
+
     raw_bytes = None
     ext = "docx"
 
@@ -720,7 +732,9 @@ def api_parse_pr_docx(pid, dt_id):
         filename = (up.filename or "").strip()
         if "." in filename:
             ext = filename.rsplit(".", 1)[-1].strip().lower()
-        raw_bytes = up.read()
+        raw_bytes = up.stream.read(MAX_DOCX_BYTES + 1)
+        if len(raw_bytes) > MAX_DOCX_BYTES:
+            return jsonify(ok=False, error="Uploaded file exceeds maximum allowed size (10 MB)"), 413
     else:
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
@@ -730,6 +744,8 @@ def api_parse_pr_docx(pid, dt_id):
             return jsonify(ok=False, error="No file provided"), 400
         if "," in b64:
             b64 = b64.split(",", 1)[1]
+        if len(b64) > MAX_B64_CHARS:
+            return jsonify(ok=False, error="Encoded file payload exceeds maximum allowed size (10 MB)"), 413
         if data.get("ext"):
             ext = str(data.get("ext")).strip().lower().lstrip(".")
         elif data.get("filename") and "." in str(data.get("filename")):
@@ -750,9 +766,12 @@ def api_parse_pr_docx(pid, dt_id):
 
     try:
         parsed = parse_pr_docx(raw_bytes)
-    except Exception as exc:
-        logger.warning("pr_docx_parse_failed pid=%s dt_id=%s error=%s", pid, dt_id, exc)
-        return jsonify(ok=False, error=f"Failed to parse DOCX: {str(exc)}"), 400
+    except ValueError as exc:
+        logger.warning("pr_docx_validation_failed pid=%s dt_id=%s error=%s", pid, dt_id, exc)
+        return jsonify(ok=False, error=str(exc)), 400
+    except Exception:
+        logger.exception("pr_docx_parse_failed pid=%s dt_id=%s", pid, dt_id)
+        return jsonify(ok=False, error="Failed to parse Word document."), 400
 
     return jsonify(
         ok=True,

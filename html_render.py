@@ -10549,7 +10549,6 @@ body.dark .disc-mobile-val{{color:#e2e8f0}}
 .pr-items-grid-head{{position:sticky;top:0;z-index:2;background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
 .pr-items-grid-head:last-child{{border-right:none}}
 .pr-items-cell{{padding:10px 12px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff;color:#10233a;white-space:normal;word-break:normal;line-height:1.35}}
-.pr-items-cell:nth-child(4n){{border-right:none}}
 .pr-items-cell.num{{text-align:center;color:var(--mu);font-weight:700;font-variant-numeric:tabular-nums}}
 .pr-items-cell.qty{{text-align:center;font-variant-numeric:tabular-nums}}
 .pr-items-cell.unit{{white-space:nowrap}}
@@ -12535,7 +12534,6 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 .pr-items-grid-head{{position:sticky;top:0;z-index:2;background:#173f66;color:#fff;font-weight:800;padding:10px 12px;border-right:1px solid rgba(255,255,255,.18)}}
 .pr-items-grid-head:last-child{{border-right:none}}
 .pr-items-cell{{padding:10px 12px;border-top:1px solid #edf2f7;border-right:1px solid #edf2f7;background:#fff;color:#10233a;white-space:normal;word-break:normal;line-height:1.35}}
-.pr-items-cell:nth-child(4n){{border-right:none}}
 .pr-items-cell.num{{text-align:center;color:var(--mu);font-weight:700;font-variant-numeric:tabular-nums}}
 .pr-items-cell.qty{{text-align:center;font-variant-numeric:tabular-nums}}
 .pr-items-cell.unit{{white-space:nowrap}}
@@ -15770,7 +15768,7 @@ async function buildForm(row,opts={{}}){{
       </div>
       <div id="pr-import-banner" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.45;position:relative"></div>
       <div id="pr-import-confirm" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;background:var(--bg,#f8fafc);border:1px solid var(--bd,#cbd5e1);font-size:12px;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-weight:600">Existing PR items found. Replace existing rows or append?</span>
+        <span id="pr-import-confirm-msg" style="font-weight:600">Existing PR items found. Replace existing rows or append?</span>
         <button type="button" class="btn btn-pr btn-sm" id="pr-confirm-replace-btn">Replace Existing</button>
         <button type="button" class="btn btn-sc btn-sm" id="pr-confirm-append-btn">Append</button>
         <button type="button" class="btn btn-sc btn-sm" onclick="hidePrImportConfirm()">Cancel</button>
@@ -15875,6 +15873,7 @@ function bindPrTableKeyboardNav(body){{
   if(!body||body.dataset.kbNavBound==='1')return;
   body.dataset.kbNavBound='1';
   body.addEventListener('keydown',(e)=>{{
+    if(e.isComposing||e.keyCode===229)return;
     const inp=e.target&&e.target.closest('input');
     if(!inp||!body.contains(inp))return;
     const tr=inp.closest('tr');
@@ -16051,6 +16050,19 @@ function insertPrRowsWithMode(items,mode){{
   }}
 }}
 
+function hasExistingPrPoValues(){{
+  const body=document.getElementById('pr-items-body');
+  if(!body)return false;
+  for(const tr of body.querySelectorAll('tr')){{
+    if(tr.dataset.rowType==='header')continue;
+    const poRef=(tr.querySelector('.pri-po-ref')?.value||'').trim();
+    const poQty=parseFloat(tr.querySelector('.pri-po-qty')?.value||'');
+    const delQty=parseFloat(tr.querySelector('.pri-del-qty')?.value||'');
+    if(poRef||(Number.isFinite(poQty)&&poQty>0)||(Number.isFinite(delQty)&&delQty>0))return true;
+  }}
+  return false;
+}}
+
 function runWithPrReplaceOrAppendGuard(items,onDone){{
   if(!hasNonEmptyPrRows()){{
     insertPrRowsWithMode(items,'replace');
@@ -16058,12 +16070,18 @@ function runWithPrReplaceOrAppendGuard(items,onDone){{
     return;
   }}
   const box=document.getElementById('pr-import-confirm');
+  const msgEl=document.getElementById('pr-import-confirm-msg');
   const repBtn=document.getElementById('pr-confirm-replace-btn');
   const appBtn=document.getElementById('pr-confirm-append-btn');
   if(!box||!repBtn||!appBtn){{
     insertPrRowsWithMode(items,'append');
     if(onDone)onDone('append');
     return;
+  }}
+  if(msgEl){{
+    msgEl.innerHTML=hasExistingPrPoValues()
+      ?'Existing PR items found. <span style="color:#b45309">Warning: choosing Replace will discard existing PO / delivery values.</span> Replace existing rows or append?'
+      :'Existing PR items found. Replace existing rows or append?';
   }}
   box.style.display='flex';
   repBtn.onclick=()=>{{

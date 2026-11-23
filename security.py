@@ -271,12 +271,19 @@ def _validate_ooxml_zip(
                         f"Security violation: Decompression bomb protection triggered "
                         f"(uncompressed data exceeds {max_uncompressed_mb}MB)."
                     )
+                if total_uncompressed > 1024 * 1024 and total_uncompressed > 100 * max(len(raw_bytes), 1):
+                    return False, (
+                        "Security violation: Decompression bomb protection triggered "
+                        "(suspicious compression ratio)."
+                    )
 
                 _, item_ext = os.path.splitext(norm_name.lower())
                 if item_ext in DANGEROUS_EXTS_INSIDE_ARCHIVE or (reject_bin_ext and item_ext == ".bin"):
                     return False, f"Security threat: executable or binary payload '{member_name}' found inside archive."
 
-                if "vbaproject.bin" in norm_name.lower() or "vba" in norm_name.lower():
+                norm_lower = norm_name.lower()
+                base_name = norm_lower.rsplit("/", 1)[-1]
+                if base_name in ("vbaproject.bin", "vbadata.xml") or "/vba/" in f"/{norm_lower}/":
                     return False, "Security violation: VBA macros / scripts are not allowed in document imports."
 
                 namelist.add(norm_name)
@@ -340,7 +347,7 @@ def scan_and_validate_file(
             raw_bytes,
             label="DOCX",
             magic_prefixes=(MAGIC_ZIP[0],),
-            max_uncompressed_mb=50,
+            max_uncompressed_mb=20,
             required_members=("[Content_Types].xml", "word/document.xml"),
             reject_bin_ext=True,
         )

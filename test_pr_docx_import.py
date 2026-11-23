@@ -128,6 +128,22 @@ class DocxSecurityValidationTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue("binary" in err.lower() or "vba" in err.lower() or "macro" in err.lower(), err)
 
+    def test_allows_media_with_vba_substring_but_rejects_vba_dir(self):
+        ok_raw = _build_docx_bytes(
+            _gas_chill_document_xml(),
+            extra_files={"word/media/vbamboo.png": b"\x89PNG\r\n\x1a\n"},
+        )
+        ok, err = scan_and_validate_file(ok_raw, "docx", ["docx"])
+        self.assertTrue(ok, err)
+
+        bad_raw = _build_docx_bytes(
+            _gas_chill_document_xml(),
+            extra_files={"word/vba/module1.xml": b"<m/>"},
+        )
+        bad_ok, bad_err = scan_and_validate_file(bad_raw, "docx", ["docx"])
+        self.assertFalse(bad_ok)
+        self.assertIn("vba", bad_err.lower())
+
     def test_rejects_arbitrary_bin_and_exe_members(self):
         raw_bin = _build_docx_bytes(_gas_chill_document_xml(), extra_files={"word/custom.bin": b"123"})
         ok_bin, _ = scan_and_validate_file(raw_bin, "docx", ["docx"])
@@ -138,10 +154,11 @@ class DocxSecurityValidationTests(unittest.TestCase):
         self.assertFalse(ok_exe)
 
     def test_rejects_path_traversal_member(self):
-        raw = _build_docx_bytes(_gas_chill_document_xml(), extra_files={"../../evil.xml": b"<x/>"})
-        ok, err = scan_and_validate_file(raw, "docx", ["docx"])
-        self.assertFalse(ok)
-        self.assertIn("unsafe archive member path", err)
+        for bad_name in ("../evil.xml", "../../evil.xml"):
+            raw = _build_docx_bytes(_gas_chill_document_xml(), extra_files={bad_name: b"<x/>"})
+            ok, err = scan_and_validate_file(raw, "docx", ["docx"])
+            self.assertFalse(ok)
+            self.assertIn("unsafe archive member path", err)
 
     def test_rejects_missing_document_xml(self):
         raw = _build_docx_bytes(_gas_chill_document_xml(), include_document=False)
@@ -156,12 +173,20 @@ class DocxSecurityValidationTests(unittest.TestCase):
         self.assertIn("[Content_Types].xml", err)
 
     def test_rejects_oversized_uncompressed_zip_bomb(self):
-        # 51 MB of zeros compresses to ~50 KB
-        huge_xml = b" " * (51 * 1024 * 1024)
+        # 21 MB of zeros exceeds the 20 MB DOCX uncompressed cap
+        huge_xml = b" " * (21 * 1024 * 1024)
         raw = _build_docx_bytes(_gas_chill_document_xml(), extra_files={"word/huge.xml": huge_xml})
         ok, err = scan_and_validate_file(raw, "docx", ["docx"])
         self.assertFalse(ok)
-        self.assertIn("50MB", err)
+        self.assertIn("20MB", err)
+
+    def test_rejects_high_compression_ratio_zip_bomb(self):
+        # 3 MB of spaces compresses to ~3 KB (ratio > 100, under 20 MB cap)
+        bomb_xml = b" " * (3 * 1024 * 1024)
+        raw = _build_docx_bytes(_gas_chill_document_xml(), extra_files={"word/bomb.xml": bomb_xml})
+        ok, err = scan_and_validate_file(raw, "docx", ["docx"])
+        self.assertFalse(ok)
+        self.assertIn("compression ratio", err.lower())
 
 
 class DocxParserTests(unittest.TestCase):
@@ -284,6 +309,15 @@ class DocxParserTests(unittest.TestCase):
         result = parse_pr_docx(raw)
         self.assertEqual(result["header"]["docNo"], "PEM064-PR-075")
         self.assertEqual(result["header"]["issuedDate"], "2026-11-22")
+
+    def test_rejects_doctype_and_entity_before_xml_parse(self):
+        for decl in ("<!DOCTYPE foo [<!ENTITY xxe 'bar'>]>", "<!ENTITY test 'val'>"):
+            xml = f'<?xml version="1.0" encoding="UTF-8"?>\n{decl}\n<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>'
+            raw = _build_docx_bytes(xml)
+            with patch("pr_docx_parser.ET.fromstring", side_effect=AssertionError("ET.fromstring must not be called")):
+                with self.assertRaises(ValueError) as ctx:
+                    parse_pr_docx(raw)
+            self.assertIn("DOCTYPE/ENTITY", str(ctx.exception))
 
 
 class ParsePrDocxEndpointTests(unittest.TestCase):
@@ -428,6 +462,37 @@ class ParsePrDocxEndpointTests(unittest.TestCase):
         self.assertFalse(resp2.get_json()["ok"])
         self.write.assert_not_called()
 
+    def test_endpoint_rejects_oversized_base64_and_multipart_before_decode(self):
+        oversized_b64 = "A" * (14 * 1024 * 1024 + 100)
+        with patch("blueprints.records.base64.b64decode", side_effect=AssertionError("b64decode must not be called")):
+            resp = self.client.post(
+                "/api/pr_items/parse_docx/ENG-P1/PR",
+                json={"file_b64": oversized_b64, "ext": "docx"},
+            )
+        self.assertEqual(resp.status_code, 413)
+        self.assertFalse(resp.get_json()["ok"])
+
+        oversized_stream = b"PK\x03\x04" + (b"\x00" * (10 * 1024 * 1024 + 64))
+        resp2 = self.client.post(
+            "/api/pr_items/parse_docx/ENG-P1/PR",
+            data={"file": (io.BytesIO(oversized_stream), "huge.docx")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(resp2.status_code, 413)
+        self.assertFalse(resp2.get_json()["ok"])
+        self.write.assert_not_called()
+
+    def test_endpoint_hides_unexpected_parse_exception_details(self):
+        raw = _build_docx_bytes(_gas_chill_document_xml())
+        b64 = base64.b64encode(raw).decode("ascii")
+        with patch("blueprints.records.parse_pr_docx", side_effect=RuntimeError("internal-secret-trace")):
+            resp = self.client.post("/api/pr_items/parse_docx/ENG-P1/PR", json={"file_b64": b64})
+        self.assertEqual(resp.status_code, 400)
+        body = resp.get_json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"], "Failed to parse Word document.")
+        self.assertNotIn("internal-secret-trace", body["error"])
+
 
 class PrModalUiWiringTests(unittest.TestCase):
     def test_render_register_contains_pr_import_ui_and_valid_js(self):
@@ -480,8 +545,12 @@ class PrModalUiWiringTests(unittest.TestCase):
             "max-height:360px;overflow:auto",
             "position:sticky;top:0;z-index:2",
             "grid-template-columns:44px 2fr",
+            "e.isComposing",
+            "hasExistingPrPoValues()",
+            "discard existing PO / delivery values",
         ):
             self.assertIn(marker, html)
+        self.assertNotIn(".pr-items-cell:nth-child(4n)", html)
 
         node_bin = shutil.which("node")
         if node_bin:
