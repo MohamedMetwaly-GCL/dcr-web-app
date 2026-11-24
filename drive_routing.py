@@ -365,6 +365,19 @@ def invalidate_subfolder_caches(parent_id=None):
             _NESTED_SUBFOLDER_CACHE.pop(k, None)
 
 
+def sanitize_drive_folder_segment(name, max_len=80):
+    """Sanitize a single Drive subfolder name by stripping unsafe path/control characters."""
+    s = str(name or "")
+    s = re.sub(r"[\x00-\x1f\x7f]+", " ", s)
+    while ".." in s:
+        s = s.replace("..", " ")
+    s = re.sub(r"\s*[/\\]+\s*", " - ", s)
+    s = re.sub(r"\s+", " ", s).strip(" .-")
+    if max_len and len(s) > max_len:
+        s = s[:max_len].rstrip(" .-")
+    return s
+
+
 def normalize_rel_subfolder(rel_subfolder):
     """Parse and validate a relative subfolder path into clean directory segments."""
     raw = str(rel_subfolder or "").replace("\\", "/").strip()
@@ -537,7 +550,7 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
     # 2) PTW subtype subfolder / Submit-Replied slot folder
     if is_ptw:
         from hse_defaults import normalize_ptw_subtype_value
-        clean_ptw_sub = normalize_ptw_subtype_value(subtype)
+        clean_ptw_sub = sanitize_drive_folder_segment(normalize_ptw_subtype_value(subtype))
         if destination_folder_id and folder_is_usable(service, destination_folder_id):
             slot_id = destination_folder_id
         elif clean_ptw_sub:

@@ -758,8 +758,11 @@ def _sync_all_hse_ptw_subtypes():
     """Ensure active hse_ptw_subtype lists contain the approved permit types and default codes."""
     from hse_defaults import HSE_LISTS, HSE_SUBTYPES, PTW_SUBTYPE_CODES
 
-    exe("DELETE FROM dropdown_lists WHERE list_name=%s AND item_value=%s",
-        ("hse_ptw_subtype", "Maintenance Work"))
+    cleanup_key = "ptw_maintenance_work_cleanup_v1"
+    if not get_setting(cleanup_key, False):
+        exe("DELETE FROM dropdown_lists WHERE list_name=%s AND item_value=%s",
+            ("hse_ptw_subtype", "Maintenance Work"))
+        save_setting(cleanup_key, True)
 
     hse_projects = q("SELECT id FROM projects WHERE UPPER(COALESCE(workspace_id, 'ENG')) = 'HSE'")
     ptw_subtypes = HSE_SUBTYPES.get("PTW", {})
@@ -3001,41 +3004,138 @@ def ensure_doc_type_subtype_column(pid, dt_id, list_name):
     return True
 
 
+def _is_subtype_list_name(list_name):
+    ln = str(list_name or "").strip().lower()
+    return bool(ln) and (ln == "subtype" or ln.endswith("_subtype"))
+
+
+def _disambiguate_ptw_code(base_code, used_codes):
+    base = re.sub(r"[^A-Z0-9]", "", str(base_code or "").upper()) or "PTW"
+    if len(base) < 2:
+        base = (base + "P")[:2]
+    base = base[:8]
+    if base not in used_codes:
+        return base
+    for n in range(2, 100):
+        suffix = str(n)
+        cand = base[: max(1, 8 - len(suffix))] + suffix
+        if len(cand) >= 2 and cand not in used_codes:
+            return cand
+    raise ValueError(f"PTW subtype code '{base}' is already in use.")
+
+
+def _fetch_list_rows(pid, list_name):
+    raw = q("SELECT item_value, meta FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
+            (pid, list_name))
+    if isinstance(raw, (list, tuple)):
+        return [r for r in raw if isinstance(r, dict)]
+    return []
+
+
 def add_list_item(pid, list_name, item, meta=None):
+    ln_clean = str(list_name or "").strip()
+    is_sub = _is_subtype_list_name(ln_clean)
+    is_ptw_sub = ln_clean.lower() == "hse_ptw_subtype"
     clean_item = str(item or "").strip()
     resolved_meta = str(meta).strip() if meta is not None and str(meta).strip() else None
-    if str(list_name or "").strip().lower() == "hse_ptw_subtype":
+    explicit_code_provided = False
+
+    if is_ptw_sub:
         from hse_defaults import get_ptw_subtype_code, parse_ptw_list_item_input
 
         parsed_name, parsed_code = parse_ptw_list_item_input(clean_item)
         if parsed_name:
             clean_item = parsed_name
         explicit_code = resolved_meta or parsed_code
-        resolved_meta = get_ptw_subtype_code(clean_item, explicit_code)
+        if explicit_code:
+            explicit_code_provided = True
+            cand_code = str(explicit_code).strip().upper()
+            if not re.fullmatch(r"[A-Z0-9]{2,8}", cand_code):
+                raise ValueError("PTW subtype code must be 2 to 8 uppercase letters or digits.")
+            resolved_meta = cand_code
+        elif clean_item:
+            resolved_meta = get_ptw_subtype_code(clean_item, None)
+
+    if is_sub:
+        if not clean_item:
+            raise ValueError("Subtype name cannot be empty.")
+        if len(clean_item) > 80:
+            raise ValueError("Subtype name must be 80 characters or fewer.")
+        existing_rows = _fetch_list_rows(pid, ln_clean)
+        low_item = clean_item.lower()
+        for row in existing_rows:
+            if str(row.get("item_value") or "").strip().lower() == low_item:
+                raise ValueError(f"Subtype '{clean_item}' already exists.")
+        if is_ptw_sub:
+            from hse_defaults import get_ptw_subtype_code
+
+            used_codes = set()
+            for row in existing_rows:
+                c = get_ptw_subtype_code(row.get("item_value") or "", row.get("meta"))
+                if c:
+                    used_codes.add(c.upper())
+            if resolved_meta and resolved_meta.upper() in used_codes:
+                if explicit_code_provided:
+                    raise ValueError(f"PTW subtype code '{resolved_meta.upper()}' is already in use.")
+                resolved_meta = _disambiguate_ptw_code(resolved_meta, used_codes)
+
     if not clean_item:
         return {"item": "", "meta": resolved_meta}
     r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM dropdown_lists WHERE project_id=%s AND list_name=%s",
-          (pid, list_name), one=True)
+          (pid, ln_clean), one=True)
     exe("""INSERT INTO dropdown_lists(project_id,list_name,item_value,sort_order,meta)
            VALUES(%s,%s,%s,%s,%s)
            ON CONFLICT(project_id,list_name,item_value)
            DO UPDATE SET meta = COALESCE(EXCLUDED.meta, dropdown_lists.meta)""",
-        (pid, list_name, clean_item, r["n"] if r else 0, resolved_meta))
+        (pid, ln_clean, clean_item, r["n"] if r else 0, resolved_meta))
     invalidate_dashboard_cache(pid)
     return {"item": clean_item, "meta": resolved_meta}
 
 def rename_list_item(pid, list_name, old_item, new_item, meta=None):
+    ln_clean = str(list_name or "").strip()
+    is_sub = _is_subtype_list_name(ln_clean)
+    is_ptw_sub = ln_clean.lower() == "hse_ptw_subtype"
     old_item = str(old_item or "").strip()
     new_item = str(new_item or "").strip()
     explicit_meta = str(meta).strip() if meta is not None and str(meta).strip() else None
-    if str(list_name or "").strip().lower() == "hse_ptw_subtype":
+
+    if is_ptw_sub:
         from hse_defaults import get_ptw_subtype_code, parse_ptw_list_item_input
 
         parsed_name, parsed_code = parse_ptw_list_item_input(new_item)
         if parsed_name:
             new_item = parsed_name
-        if explicit_meta or parsed_code:
-            explicit_meta = get_ptw_subtype_code(new_item, explicit_meta or parsed_code)
+        raw_code = explicit_meta or parsed_code
+        if raw_code:
+            cand_code = str(raw_code).strip().upper()
+            if not re.fullmatch(r"[A-Z0-9]{2,8}", cand_code):
+                raise ValueError("PTW subtype code must be 2 to 8 uppercase letters or digits.")
+            explicit_meta = cand_code
+
+    if is_sub:
+        if not new_item:
+            raise ValueError("Subtype name cannot be empty.")
+        if len(new_item) > 80:
+            raise ValueError("Subtype name must be 80 characters or fewer.")
+        existing_rows = _fetch_list_rows(pid, ln_clean)
+        low_new = new_item.lower()
+        for row in existing_rows:
+            ev = str(row.get("item_value") or "").strip()
+            if ev == old_item:
+                continue
+            if ev.lower() == low_new:
+                raise ValueError(f"Subtype '{new_item}' already exists.")
+        if is_ptw_sub and explicit_meta:
+            from hse_defaults import get_ptw_subtype_code
+
+            for row in existing_rows:
+                ev = str(row.get("item_value") or "").strip()
+                if ev == old_item:
+                    continue
+                c = get_ptw_subtype_code(ev, row.get("meta"))
+                if c and c.upper() == explicit_meta:
+                    raise ValueError(f"PTW subtype code '{explicit_meta}' is already in use.")
+
     if not old_item or not new_item or (old_item == new_item and explicit_meta is None):
         return 0
     with DB() as cur:
@@ -3044,13 +3144,13 @@ def rename_list_item(pid, list_name, old_item, new_item, meta=None):
                 UPDATE dropdown_lists
                 SET item_value=%s, meta=%s
                 WHERE project_id=%s AND list_name=%s AND item_value=%s
-            """, (new_item, explicit_meta, pid, list_name, old_item))
+            """, (new_item, explicit_meta, pid, ln_clean, old_item))
         else:
             cur.execute("""
                 UPDATE dropdown_lists
                 SET item_value=%s
                 WHERE project_id=%s AND list_name=%s AND item_value=%s
-            """, (new_item, pid, list_name, old_item))
+            """, (new_item, pid, ln_clean, old_item))
         renamed = cur.rowcount or 0
         if not renamed:
             return 0
@@ -3970,7 +4070,7 @@ def save_col_width(pid, dt_id, col_key, width_px):
 
 def get_setting(key, default=None):
     r = q("SELECT value FROM app_settings WHERE key=%s", (key,), one=True)
-    if r is None: return default
+    if not r or "value" not in r: return default
     import json
     v = r["value"]
     return v if not isinstance(v, str) else json.loads(v)

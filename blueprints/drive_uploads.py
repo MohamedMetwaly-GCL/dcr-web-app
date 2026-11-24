@@ -264,7 +264,7 @@ def api_create_upload_session():
         doc_no = str(body.get("doc_no") or (rec.get("docNo") if rec else "") or clean_name or "").strip()
         raw_subtype = body.get("subtype") or (rec.get("legacySubtype") if rec else "")
         from hse_defaults import normalize_ptw_subtype_value
-        subtype = normalize_ptw_subtype_value(raw_subtype)
+        subtype = drive_routing.sanitize_drive_folder_segment(normalize_ptw_subtype_value(raw_subtype))
         dest_folder_id = str(body.get("destination_folder_id") or "").strip()
         dest = drive_routing.resolve_upload_destination(
             pid, dt_id, slot, service, db, create_if_missing=create_folders,

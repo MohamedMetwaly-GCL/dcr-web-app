@@ -295,6 +295,9 @@ class TestPtwSubtypesDefaultsAndNumbering(unittest.TestCase):
         with patch.object(app_mod, "current_user", return_value=user), \
              patch.object(app_mod, "can_view_project", return_value=True), \
              patch("blueprints.lists.can_edit", return_value=True), \
+             patch("blueprints.lists.can_access_doc_type", return_value=True), \
+             patch("db.get_doc_type", return_value={"id": "JSA", "code": "JSA", "name": "Job Safety Analysis"}), \
+             patch("db.get_project", return_value={"id": "HSE-CFC-P2", "workspace_id": "HSE"}), \
              patch("db.q", side_effect=fake_q_no_col), \
              patch("db.exe", side_effect=fake_exe), \
              patch("db.invalidate_dashboard_cache"):
@@ -324,6 +327,9 @@ class TestPtwSubtypesDefaultsAndNumbering(unittest.TestCase):
         with patch.object(app_mod, "current_user", return_value=user), \
              patch.object(app_mod, "can_view_project", return_value=True), \
              patch("blueprints.lists.can_edit", return_value=True), \
+             patch("blueprints.lists.can_access_doc_type", return_value=True), \
+             patch("db.get_doc_type", return_value={"id": "JSA", "code": "JSA", "name": "Job Safety Analysis"}), \
+             patch("db.get_project", return_value={"id": "HSE-CFC-P2", "workspace_id": "HSE"}), \
              patch("db.q", side_effect=fake_q_has_col), \
              patch("db.exe", side_effect=fake_exe), \
              patch("db.invalidate_dashboard_cache"):
@@ -334,6 +340,173 @@ class TestPtwSubtypesDefaultsAndNumbering(unittest.TestCase):
             self.assertEqual(resp2.status_code, 200)
             self.assertFalse(resp2.get_json()["column_wired"])
         self.assertNotIn("insert into columns_config", "\n".join(s for s, _ in executed).lower())
+
+    def test_07_m1_maintenance_work_cleanup_is_one_shot(self):
+        settings_store = {}
+        dropdown_items = [("hse_ptw_subtype", "Maintenance Work")]
+        executed = []
+
+        def fake_exe(sql, params=()):
+            s = " ".join(sql.split())
+            executed.append((s, params))
+            if s.lower().startswith("delete from dropdown_lists"):
+                ln, val = params
+                dropdown_items[:] = [x for x in dropdown_items if x != (ln, val)]
+            elif "insert into app_settings" in s.lower():
+                k, raw_v = params
+                settings_store[k] = json.loads(raw_v)
+
+        def fake_q(sql, params=(), one=False):
+            s = " ".join(sql.split())
+            if "FROM app_settings" in s:
+                key = params[0]
+                return {"value": settings_store[key]} if key in settings_store else None
+            if "FROM projects" in s:
+                return [{"id": "HSE-CFC-P2"}]
+            if "FROM doc_types" in s:
+                return {"id": "PTW", "data": {"legacy_subtypes": hse_defaults.HSE_SUBTYPES["PTW"]}}
+            return None if one else []
+
+        with patch("db.exe", side_effect=fake_exe), \
+             patch("db.q", side_effect=fake_q):
+            # First run performs one-shot cleanup and persists marker
+            db._sync_all_hse_ptw_subtypes()
+            self.assertNotIn(("hse_ptw_subtype", "Maintenance Work"), dropdown_items)
+            self.assertTrue(settings_store.get("ptw_maintenance_work_cleanup_v1"))
+
+            # Admin manually re-adds Maintenance Work later
+            dropdown_items.append(("hse_ptw_subtype", "Maintenance Work"))
+            executed.clear()
+
+            # Second run must NOT delete Maintenance Work again
+            db._sync_all_hse_ptw_subtypes()
+            self.assertIn(("hse_ptw_subtype", "Maintenance Work"), dropdown_items)
+            self.assertNotIn("delete from dropdown_lists", "\n".join(s.lower() for s, _ in executed))
+
+    def test_08_m2_list_auto_column_wiring_authorization_and_list_name_validation(self):
+        client = app_mod.app.test_client()
+        user = {"username": "editor1", "role": "editor"}
+
+        # 1. Unknown dt_id -> 404
+        with patch.object(app_mod, "current_user", return_value=user), \
+             patch.object(app_mod, "can_view_project", return_value=True), \
+             patch("blueprints.lists.can_edit", return_value=True), \
+             patch("db.get_doc_type", return_value=None), \
+             patch("db.add_list_item") as mock_add, \
+             patch("db.ensure_doc_type_subtype_column") as mock_wire:
+            r = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_jsa_subtype", "item": "Hot Work JSA", "dt_id": "NOPE"},
+            )
+            self.assertEqual(r.status_code, 404)
+            mock_add.assert_not_called()
+            mock_wire.assert_not_called()
+
+        # 2. Unauthorized doc-type access -> 403
+        with patch.object(app_mod, "current_user", return_value=user), \
+             patch.object(app_mod, "can_view_project", return_value=True), \
+             patch("blueprints.lists.can_edit", return_value=True), \
+             patch("db.get_doc_type", return_value={"id": "JSA", "code": "JSA", "name": "JSA"}), \
+             patch("blueprints.lists.can_access_doc_type", return_value=False), \
+             patch("db.add_list_item") as mock_add, \
+             patch("db.ensure_doc_type_subtype_column") as mock_wire:
+            r = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_jsa_subtype", "item": "Hot Work JSA", "dt_id": "JSA"},
+            )
+            self.assertEqual(r.status_code, 403)
+            mock_add.assert_not_called()
+            mock_wire.assert_not_called()
+
+        # 3. Mismatched list_name for dt_id -> 400
+        with patch.object(app_mod, "current_user", return_value=user), \
+             patch.object(app_mod, "can_view_project", return_value=True), \
+             patch("blueprints.lists.can_edit", return_value=True), \
+             patch("db.get_doc_type", return_value={"id": "JSA", "code": "JSA", "name": "JSA"}), \
+             patch("db.get_project", return_value={"id": "HSE-CFC-P2", "workspace_id": "HSE"}), \
+             patch("blueprints.lists.can_access_doc_type", return_value=True), \
+             patch("db.add_list_item") as mock_add, \
+             patch("db.ensure_doc_type_subtype_column") as mock_wire:
+            r_wrong = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_ptw_subtype", "item": "Cross Type", "dt_id": "JSA"},
+            )
+            self.assertEqual(r_wrong.status_code, 400)
+            r_non_sub = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "contractors", "item": "Acme", "dt_id": "JSA"},
+            )
+            self.assertEqual(r_non_sub.status_code, 400)
+            mock_add.assert_not_called()
+            mock_wire.assert_not_called()
+
+    def test_09_m3_subtype_name_and_ptw_code_server_validation(self):
+        client = app_mod.app.test_client()
+        user = {"username": "tester", "role": "superadmin"}
+        existing_ptw = [
+            {"item_value": "Hot Work Permit", "meta": "HWP"},
+            {"item_value": "Cold Work Permit", "meta": "CWP"},
+        ]
+
+        def fake_q(sql, params=(), one=False):
+            s = " ".join(sql.split())
+            if "SELECT item_value, meta FROM dropdown_lists" in s:
+                return list(existing_ptw)
+            return {"n": len(existing_ptw) + 1} if one else []
+
+        with patch.object(app_mod, "current_user", return_value=user), \
+             patch("blueprints.lists.can_edit", return_value=True), \
+             patch("db.q", side_effect=fake_q), \
+             patch("db.exe"), \
+             patch("db.invalidate_dashboard_cache"):
+            # Empty name -> 400
+            r_empty = client.post("/api/lists/HSE-CFC-P2", json={"list_name": "hse_ptw_subtype", "item": "   "})
+            self.assertEqual(r_empty.status_code, 400)
+
+            # Name > 80 chars -> 400
+            r_long = client.post("/api/lists/HSE-CFC-P2", json={"list_name": "hse_obs_subtype", "item": "A" * 81})
+            self.assertEqual(r_long.status_code, 400)
+
+            # Case-insensitive duplicate name on POST -> 400
+            r_dup_add = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_ptw_subtype", "item": "hot work permit", "meta": "HW2"},
+            )
+            self.assertEqual(r_dup_add.status_code, 400)
+
+            # Duplicate explicit PTW code on POST -> 400
+            r_dup_code = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_ptw_subtype", "item": "High Wind Permit", "meta": "HWP"},
+            )
+            self.assertEqual(r_dup_code.status_code, 400)
+
+            # Auto-generated fallback code collision is auto-disambiguated -> 200 with HWP2
+            r_disambig = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_ptw_subtype", "item": "High Wind Permit"},
+            )
+            self.assertEqual(r_disambig.status_code, 200)
+            self.assertEqual(r_disambig.get_json()["meta"], "HWP2")
+
+            # Case-insensitive duplicate name on PATCH -> 400
+            r_dup_ren = client.patch(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_ptw_subtype", "old_item": "Cold Work Permit", "new_item": "HOT WORK PERMIT"},
+            )
+            self.assertEqual(r_dup_ren.status_code, 400)
+
+            # Duplicate explicit PTW code on PATCH -> 400
+            r_dup_ren_code = client.patch(
+                "/api/lists/HSE-CFC-P2",
+                json={
+                    "list_name": "hse_ptw_subtype",
+                    "old_item": "Cold Work Permit",
+                    "new_item": "Cold Work Permit",
+                    "meta": "HWP",
+                },
+            )
+            self.assertEqual(r_dup_ren_code.status_code, 400)
 
 
 class TestPtwDriveSubfolderRouting(unittest.TestCase):
@@ -406,11 +579,60 @@ class TestPtwDriveSubfolderRouting(unittest.TestCase):
             create_if_missing=True, flat=False, subtype="Electrical / Isolation Permit",
         )
         self.assertEqual(res_leg["doc_type_folder_id"], legacy_drive.id_of("PTW - Permit to Work"))
-        self.assertEqual(legacy_drive.items[res_leg["folder_id"]]["name"], "Electrical / Isolation Permit")
+        self.assertEqual(legacy_drive.items[res_leg["folder_id"]]["name"], "Electrical - Isolation Permit")
         self.assertEqual(
             legacy_drive.items[res_leg["folder_id"]]["parent"],
             legacy_drive.id_of("PTW - Permit to Work"),
         )
+
+    def test_03_l1_drive_subfolder_sanitization(self):
+        drive = FakeDrive({"HSE Root": {}})
+        store = FakeStore(
+            {"drive_folder_id": drive.id_of("HSE Root"), "workspace_id": "HSE"},
+            {"PTW": {"id": "PTW", "code": "PTW", "name": "Permit to Work"}},
+        )
+
+        # Path traversal & slash characters stripped safely
+        r_trav = drive_routing.resolve_upload_destination(
+            "HSE-CFC-P2", "PTW", "submission", drive, store,
+            create_if_missing=True, flat=False, subtype="../../etc/passwd",
+        )
+        trav_name = drive.items[r_trav["folder_id"]]["name"]
+        self.assertEqual(trav_name, "etc - passwd")
+        self.assertNotIn("..", trav_name)
+        self.assertNotIn("/", trav_name)
+        self.assertNotIn("\\", trav_name)
+
+        # Backslash and NUL/control characters stripped
+        r_ctrl = drive_routing.resolve_upload_destination(
+            "HSE-CFC-P2", "PTW", "submission", drive, store,
+            create_if_missing=True, flat=False, subtype="Safe\\Sub\x00Name\nLine",
+        )
+        ctrl_name = drive.items[r_ctrl["folder_id"]]["name"]
+        self.assertEqual(ctrl_name, "Safe - Sub Name Line")
+        self.assertNotIn("\\", ctrl_name)
+        self.assertNotIn("\x00", ctrl_name)
+
+        # Pure traversal string falls back safely to parent PTW folder
+        r_empty = drive_routing.resolve_upload_destination(
+            "HSE-CFC-P2", "PTW", "submission", drive, store,
+            create_if_missing=True, flat=False, subtype="../../../",
+        )
+        self.assertEqual(r_empty["folder_id"], r_empty["doc_type_folder_id"])
+
+        # Length capped at 80 chars
+        r_long = drive_routing.resolve_upload_destination(
+            "HSE-CFC-P2", "PTW", "submission", drive, store,
+            create_if_missing=True, flat=False, subtype="X" * 120,
+        )
+        self.assertEqual(len(drive.items[r_long["folder_id"]]["name"]), 80)
+
+        # Legacy Maintenance Work still allowed cleanly
+        r_leg = drive_routing.resolve_upload_destination(
+            "HSE-CFC-P2", "PTW", "submission", drive, store,
+            create_if_missing=True, flat=False, subtype="Maintenance Work",
+        )
+        self.assertEqual(drive.items[r_leg["folder_id"]]["name"], "Maintenance Work")
 
     def test_02_upload_session_endpoint_passes_ptw_subtype_and_preserves_legacy_links(self):
         drive = FakeDrive({"HSE Root": {}})
