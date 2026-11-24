@@ -1,9 +1,9 @@
 # DCR Current Project Knowledge
 
-**Repository:** `D:\DCR-dev`  
+**Repository:** `D:\DCR-dev` (synced with `D:\DCR` and `origin/main`)  
 **Active Local Branch:** `main`  
 **Latest Merged Milestone Commit:** `829d707` (`Merge branch 'feat/ptw-subtypes-structure' into main`, from `8196656`)  
-**Release / Deployment Status:** Local `main` only. **`origin/main` and Railway production have NOT been pushed or deployed for this milestone** (held pending explicit user release authorization).
+**Release / Deployment Status:** `main` commit `9069abe` pushed to `origin/main` (`47e61a7..9069abe` via `D:\DCR`) and verified live on Railway (`https://dcr.up.railway.app/login` returned `HTTP 200`, `95,165` bytes on `2026-11-24`).
 
 ---
 
