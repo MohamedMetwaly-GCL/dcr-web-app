@@ -277,6 +277,64 @@ class TestPtwSubtypesDefaultsAndNumbering(unittest.TestCase):
             self.assertEqual(body["item"], "Solar Work Permit")
             self.assertEqual(body["meta"], "SWP")
 
+    def test_06_first_subtype_auto_wires_legacy_subtype_column(self):
+        client = app_mod.app.test_client()
+        user = {"username": "tester", "role": "superadmin"}
+        executed = []
+
+        def fake_exe(sql, params=()):
+            executed.append((" ".join(sql.split()), params))
+
+        # Case 1: JSA has no legacySubtype column yet -> ensure_doc_type_subtype_column inserts it
+        def fake_q_no_col(sql, params=(), one=False):
+            s = " ".join(sql.split())
+            if "FROM columns_config" in s:
+                return None
+            return {"n": 1} if one else []
+
+        with patch.object(app_mod, "current_user", return_value=user), \
+             patch.object(app_mod, "can_view_project", return_value=True), \
+             patch("blueprints.lists.can_edit", return_value=True), \
+             patch("db.q", side_effect=fake_q_no_col), \
+             patch("db.exe", side_effect=fake_exe), \
+             patch("db.invalidate_dashboard_cache"):
+            resp = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_jsa_subtype", "item": "Hot Work JSA", "dt_id": "JSA"},
+            )
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_json()
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["item"], "Hot Work JSA")
+            self.assertTrue(body["column_wired"])
+
+        sql_blob = "\n".join(s for s, _ in executed).lower()
+        self.assertIn("insert into columns_config", sql_blob)
+        self.assertNotIn("records", sql_blob)
+        self.assertIn(("HSE-CFC-P2", "JSA", "hse_jsa_subtype"), [p for _, p in executed])
+
+        # Case 2: Column already exists -> column_wired is False and no columns_config INSERT runs
+        executed.clear()
+        def fake_q_has_col(sql, params=(), one=False):
+            s = " ".join(sql.split())
+            if "FROM columns_config" in s:
+                return {"col_key": "legacySubtype"}
+            return {"n": 2} if one else []
+
+        with patch.object(app_mod, "current_user", return_value=user), \
+             patch.object(app_mod, "can_view_project", return_value=True), \
+             patch("blueprints.lists.can_edit", return_value=True), \
+             patch("db.q", side_effect=fake_q_has_col), \
+             patch("db.exe", side_effect=fake_exe), \
+             patch("db.invalidate_dashboard_cache"):
+            resp2 = client.post(
+                "/api/lists/HSE-CFC-P2",
+                json={"list_name": "hse_jsa_subtype", "item": "Lifting JSA", "dt_id": "JSA"},
+            )
+            self.assertEqual(resp2.status_code, 200)
+            self.assertFalse(resp2.get_json()["column_wired"])
+        self.assertNotIn("insert into columns_config", "\n".join(s for s, _ in executed).lower())
+
 
 class TestPtwDriveSubfolderRouting(unittest.TestCase):
     def test_01_drive_routing_ptw_subtype_auto_creates_and_reuses_folders(self):
@@ -455,13 +513,17 @@ class TestPtwUiRenderingAndJsBehavior(unittest.TestCase):
         for lang in ("en", "ar"):
             html = self._render_register(lang=lang)
             self.assertIn('id="ptw-subtabs"', html)
+            self.assertIn('id="btn-add-subtab"', html)
             self.assertIn('id="add-subtype-modal"', html)
             self.assertIn('id="add-subtype-name"', html)
             self.assertIn('id="add-subtype-code"', html)
             self.assertIn("openAddSubtypeModal", html)
             self.assertIn("saveNewSubtype", html)
             self.assertIn("getActiveSubtypeConfig", html)
+            self.assertIn("getOrBuildSubtypeModalConfig", html)
             self.assertIn("DEFAULT_PTW_SUBTYPE_CODES", html)
+            expected_btn_lbl = "+ تابة فرعية" if lang == "ar" else "+ Sub-Tab"
+            self.assertIn(expected_btn_lbl, html)
             self.assertIn("updatePtwSubTabs", html)
             self.assertIn("setPtwSubtypeFilter", html)
             self.assertIn("isHsePtwTab", html)
@@ -481,6 +543,8 @@ class TestPtwUiRenderingAndJsBehavior(unittest.TestCase):
             "hse.ptw.edit_code_prompt",
             "hse.ptw.edit_code_btn",
             "hse.subtab.add_btn_title",
+            "hse.subtab.toolbar_btn",
+            "hse.subtab.toolbar_btn_title",
             "hse.subtab.modal_title_ptw",
             "hse.subtab.modal_title_generic",
             "hse.subtab.name_label",
@@ -547,7 +611,7 @@ function mkEl(tag) {
 
 const byId = {};
 [
-  'tabsbar', 'ptw-subtabs', 'toolbar', 'thead', 'tbody', 'srchbox',
+  'tabsbar', 'ptw-subtabs', 'toolbar', 'btn-add-subtab', 'thead', 'tbody', 'srchbox',
   'rec-form', 'rec-title', 'rec-modal', 'rec-save-btn', 'rec-cancel-btn',
   'add-subtype-modal', 'add-subtype-title', 'add-subtype-name',
   'add-subtype-code-wrap', 'add-subtype-code', 'add-subtype-docno-preview', 'add-subtype-save-btn',
@@ -616,6 +680,22 @@ const mockServerMeta = {
 };
 const postedLists = [];
 
+const mockColsByDt = {
+  PTW: ptwColsMock,
+  OBS: [
+    { col_key: 'docNo', label: 'Register No.', col_type: 'docno', visible: true },
+    { col_key: 'legacySubtype', label: 'Subtype', col_type: 'dropdown', list_name: 'hse_obs_subtype', visible: true },
+    { col_key: 'title', label: 'Subject', col_type: 'text', visible: true },
+  ],
+  JSA: [
+    { col_key: 'docNo', label: 'Register No.', col_type: 'docno', visible: true },
+    { col_key: 'title', label: 'Subject', col_type: 'text', visible: true },
+  ],
+  TBT: [
+    { col_key: 'docNo', label: 'Register No.', col_type: 'docno', visible: true },
+  ],
+};
+
 const ctx = {
   console,
   Math,
@@ -656,7 +736,15 @@ const ctx = {
   escHtml: (s) => String(s || ''),
   apiFetch: async (url, opts) => {
     const u = String(url);
-    if (u.startsWith('/api/columns/')) return apiObj.state.cols;
+    if (u.startsWith('/api/columns/')) {
+      const dt = u.split('/').pop();
+      return mockColsByDt[dt] || apiObj.state.cols;
+    }
+    if (u.startsWith('/api/records/')) {
+      const dt = u.split('/').pop().split('?')[0];
+      return { records: apiObj.state.recs || [], columns: mockColsByDt[dt] || apiObj.state.cols, count: (apiObj.state.recs || []).length };
+    }
+    if (u.startsWith('/api/col_width/')) return {};
     if (u.includes('/api/next_doc_no/')) {
       const m = u.match(/subtype=([^&]+)/);
       const sub = m ? decodeURIComponent(m[1]) : '';
@@ -671,7 +759,14 @@ const ctx = {
         mockServerMeta[body.list_name] = mockServerMeta[body.list_name] || [];
         mockServerMeta[body.list_name].push({ value: body.item, meta: body.meta });
       }
-      return { ok: true, item: body.item, meta: body.meta || null };
+      let columnWired = false;
+      if (body.dt_id && mockColsByDt[body.dt_id] && !mockColsByDt[body.dt_id].some(c => c.col_key === 'legacySubtype')) {
+        mockColsByDt[body.dt_id].splice(1, 0, {
+          col_key: 'legacySubtype', label: 'Subtype', col_type: 'dropdown', list_name: body.list_name, visible: true
+        });
+        columnWired = true;
+      }
+      return { ok: true, item: body.item, meta: body.meta || null, list_name: body.list_name, column_wired: columnWired };
     }
     if (u.startsWith('/api/lists/')) return JSON.parse(JSON.stringify(mockServerLists));
     if (u.startsWith('/api/lists_meta/')) return JSON.parse(JSON.stringify(mockServerMeta));
@@ -702,6 +797,7 @@ const apiObj = vm.runInNewContext(
   apiObj.state.dtList = [
     { id: 'PTW', code: 'PTW', name: 'Permit to Work' },
     { id: 'OBS', code: 'OBS', name: 'Safety Observations' },
+    { id: 'JSA', code: 'JSA', name: 'Job Safety Analysis' },
     { id: 'TBT', code: 'TBT', name: 'Toolbox Talks' },
   ];
   apiObj.state.lists = JSON.parse(JSON.stringify(mockServerLists));
@@ -712,6 +808,7 @@ const apiObj = vm.runInNewContext(
   ];
 
   apiObj.updatePtwSubTabs();
+  assert.strictEqual(byId['btn-add-subtab'].style.display, 'none', 'Toolbar + Sub-Tab button must stay hidden when PTW sub-tab strip is visible');
   const subBtns = byId['ptw-subtabs'].children;
   assert.strictEqual(subBtns.length, 10, 'All + 8 permit types + "+" button must appear as sub-tabs');
   assert.strictEqual(subBtns[0].dataset.subtype, '');
@@ -823,19 +920,53 @@ const apiObj = vm.runInNewContext(
   assert.strictEqual(postedLists[1].meta, undefined);
   assert.strictEqual(byId['ptw-subtabs'].children.length, 6, 'OBS: All + 4 subtypes + "+" button');
 
-  // Document type without subtypes (TBT) hides sub-tab bar until a subtype list is added
+  // Document type without subtypes (JSA): hides sub-tab bar & shows toolbar "+ Sub-Tab" button
+  apiObj.state.tab = 'JSA';
+  apiObj.state.cols = mockColsByDt.JSA;
+  apiObj.state.allTabCols = mockColsByDt.JSA;
+  apiObj.state.ptwSubtypeFilter = '';
+  apiObj.state.filters = {};
+  apiObj.state.recs = [];
+  apiObj.updatePtwSubTabs();
+  assert.strictEqual(byId['ptw-subtabs'].style.display, 'none', 'JSA without subtypes hides sub-tab strip');
+  assert.strictEqual(byId['btn-add-subtab'].style.display, '', 'JSA without subtypes shows toolbar + Sub-Tab button');
+
+  // Clicking toolbar "+ Sub-Tab" on JSA adds first subtype, auto-wires legacySubtype column, shows sub-tabs & hides toolbar button
+  apiObj.openAddSubtypeModal();
+  assert.strictEqual(byId['add-subtype-code-wrap'].style.display, 'none', 'JSA modal hides PTW code input');
+  byId['add-subtype-name'].value = 'Hot Work JSA';
+  await apiObj.saveNewSubtype();
+  assert.strictEqual(postedLists[2].list_name, 'hse_jsa_subtype');
+  assert.strictEqual(postedLists[2].item, 'Hot Work JSA');
+  assert.strictEqual(postedLists[2].dt_id, 'JSA');
+  assert.ok(apiObj.state.cols.some(c => c.col_key === 'legacySubtype'), 'JSA columns refreshed with auto-wired legacySubtype');
+  assert.strictEqual(byId['ptw-subtabs'].style.display, 'flex', 'JSA sub-tab strip appears immediately after first subtype');
+  assert.strictEqual(byId['btn-add-subtab'].style.display, 'none', 'Toolbar + Sub-Tab button hides once sub-tab strip is active');
+  assert.strictEqual(byId['ptw-subtabs'].children.length, 3, 'JSA: All + Hot Work JSA + circular "+" button');
+  assert.strictEqual(apiObj.state.ptwSubtypeFilter, 'Hot Work JSA', 'First subtype becomes active sub-tab');
+
+  // Opening Add form on JSA immediately pre-selects the new subtype
+  apiObj.state.editId = null;
+  await apiObj.buildForm(null, { defaultSubtype: 'Hot Work JSA', suggestedDocNo: 'JSA-001' });
+  const jsaMs = documentStub.getElementById('f-legacySubtype');
+  assert.ok(jsaMs, 'JSA Add form must render auto-wired legacySubtype field');
+  assert.strictEqual(jsaMs.dataset.value, 'Hot Work JSA', 'JSA Add form pre-selects active first subtype');
+
+  // Document type without subtypes (TBT) hides sub-tab bar until a subtype list is added via Lists
   apiObj.state.tab = 'TBT';
-  apiObj.state.cols = [{ col_key: 'docNo', label: 'Register No.', col_type: 'docno', visible: true }];
-  apiObj.state.allTabCols = apiObj.state.cols;
+  apiObj.state.cols = mockColsByDt.TBT;
+  apiObj.state.allTabCols = mockColsByDt.TBT;
   apiObj.state.ptwSubtypeFilter = '';
   apiObj.state.recs = [];
   apiObj.updatePtwSubTabs();
   assert.strictEqual(byId['ptw-subtabs'].style.display, 'none', 'TBT without subtype list hides sub-tab bar');
+  assert.strictEqual(byId['btn-add-subtab'].style.display, '', 'TBT without subtype list shows toolbar + Sub-Tab button');
 
   // Step C: adding hse_tbt_subtype via Lists automatically enables sub-tabs for TBT
   apiObj.state.lists.hse_tbt_subtype = ['Fire Safety Talk'];
   apiObj.updatePtwSubTabs();
   assert.strictEqual(byId['ptw-subtabs'].style.display, 'flex', 'Adding hse_tbt_subtype enables sub-tab bar seamlessly');
+  assert.strictEqual(byId['btn-add-subtab'].style.display, 'none', 'Toolbar + Sub-Tab hides once TBT sub-tab bar appears');
   assert.strictEqual(byId['ptw-subtabs'].children.length, 3, 'TBT: All + 1 subtype + "+" button');
 })().catch(e => { console.error(e); process.exit(1); });
 """

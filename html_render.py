@@ -13656,11 +13656,17 @@ def render_register(u, proj, active_ws_id=None, lang=None):
     _hol_btn = f" <button class='tool-btn purple' onclick='openSettings()'>{t('reg.btn_holidays', norm)}</button>" if _can_manage_proj else ''
     _col_btn = f"<button class='tool-btn purple' onclick='manageColumns()'>{t('reg.btn_columns', norm)}</button>" if _can_manage_proj else ''
     _lst_btn = f"<button class='tool-btn' onclick='openLists()'>{t('reg.btn_lists', norm)}</button>" if _can_manage_proj else ''
+    _subtab_btn = (
+        f'<button id="btn-add-subtab" class="tool-btn" style="display:none" '
+        f'onclick="openAddSubtypeModal()" title="{t("hse.subtab.toolbar_btn_title", norm)}">'
+        f'{t("hse.subtab.toolbar_btn", norm)}</button>'
+    )
     _color_btn = f"<button class='tool-btn purple' onclick='openProjectSettings()'>{t('reg.btn_status_colors', norm)}</button>" if _can_manage_proj else ''
     edit_btns = (f'<button class="tool-btn" onclick="addRecord()">{t("reg.btn_add", norm)}</button>'
                  f'{_col_btn}'
                  f'{_hol_btn}'
                  f'{_lst_btn}'
+                 f'{_subtab_btn}'
                  f'{_color_btn}'
                  f'<button class="tool-btn" onclick="editProject()">{t("reg.btn_project", norm)}</button>'
                  if editable else
@@ -18458,6 +18464,11 @@ async function updatePtwDocNoForSubtype(subtypeName,inputEl){{
     if(r&&r.next)inputEl.value=r.next;
   }}catch(_e){{}}
 }}
+function getDefaultSubtypeListName(dtCode){{
+  const wsLow=String(typeof WS_ID!=='undefined'&&WS_ID?WS_ID:'ENG').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_')||'eng';
+  const codeLow=String(dtCode||state.tab||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_');
+  return codeLow ? `${{wsLow}}_${{codeLow}}_subtype` : '';
+}}
 function getActiveSubtypeConfig(){{
   const dtObj=(state.dtList||[]).find(d=>String(d.id)===String(state.tab)||String(d.code||'').toUpperCase()===String(state.tab||'').toUpperCase())||{{}};
   const dtCode=String(dtObj.code||dtObj.id||state.tab||'').trim().toUpperCase();
@@ -18476,7 +18487,8 @@ function getActiveSubtypeConfig(){{
     if(isPtw){{
       listName='hse_ptw_subtype';
     }}else if(codeLow){{
-      const candidates=[`hse_${{codeLow}}_subtype`, `${{codeLow}}_subtype`];
+      const defLn=getDefaultSubtypeListName(dtCode);
+      const candidates=[defLn, `hse_${{codeLow}}_subtype`, `${{codeLow}}_subtype`].filter(Boolean);
       listName=candidates.find(ln=>Object.prototype.hasOwnProperty.call(state.lists||{{}}, ln))||'';
     }}
   }}
@@ -18484,7 +18496,7 @@ function getActiveSubtypeConfig(){{
   const rawItems=Array.isArray(state.lists?.[listName])
     ? state.lists[listName]
     : (isPtw?Object.keys(DEFAULT_PTW_SUBTYPE_CODES||{{}}):[]);
-  if(!isPtw && !rawItems.length && !subCol)return null;
+  if(!isPtw && !rawItems.length)return null;
   return {{
     isPtw,
     dtCode,
@@ -18492,6 +18504,25 @@ function getActiveSubtypeConfig(){{
     colKey,
     listName,
     items: [...rawItems]
+  }};
+}}
+function getOrBuildSubtypeModalConfig(){{
+  const existing=getActiveSubtypeConfig();
+  if(existing)return {{...existing, needsColumnWiring:false}};
+  if(!state.tab)return null;
+  const dtObj=(state.dtList||[]).find(d=>String(d.id)===String(state.tab)||String(d.code||'').toUpperCase()===String(state.tab||'').toUpperCase())||{{}};
+  const dtCode=String(dtObj.code||dtObj.id||state.tab||'').trim().toUpperCase();
+  const listName=getDefaultSubtypeListName(dtCode);
+  if(!listName)return null;
+  const rawItems=Array.isArray(state.lists?.[listName])?state.lists[listName]:[];
+  return {{
+    isPtw: isHsePtwTab(),
+    dtCode,
+    dtName: dtObj.name || dtCode || state.tab || '',
+    colKey: 'legacySubtype',
+    listName,
+    items: [...rawItems],
+    needsColumnWiring: true
   }};
 }}
 function recordMatchesSubtype(rec, colKey, targetSubtype, isSingleSelect){{
@@ -18515,8 +18546,13 @@ function recordMatchesSubtype(rec, colKey, targetSubtype, isSingleSelect){{
 }}
 function updatePtwSubTabs(){{
   const bar=document.getElementById('ptw-subtabs');
-  if(!bar)return;
+  const tbBtn=document.getElementById('btn-add-subtab');
   const cfg=getActiveSubtypeConfig();
+  if(tbBtn){{
+    const showToolbarBtn=Boolean(!cfg && typeof CAN_EDIT!=='undefined' && CAN_EDIT && state.tab);
+    tbBtn.style.display=showToolbarBtn?'':'none';
+  }}
+  if(!bar)return;
   bar.style.display=cfg?'flex':'none';
   if(!cfg){{
     state.ptwSubtypeFilter='';
@@ -18610,7 +18646,7 @@ function setPtwSubtypeFilter(subtype){{
 function _updateAddSubtypeDocNoPreview(){{
   const prevEl=document.getElementById('add-subtype-docno-preview');
   const codeInp=document.getElementById('add-subtype-code');
-  const cfg=getActiveSubtypeConfig();
+  const cfg=getOrBuildSubtypeModalConfig();
   if(!prevEl||!codeInp)return;
   if(!cfg||!cfg.isPtw){{
     prevEl.style.display='none';
@@ -18626,7 +18662,7 @@ function _updateAddSubtypeDocNoPreview(){{
   prevEl.textContent=`${{window.t('hse.subtab.docno_preview')}} ${{prefix}}-${{code}}-001`;
 }}
 function openAddSubtypeModal(){{
-  const cfg=getActiveSubtypeConfig();
+  const cfg=getOrBuildSubtypeModalConfig();
   if(!cfg||!CAN_EDIT)return;
   const titleEl=document.getElementById('add-subtype-title');
   const nameInp=document.getElementById('add-subtype-name');
@@ -18651,7 +18687,7 @@ function openAddSubtypeModal(){{
   if(nameInp&&typeof nameInp.focus==='function')setTimeout(()=>nameInp.focus(),30);
 }}
 function onAddSubtypeNameInput(){{
-  const cfg=getActiveSubtypeConfig();
+  const cfg=getOrBuildSubtypeModalConfig();
   if(!cfg||!cfg.isPtw)return;
   const nameInp=document.getElementById('add-subtype-name');
   const codeInp=document.getElementById('add-subtype-code');
@@ -18669,7 +18705,7 @@ function onAddSubtypeCodeInput(){{
   _updateAddSubtypeDocNoPreview();
 }}
 async function saveNewSubtype(){{
-  const cfg=getActiveSubtypeConfig();
+  const cfg=getOrBuildSubtypeModalConfig();
   if(!cfg||!CAN_EDIT)return;
   const nameInp=document.getElementById('add-subtype-name');
   const codeInp=document.getElementById('add-subtype-code');
@@ -18684,7 +18720,7 @@ async function saveNewSubtype(){{
     toast(window.t('hse.subtab.err_duplicate'),'wa');
     return;
   }}
-  const payload={{list_name:cfg.listName,item:name}};
+  const payload={{list_name:cfg.listName,item:name,dt_id:state.tab}};
   if(cfg.isPtw){{
     let code=String(codeInp?.value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
     if(!code)code=getPtwSubtypeCode(name);
@@ -18705,8 +18741,13 @@ async function saveNewSubtype(){{
     const savedItem=String(res.item||name).trim();
     closeM('add-subtype-modal');
     await loadLists(true);
-    setPtwSubtypeFilter(savedItem);
-    if(typeof buildHead==='function')buildHead();
+    if(res.column_wired || cfg.needsColumnWiring){{
+      if(typeof loadRecords==='function')await loadRecords();
+      setPtwSubtypeFilter(savedItem);
+    }}else{{
+      setPtwSubtypeFilter(savedItem);
+      if(typeof buildHead==='function')buildHead();
+    }}
     toast(window.t('hse.subtab.added_toast',{{name:savedItem}}),'ok');
   }}finally{{
     if(saveBtn)saveBtn.disabled=false;

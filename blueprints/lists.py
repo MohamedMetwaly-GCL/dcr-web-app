@@ -28,8 +28,13 @@ def api_lists(pid):
 def api_add_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    res = db.add_list_item(pid, data.get("list_name",""), data.get("item",""), meta=data.get("meta"))
-    return jsonify(ok=True, item=res.get("item", ""), meta=res.get("meta"))
+    list_name = str(data.get("list_name", "") or "").strip()
+    dt_id = str(data.get("dt_id", "") or "").strip()
+    res = db.add_list_item(pid, list_name, data.get("item", ""), meta=data.get("meta"))
+    column_wired = False
+    if dt_id and list_name and (list_name.lower().endswith("_subtype") or list_name.lower() == "subtype"):
+        column_wired = bool(db.ensure_doc_type_subtype_column(pid, dt_id, list_name))
+    return jsonify(ok=True, item=res.get("item", ""), meta=res.get("meta"), list_name=list_name, column_wired=column_wired)
 
 
 @lists_bp.route("/api/lists/<pid>", methods=["PATCH"])

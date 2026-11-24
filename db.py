@@ -2963,6 +2963,44 @@ def set_list_item_meta(pid, list_name, item_value, meta):
         (clean_meta, pid, list_name, item_value))
     invalidate_dashboard_cache(pid)
 
+def ensure_doc_type_subtype_column(pid, dt_id, list_name):
+    """Ensure a visible 'legacySubtype' dropdown column exists for (pid, dt_id) when its first subtype is added.
+
+    Leaves existing columns and records untouched if a subtype column is already configured.
+    Returns True if a new column row was inserted, False otherwise.
+    """
+    pid_s = str(pid or "").strip()
+    dt_s = str(dt_id or "").strip()
+    ln_s = str(list_name or "").strip()
+    if not pid_s or not dt_s or not ln_s:
+        return False
+    existing = q(
+        """SELECT col_key FROM columns_config
+           WHERE project_id=%s AND dt_id=%s
+             AND (LOWER(col_key) IN ('legacysubtype', 'subtype')
+                  OR (col_type='dropdown' AND LOWER(COALESCE(list_name, ''))=LOWER(%s)))
+           LIMIT 1""",
+        (pid_s, dt_s, ln_s),
+        one=True,
+    )
+    if existing:
+        return False
+    exe(
+        """UPDATE columns_config
+           SET sort_order = sort_order + 1
+           WHERE project_id=%s AND dt_id=%s AND sort_order >= 1 AND col_key != 'legacySubtype'""",
+        (pid_s, dt_s),
+    )
+    exe(
+        """INSERT INTO columns_config(project_id, dt_id, col_key, label, col_type, list_name, visible, sort_order)
+           VALUES(%s, %s, 'legacySubtype', 'Subtype', 'dropdown', %s, true, 1)
+           ON CONFLICT(project_id, dt_id, col_key) DO NOTHING""",
+        (pid_s, dt_s, ln_s),
+    )
+    invalidate_dashboard_cache(pid_s)
+    return True
+
+
 def add_list_item(pid, list_name, item, meta=None):
     clean_item = str(item or "").strip()
     resolved_meta = str(meta).strip() if meta is not None and str(meta).strip() else None
