@@ -1484,7 +1484,7 @@ def build_migration_plan(
 
 def _seed_hse_project_with_cursor(cur, pid: str) -> None:
     """Seed all 11 English HSE registers, columns, and dropdown lists inside an active transaction."""
-    from hse_defaults import HSE_LISTS, HSE_REGISTERS, HSE_SUBTYPES, hse_columns
+    from hse_defaults import HSE_LISTS, HSE_REGISTERS, HSE_SUBTYPES, PTW_SUBTYPE_CODES, hse_columns
 
     for order, (code, name, source) in enumerate(HSE_REGISTERS):
         dt_data = {"legacy_source": source, "legacy_subtypes": HSE_SUBTYPES.get(code, {})}
@@ -1504,6 +1504,8 @@ def _seed_hse_project_with_cursor(cur, pid: str) -> None:
             meta = None
             if list_name == "hse_doc_status":
                 meta = "pending" if value == "Open" else ("approved" if value == "Closed" else None)
+            elif list_name == "hse_ptw_subtype":
+                meta = PTW_SUBTYPE_CODES.get(value)
             elif list_name == "hse_extinguisher_status":
                 meta = (
                     "approved"

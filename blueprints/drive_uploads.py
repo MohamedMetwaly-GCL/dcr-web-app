@@ -262,12 +262,16 @@ def api_create_upload_session():
         to_party = str(body.get("to_party") or ((rec.get("toParty") or rec.get("to")) if rec else "") or "").strip()
         party = str(body.get("party") or "").strip()
         doc_no = str(body.get("doc_no") or (rec.get("docNo") if rec else "") or clean_name or "").strip()
+        raw_subtype = body.get("subtype") or (rec.get("legacySubtype") if rec else "")
+        from hse_defaults import normalize_ptw_subtype_value
+        subtype = drive_routing.sanitize_drive_folder_segment(normalize_ptw_subtype_value(raw_subtype))
         dest_folder_id = str(body.get("destination_folder_id") or "").strip()
         dest = drive_routing.resolve_upload_destination(
             pid, dt_id, slot, service, db, create_if_missing=create_folders,
             subfolder_name=subfolder_name or None, flat=not has_cycle,
             direction=direction, destination_folder_id=dest_folder_id,
-            party=party, from_party=from_party, to_party=to_party, doc_no=doc_no)
+            party=party, from_party=from_party, to_party=to_party, doc_no=doc_no,
+            subtype=subtype)
         root_package_folder_id = dest.get("subfolder_id") or dest["folder_id"]
         rel_parts = drive_routing.normalize_rel_subfolder(rel_subfolder)
         leaf_folder_id = dest["folder_id"]
