@@ -3054,6 +3054,9 @@ def rename_list_item(pid, list_name, old_item, new_item, meta=None):
         renamed = cur.rowcount or 0
         if not renamed:
             return 0
+        if old_item == new_item:
+            invalidate_dashboard_cache(pid)
+            return renamed
         cur.execute("""
             SELECT DISTINCT dt_id, col_key
             FROM columns_config

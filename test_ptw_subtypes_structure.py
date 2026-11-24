@@ -518,6 +518,11 @@ class TestPtwUiRenderingAndJsBehavior(unittest.TestCase):
             self.assertIn('id="add-subtype-name"', html)
             self.assertIn('id="add-subtype-code"', html)
             self.assertIn("openAddSubtypeModal", html)
+            self.assertIn("openSubtabContextMenu", html)
+            self.assertIn("openEditSubtypeModal", html)
+            self.assertIn("moveSubtypeTab", html)
+            self.assertIn("deleteSubtypeTab", html)
+            self.assertIn("subtab-ctx-menu", html)
             self.assertIn("saveNewSubtype", html)
             self.assertIn("getActiveSubtypeConfig", html)
             self.assertIn("getOrBuildSubtypeModalConfig", html)
@@ -550,6 +555,14 @@ class TestPtwUiRenderingAndJsBehavior(unittest.TestCase):
             "hse.subtab.name_label",
             "hse.subtab.code_label",
             "hse.subtab.added_toast",
+            "hse.subtab.ctx_edit",
+            "hse.subtab.ctx_move_left",
+            "hse.subtab.ctx_move_right",
+            "hse.subtab.ctx_delete",
+            "hse.subtab.edit_modal_title",
+            "hse.subtab.confirm_delete",
+            "hse.subtab.updated_toast",
+            "hse.subtab.deleted_toast",
         ):
             self.assertTrue(i18n.TRANSLATIONS["en"][key].strip())
             self.assertTrue(i18n.TRANSLATIONS["ar"][key].strip())
@@ -595,6 +608,13 @@ function mkEl(tag) {
     getAttribute: (k) => attrs[k] || null,
     appendChild: (c) => { children.push(c); c.parentElement = el; return c; },
     insertBefore: (c) => { children.push(c); c.parentElement = el; return c; },
+    remove: () => {
+      if (el.parentElement && Array.isArray(el.parentElement.children)) {
+        const i = el.parentElement.children.indexOf(el);
+        if (i >= 0) el.parentElement.children.splice(i, 1);
+      }
+      if (el.id && byId[el.id] === el) delete byId[el.id];
+    },
     addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); },
     dispatchEvent: (ev) => { (listeners[ev.type] || []).forEach(fn => fn(ev)); },
     querySelector: (sel) => String(sel || '').startsWith('#') ? null : mkEl('span'),
@@ -629,9 +649,21 @@ function walkEls(root, out = []) {
   return out;
 }
 
+const bodyChildren = [];
+const bodyEl = {
+  children: bodyChildren,
+  classList: { contains: () => false },
+  appendChild: (c) => {
+    bodyChildren.push(c);
+    c.parentElement = bodyEl;
+    if (c.id) byId[c.id] = c;
+    return c;
+  },
+};
+
 const documentStub = {
   documentElement: { dir: 'rtl', lang: 'ar' },
-  body: { classList: { contains: () => false }, appendChild: () => {} },
+  body: bodyEl,
   createElement: (tag) => mkEl(tag),
   getElementById: (id) => {
     if (byId[id]) return byId[id];
@@ -679,6 +711,10 @@ const mockServerMeta = {
   ],
 };
 const postedLists = [];
+const patchedLists = [];
+const reorderedLists = [];
+const deletedLists = [];
+const confirmCalls = [];
 
 const mockColsByDt = {
   PTW: ptwColsMock,
@@ -734,6 +770,7 @@ const ctx = {
     addEventListener: () => {},
   },
   escHtml: (s) => String(s || ''),
+  confirm: (msg) => { confirmCalls.push(msg); return true; },
   apiFetch: async (url, opts) => {
     const u = String(url);
     if (u.startsWith('/api/columns/')) {
@@ -749,6 +786,32 @@ const ctx = {
       const m = u.match(/subtype=([^&]+)/);
       const sub = m ? decodeURIComponent(m[1]) : '';
       return { next: apiObj.computeNextPtwDocNoClient(sub) };
+    }
+    if (u.includes('/reorder') && opts && opts.method === 'POST') {
+      const body = JSON.parse(opts.body || '{}');
+      reorderedLists.push(body);
+      mockServerLists[body.list_name] = [...(body.order || [])];
+      return { ok: true };
+    }
+    if (u.startsWith('/api/lists/') && opts && opts.method === 'PATCH') {
+      const body = JSON.parse(opts.body || '{}');
+      patchedLists.push(body);
+      const arr = mockServerLists[body.list_name] || [];
+      const i = arr.indexOf(body.old_item);
+      if (i >= 0) arr[i] = body.new_item;
+      if (body.meta) {
+        mockServerMeta[body.list_name] = mockServerMeta[body.list_name] || [];
+        const mi = mockServerMeta[body.list_name].find(x => x.value === body.old_item || x.value === body.new_item);
+        if (mi) { mi.value = body.new_item; mi.meta = body.meta; }
+        else mockServerMeta[body.list_name].push({ value: body.new_item, meta: body.meta });
+      }
+      return { ok: true, renamed: 1 };
+    }
+    if (u.startsWith('/api/lists/') && opts && opts.method === 'DELETE') {
+      const body = JSON.parse(opts.body || '{}');
+      deletedLists.push(body);
+      mockServerLists[body.list_name] = (mockServerLists[body.list_name] || []).filter(x => x !== body.item);
+      return { ok: true };
     }
     if (u.startsWith('/api/lists/') && opts && opts.method === 'POST') {
       const body = JSON.parse(opts.body || '{}');
@@ -781,7 +844,7 @@ ctx.globalThis = ctx;
 const apiObj = vm.runInNewContext(
   'function bindDirectionalInput(){} function bindSmartTextarea(){} function openM(){} function closeM(){} function toast(){} function initRz(){} function renderNocSummary(){} function updateLTRQuickBar(){} function isLTRTab(){return false;} function isNOCTab(){return false;} function isPRTab(){return false;} function isSDOrABDTab(){return false;} function tabHasReplyCycle(){return false;} function getOrCreateFormSection(f){return f;} function compactSingleFieldFormSections(){} function mountIncBodyMapSection(){} function mountDriveAttachmentsBox(){} function getDynamicFieldSpan(){return "";} function getDynamicFormSection(){return "Basic";} function getOrderedRecordFormCols(cols){return cols;} function isCalculatedFormField(){return false;} function isCurrencyField(){return false;} function _normalizeRowAttachments(){return {};} function _getReplyStatusTheme(){return {color:"#333",bg:"#fff",bd:"#ccc"};} function buildMS(k,_o,init){const d=document.createElement("div");d.className="ms-con";d.id="f-"+k;d.dataset={value:init||""};return d;}\n' +
   mainJs +
-  '\n;({ state, getLongTextMeta, getActiveSubtypeConfig, updatePtwSubTabs, setPtwSubtypeFilter, renderRows, computeNextPtwDocNoClient, buildForm, getBatchTargetDrivePath, openAddSubtypeModal, onAddSubtypeNameInput, onAddSubtypeCodeInput, saveNewSubtype });',
+  '\n;({ state, getLongTextMeta, getActiveSubtypeConfig, updatePtwSubTabs, setPtwSubtypeFilter, renderRows, computeNextPtwDocNoClient, buildForm, getBatchTargetDrivePath, openAddSubtypeModal, openSubtabContextMenu, openEditSubtypeModal, moveSubtypeTab, deleteSubtypeTab, onAddSubtypeNameInput, onAddSubtypeCodeInput, saveNewSubtype });',
   ctx
 );
 
@@ -879,6 +942,64 @@ const apiObj = vm.runInNewContext(
   assert.strictEqual(apiObj.state.ptwSubtypeFilter, 'Marine Work Permit', 'New subtype should become active');
   assert.strictEqual(byId['ptw-subtabs'].children.length, 11, 'All + 9 permit types + "+" button');
   assert.strictEqual(apiObj.computeNextPtwDocNoClient('Marine Work Permit'), 'PEM058-MWP-001');
+
+  // Test right-click context menu on sub-tabs (All and + must not have contextmenu)
+  assert.strictEqual(byId['ptw-subtabs'].children[0].oncontextmenu, undefined, 'All pill must not open context menu');
+  assert.strictEqual(byId['ptw-subtabs'].children[10].oncontextmenu, undefined, '+ button must not open context menu');
+  assert.strictEqual(typeof byId['ptw-subtabs'].children[1].oncontextmenu, 'function', 'Subtype pill must attach oncontextmenu');
+
+  // RTL: index 0 (Hot Work Permit) is rightmost -> move-right disabled, move-left enabled (delta=+1)
+  documentStub.documentElement.dir = 'rtl';
+  byId['ptw-subtabs'].children[1].oncontextmenu({ preventDefault() {}, clientX: 120, clientY: 80 });
+  let ctxMenu = byId['subtab-ctx-menu'];
+  assert.ok(ctxMenu, '#subtab-ctx-menu must render on right-click');
+  assert.strictEqual(ctxMenu.children.length, 4);
+  assert.strictEqual(ctxMenu.children[1].dataset.action, 'move-left');
+  assert.strictEqual(ctxMenu.children[1].getAttribute('aria-disabled'), null, 'RTL index 0 can move left');
+  assert.strictEqual(ctxMenu.children[2].dataset.action, 'move-right');
+  assert.strictEqual(ctxMenu.children[2].getAttribute('aria-disabled'), 'true', 'RTL index 0 cannot move right');
+
+  // Click Move Left in RTL -> swaps Hot Work Permit (0) and Cold Work Permit (1)
+  await ctxMenu.children[1].onclick({ stopPropagation() {} });
+  assert.strictEqual(reorderedLists.length, 1);
+  assert.strictEqual(reorderedLists[0].order[0], 'Cold Work Permit');
+  assert.strictEqual(reorderedLists[0].order[1], 'Hot Work Permit');
+
+  // LTR: index 0 (Cold Work Permit) is leftmost -> move-left disabled, move-right enabled (delta=+1)
+  documentStub.documentElement.dir = 'ltr';
+  byId['ptw-subtabs'].children[1].oncontextmenu({ preventDefault() {}, clientX: 120, clientY: 80 });
+  ctxMenu = byId['subtab-ctx-menu'];
+  assert.strictEqual(ctxMenu.children[1].getAttribute('aria-disabled'), 'true', 'LTR index 0 cannot move left');
+  assert.strictEqual(ctxMenu.children[2].getAttribute('aria-disabled'), null, 'LTR index 0 can move right');
+  await ctxMenu.children[2].onclick({ stopPropagation() {} });
+  assert.strictEqual(reorderedLists[1].order[0], 'Hot Work Permit');
+
+  // Edit Sub-Tab Settings via context menu: rename Marine Work Permit -> Marine Ops Permit + code MOP
+  apiObj.setPtwSubtypeFilter('Marine Work Permit');
+  byId['ptw-subtabs'].children[9].oncontextmenu({ preventDefault() {}, clientX: 200, clientY: 80 });
+  byId['subtab-ctx-menu'].children[0].onclick({ stopPropagation() {} });
+  assert.strictEqual(byId['add-subtype-name'].value, 'Marine Work Permit');
+  assert.strictEqual(byId['add-subtype-code'].value, 'MWP');
+  byId['add-subtype-name'].value = 'Marine Ops Permit';
+  byId['add-subtype-code'].value = 'MOP';
+  await apiObj.saveNewSubtype();
+  assert.strictEqual(patchedLists.length, 1);
+  assert.strictEqual(patchedLists[0].old_item, 'Marine Work Permit');
+  assert.strictEqual(patchedLists[0].new_item, 'Marine Ops Permit');
+  assert.strictEqual(patchedLists[0].meta, 'MOP');
+  assert.strictEqual(apiObj.state.ptwSubtypeFilter, 'Marine Ops Permit', 'Active filter must update after rename');
+  assert.strictEqual(apiObj.computeNextPtwDocNoClient('Marine Ops Permit'), 'PEM058-MOP-001');
+
+  // Delete Sub-Tab via context menu: removes from list, resets active filter to All, keeps records intact
+  const recCountBeforeDel = apiObj.state.recs.length;
+  byId['ptw-subtabs'].children[9].oncontextmenu({ preventDefault() {}, clientX: 200, clientY: 80 });
+  await byId['subtab-ctx-menu'].children[3].onclick({ stopPropagation() {} });
+  assert.strictEqual(confirmCalls.length, 1);
+  assert.strictEqual(deletedLists.length, 1);
+  assert.strictEqual(deletedLists[0].item, 'Marine Ops Permit');
+  assert.strictEqual(apiObj.state.ptwSubtypeFilter, '', 'Deleting active sub-tab resets filter to All');
+  assert.strictEqual(apiObj.state.recs.length, recCountBeforeDel, 'Existing records must never be deleted');
+  assert.strictEqual(byId['ptw-subtabs'].children.length, 10, 'Back to All + 8 default subtypes + "+" button');
 
   // Test generalized sub-tabs on non-PTW document type with subtypes (OBS)
   const obsCols = [

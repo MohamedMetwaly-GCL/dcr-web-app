@@ -13688,6 +13688,9 @@ body.dark .ptw-subtab-btn.active{{background:#2563eb;color:#fff;border-color:#3b
 body.dark .ptw-subtab-cnt{{background:rgba(255,255,255,.12);color:#e2e8f0}}
 body.dark .ptw-subtab-add{{border-color:#60a5fa;background:rgba(59,130,246,.16);color:#93c5fd}}
 body.dark .ptw-subtab-add:hover{{background:#2563eb;color:#fff;border-color:#3b82f6;border-style:solid}}
+body.dark .subtab-ctx-menu{{background:#162132;border-color:#304257;color:#e2e8f0}}
+body.dark .subtab-ctx-item:hover:not(.disabled){{background:#1e3147}}
+body.dark .subtab-ctx-item.danger:hover{{background:rgba(239,68,68,.16)}}
 body.dark #tabsbar{{background:#0d1f33}}
 body.dark #tblwrap{{background:#111b2a}}
 body.dark .pf-lbl{{color:#93c5fd}}
@@ -13768,6 +13771,13 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
   border-radius:50%;border:1.5px dashed var(--pr);background:rgba(37,99,168,.08);color:var(--pr);
   cursor:pointer;font-size:15px;font-weight:700;line-height:1;flex-shrink:0;transition:all .15s;margin-inline-start:2px}}
 .ptw-subtab-add:hover{{background:var(--pr);color:#fff;border-style:solid;transform:scale(1.05)}}
+.subtab-ctx-menu{{position:fixed;background:#fff;border:1px solid var(--bd);border-radius:6px;
+  box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:9999;min-width:155px;overflow:hidden}}
+.subtab-ctx-item{{padding:8px 14px;cursor:pointer;font-size:12px;user-select:none;transition:background .1s}}
+.subtab-ctx-item:hover:not(.disabled){{background:#f0f4f8}}
+.subtab-ctx-item.disabled{{cursor:not-allowed;opacity:.45}}
+.subtab-ctx-item.danger{{color:#ef4444}}
+.subtab-ctx-item.danger:hover{{background:#fef2f2}}
 #toolbar{{background:#fff;border-bottom:1px solid var(--bd);padding:4px 8px;
   display:flex;align-items:center;gap:5px;flex-shrink:0;flex-wrap:wrap}}
 #toolbar-actions{{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}}
@@ -18610,6 +18620,9 @@ function updatePtwSubTabs(){{
     cnt.textContent=String(countNum);
     btn.appendChild(cnt);
     btn.onclick=()=>setPtwSubtypeFilter(subtypeVal);
+    if(subtypeVal && typeof CAN_EDIT!=='undefined' && CAN_EDIT){{
+      btn.oncontextmenu=(e)=>{{e.preventDefault();openSubtabContextMenu(subtypeVal,e);}};
+    }}
     return btn;
   }};
   bar.appendChild(mkBtn('',window.t('reg.filter_all'),'',recs.length,!state.ptwSubtypeFilter,window.t('reg.filter_all')));
@@ -18643,6 +18656,125 @@ function setPtwSubtypeFilter(subtype){{
   updatePtwSubTabs();
   renderRows();
 }}
+function closeSubtabContextMenu(){{
+  const old=document.getElementById('subtab-ctx-menu');
+  if(old)old.remove();
+}}
+function openSubtabContextMenu(subtypeName,e){{
+  if(typeof CAN_EDIT==='undefined'||!CAN_EDIT)return;
+  const cfg=getActiveSubtypeConfig();
+  if(!cfg||!subtypeName)return;
+  closeSubtabContextMenu();
+  const oldTabCtx=document.getElementById('tabctx');
+  if(oldTabCtx)oldTabCtx.remove();
+  const items=cfg.items||[];
+  const idx=items.findIndex(s=>String(s||'').toLowerCase()===String(subtypeName||'').toLowerCase());
+  if(idx<0)return;
+  const canonicalName=items[idx];
+  const isRtl=String(document.documentElement?.dir||'').toLowerCase()==='rtl';
+  const leftDelta=isRtl?1:-1;
+  const rightDelta=isRtl?-1:1;
+  const canMoveLeft=(idx+leftDelta>=0)&&(idx+leftDelta<items.length);
+  const canMoveRight=(idx+rightDelta>=0)&&(idx+rightDelta<items.length);
+
+  const m=document.createElement('div');
+  m.id='subtab-ctx-menu';
+  m.className='subtab-ctx-menu';
+  m.setAttribute('role','menu');
+  const rawX=Math.max(8,Number(e?.clientX||0));
+  const rawY=Math.max(8,Number(e?.clientY||0));
+  const maxX=(typeof window!=='undefined'&&window.innerWidth)?Math.max(8,window.innerWidth-175):rawX;
+  const maxY=(typeof window!=='undefined'&&window.innerHeight)?Math.max(8,window.innerHeight-160):rawY;
+  m.style.cssText=`left:${{Math.min(rawX,maxX)}}px;top:${{Math.min(rawY,maxY)}}px`;
+
+  const mkItem=(action,label,opts={{}})=>{{
+    const div=document.createElement('div');
+    div.className='subtab-ctx-item'+(opts.disabled?' disabled':'')+(opts.danger?' danger':'');
+    div.dataset.action=action;
+    div.setAttribute('role','menuitem');
+    if(opts.disabled)div.setAttribute('aria-disabled','true');
+    div.textContent=label;
+    div.onclick=(ev)=>{{
+      ev.stopPropagation();
+      if(opts.disabled)return;
+      closeSubtabContextMenu();
+      return opts.onClick();
+    }};
+    return div;
+  }};
+
+  m.appendChild(mkItem('edit',window.t('hse.subtab.ctx_edit'),{{
+    onClick:()=>openEditSubtypeModal(canonicalName)
+  }}));
+  m.appendChild(mkItem('move-left',window.t('hse.subtab.ctx_move_left'),{{
+    disabled:!canMoveLeft,
+    onClick:()=>moveSubtypeTab(canonicalName,leftDelta)
+  }}));
+  m.appendChild(mkItem('move-right',window.t('hse.subtab.ctx_move_right'),{{
+    disabled:!canMoveRight,
+    onClick:()=>moveSubtypeTab(canonicalName,rightDelta)
+  }}));
+  m.appendChild(mkItem('delete',window.t('hse.subtab.ctx_delete'),{{
+    danger:true,
+    onClick:()=>deleteSubtypeTab(canonicalName)
+  }}));
+
+  document.body.appendChild(m);
+  setTimeout(()=>document.addEventListener('click',()=>closeSubtabContextMenu(),{{once:true}}),10);
+}}
+function openEditSubtypeModal(subtypeName){{
+  const cfg=getActiveSubtypeConfig();
+  if(!cfg||!CAN_EDIT||!subtypeName)return;
+  state.editingSubtypeOldName=subtypeName;
+  const titleEl=document.getElementById('add-subtype-title');
+  const nameInp=document.getElementById('add-subtype-name');
+  const codeWrap=document.getElementById('add-subtype-code-wrap');
+  const codeInp=document.getElementById('add-subtype-code');
+  const saveBtn=document.getElementById('add-subtype-save-btn');
+  if(titleEl)titleEl.textContent=window.t('hse.subtab.edit_modal_title');
+  if(saveBtn)saveBtn.textContent=window.t('common.save');
+  if(nameInp){{
+    nameInp.value=subtypeName;
+    nameInp.placeholder=cfg.isPtw?window.t('hse.subtab.name_ph_ptw'):window.t('hse.subtab.name_ph_generic');
+  }}
+  if(codeWrap)codeWrap.style.display=cfg.isPtw?'':'none';
+  if(codeInp){{
+    codeInp.value=cfg.isPtw?getPtwSubtypeCode(subtypeName):'';
+    codeInp.dataset.manualEdit=cfg.isPtw?'1':'';
+  }}
+  _updateAddSubtypeDocNoPreview();
+  openM('add-subtype-modal');
+  if(nameInp&&typeof nameInp.focus==='function')setTimeout(()=>nameInp.focus(),30);
+}}
+async function moveSubtypeTab(subtypeName,delta){{
+  const cfg=getActiveSubtypeConfig();
+  if(!cfg||!CAN_EDIT)return;
+  const items=[...(cfg.items||[])];
+  const idx=items.findIndex(s=>String(s||'').toLowerCase()===String(subtypeName||'').toLowerCase());
+  const next=idx+delta;
+  if(idx<0||next<0||next>=items.length)return;
+  [items[idx],items[next]]=[items[next],items[idx]];
+  await apiFetch('/api/lists/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{list_name:cfg.listName,order:items}})}});
+  await loadLists(true);
+  updatePtwSubTabs();
+  if(typeof buildHead==='function')buildHead();
+  toast(window.t('reg.lists_order_updated'),'ok');
+}}
+async function deleteSubtypeTab(subtypeName){{
+  const cfg=getActiveSubtypeConfig();
+  if(!cfg||!CAN_EDIT||!subtypeName)return;
+  if(!confirm(window.t('hse.subtab.confirm_delete',{{name:subtypeName}})))return;
+  await apiFetch('/api/lists/'+PID,{{method:'DELETE',body:JSON.stringify({{list_name:cfg.listName,item:subtypeName}})}});
+  if(state.ptwSubtypeFilter&&state.ptwSubtypeFilter.toLowerCase()===String(subtypeName).toLowerCase()){{
+    state.ptwSubtypeFilter='';
+    delete state.filters[cfg.colKey];
+  }}
+  await loadLists(true);
+  updatePtwSubTabs();
+  if(typeof buildHead==='function')buildHead();
+  renderRows();
+  toast(window.t('hse.subtab.deleted_toast',{{name:subtypeName}}),'wa');
+}}
 function _updateAddSubtypeDocNoPreview(){{
   const prevEl=document.getElementById('add-subtype-docno-preview');
   const codeInp=document.getElementById('add-subtype-code');
@@ -18664,15 +18796,18 @@ function _updateAddSubtypeDocNoPreview(){{
 function openAddSubtypeModal(){{
   const cfg=getOrBuildSubtypeModalConfig();
   if(!cfg||!CAN_EDIT)return;
+  state.editingSubtypeOldName='';
   const titleEl=document.getElementById('add-subtype-title');
   const nameInp=document.getElementById('add-subtype-name');
   const codeWrap=document.getElementById('add-subtype-code-wrap');
   const codeInp=document.getElementById('add-subtype-code');
+  const saveBtn=document.getElementById('add-subtype-save-btn');
   if(titleEl){{
     titleEl.textContent=cfg.isPtw
       ? window.t('hse.subtab.modal_title_ptw')
       : window.t('hse.subtab.modal_title_generic',{{dt:cfg.dtCode||cfg.dtName}});
   }}
+  if(saveBtn)saveBtn.textContent=window.t('common.add');
   if(nameInp){{
     nameInp.value='';
     nameInp.placeholder=cfg.isPtw?window.t('hse.subtab.name_ph_ptw'):window.t('hse.subtab.name_ph_generic');
@@ -18707,6 +18842,8 @@ function onAddSubtypeCodeInput(){{
 async function saveNewSubtype(){{
   const cfg=getOrBuildSubtypeModalConfig();
   if(!cfg||!CAN_EDIT)return;
+  const oldName=String(state.editingSubtypeOldName||'').trim();
+  const isEdit=Boolean(oldName);
   const nameInp=document.getElementById('add-subtype-name');
   const codeInp=document.getElementById('add-subtype-code');
   const saveBtn=document.getElementById('add-subtype-save-btn');
@@ -18716,23 +18853,46 @@ async function saveNewSubtype(){{
     if(nameInp&&typeof nameInp.focus==='function')nameInp.focus();
     return;
   }}
-  if(cfg.items.some(s=>String(s||'').trim().toLowerCase()===name.toLowerCase())){{
+  if(cfg.items.some(s=>String(s||'').trim().toLowerCase()===name.toLowerCase()&&(!isEdit||String(s||'').trim().toLowerCase()!==oldName.toLowerCase()))){{
     toast(window.t('hse.subtab.err_duplicate'),'wa');
     return;
   }}
-  const payload={{list_name:cfg.listName,item:name,dt_id:state.tab}};
+  let code='';
   if(cfg.isPtw){{
-    let code=String(codeInp?.value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    code=String(codeInp?.value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
     if(!code)code=getPtwSubtypeCode(name);
     if(!code){{
       toast(window.t('hse.subtab.err_code_req'),'er');
       if(codeInp&&typeof codeInp.focus==='function')codeInp.focus();
       return;
     }}
-    payload.meta=code;
   }}
   if(saveBtn)saveBtn.disabled=true;
   try{{
+    if(isEdit){{
+      const patchPayload={{list_name:cfg.listName,old_item:oldName,new_item:name}};
+      if(cfg.isPtw)patchPayload.meta=code;
+      const res=await apiFetch('/api/lists/'+PID,{{method:'PATCH',body:JSON.stringify(patchPayload)}});
+      if(!res||!res.ok){{
+        toast(res?.error||window.t('hse.subtab.err_save'),'er');
+        return;
+      }}
+      state.editingSubtypeOldName='';
+      const wasActiveFilter=Boolean(state.ptwSubtypeFilter&&state.ptwSubtypeFilter.toLowerCase()===oldName.toLowerCase());
+      closeM('add-subtype-modal');
+      await loadLists(true);
+      if(wasActiveFilter){{
+        state.ptwSubtypeFilter=name;
+        state.filters[cfg.colKey]=name;
+      }}
+      if(oldName!==name&&typeof loadRecords==='function')await loadRecords();
+      updatePtwSubTabs();
+      if(typeof buildHead==='function')buildHead();
+      toast(window.t('hse.subtab.updated_toast',{{name}}),'ok');
+      return;
+    }}
+    const payload={{list_name:cfg.listName,item:name,dt_id:state.tab}};
+    if(cfg.isPtw)payload.meta=code;
     const res=await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
     if(!res||!res.ok){{
       toast(res?.error||window.t('hse.subtab.err_save'),'er');
