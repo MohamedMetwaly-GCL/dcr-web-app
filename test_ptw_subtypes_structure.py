@@ -329,6 +329,14 @@ class TestPtwDriveSubfolderRouting(unittest.TestCase):
         )
         self.assertEqual(res_empty["folder_id"], ptw_id)
 
+        # 4b. Dynamically added custom permit subtype routes to PTW/<New Subtype Name>/
+        res_marine = drive_routing.resolve_upload_destination(
+            "HSE-CFC-P2", "PTW", "submission", drive, store,
+            create_if_missing=True, flat=False, subtype="Marine Work Permit",
+        )
+        self.assertEqual(drive.items[res_marine["folder_id"]]["name"], "Marine Work Permit")
+        self.assertEqual(drive.items[res_marine["folder_id"]]["parent"], ptw_id)
+
         # 5. Reuses existing "PTW - Permit to Work" folder if present in legacy Drive layout
         legacy_drive = FakeDrive({"HSE Root Legacy": {"PTW - Permit to Work": {}}})
         legacy_store = FakeStore(
@@ -447,6 +455,12 @@ class TestPtwUiRenderingAndJsBehavior(unittest.TestCase):
         for lang in ("en", "ar"):
             html = self._render_register(lang=lang)
             self.assertIn('id="ptw-subtabs"', html)
+            self.assertIn('id="add-subtype-modal"', html)
+            self.assertIn('id="add-subtype-name"', html)
+            self.assertIn('id="add-subtype-code"', html)
+            self.assertIn("openAddSubtypeModal", html)
+            self.assertIn("saveNewSubtype", html)
+            self.assertIn("getActiveSubtypeConfig", html)
             self.assertIn("DEFAULT_PTW_SUBTYPE_CODES", html)
             self.assertIn("updatePtwSubTabs", html)
             self.assertIn("setPtwSubtypeFilter", html)
@@ -466,6 +480,12 @@ class TestPtwUiRenderingAndJsBehavior(unittest.TestCase):
             "hse.ptw.list_code_ph",
             "hse.ptw.edit_code_prompt",
             "hse.ptw.edit_code_btn",
+            "hse.subtab.add_btn_title",
+            "hse.subtab.modal_title_ptw",
+            "hse.subtab.modal_title_generic",
+            "hse.subtab.name_label",
+            "hse.subtab.code_label",
+            "hse.subtab.added_toast",
         ):
             self.assertTrue(i18n.TRANSLATIONS["en"][key].strip())
             self.assertTrue(i18n.TRANSLATIONS["ar"][key].strip())
@@ -513,7 +533,7 @@ function mkEl(tag) {
     insertBefore: (c) => { children.push(c); c.parentElement = el; return c; },
     addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); },
     dispatchEvent: (ev) => { (listeners[ev.type] || []).forEach(fn => fn(ev)); },
-    querySelector: () => null,
+    querySelector: (sel) => String(sel || '').startsWith('#') ? null : mkEl('span'),
     querySelectorAll: () => [],
     closest: () => null,
     get isConnected() { return true; },
@@ -526,7 +546,13 @@ function mkEl(tag) {
 }
 
 const byId = {};
-['tabsbar', 'ptw-subtabs', 'toolbar', 'thead', 'tbody', 'srchbox', 'rec-form', 'rec-title', 'rec-modal', 'rec-save-btn', 'rec-cancel-btn', 's-clock', 's-total', 's-show', 's-ov', 'empty'].forEach(id => {
+[
+  'tabsbar', 'ptw-subtabs', 'toolbar', 'thead', 'tbody', 'srchbox',
+  'rec-form', 'rec-title', 'rec-modal', 'rec-save-btn', 'rec-cancel-btn',
+  'add-subtype-modal', 'add-subtype-title', 'add-subtype-name',
+  'add-subtype-code-wrap', 'add-subtype-code', 'add-subtype-docno-preview', 'add-subtype-save-btn',
+  's-clock', 's-total', 's-show', 's-ov', 'empty'
+].forEach(id => {
   const e = mkEl('div'); e.id = id; byId[id] = e;
 });
 
@@ -568,6 +594,28 @@ const ptwColsMock = [
   { col_key: 'fileLocation', label: 'Drive Link', col_type: 'url', visible: true },
 ];
 
+const mockServerLists = {
+  hse_doc_status: ['Open', 'Closed'],
+  hse_ptw_subtype: [
+    'Hot Work Permit',
+    'Cold Work Permit',
+    'Work at Height Permit',
+    'Confined Space Permit',
+    'Excavation Permit',
+    'Electrical / Isolation Permit',
+    'Lifting Operations Permit',
+    'Radiography Permit',
+  ],
+  hse_obs_subtype: ['Unsafe Act', 'Unsafe Condition', 'Near Miss'],
+};
+const mockServerMeta = {
+  hse_ptw_subtype: [
+    { value: 'Hot Work Permit', meta: 'HWP' },
+    { value: 'Cold Work Permit', meta: 'CWP' },
+  ],
+};
+const postedLists = [];
+
 const ctx = {
   console,
   Math,
@@ -606,13 +654,27 @@ const ctx = {
     addEventListener: () => {},
   },
   escHtml: (s) => String(s || ''),
-  apiFetch: async (url) => {
-    if (String(url).startsWith('/api/columns/')) return ptwColsMock;
-    if (String(url).includes('/api/next_doc_no/')) {
-      const m = String(url).match(/subtype=([^&]+)/);
+  apiFetch: async (url, opts) => {
+    const u = String(url);
+    if (u.startsWith('/api/columns/')) return apiObj.state.cols;
+    if (u.includes('/api/next_doc_no/')) {
+      const m = u.match(/subtype=([^&]+)/);
       const sub = m ? decodeURIComponent(m[1]) : '';
       return { next: apiObj.computeNextPtwDocNoClient(sub) };
     }
+    if (u.startsWith('/api/lists/') && opts && opts.method === 'POST') {
+      const body = JSON.parse(opts.body || '{}');
+      postedLists.push(body);
+      mockServerLists[body.list_name] = mockServerLists[body.list_name] || [];
+      mockServerLists[body.list_name].push(body.item);
+      if (body.meta) {
+        mockServerMeta[body.list_name] = mockServerMeta[body.list_name] || [];
+        mockServerMeta[body.list_name].push({ value: body.item, meta: body.meta });
+      }
+      return { ok: true, item: body.item, meta: body.meta || null };
+    }
+    if (u.startsWith('/api/lists/')) return JSON.parse(JSON.stringify(mockServerLists));
+    if (u.startsWith('/api/lists_meta/')) return JSON.parse(JSON.stringify(mockServerMeta));
     return null;
   },
   fetch: async () => ({ ok: true, json: async () => ({}) }),
@@ -622,9 +684,9 @@ ctx.globalThis = ctx;
 
 // Stub helper functions defined in _shared_js_html / earlier script tag
 const apiObj = vm.runInNewContext(
-  'function bindDirectionalInput(){} function bindSmartTextarea(){} function openM(){} function closeM(){} function toast(){} function initRz(){} function renderNocSummary(){} function updateLTRQuickBar(){} function isLTRTab(){return false;} function isNOCTab(){return false;} function isPRTab(){return false;} function isSDOrABDTab(){return false;} function tabHasReplyCycle(){return false;} function getOrCreateFormSection(f){return f;} function compactSingleFieldFormSections(){} function mountIncBodyMapSection(){} function mountDriveAttachmentsBox(){} function getDynamicFieldSpan(){return "";} function getDynamicFormSection(){return "Basic";} function getOrderedRecordFormCols(cols){return cols;} function isCalculatedFormField(){return false;} function isCurrencyField(){return false;} function _normalizeRowAttachments(){return {};} function _getReplyStatusTheme(){return {color:"#333",bg:"#fff",bd:"#ccc"};} function buildMS(k){const d=document.createElement("div");d.className="ms-con";d.id="f-"+k;d.dataset={value:""};return d;}\n' +
+  'function bindDirectionalInput(){} function bindSmartTextarea(){} function openM(){} function closeM(){} function toast(){} function initRz(){} function renderNocSummary(){} function updateLTRQuickBar(){} function isLTRTab(){return false;} function isNOCTab(){return false;} function isPRTab(){return false;} function isSDOrABDTab(){return false;} function tabHasReplyCycle(){return false;} function getOrCreateFormSection(f){return f;} function compactSingleFieldFormSections(){} function mountIncBodyMapSection(){} function mountDriveAttachmentsBox(){} function getDynamicFieldSpan(){return "";} function getDynamicFormSection(){return "Basic";} function getOrderedRecordFormCols(cols){return cols;} function isCalculatedFormField(){return false;} function isCurrencyField(){return false;} function _normalizeRowAttachments(){return {};} function _getReplyStatusTheme(){return {color:"#333",bg:"#fff",bd:"#ccc"};} function buildMS(k,_o,init){const d=document.createElement("div");d.className="ms-con";d.id="f-"+k;d.dataset={value:init||""};return d;}\n' +
   mainJs +
-  '\n;({ state, getLongTextMeta, updatePtwSubTabs, setPtwSubtypeFilter, renderRows, computeNextPtwDocNoClient, buildForm, getBatchTargetDrivePath });',
+  '\n;({ state, getLongTextMeta, getActiveSubtypeConfig, updatePtwSubTabs, setPtwSubtypeFilter, renderRows, computeNextPtwDocNoClient, buildForm, getBatchTargetDrivePath, openAddSubtypeModal, onAddSubtypeNameInput, onAddSubtypeCodeInput, saveNewSubtype });',
   ctx
 );
 
@@ -636,26 +698,14 @@ const apiObj = vm.runInNewContext(
   // Setup state as PTW tab on HSE-CFC-P2
   apiObj.state.tab = 'PTW';
   apiObj.state.cols = ptwColsMock;
-  apiObj.state.dtList = [{ id: 'PTW', code: 'PTW', name: 'Permit to Work' }];
-  apiObj.state.lists = {
-    hse_doc_status: ['Open', 'Closed'],
-    hse_ptw_subtype: [
-      'Hot Work Permit',
-      'Cold Work Permit',
-      'Work at Height Permit',
-      'Confined Space Permit',
-      'Excavation Permit',
-      'Electrical / Isolation Permit',
-      'Lifting Operations Permit',
-      'Radiography Permit',
-    ]
-  };
-  apiObj.state.listsMeta = {
-    hse_ptw_subtype: [
-      { value: 'Hot Work Permit', meta: 'HWP' },
-      { value: 'Cold Work Permit', meta: 'CWP' },
-    ]
-  };
+  apiObj.state.allTabCols = ptwColsMock;
+  apiObj.state.dtList = [
+    { id: 'PTW', code: 'PTW', name: 'Permit to Work' },
+    { id: 'OBS', code: 'OBS', name: 'Safety Observations' },
+    { id: 'TBT', code: 'TBT', name: 'Toolbox Talks' },
+  ];
+  apiObj.state.lists = JSON.parse(JSON.stringify(mockServerLists));
+  apiObj.state.listsMeta = JSON.parse(JSON.stringify(mockServerMeta));
   apiObj.state.recs = [
     { _id: '1', docNo: 'PEM-058-001', legacySubtype: 'Maintenance Work' },
     { _id: '2', docNo: 'PEM058-HWP-001', legacySubtype: 'Hot Work Permit' },
@@ -663,12 +713,14 @@ const apiObj = vm.runInNewContext(
 
   apiObj.updatePtwSubTabs();
   const subBtns = byId['ptw-subtabs'].children;
-  assert.strictEqual(subBtns.length, 9, 'All + 8 permit types must appear as sub-tabs');
+  assert.strictEqual(subBtns.length, 10, 'All + 8 permit types + "+" button must appear as sub-tabs');
   assert.strictEqual(subBtns[0].dataset.subtype, '');
   assert.strictEqual(subBtns[1].dataset.subtype, 'Hot Work Permit');
   assert.strictEqual(subBtns[1].children[2].textContent, '1');
   assert.strictEqual(subBtns[2].dataset.subtype, 'Cold Work Permit');
   assert.strictEqual(subBtns[2].children[2].textContent, '0');
+  assert.strictEqual(subBtns[9].id, 'ptw-subtab-add-btn', 'Last item on sub-tab strip must be "+" button');
+  assert.strictEqual(subBtns[9].textContent, '+');
 
   // Sub-tab filtering restricts visibleRows cleanly and All restores all records
   apiObj.setPtwSubtypeFilter('Hot Work Permit');
@@ -716,12 +768,75 @@ const apiObj = vm.runInNewContext(
   assert.strictEqual(editDoc.value, 'PEM-058-001', 'Legacy Doc No. must not be overwritten');
   assert.ok(editSel.innerHTML.includes('Maintenance Work'), 'Legacy subtype option must remain selectable on edit');
 
-  // Simulate adding a custom subtype dynamically via Lists
-  apiObj.state.lists.hse_ptw_subtype.push('Solar Work Permit');
-  apiObj.state.listsMeta.hse_ptw_subtype.push({ value: 'Solar Work Permit', meta: 'SWP' });
+  // Test "+" modal inside PTW: auto-suggests MWP for Marine Work Permit, saves via /api/lists, activates new sub-tab
+  apiObj.openAddSubtypeModal();
+  assert.strictEqual(byId['add-subtype-code-wrap'].style.display, '', 'PTW modal must show code input');
+  byId['add-subtype-name'].value = 'Marine Work Permit';
+  apiObj.onAddSubtypeNameInput();
+  assert.strictEqual(byId['add-subtype-code'].value, 'MWP', 'Auto-suggested code for Marine Work Permit must be MWP');
+  assert.ok(byId['add-subtype-docno-preview'].textContent.includes('PEM058-MWP-001'));
+  await apiObj.saveNewSubtype();
+  assert.strictEqual(postedLists[0].list_name, 'hse_ptw_subtype');
+  assert.strictEqual(postedLists[0].item, 'Marine Work Permit');
+  assert.strictEqual(postedLists[0].meta, 'MWP');
+  assert.strictEqual(apiObj.state.ptwSubtypeFilter, 'Marine Work Permit', 'New subtype should become active');
+  assert.strictEqual(byId['ptw-subtabs'].children.length, 11, 'All + 9 permit types + "+" button');
+  assert.strictEqual(apiObj.computeNextPtwDocNoClient('Marine Work Permit'), 'PEM058-MWP-001');
+
+  // Test generalized sub-tabs on non-PTW document type with subtypes (OBS)
+  const obsCols = [
+    { col_key: 'docNo', label: 'Register No.', col_type: 'docno', visible: true },
+    { col_key: 'legacySubtype', label: 'Subtype', col_type: 'dropdown', list_name: 'hse_obs_subtype', visible: true },
+    { col_key: 'title', label: 'Subject', col_type: 'text', visible: true },
+  ];
+  apiObj.state.tab = 'OBS';
+  apiObj.state.cols = obsCols;
+  apiObj.state.allTabCols = obsCols;
+  apiObj.state.ptwSubtypeFilter = '';
+  apiObj.state.filters = {};
+  apiObj.state.recs = [
+    { _id: 'o1', docNo: 'OBS-001', legacySubtype: 'Unsafe Act' },
+    { _id: 'o2', docNo: 'OBS-002', legacySubtype: 'Near Miss' },
+  ];
   apiObj.updatePtwSubTabs();
-  assert.strictEqual(byId['ptw-subtabs'].children.length, 10, 'Dynamic addition reflects immediately in sub-tabs');
-  assert.strictEqual(apiObj.computeNextPtwDocNoClient('Solar Work Permit'), 'PEM058-SWP-001');
+  assert.strictEqual(byId['ptw-subtabs'].style.display, 'flex', 'OBS must show generalized sub-tab strip');
+  assert.strictEqual(byId['ptw-subtabs'].children.length, 5, 'OBS: All + 3 subtypes + "+" button');
+  assert.strictEqual(byId['ptw-subtabs'].children[4].id, 'ptw-subtab-add-btn');
+
+  // Filtering OBS by subtype
+  apiObj.setPtwSubtypeFilter('Unsafe Act');
+  assert.strictEqual(JSON.stringify(apiObj.state.visibleRows.map(r => r._id)), JSON.stringify(['o1']));
+
+  // Opening Add form on OBS pre-selects active subtype in buildMS
+  apiObj.state.editId = null;
+  await apiObj.buildForm(null, { defaultSubtype: 'Unsafe Act', suggestedDocNo: 'OBS-003' });
+  const obsMs = documentStub.getElementById('f-legacySubtype');
+  assert.strictEqual(obsMs.dataset.value, 'Unsafe Act', 'OBS Add form must pre-select active sub-tab subtype');
+
+  // Adding a new subtype on OBS hides PTW code input and saves cleanly
+  apiObj.openAddSubtypeModal();
+  assert.strictEqual(byId['add-subtype-code-wrap'].style.display, 'none', 'Non-PTW modal hides Doc No. code field');
+  byId['add-subtype-name'].value = 'Environmental Hazard';
+  await apiObj.saveNewSubtype();
+  assert.strictEqual(postedLists[1].list_name, 'hse_obs_subtype');
+  assert.strictEqual(postedLists[1].item, 'Environmental Hazard');
+  assert.strictEqual(postedLists[1].meta, undefined);
+  assert.strictEqual(byId['ptw-subtabs'].children.length, 6, 'OBS: All + 4 subtypes + "+" button');
+
+  // Document type without subtypes (TBT) hides sub-tab bar until a subtype list is added
+  apiObj.state.tab = 'TBT';
+  apiObj.state.cols = [{ col_key: 'docNo', label: 'Register No.', col_type: 'docno', visible: true }];
+  apiObj.state.allTabCols = apiObj.state.cols;
+  apiObj.state.ptwSubtypeFilter = '';
+  apiObj.state.recs = [];
+  apiObj.updatePtwSubTabs();
+  assert.strictEqual(byId['ptw-subtabs'].style.display, 'none', 'TBT without subtype list hides sub-tab bar');
+
+  // Step C: adding hse_tbt_subtype via Lists automatically enables sub-tabs for TBT
+  apiObj.state.lists.hse_tbt_subtype = ['Fire Safety Talk'];
+  apiObj.updatePtwSubTabs();
+  assert.strictEqual(byId['ptw-subtabs'].style.display, 'flex', 'Adding hse_tbt_subtype enables sub-tab bar seamlessly');
+  assert.strictEqual(byId['ptw-subtabs'].children.length, 3, 'TBT: All + 1 subtype + "+" button');
 })().catch(e => { console.error(e); process.exit(1); });
 """
         with tempfile.TemporaryDirectory() as tmpdir:

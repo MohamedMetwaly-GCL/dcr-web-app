@@ -13680,6 +13680,8 @@ body.dark .ptw-subtab-btn{{background:#101a29;color:#cbd5e1;border-color:#304257
 body.dark .ptw-subtab-btn:hover{{background:#1e3147;color:#fff;border-color:#475569}}
 body.dark .ptw-subtab-btn.active{{background:#2563eb;color:#fff;border-color:#3b82f6}}
 body.dark .ptw-subtab-cnt{{background:rgba(255,255,255,.12);color:#e2e8f0}}
+body.dark .ptw-subtab-add{{border-color:#60a5fa;background:rgba(59,130,246,.16);color:#93c5fd}}
+body.dark .ptw-subtab-add:hover{{background:#2563eb;color:#fff;border-color:#3b82f6;border-style:solid}}
 body.dark #tabsbar{{background:#0d1f33}}
 body.dark #tblwrap{{background:#111b2a}}
 body.dark .pf-lbl{{color:#93c5fd}}
@@ -13756,6 +13758,10 @@ body.dark .addrow input{{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}}
 .ptw-subtab-cnt{{background:rgba(15,23,42,.08);color:var(--tx);border-radius:999px;padding:0 6px;
   font-size:10px;font-weight:700;min-width:18px;text-align:center}}
 .ptw-subtab-btn.active .ptw-subtab-cnt{{background:rgba(255,255,255,.22);color:#fff}}
+.ptw-subtab-add{{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+  border-radius:50%;border:1.5px dashed var(--pr);background:rgba(37,99,168,.08);color:var(--pr);
+  cursor:pointer;font-size:15px;font-weight:700;line-height:1;flex-shrink:0;transition:all .15s;margin-inline-start:2px}}
+.ptw-subtab-add:hover{{background:var(--pr);color:#fff;border-style:solid;transform:scale(1.05)}}
 #toolbar{{background:#fff;border-bottom:1px solid var(--bd);padding:4px 8px;
   display:flex;align-items:center;gap:5px;flex-shrink:0;flex-wrap:wrap}}
 #toolbar-actions{{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}}
@@ -14496,6 +14502,35 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
     <div class="mfoot">
       <button class="btn btn-sc" onclick="closeM('addcol-modal')">{t("common.cancel", norm)}</button>
       <button class="btn btn-pr" onclick="saveAddCol()">{t("common.add", norm)}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD SUBTYPE MODAL -->
+<div class="overlay hidden" id="add-subtype-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="mhdr"><span id="add-subtype-title">{t("hse.subtab.modal_title_ptw", norm)}</span>
+      <button class="xbtn" onclick="closeM('add-subtype-modal')">✕</button></div>
+    <div class="mbody">
+      <div class="fgrid">
+        <div class="fg full">
+          <label for="add-subtype-name">{t("hse.subtab.name_label", norm)}</label>
+          <input id="add-subtype-name" placeholder="{t("hse.subtab.name_ph_ptw", norm)}" autocomplete="off"
+            oninput="onAddSubtypeNameInput()" onkeydown="if(event.key==='Enter'){{event.preventDefault();saveNewSubtype();}}">
+        </div>
+        <div class="fg full" id="add-subtype-code-wrap" style="display:none">
+          <label for="add-subtype-code">{t("hse.subtab.code_label", norm)}</label>
+          <input id="add-subtype-code" class="bidi-ltr" maxlength="8" placeholder="{t("hse.subtab.code_ph", norm)}" autocomplete="off"
+            style="font-family:Consolas,monospace;font-weight:700;text-transform:uppercase"
+            oninput="onAddSubtypeCodeInput()" onkeydown="if(event.key==='Enter'){{event.preventDefault();saveNewSubtype();}}">
+          <div style="font-size:10.5px;color:var(--mu);margin-top:4px">{t("hse.subtab.code_hint", norm)}</div>
+          <div id="add-subtype-docno-preview" style="display:none;margin-top:6px;padding:6px 10px;border-radius:6px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-size:11px;font-weight:600"></div>
+        </div>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-sc" onclick="closeM('add-subtype-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" id="add-subtype-save-btn" onclick="saveNewSubtype()">{t("common.add", norm)}</button>
     </div>
   </div>
 </div>
@@ -15620,11 +15655,13 @@ function buildHead(){{
         ? 'correspondence_parties'
         : (ltrRole==='direction' ? 'letter_direction' : (ltrRole==='status' ? 'letter_status' : col.list_name));
       const isStCol=(col.col_key==='status'||isStatusLikeField(col));
-      const curFlt=(isHsePtwTab()&&col.col_key==='legacySubtype')?(state.ptwSubtypeFilter||state.filters[col.col_key]||''):(state.filters[col.col_key]||'');
+      const activeSubCfg=getActiveSubtypeConfig();
+      const isSubCol=Boolean(activeSubCfg&&col.col_key===activeSubCfg.colKey);
+      const curFlt=isSubCol?(state.ptwSubtypeFilter||state.filters[col.col_key]||''):(state.filters[col.col_key]||'');
       sel.innerHTML='<option value="">'+escHtml(window.t('reg.filter_all'))+'</option>'+(state.lists[listName]||[]).map(o=>`<option value="${{escHtml(o)}}" ${{curFlt===o?'selected':''}}>${{escHtml(isStCol?window.tStatus(o):o)}}</option>`).join('');
       sel.onchange=()=>{{
         state.filters[col.col_key]=sel.value;
-        if(isHsePtwTab()&&col.col_key==='legacySubtype'){{
+        if(isSubCol){{
           state.ptwSubtypeFilter=sel.value||'';
           updatePtwSubTabs();
         }}
@@ -15864,16 +15901,17 @@ function renderRows(){{
   const isPrTab=isPRTab();
   const isLtrTab=isLTRTab();
   const prDetailsKey=isPrTab?getPrDetailsColKey():null;
+  const activeSubCfg=getActiveSubtypeConfig();
   let rows=state.recs.filter(r=>{{
     if(state.latestRevisionsOnly && r._has_newer_revision) return false;
-    if(isHsePtwTab() && state.ptwSubtypeFilter){{
-      if(normalizePtwSubtypeValue(r.legacySubtype).toLowerCase() !== state.ptwSubtypeFilter.toLowerCase()) return false;
+    if(activeSubCfg && state.ptwSubtypeFilter){{
+      if(!recordMatchesSubtype(r, activeSubCfg.colKey, state.ptwSubtypeFilter, activeSubCfg.isPtw)) return false;
     }}
     for(const[k,v]of Object.entries(state.filters)){{
       if(k.startsWith('_'))continue;
       if(v){{
-        if(isHsePtwTab() && k==='legacySubtype'){{
-          if(normalizePtwSubtypeValue(r[k]).toLowerCase() !== String(v).trim().toLowerCase()) return false;
+        if(activeSubCfg && k===activeSubCfg.colKey){{
+          if(!recordMatchesSubtype(r, k, v, activeSubCfg.isPtw)) return false;
           continue;
         }}
         const fCol=(state.cols||[]).find(c=>c.col_key===k);
@@ -16789,14 +16827,18 @@ function addRecord(){{
     buildForm(draft,{{mode:'revisionDraft'}});
   }}else{{
     document.getElementById('rec-title').textContent=window.t('form.add_title');
+    const subCfg=getActiveSubtypeConfig();
+    const defSub=subCfg?(state.ptwSubtypeFilter||''):'';
     if(isHsePtwTab()){{
-      const defSub=state.ptwSubtypeFilter||'';
       buildForm(null,{{
         defaultSubtype:defSub,
         suggestedDocNo:defSub?computeNextPtwDocNoClient(defSub):''
       }});
     }}else{{
-      buildForm(null,{{suggestedDocNo:suggestNextDocNoFromVisibleRows()}});
+      buildForm(null,{{
+        defaultSubtype:defSub,
+        suggestedDocNo:suggestNextDocNoFromVisibleRows()
+      }});
     }}
   }}
   openM('rec-modal');
@@ -17151,7 +17193,9 @@ async function buildForm(row,opts={{}}){{
       // Add free-text input below multiselect
       const wrapper=document.createElement('div');
       const isStatusCol = key==='status' || isStatusLikeField(col) || String(col.list_name||'').toLowerCase().includes('status');
-      wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],val,isStatusCol));
+      const activeSubCfg=getActiveSubtypeConfig();
+      const initDropVal=(!row && activeSubCfg && key===activeSubCfg.colKey && opts.defaultSubtype) ? opts.defaultSubtype : val;
+      wrapper.appendChild(buildMS(key,state.lists[col.list_name]||[],initDropVal,isStatusCol));
       const freeInp=document.createElement('input');
       freeInp.id='f-free-'+key;freeInp.placeholder=window.t('form.custom_val_ph');
       freeInp.style.cssText='margin-top:4px;width:100%;padding:5px 8px;border:1px dashed var(--bd);border-radius:var(--rd);font-size:11px;color:var(--mu);outline:none';
@@ -18414,16 +18458,71 @@ async function updatePtwDocNoForSubtype(subtypeName,inputEl){{
     if(r&&r.next)inputEl.value=r.next;
   }}catch(_e){{}}
 }}
+function getActiveSubtypeConfig(){{
+  const dtObj=(state.dtList||[]).find(d=>String(d.id)===String(state.tab)||String(d.code||'').toUpperCase()===String(state.tab||'').toUpperCase())||{{}};
+  const dtCode=String(dtObj.code||dtObj.id||state.tab||'').trim().toUpperCase();
+  const codeLow=dtCode.toLowerCase();
+  const isPtw=isHsePtwTab();
+  const allCols=(Array.isArray(state.allTabCols)&&state.allTabCols.length)?state.allTabCols:(Array.isArray(state.cols)?state.cols:[]);
+  const subCol=allCols.find(c=>c&&c.col_type==='dropdown'&&c.list_name&&(
+    String(c.col_key||'').toLowerCase()==='legacysubtype'
+    || String(c.col_key||'').toLowerCase()==='subtype'
+    || String(c.list_name||'').toLowerCase().endsWith('_subtype')
+    || String(c.list_name||'').toLowerCase()==='subtype'
+  ))||null;
+  let colKey=subCol?subCol.col_key:'legacySubtype';
+  let listName=subCol?subCol.list_name:'';
+  if(!listName){{
+    if(isPtw){{
+      listName='hse_ptw_subtype';
+    }}else if(codeLow){{
+      const candidates=[`hse_${{codeLow}}_subtype`, `${{codeLow}}_subtype`];
+      listName=candidates.find(ln=>Object.prototype.hasOwnProperty.call(state.lists||{{}}, ln))||'';
+    }}
+  }}
+  if(!listName)return null;
+  const rawItems=Array.isArray(state.lists?.[listName])
+    ? state.lists[listName]
+    : (isPtw?Object.keys(DEFAULT_PTW_SUBTYPE_CODES||{{}}):[]);
+  if(!isPtw && !rawItems.length && !subCol)return null;
+  return {{
+    isPtw,
+    dtCode,
+    dtName: dtObj.name || dtCode || state.tab || '',
+    colKey,
+    listName,
+    items: [...rawItems]
+  }};
+}}
+function recordMatchesSubtype(rec, colKey, targetSubtype, isSingleSelect){{
+  const want=String(targetSubtype||'').trim().toLowerCase();
+  if(!want)return true;
+  const raw=rec?.[colKey];
+  if(raw===null||raw===undefined)return false;
+  if(isSingleSelect){{
+    return normalizePtwSubtypeValue(raw).toLowerCase()===want;
+  }}
+  if(Array.isArray(raw)){{
+    return raw.some(v=>normalizePtwSubtypeValue(v).toLowerCase()===want);
+  }}
+  const s=String(raw).trim();
+  if(!s)return false;
+  if(s.toLowerCase()===want)return true;
+  if(s.includes(',')){{
+    return s.split(',').map(p=>p.trim().toLowerCase()).includes(want);
+  }}
+  return normalizePtwSubtypeValue(s).toLowerCase()===want;
+}}
 function updatePtwSubTabs(){{
   const bar=document.getElementById('ptw-subtabs');
   if(!bar)return;
-  const on=isHsePtwTab();
-  bar.style.display=on?'flex':'none';
-  if(!on){{
+  const cfg=getActiveSubtypeConfig();
+  bar.style.display=cfg?'flex':'none';
+  if(!cfg){{
     state.ptwSubtypeFilter='';
     return;
   }}
-  const configured=[...(state.lists?.hse_ptw_subtype||Object.keys(DEFAULT_PTW_SUBTYPE_CODES||{{}}))];
+  const configured=cfg.items;
   if(state.ptwSubtypeFilter&&!configured.some(s=>s.toLowerCase()===state.ptwSubtypeFilter.toLowerCase())){{
     state.ptwSubtypeFilter='';
   }}
@@ -18431,10 +18530,25 @@ function updatePtwSubTabs(){{
   const counts=new Map();
   configured.forEach(s=>counts.set(s.toLowerCase(),0));
   recs.forEach(r=>{{
-    const sub=normalizePtwSubtypeValue(r?.legacySubtype);
-    if(sub){{
-      const k=sub.toLowerCase();
-      counts.set(k,(counts.get(k)||0)+1);
+    if(cfg.isPtw){{
+      const sub=normalizePtwSubtypeValue(r?.[cfg.colKey]);
+      if(sub){{
+        const k=sub.toLowerCase();
+        counts.set(k,(counts.get(k)||0)+1);
+      }}
+    }}else{{
+      const raw=r?.[cfg.colKey];
+      const vals=Array.isArray(raw)
+        ? raw.map(v=>normalizePtwSubtypeValue(v)).filter(Boolean)
+        : String(raw||'').split(',').map(v=>normalizePtwSubtypeValue(v)).filter(Boolean);
+      const seen=new Set();
+      vals.forEach(v=>{{
+        const k=v.toLowerCase();
+        if(!seen.has(k)){{
+          seen.add(k);
+          counts.set(k,(counts.get(k)||0)+1);
+        }}
+      }});
     }}
   }});
   bar.innerHTML='';
@@ -18464,20 +18578,139 @@ function updatePtwSubTabs(){{
   }};
   bar.appendChild(mkBtn('',window.t('reg.filter_all'),'',recs.length,!state.ptwSubtypeFilter,window.t('reg.filter_all')));
   configured.forEach(sub=>{{
-    const code=getPtwSubtypeCode(sub);
+    const code=cfg.isPtw?getPtwSubtypeCode(sub):'';
     const cnt=counts.get(sub.toLowerCase())||0;
     const active=!!state.ptwSubtypeFilter&&state.ptwSubtypeFilter.toLowerCase()===sub.toLowerCase();
-    bar.appendChild(mkBtn(sub,formatPtwSubTabLabel(sub),code,cnt,active,`${{sub}}${{code?' ('+code+')':''}}`));
+    const dispLabel=cfg.isPtw?formatPtwSubTabLabel(sub):sub;
+    bar.appendChild(mkBtn(sub,dispLabel,code,cnt,active,`${{sub}}${{code?' ('+code+')':''}}`));
   }});
+  if(typeof CAN_EDIT!=='undefined'&&CAN_EDIT){{
+    const addBtn=document.createElement('button');
+    addBtn.type='button';
+    addBtn.id='ptw-subtab-add-btn';
+    addBtn.className='ptw-subtab-add';
+    addBtn.textContent='+';
+    addBtn.title=window.t('hse.subtab.add_btn_title');
+    addBtn.setAttribute('aria-label',window.t('hse.subtab.add_btn_title'));
+    addBtn.onclick=()=>openAddSubtypeModal();
+    bar.appendChild(addBtn);
+  }}
 }}
 function setPtwSubtypeFilter(subtype){{
+  const cfg=getActiveSubtypeConfig();
+  const colKey=cfg?cfg.colKey:'legacySubtype';
   state.ptwSubtypeFilter=normalizePtwSubtypeValue(subtype);
-  if(state.ptwSubtypeFilter)state.filters.legacySubtype=state.ptwSubtypeFilter;
-  else delete state.filters.legacySubtype;
-  const fltSel=document.querySelector('#thead .frow select[data-col-key="legacySubtype"]');
+  if(state.ptwSubtypeFilter)state.filters[colKey]=state.ptwSubtypeFilter;
+  else delete state.filters[colKey];
+  const fltSel=document.querySelector(`#thead .frow select[data-col-key="${{colKey}}"]`);
   if(fltSel)fltSel.value=state.ptwSubtypeFilter||'';
   updatePtwSubTabs();
   renderRows();
+}}
+function _updateAddSubtypeDocNoPreview(){{
+  const prevEl=document.getElementById('add-subtype-docno-preview');
+  const codeInp=document.getElementById('add-subtype-code');
+  const cfg=getActiveSubtypeConfig();
+  if(!prevEl||!codeInp)return;
+  if(!cfg||!cfg.isPtw){{
+    prevEl.style.display='none';
+    return;
+  }}
+  const code=String(codeInp.value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!code){{
+    prevEl.style.display='none';
+    return;
+  }}
+  const prefix=resolvePtwProjectPrefix();
+  prevEl.style.display='block';
+  prevEl.textContent=`${{window.t('hse.subtab.docno_preview')}} ${{prefix}}-${{code}}-001`;
+}}
+function openAddSubtypeModal(){{
+  const cfg=getActiveSubtypeConfig();
+  if(!cfg||!CAN_EDIT)return;
+  const titleEl=document.getElementById('add-subtype-title');
+  const nameInp=document.getElementById('add-subtype-name');
+  const codeWrap=document.getElementById('add-subtype-code-wrap');
+  const codeInp=document.getElementById('add-subtype-code');
+  if(titleEl){{
+    titleEl.textContent=cfg.isPtw
+      ? window.t('hse.subtab.modal_title_ptw')
+      : window.t('hse.subtab.modal_title_generic',{{dt:cfg.dtCode||cfg.dtName}});
+  }}
+  if(nameInp){{
+    nameInp.value='';
+    nameInp.placeholder=cfg.isPtw?window.t('hse.subtab.name_ph_ptw'):window.t('hse.subtab.name_ph_generic');
+  }}
+  if(codeWrap)codeWrap.style.display=cfg.isPtw?'':'none';
+  if(codeInp){{
+    codeInp.value='';
+    codeInp.dataset.manualEdit='';
+  }}
+  _updateAddSubtypeDocNoPreview();
+  openM('add-subtype-modal');
+  if(nameInp&&typeof nameInp.focus==='function')setTimeout(()=>nameInp.focus(),30);
+}}
+function onAddSubtypeNameInput(){{
+  const cfg=getActiveSubtypeConfig();
+  if(!cfg||!cfg.isPtw)return;
+  const nameInp=document.getElementById('add-subtype-name');
+  const codeInp=document.getElementById('add-subtype-code');
+  if(!nameInp||!codeInp||codeInp.dataset.manualEdit==='1')return;
+  const nameVal=String(nameInp.value||'').trim();
+  codeInp.value=nameVal?getPtwSubtypeCode(nameVal):'';
+  _updateAddSubtypeDocNoPreview();
+}}
+function onAddSubtypeCodeInput(){{
+  const codeInp=document.getElementById('add-subtype-code');
+  if(!codeInp)return;
+  const cleaned=String(codeInp.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  codeInp.value=cleaned;
+  codeInp.dataset.manualEdit=cleaned?'1':'';
+  _updateAddSubtypeDocNoPreview();
+}}
+async function saveNewSubtype(){{
+  const cfg=getActiveSubtypeConfig();
+  if(!cfg||!CAN_EDIT)return;
+  const nameInp=document.getElementById('add-subtype-name');
+  const codeInp=document.getElementById('add-subtype-code');
+  const saveBtn=document.getElementById('add-subtype-save-btn');
+  const name=String(nameInp?.value||'').trim();
+  if(!name){{
+    toast(window.t('hse.subtab.err_name_req'),'er');
+    if(nameInp&&typeof nameInp.focus==='function')nameInp.focus();
+    return;
+  }}
+  if(cfg.items.some(s=>String(s||'').trim().toLowerCase()===name.toLowerCase())){{
+    toast(window.t('hse.subtab.err_duplicate'),'wa');
+    return;
+  }}
+  const payload={{list_name:cfg.listName,item:name}};
+  if(cfg.isPtw){{
+    let code=String(codeInp?.value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(!code)code=getPtwSubtypeCode(name);
+    if(!code){{
+      toast(window.t('hse.subtab.err_code_req'),'er');
+      if(codeInp&&typeof codeInp.focus==='function')codeInp.focus();
+      return;
+    }}
+    payload.meta=code;
+  }}
+  if(saveBtn)saveBtn.disabled=true;
+  try{{
+    const res=await apiFetch('/api/lists/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
+    if(!res||!res.ok){{
+      toast(res?.error||window.t('hse.subtab.err_save'),'er');
+      return;
+    }}
+    const savedItem=String(res.item||name).trim();
+    closeM('add-subtype-modal');
+    await loadLists(true);
+    setPtwSubtypeFilter(savedItem);
+    if(typeof buildHead==='function')buildHead();
+    toast(window.t('hse.subtab.added_toast',{{name:savedItem}}),'ok');
+  }}finally{{
+    if(saveBtn)saveBtn.disabled=false;
+  }}
 }}
 function isHseFeiTab(dtTab){{
   return getHseTabCode(dtTab) === 'FEI';
@@ -21973,7 +22206,7 @@ async function addItem(ln){{
     await apiFetch('/api/lists_meta/'+PID,{{method:'POST',body:JSON.stringify({{list_name:ln,item_value:val,meta:'pending'}})}});
   }}
   await loadLists(true);openLists();
-  if(ln.toLowerCase()==='hse_ptw_subtype'&&isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
+  if(ln.toLowerCase().endsWith('_subtype')||ln.toLowerCase()==='subtype'){{updatePtwSubTabs();buildHead();}}
 }}
 async function renameItem(ln,item){{
   const next=prompt(window.t('reg.lists_rename_prompt'),item);
@@ -21982,7 +22215,7 @@ async function renameItem(ln,item){{
   if(!new_item||new_item===item)return;
   await apiFetch('/api/lists/'+PID,{{method:'PATCH',body:JSON.stringify({{list_name:ln,old_item:item,new_item}})}});
   await loadLists(true);openLists();
-  if(ln.toLowerCase()==='hse_ptw_subtype'&&isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
+  if(ln.toLowerCase().endsWith('_subtype')||ln.toLowerCase()==='subtype'){{updatePtwSubTabs();buildHead();}}
   toast(window.t('reg.lists_item_renamed'),'ok');
 }}
 async function moveListItem(ln,item,delta){{
@@ -21992,13 +22225,13 @@ async function moveListItem(ln,item,delta){{
   [items[idx],items[next]]=[items[next],items[idx]];
   await apiFetch('/api/lists/'+PID+'/reorder',{{method:'POST',body:JSON.stringify({{list_name:ln,order:items}})}});
   await loadLists(true);openLists();
-  if(ln.toLowerCase()==='hse_ptw_subtype'&&isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
+  if(ln.toLowerCase().endsWith('_subtype')||ln.toLowerCase()==='subtype'){{updatePtwSubTabs();buildHead();}}
   toast(window.t('reg.lists_order_updated'),'ok');
 }}
 async function rmItem(ln,item,btn){{
   await apiFetch('/api/lists/'+PID,{{method:'DELETE',body:JSON.stringify({{list_name:ln,item}})}});
   btn.closest('li').remove();await loadLists(true);
-  if(ln.toLowerCase()==='hse_ptw_subtype'&&isHsePtwTab()){{updatePtwSubTabs();buildHead();}}
+  if(ln.toLowerCase().endsWith('_subtype')||ln.toLowerCase()==='subtype'){{updatePtwSubTabs();buildHead();}}
 }}
 async function mkList(){{
   const name=document.getElementById('new-list')?.value.trim().toLowerCase().replace(/[\\s]+/g,'_');if(!name)return;
