@@ -609,10 +609,10 @@ def api_drive_sync(pid):
         import json
         db.exe("UPDATE projects SET data=%s WHERE id=%s", (json.dumps(proj), pid))
         
-    # Start sync process in background
+    # Start sync process in background (scoped to pid)
     from drive_service import process_drive_folder
     import threading
-    threading.Thread(target=process_drive_folder, args=(folder_id,)).start()
+    threading.Thread(target=process_drive_folder, args=(folder_id,), kwargs={"project_id": pid}).start()
     
     return jsonify(ok=True)
 
@@ -1152,7 +1152,7 @@ def drive_polling_job():
                 folder_id = p.get("data", {}).get("drive_folder_id")
                 if folder_id:
                     from drive_service import process_drive_folder
-                    process_drive_folder(folder_id)
+                    process_drive_folder(folder_id, project_id=p.get("id"))
         except Exception as e:
             print(f"[Drive Polling Error]: {e}")
 

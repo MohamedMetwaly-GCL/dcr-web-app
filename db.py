@@ -4088,17 +4088,58 @@ def reorder_columns(pid, dt_id, ordered_ids):
         exe("UPDATE columns_config SET sort_order=%s WHERE id=%s AND project_id=%s",
             (i, col_id, pid))
 
-def update_record_link(doc_no, link, sync_links=None):
-    """Updates the fileLocation (Drive Link) of a record by its docNo."""
-    import json
-    rows = q("SELECT id, data FROM records WHERE data->>'docNo' = %s", (doc_no,))
+def _extract_drive_folder_id(raw_value):
+    val = str(raw_value or "").strip()
+    if not val:
+        return ""
+    m = re.search(r"/folders/([a-zA-Z0-9_-]+)", val)
+    return m.group(1) if m else val
+
+
+def get_project_ids_for_drive_folder(folder_id):
+    """Resolve canonical project_id(s) owning the given Google Drive root `folder_id`."""
+    clean_fid = _extract_drive_folder_id(folder_id)
+    if not clean_fid:
+        return []
+    rows = q("SELECT id, data FROM projects ORDER BY id") or []
+    matched = []
     for r in rows:
-        d = r["data"] if isinstance(r["data"], dict) else {}
-        d["fileLocation"] = link
-        if sync_links:  # additive: merge Submit/Replied links without overwriting DCR uploads
+        pdata = r.get("data") or {}
+        if isinstance(pdata, str):
+            try:
+                pdata = json.loads(pdata)
+            except Exception:
+                pdata = {}
+        if isinstance(pdata, dict):
+            proj_fid = _extract_drive_folder_id(pdata.get("drive_folder_id"))
+            if proj_fid and proj_fid == clean_fid:
+                matched.append(r["id"])
+    return matched
+
+
+def update_record_link(doc_no, link, sync_links=None, project_id=None):
+    """Update `fileLocation` and slot `attachments` of records matching `(project_id, doc_no)`."""
+    import copy
+    import json
+    pid = str(project_id or "").strip()
+    doc_no_clean = str(doc_no or "").strip()
+    if not pid or not doc_no_clean:
+        return 0
+    rows = q(
+        "SELECT id, data FROM records WHERE project_id = %s AND data->>'docNo' = %s",
+        (pid, doc_no_clean),
+    ) or []
+    updated = 0
+    for r in rows:
+        d = copy.deepcopy(r["data"]) if isinstance(r["data"], dict) else {}
+        if link:
+            d["fileLocation"] = link
+        if sync_links:  # additive: merge Submit/Replied links independently without overwriting DCR uploads
             import attachments as _att
             d = _att.merge_sync_links(d, sync_links)
-        exe("UPDATE records SET data=%s WHERE id=%s", (json.dumps(d), r["id"]))
+        exe("UPDATE records SET data=%s WHERE id=%s AND project_id=%s", (json.dumps(d), r["id"], pid))
+        updated += 1
+    return updated
 
 
 # ── Dual attachments (Submission / Approval) - additive, see attachments.py ──
@@ -4139,7 +4180,13 @@ def clear_record_attachment(record_id, slot):
 # ── Drive folder routing cache (doc_types.data) - additive, see drive_routing.py ──
 def set_doc_type_drive_cache(pid, dt_id, patch):
     """Merge Drive routing keys into doc_types.data atomically; other keys are untouched."""
-    allowed = {"drive_folder_id", "drive_folder_name", "drive_slot_folders", "folder_synced_at"}
+    allowed = {
+        "drive_folder_id",
+        "drive_folder_name",
+        "drive_slot_folders",
+        "drive_direction_folders",
+        "folder_synced_at",
+    }
     patch = {k: v for k, v in (patch or {}).items() if k in allowed}
     if not patch:
         return False

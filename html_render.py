@@ -16050,6 +16050,7 @@ function renderRows(){{
           const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
           const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
           const _chip=(label,slot,entry,color,bg,name,themeObj,revNum=null)=>{{
+            const _effSlot=(entry&&entry.legacy&&!(row&&row.attachments&&row.attachments[slot]))?'legacy':slot;
             const sp=document.createElement('span');
             const isMix=Boolean(themeObj&&themeObj.mixed);
             const bdStyle=isMix
@@ -16069,15 +16070,15 @@ function renderRows(){{
               lbl.appendChild(rBadge);
             }}
             lbl.title='View '+name;
-            lbl.onclick=(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}};
+            lbl.onclick=(ev)=>{{ev.preventDefault();openDocViewer(row._id,_effSlot,{{label:name}});}};
             if(isMix)lbl.style.color=themeObj.color;
             sp.appendChild(lbl);
             const v=document.createElement('a');
             v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px;cursor:pointer'+(isMix?';color:'+themeObj.color2:'');
             v.href='#';v.title='View '+name;v.innerHTML=_eye;
-            v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}});
+            v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,_effSlot,{{label:name}});}});
             sp.appendChild(v);
-            const dh=canDownloadUI()?docDownloadHref(row._id,slot,entry):'';
+            const dh=canDownloadUI()?docDownloadHref(row._id,_effSlot,entry):'';
             if(dh){{
               const d=document.createElement('a');
               d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px;cursor:pointer'+(isMix?';color:'+themeObj.color2:'');
@@ -20139,12 +20140,40 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
     return {{submission: sub, approval: app, part_a, part_b, part_c, part_d}};
   }}
 
-  // An explicit new DCR upload has file_id, or uploaded_at without legacy flag
-  const isVerifiedSubm = (e) => Boolean(e && (e.file_id || (e.uploaded_at && !e.legacy)));
+  // Verified slot assignment: DCR upload (file_id / folder_id / non-legacy uploaded_at) or Drive sync
+  const isVerifiedSubm = (e) => Boolean(e && (
+    e.file_id || e.folder_id ||
+    (e.uploaded_at && !e.legacy) ||
+    e.source === 'drive_sync' ||
+    e.slot_verified === true
+  ));
 
-  // If submission is a genuine DCR upload, NEVER convert it to approval
+  const _extractDriveId = (u) => {{
+    const s = String(u || '').trim();
+    if(!s) return '';
+    const m = s.match(/\\/folders\\/([a-zA-Z0-9_-]+)/) || s.match(/\\/d\\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    return m ? m[1] : '';
+  }};
+
+  const curTab = dtTab || (typeof state !== 'undefined' ? state.tab : '');
+  const curT = String(curTab).trim().toUpperCase();
+  const dtObj = (typeof state !== 'undefined' && state.dtList || []).find(d =>
+    String(d.id).trim().toUpperCase() === curT ||
+    String(d.code || '').trim().toUpperCase() === curT
+  ) || {{}};
+  const isFlatDocType = !dtHasReplyCycle(dtObj) && !isHseCloseoutTab(dtTab);
+
   if(sub && isVerifiedSubm(sub)){{
-    return {{submission: sub, approval: app}};
+    if(app){{
+      const subUrl = String(sub.url || '').trim().toLowerCase();
+      const appUrl = String(app.url || '').trim().toLowerCase();
+      const subId = sub.file_id || sub.folder_id || _extractDriveId(sub.url);
+      const appId = app.file_id || app.folder_id || _extractDriveId(app.url);
+      if((subUrl && appUrl && subUrl === appUrl) || (subId && appId && subId === appId)){{
+        app = null;
+      }}
+    }}
+    return {{submission: sub, approval: app, is_flat_doc: Boolean(sub.is_flat_doc || isFlatDocType)}};
   }}
 
   if(!sub && !app && hasLeg){{
@@ -20156,20 +20185,28 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
     }} else {{
       sub = {{url: leg, file_name: 'Current Drive Link', legacy: true}};
     }}
+  }} else if(!sub && app && hasLeg){{
+    const appUrl = String(app.url || '').trim().toLowerCase();
+    const appId = app.file_id || app.folder_id || _extractDriveId(app.url);
+    const legId = _extractDriveId(leg);
+    const isSameAsApp = Boolean((appUrl && leg.toLowerCase() === appUrl) || (appId && legId && appId === legId));
+    if(!isSameAsApp){{
+      sub = isFlatDocType
+        ? {{url: leg, file_name: 'Document', legacy: true, is_flat_doc: true}}
+        : {{url: leg, file_name: 'Current Drive Link', legacy: true}};
+    }}
   }} else if(sub && !app && !isVerifiedSubm(sub)){{
-    const subUrl = (sub && (sub.url || '')) || leg;
-    const kind = classifyLegacyLinkKind(row, dtTab || state.tab, subUrl);
-    if(kind === 'approval'){{
-      app = {{...sub, file_name: sub.file_name || 'Consultant Reply', legacy: true, consultant_status: row.status || sub.consultant_status || ''}};
-      sub = null;
-    }} else if(kind === 'doc'){{
-      sub = {{...sub, file_name: sub.file_name || 'Document', legacy: true, is_flat_doc: true}};
+    // Never re-classify an existing submission slot entry into approval based on row.status
+    if(isFlatDocType){{
+      sub = {{...sub, file_name: sub.file_name || 'Document', legacy: Boolean(sub.legacy), is_flat_doc: true}};
     }}
   }}
   if(sub && app){{
     const subUrl = String(sub.url || '').trim().toLowerCase();
     const appUrl = String(app.url || '').trim().toLowerCase();
-    if(sub.legacy || subUrl === appUrl || (sub.file_id && app.file_id && sub.file_id === app.file_id)){{
+    const subId = sub.file_id || sub.folder_id || _extractDriveId(sub.url);
+    const appId = app.file_id || app.folder_id || _extractDriveId(app.url);
+    if((subUrl && appUrl && subUrl === appUrl) || (subId && appId && subId === appId)){{
       sub = null;
     }}
   }}
@@ -20542,7 +20579,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       statusLine.appendChild(nameSpan);
 
       const _recId=row&&row._id?row._id:(state.editId||'');
-      const _slotKey=entry.legacy?'legacy':s.key;
+      const _slotKey=(entry.legacy&&!(row&&row.attachments&&row.attachments[s.key]))?'legacy':s.key;
       const _curRev=isNoc?getNocPartRev(entry):undefined;
       const vA=document.createElement('a');
       vA.href=_recId?'#':vUrl;

@@ -56,6 +56,14 @@ assert A.classify_path_kind("Root / 3. Material Submittal (MS) / Replied / MS-00
 assert A.classify_path_kind("Root / 3. Material Submittal (MS) / Submit / MS-001.pdf") == "submission"
 assert A.classify_path_kind("Root / 3. Material Submittal (MS) / MS-001.pdf") is None
 assert A.classify_path_kind("Root / 5. Material Inspection Request (MIR) / MIR-001.pdf") is None
+# Directory-only classification: basename keywords must never override parent folder
+assert A.classify_path_kind("Root / Submit / DS-001_For_Approval.pdf") == "submission"
+assert A.classify_path_kind("Root / Submit / DS-001 For Approval.pdf") == "submission"
+assert A.classify_path_kind("Root / Submit / MS-002_Approved_Reply.pdf") == "submission"
+assert A.classify_path_kind("Root / Submit / DS-001 For Approval REV00 / DS-001_For_Approval.pdf") == "submission"
+assert A.classify_path_kind("Root / Replied / DS-001_Submit_Copy.pdf") == "approval"
+assert A.classify_path_kind("DS-001_For_Approval.pdf") is None
+assert A.classify_path_kind("Root / 3. Material Submittal (MS) / MS-001_For_Approval.pdf") is None
 base = {"docNo": "X", "fileLocation": "old"}
 m = A.merge_sync_links(base, {"submission": "S1", "approval": "R1"})
 assert m["attachments"]["submission"] == {"url": "S1", "source": "drive_sync"}
