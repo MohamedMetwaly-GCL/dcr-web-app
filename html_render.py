@@ -20674,10 +20674,13 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           return;
         }}
         upBtn.disabled=true;
+        progWrap.dataset.hasError='';
         progWrap.style.display='flex';
+        progBarInner.style.background=s.color;
+        progBarInner.style.animation='';
         progBarInner.style.width='0%';
         progTxt.style.color='#475569';
-        progTxt.textContent=window.t('form.starting_upload');
+        progTxt.textContent=_formatDriveStageText('preparing',0,f.size||0,'');
         state.activeDriveUploads=(state.activeDriveUploads||0)+1;
         const dirEl=formRoot.querySelector('#f-direction')||formRoot.querySelector('[name="direction"]');
         const formDir=(dirEl&&dirEl.value)?dirEl.value:(row?.direction||'');
@@ -20690,11 +20693,13 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const formSubtype=getCurrentFormSubtype();
         const revOpts=getUploadRevOpts(cur[s.key]);
         try{{
-          const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
+          const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label,stage)=>{{
             const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-            progBarInner.style.width=pct+'%';
-            progTxt.textContent=label||(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
-          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, subtype: formSubtype, rev_mode: revOpts.rev_mode, part_rev: revOpts.part_rev}});
+            const isPrep=(stage==='preparing'&&pct===0);
+            progBarInner.style.width=isPrep?'30%':(pct+'%');
+            progBarInner.style.animation=isPrep?'aiPulse 1.2s ease-in-out infinite':'';
+            progTxt.textContent=_formatDriveStageText(stage||'uploading',done,total,label);
+          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, subtype: formSubtype, rev_mode: revOpts.rev_mode, part_rev: revOpts.part_rev, signal: slotAbortCtrl?slotAbortCtrl.signal:undefined}});
           if(res&&res.pending){{
             state.pendingDriveAttachments[s.key]=res;
             renderSlotInfo(cur[s.key],res);
@@ -20718,14 +20723,24 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             toast(window.t('form.file_uploaded_linked',{{slot:s.key}}),'ok');
           }}
         }}catch(e){{
-          progTxt.style.color='#dc2626';
-          const errMsg = String(e.message || e || '');
-          const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
-            ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
-            : (e.message || e);
-          progTxt.textContent=window.t('form.upload_failed',{{err:friendly}});
-          toast(window.t('form.upload_failed_toast',{{err:friendly}}), 'er');
+          progBarInner.style.animation='';
+          if(e.name==='AbortError'||cancelSlotUpload){{
+            progWrap.dataset.hasError='';
+            toast('Upload stopped','wa');
+          }}else{{
+            progWrap.dataset.hasError='1';
+            progBarInner.style.background='#dc2626';
+            progTxt.style.color='#dc2626';
+            const errMsg = String(e.message || e || '');
+            const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
+              ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
+              : (e.message || e);
+            progTxt.textContent=window.t('form.upload_failed',{{err:friendly}});
+            progWrap.style.display='flex';
+            toast(window.t('form.upload_failed_toast',{{err:friendly}}), 'er');
+          }}
         }}finally{{
+          progBarInner.style.animation='';
           state.activeDriveUploads=Math.max(0,(state.activeDriveUploads||1)-1);
           upBtn.disabled=false;
           fileInp.value='';
@@ -20772,7 +20787,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           await origFileChange();
         }} finally {{
           upBtn.style.display='';fldBtn.style.display='';
-          progWrap.style.display='none';
+          if(progWrap.dataset.hasError!=='1')progWrap.style.display='none';
           slotAbortCtrl=null;
         }}
       }};
@@ -20799,11 +20814,16 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         slotAbortCtrl = new AbortController();
         slotStopBtn.disabled = false; slotStopBtn.textContent = '⏹ Stop';
         upBtn.style.display = 'none'; fldBtn.style.display = 'none';
+        progWrap.dataset.hasError = '';
         progWrap.style.display = 'flex';
-        progBarInner.style.width = '0%';
+        progBarInner.style.background = s.color;
+        progBarInner.style.animation = 'aiPulse 1.2s ease-in-out infinite';
+        progBarInner.style.width = '30%';
         progTxt.style.color = '#475569';
-        progTxt.textContent = skippedJunk > 0 ? `Filtered out ${{skippedJunk}} junk file(s). Uploading ${{fls.length}} files...` : `Starting folder upload (${{fls.length}} files)...`;
+        progTxt.textContent = skippedJunk > 0 ? `Filtered out ${{skippedJunk}} junk file(s). Uploading ${{fls.length}} files...` : _formatDriveStageText('preparing', 0, 0, '');
         state.activeDriveUploads = (state.activeDriveUploads || 0) + 1;
+        const totalFolderBytes = fls.reduce((sum, itemFile) => sum + (itemFile.size || 0), 0);
+        let uploadedFolderBytes = 0;
         try {{
           let lastRes = null;
           let uploadedCount = 0;
@@ -20825,11 +20845,23 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]')||formRoot.querySelector('#f-nocNo')||formRoot.querySelector('[name="nocNo"]');
             const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||row?.nocNo||'');
             const formSubtype=getCurrentFormSubtype();
-            lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
-              const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
-              progBarInner.style.width = overall + '%';
-              progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
+            lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label, stage) => {{
+              const activeDone = Math.min(done || 0, f.size || total || 0);
+              const overallBytes = uploadedFolderBytes + activeDone;
+              const overall = totalFolderBytes > 0
+                ? Math.min(100, Math.round((overallBytes / totalFolderBytes) * 100))
+                : Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
+              const isPrep = (stage === 'preparing' && overallBytes === 0);
+              progBarInner.style.width = isPrep ? '30%' : (overall + '%');
+              progBarInner.style.animation = isPrep ? 'aiPulse 1.2s ease-in-out infinite' : '';
+              const ar = _isArLang();
+              const prefix = ar
+                ? `ملف ${{fi + 1}} من ${{fls.length}}: ${{f.name}} — ${{overall}}%`
+                : `File ${{fi + 1}} / ${{fls.length}}: ${{f.name}} — ${{overall}}%`;
+              const stageSuffix = (stage && stage !== 'uploading') ? (' — ' + _formatDriveStageText(stage, done, total, label)) : '';
+              progTxt.textContent = prefix + stageSuffix;
             }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, rev_mode: (fi === 0 ? revOpts.rev_mode : 'overwrite'), part_rev: revOpts.part_rev, direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, subtype: formSubtype, signal: slotAbortCtrl.signal}});
+            uploadedFolderBytes += (f.size || 0);
             if(lastRes && lastRes.pending) pendingItems.push(lastRes);
             uploadedCount++;
           }}
@@ -20859,19 +20891,27 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             }}
           }}
         }} catch(e) {{
+          progBarInner.style.animation = '';
           if(e.name === 'AbortError' || cancelSlotUpload) {{
+            progWrap.dataset.hasError = '';
             toast('Folder upload stopped', 'wa');
           }} else {{
+            progWrap.dataset.hasError = '1';
+            progBarInner.style.background = '#dc2626';
+            progTxt.style.color = '#dc2626';
             const errMsg = String(e.message || e || '');
             const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
               ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
               : (e.message || e);
+            progTxt.textContent = window.t('form.upload_failed', {{err: friendly}});
+            progWrap.style.display = 'flex';
             toast('Folder upload error: ' + friendly, 'er');
           }}
         }} finally {{
+          progBarInner.style.animation = '';
           state.activeDriveUploads = Math.max(0, (state.activeDriveUploads || 1) - 1);
           upBtn.style.display = ''; fldBtn.style.display = '';
-          progWrap.style.display = 'none';
+          if(progWrap.dataset.hasError !== '1') progWrap.style.display = 'none';
           folderInp.value = '';
           slotAbortCtrl = null;
         }}
@@ -20906,35 +20946,138 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   secBody.insertBefore(wrap,secBody.firstChild);
 }}
 
+function _isArLang(){{
+  try{{
+    return (typeof window!=='undefined'&&window.DCR_LANG==='ar')||(typeof document!=='undefined'&&document.documentElement&&document.documentElement.getAttribute('lang')==='ar');
+  }}catch(_e){{return false;}}
+}}
+
+function _formatDriveStageText(stage,done,total,label){{
+  if(label)return label;
+  const ar=_isArLang();
+  const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+  if(stage==='preparing'){{
+    return ar?'جاري تجهيز مجلد Drive...':'Preparing Drive folder...';
+  }}
+  if(stage==='forwarding'){{
+    return ar?'جاري النقل إلى Google Drive...':'Transferring to Google Drive...';
+  }}
+  if(stage==='linking'){{
+    return ar?'جاري ربط الملف بالسجل...':'Linking file to record...';
+  }}
+  const sz=total>0?(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')'):(pct+'%');
+  return ar?(sz+' — جاري الرفع...'):(sz+' — Uploading...');
+}}
+
+function _xhrSendBlob(opts){{
+  const {{url,method,headers,body,signal,onUploadProgress,onUploadComplete}}=opts||{{}};
+  return new Promise((resolve,reject)=>{{
+    if(signal&&signal.aborted){{
+      reject(new DOMException('Upload aborted by user','AbortError'));
+      return;
+    }}
+    const xhr=new XMLHttpRequest();
+    xhr.open(method||'PUT',url,true);
+    if(headers){{
+      Object.keys(headers).forEach((k)=>{{
+        xhr.setRequestHeader(k,headers[k]);
+      }});
+    }}
+    let settled=false;
+    let onAbort=null;
+    const cleanup=()=>{{
+      if(signal&&onAbort){{
+        try{{signal.removeEventListener('abort',onAbort);}}catch(_e){{}}
+      }}
+    }};
+    onAbort=()=>{{
+      if(settled)return;
+      settled=true;
+      cleanup();
+      try{{xhr.abort();}}catch(_e){{}}
+      reject(new DOMException('Upload aborted by user','AbortError'));
+    }};
+    if(signal){{
+      signal.addEventListener('abort',onAbort,{{once:true}});
+    }}
+    if(xhr.upload){{
+      xhr.upload.onprogress=(ev)=>{{
+        if(settled)return;
+        if(ev&&ev.lengthComputable&&typeof onUploadProgress==='function'){{
+          onUploadProgress(ev.loaded,ev.total);
+        }}
+      }};
+      xhr.upload.onload=()=>{{
+        if(settled)return;
+        if(typeof onUploadComplete==='function'){{
+          onUploadComplete();
+        }}
+      }};
+    }}
+    xhr.onload=()=>{{
+      if(settled)return;
+      settled=true;
+      cleanup();
+      resolve({{
+        status:xhr.status,
+        responseText:xhr.responseText||'',
+        getResponseHeader:(name)=>{{
+          try{{return xhr.getResponseHeader(name);}}catch(_e){{return null;}}
+        }}
+      }});
+    }};
+    xhr.onerror=()=>{{
+      if(settled)return;
+      settled=true;
+      cleanup();
+      reject(new Error('Network error during upload'));
+    }};
+    xhr.onabort=()=>{{
+      if(settled)return;
+      settled=true;
+      cleanup();
+      reject(new DOMException('Upload aborted by user','AbortError'));
+    }};
+    xhr.send(body);
+  }});
+}}
+
 async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,onProgress,useProxyRef,signal){{
   if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
   const end=Math.min(offset+chunkSize,file.size);
+  const chunkLen=Math.max(0,end-offset);
   const blob=file.slice(offset,end);
   const contentRange=`bytes ${{offset}}-${{end-1}}/${{file.size}}`;
   for(let attempt=0;attempt<5;attempt++){{
     if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
     try{{
       if(!useProxyRef.proxy){{
-        const r=await fetch(sessionUrl,{{
+        const r=await _xhrSendBlob({{
+          url:sessionUrl,
           method:'PUT',
           headers:{{'Content-Range':contentRange}},
           body:blob,
-          signal:signal
+          signal:signal,
+          onUploadProgress:(loaded,total)=>{{
+            const effTotal=total>0?total:chunkLen;
+            const cappedLoaded=effTotal>0?Math.min(loaded,Math.floor(effTotal*0.99)):0;
+            if(typeof onProgress==='function')onProgress(Math.min(offset+cappedLoaded,file.size),file.size,'','uploading');
+          }}
         }});
         if(r.status===308){{
-          const rng=r.headers.get('Range')||'';
+          const rng=r.getResponseHeader('Range')||'';
           const nextOff=rng.includes('-')?(parseInt(rng.split('-')[1],10)+1):end;
-          onProgress(nextOff,file.size);
+          if(typeof onProgress==='function')onProgress(nextOff,file.size,'','uploading');
           return {{done:false,offset:nextOff}};
         }}
         if(r.status===200||r.status===201){{
-          const j=await r.json();
-          onProgress(file.size,file.size);
+          let j={{}};
+          try{{j=JSON.parse(r.responseText||'{{}}');}}catch(_e){{}}
+          if(typeof onProgress==='function')onProgress(file.size,file.size,'','uploading');
           return {{done:true,fileId:j.id}};
         }}
-        if(r.status>=500||r.status===429)throw new Error('Drive HTTP '+r.status);
-        const errTxt=await r.text();
-        throw new Error('Drive upload error ('+r.status+'): '+errTxt.slice(0,160));
+        if(r.status>=500||r.status===429||r.status===0)throw new Error('Drive HTTP '+r.status);
+        throw new Error('Drive upload error ('+r.status+'): '+String(r.responseText||'').slice(0,160));
       }}
     }}catch(directErr){{
       if(directErr.name==='AbortError'||(signal&&signal.aborted))throw directErr;
@@ -20947,20 +21090,31 @@ async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,
     }}
     if(useProxyRef.proxy){{
       if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
-      const pr=await fetch('/api/drive/upload-chunk',{{
+      const pr=await _xhrSendBlob({{
+        url:'/api/drive/upload-chunk',
         method:'POST',
         headers:{{'X-Upload-Ticket':ticket,'X-Content-Range':contentRange}},
         body:blob,
-        signal:signal
+        signal:signal,
+        onUploadProgress:(loaded,total)=>{{
+          const effTotal=total>0?total:chunkLen;
+          const cappedLoaded=effTotal>0?Math.min(loaded,Math.floor(effTotal*0.95)):0;
+          if(typeof onProgress==='function')onProgress(Math.min(offset+cappedLoaded,file.size),file.size,'','uploading');
+        }},
+        onUploadComplete:()=>{{
+          const capped95=chunkLen>0?Math.floor(chunkLen*0.95):0;
+          if(typeof onProgress==='function')onProgress(Math.min(offset+capped95,file.size),file.size,'','forwarding');
+        }}
       }});
-      const pj=await pr.json().catch(()=>({{}}));
-      if(!pr.ok)throw new Error(pj.error||('Chunk upload failed ('+pr.status+')'));
+      let pj={{}};
+      try{{pj=JSON.parse(pr.responseText||'{{}}');}}catch(_e){{}}
+      if(pr.status<200||pr.status>=300)throw new Error(pj.error||('Chunk upload failed ('+pr.status+')'));
       if(pj.done&&pj.file&&pj.file.id){{
-        onProgress(file.size,file.size);
+        if(typeof onProgress==='function')onProgress(file.size,file.size,'','uploading');
         return {{done:true,fileId:pj.file.id}};
       }}
       const nextOff=pj.offset||end;
-      onProgress(nextOff,file.size);
+      if(typeof onProgress==='function')onProgress(nextOff,file.size,'','uploading');
       return {{done:false,offset:nextOff}};
     }}
   }}
@@ -21000,6 +21154,7 @@ function promptDriveFolderChoice(candidates, dtName){{
 async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
   const signal=extraOpts.signal||null;
   if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
+  if(typeof onProgress==='function')onProgress(0,file.size||0,'','preparing');
   const sessPayload = {{
     project_id: PID,
     dt_id: state.tab,
@@ -21037,7 +21192,7 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
   }}
   if(!sessRes.ok||!sess.ok)throw new Error(sess.hint||sess.error||('Could not start upload ('+sessRes.status+')'));
 
-  const chunkSize=sess.chunk_size||(8*1024*1024);
+  const chunkSize=sess.chunk_size||(2*1024*1024);
   const useProxyRef={{proxy:false}};
   let offset=0, fileId='';
   while(offset<file.size){{
@@ -21065,7 +21220,7 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
     }};
   }}
   if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
-  onProgress(file.size,file.size,'Linking file to record...');
+  if(typeof onProgress==='function')onProgress(file.size,file.size,'','linking');
   const cmpRes=await fetch('/api/drive/upload-complete',{{
     method:'POST',
     headers:{{'Content-Type':'application/json'}},
@@ -21218,12 +21373,14 @@ function updateBatchControlsState(){{
 function updateBatchOverallProgress(){{
   const q=state.batchQueue||[];
   const matched=q.filter(it=>it.recordId);
-  const done=q.filter(it=>it.status==='done').length;
+  const done=matched.filter(it=>it.status==='done').length;
+  const active=matched.find(it=>it.status==='uploading');
+  const activeFrac=active?(Math.max(0,Math.min(100,Number(active.pct)||0))/100):0;
   const total=matched.length||1;
   const ovBar=document.getElementById('batch-drv-overall-bar');
   const ovPct=document.getElementById('batch-drv-overall-pct');
   const ovTxt=document.getElementById('batch-drv-overall-txt');
-  const pct=Math.min(100,Math.round((done/total)*100));
+  const pct=Math.min(100,Math.round(((done+activeFrac)/total)*100));
   if(ovBar)ovBar.style.width=pct+'%';
   if(ovPct)ovPct.textContent=pct+'%';
   if(ovTxt)ovTxt.textContent=window.t('drive.batch_completed_n',{{done,total}});
@@ -21662,6 +21819,8 @@ async function startBatchDriveUpload(){{
             const revLbl=formatNocRevLabel(batchPartRev||0);
             subName=baseDoc?`${{baseDoc}} - Part ${{pLet}} ${{revLbl}}`:`${{item.folderName||('Part_'+pLet)}} ${{revLbl}}`;
           }}
+          const totalFolderBytes=files.reduce((sum,f)=>sum+(f.size||0),0);
+          let uploadedFolderBytes=0;
           let fDone=0;
           let lastRes=null;
           for(let fi=0;fi<files.length;fi++){{
@@ -21669,12 +21828,22 @@ async function startBatchDriveUpload(){{
             const subFile=files[fi];
             const relParts=(subFile.webkitRelativePath||'').split('/').filter(Boolean);
             const relSub=relParts.length>2?relParts.slice(1,-1).join('/'):'';
-            lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl)=>{{
-              const subPct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-              item.pct=Math.round(((fi+(total>0?done/total:0))/files.length)*100);
-              item.msg=`Uploading file ${{fi+1}}/${{files.length}}: ${{subFile.name}} (${{item.pct}}%)`;
+            lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl,stage)=>{{
+              const activeDone=Math.min(done||0,subFile.size||total||0);
+              const overallBytes=uploadedFolderBytes+activeDone;
+              item.pct=totalFolderBytes>0
+                ?Math.min(100,Math.round((overallBytes/totalFolderBytes)*100))
+                :Math.round(((fi+(total>0?done/total:0))/files.length)*100);
+              const ar=_isArLang();
+              const prefix=ar
+                ?`ملف ${{fi+1}} من ${{files.length}}: ${{subFile.name}} — ${{item.pct}}%`
+                :`File ${{fi+1}} / ${{files.length}}: ${{subFile.name}} — ${{item.pct}}%`;
+              const stageSuffix=(stage&&stage!=='uploading')?(' — '+_formatDriveStageText(stage,done,total,lbl)):'';
+              item.msg=prefix+stageSuffix;
               if(cell)updateBatchRowStatusCell(cell,item);
+              updateBatchOverallProgress();
             }},{{subfolder_name:subName,link_as_folder:true,replace_existing:(fi===0),rel_subfolder:relSub,rev_mode:(fi===0?batchRevMode:'overwrite'),part_rev:batchPartRev,signal:state.batchCurrentAbort.signal}});
+            uploadedFolderBytes+=(subFile.size||0);
             fDone++;
           }}
           if(state.batchCancel||item.status==='cancelled'){{
@@ -21689,9 +21858,9 @@ async function startBatchDriveUpload(){{
             newlyDone++;
           }}
         }}else{{
-          const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl)=>{{
+          const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl,stage)=>{{
             item.pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-            item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
+            item.msg=_formatDriveStageText(stage||'uploading',done,total,lbl);
             if(cell)updateBatchRowStatusCell(cell,item);
             updateBatchOverallProgress();
           }},{{rev_mode:batchRevMode,part_rev:batchPartRev,signal:state.batchCurrentAbort.signal}});
