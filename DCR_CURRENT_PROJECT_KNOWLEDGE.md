@@ -2,8 +2,15 @@
 
 **Repository:** `D:\DCR-dev` (synced with `D:\DCR` and `origin/main`)  
 **Active Local Branch:** `main`  
-**Latest Merged Milestone Commit:** `829d707` (`Merge branch 'feat/ptw-subtypes-structure' into main`, from `8196656`)  
-**Release / Deployment Status:** `main` commit `9069abe` pushed to `origin/main` (`47e61a7..9069abe` via `D:\DCR`) and verified live on Railway (`https://dcr.up.railway.app/login` returned `HTTP 200`, `95,165` bytes on `2026-11-24`).
+**Latest Merged Milestone Commit:** `6e03a6a` (merged via `fix/restore-gcl-swirl-logo` into `main`)  
+**Release / Deployment Status:** `main` updated with GCL swirl logo restoration (`fix/restore-gcl-swirl-logo`, `6e03a6a`) and pushed to `origin/main` via `D:\DCR` for Railway Auto-Deploy (prior release `9069abe` verified live on `2026-11-24`).
+
+---
+
+## Completed Branding Fix: Restore Original GCL Swirl Logo (`fix/restore-gcl-swirl-logo`)
+- Restored `static/favicon.ico` (`316,265` bytes, multi-size transparent RGBA `GCL_Logo_2019_Transparent_Swirl_icoconvert.ico` from `4ff6449`).
+- Regenerated transparent RGBA PNG icons (`static/apple-touch-icon.png` `180x180`, `static/icon-192.png` `192x192`, `static/icon-512.png` `512x512`) from the `256x256` ICO frame with ~6% transparent padding.
+- Added `?v=gcl2019` cache-busting query parameters across `html_render.py` (`_head_icon_tags()`, `printHseQrLabel()`), `templates/executive_summary.html`, and `static/manifest.json`.
 
 ---
 
