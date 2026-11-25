@@ -51,15 +51,12 @@ def _asset_ver(rel_path: str) -> str:
 
 
 def _head_icon_tags() -> str:
-    v_ico = _asset_ver("favicon.ico")
-    v_192 = _asset_ver("icon-192.png")
-    v_app = _asset_ver("apple-touch-icon.png")
-    v_man = _asset_ver("manifest.json")
+    v = "gcl2019"
     return (
-        f'<link rel="icon" href="/favicon.ico?v={v_ico}" sizes="any">\n'
-        f'<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png?v={v_192}">\n'
-        f'<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v={v_app}">\n'
-        f'<link rel="manifest" href="/manifest.webmanifest?v={v_man}">\n'
+        f'<link rel="icon" href="/favicon.ico?v={v}" sizes="any">\n'
+        f'<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png?v={v}">\n'
+        f'<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v={v}">\n'
+        f'<link rel="manifest" href="/manifest.webmanifest?v={v}">\n'
         f'<meta name="theme-color" content="#0f1d2e">'
     )
 
@@ -19227,7 +19224,7 @@ function printHseQrLabel(){{
   const w = window.open('', '_blank', 'width=440,height=560');
   if(!w) return toast('Allow popups to print QR badge', 'wa');
   w.document.write(`<!DOCTYPE html><html><head><title>QR Label - ${{escHtml(_activeQrMeta.doc_no)}}</title>
-    <link rel="icon" href="${{window.location.origin}}/favicon.ico" sizes="any">
+    <link rel="icon" href="${{window.location.origin}}/favicon.ico?v=gcl2019" sizes="any">
     <style>body{{font-family:system-ui,sans-serif;text-align:center;padding:24px;color:#0f172a}}
     .lbl{{border:2px solid #0f172a;border-radius:12px;padding:18px;display:inline-block;max-width:340px}}
     h3{{margin:6px 0;font-size:16px;font-family:monospace}} p{{margin:4px 0;font-size:12px;color:#475569}}
