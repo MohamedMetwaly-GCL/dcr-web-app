@@ -2052,9 +2052,15 @@ def save_project(pid, name, code, extra: dict, workspace_id=None):
         )
 
 
-def create_project(pid, name, code, creator=None, workspace_id="ENG", client=None):
+def create_project(pid, name, code, creator=None, workspace_id="ENG", client=None, drive_folder_id=None):
     ws_id = str(workspace_id or "ENG").strip().upper() or "ENG"
-    jdata = json.dumps({"client": client}) if client else "{}"
+    init_data = {}
+    if client:
+        init_data["client"] = client
+    clean_drv = _extract_drive_folder_id(drive_folder_id) if drive_folder_id else ""
+    if clean_drv:
+        init_data["drive_folder_id"] = clean_drv
+    jdata = json.dumps(init_data) if init_data else "{}"
     # Finding A2 + Finding 3: insert, seed doc types/columns/lists, and assign creator in a
     # single shared transaction so any failure rolls back cleanly without orphan projects, while
     # preserving ON CONFLICT DO NOTHING duplicate protection and offline test compatibility.
@@ -2074,10 +2080,17 @@ def delete_project(pid):
         exe(f"DELETE FROM {tbl} WHERE {'id' if tbl=='projects' else 'project_id'}=%s", (pid,))
 
 def _seed_hse_project(pid):
+    import attachments as _att
     from hse_defaults import HSE_LISTS, HSE_REGISTERS, HSE_SUBTYPES, PTW_SUBTYPE_CODES, hse_columns
 
     for order, (code, name, source) in enumerate(HSE_REGISTERS):
-        data = {"legacy_source": source, "legacy_subtypes": HSE_SUBTYPES.get(code, {})}
+        has_cycle = bool(code in _att.HSE_CLOSEOUT_CODES)
+        data = {
+            "legacy_source": source,
+            "legacy_subtypes": HSE_SUBTYPES.get(code, {}),
+            "has_reply_cycle": has_cycle,
+            "has_closeout_slot": has_cycle,
+        }
         exe(
             """INSERT INTO doc_types(id,project_id,name,code,sort_order,data)
                VALUES(%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING""",
@@ -2112,13 +2125,16 @@ def _seed_hse_project(pid):
 
 
 def _seed_project(pid, workspace_id="ENG"):
-    if str(workspace_id or "").upper() == "HSE":
+    import attachments as _att
+    ws_up = str(workspace_id or "ENG").strip().upper()
+    if ws_up == "HSE":
         _seed_hse_project(pid)
         return
-    if str(workspace_id or "").upper() == "OM":
+    if ws_up in ("OM", "O&M"):
         for code, name, order in DEFAULT_OM_DOC_TYPES:
-            exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                (code, pid, name, code, order))
+            dt_data = json.dumps({"has_reply_cycle": False})
+            exe("INSERT INTO doc_types(id,project_id,name,code,sort_order,data) VALUES(%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING",
+                (code, pid, name, code, order, dt_data))
             for ck, lbl, ct, ln, so, visible in DEFAULT_OM_COLS:
                 exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
@@ -2132,8 +2148,10 @@ def _seed_project(pid, workspace_id="ENG"):
                     (pid, ln, item, i, meta))
     else:
         for code, name, order in DEFAULT_DOC_TYPES:
-            exe("INSERT INTO doc_types(id,project_id,name,code,sort_order) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                (code, pid, name, code, order))
+            has_cycle = bool(_att.doc_type_has_reply_cycle({"code": code, "name": name}, workspace_id=ws_up))
+            dt_data = json.dumps({"has_reply_cycle": has_cycle})
+            exe("INSERT INTO doc_types(id,project_id,name,code,sort_order,data) VALUES(%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING",
+                (code, pid, name, code, order, dt_data))
             for ck, lbl, ct, ln, so, visible in _doc_type_col_specs(code, name):
                 exe("""INSERT INTO columns_config(project_id,dt_id,col_key,label,col_type,list_name,visible,sort_order)
                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
@@ -2192,15 +2210,37 @@ def get_doc_type_expected_reply_override(pid, dt_id):
         return dict(DEFAULT_DOC_TYPE_EXPECTED_REPLY_OVERRIDE)
 
 def save_doc_type_expected_reply_override(pid, dt_id, override):
+    save_doc_type_metadata(pid, dt_id, expected_reply_override=override)
+
+
+def save_doc_type_metadata(pid, dt_id, expected_reply_override=None, has_reply_cycle=None):
     dt = get_doc_type(pid, dt_id) or {}
     data = {k: v for k, v in dt.items() if k not in ("id", "project_id", "name", "code", "sort_order")}
-    data["expected_reply_override"] = override or {}
+    if expected_reply_override is not None:
+        data["expected_reply_override"] = expected_reply_override or {}
+    if isinstance(has_reply_cycle, bool):
+        data["has_reply_cycle"] = has_reply_cycle
     exe("UPDATE doc_types SET data=%s::jsonb WHERE id=%s AND project_id=%s", (json.dumps(data), dt_id, pid))
 
-def add_doc_type(pid, code, name, expected_reply_override=None):
+
+def add_doc_type(pid, code, name, expected_reply_override=None, has_reply_cycle=None):
+    import attachments as _att
     r = q("SELECT COALESCE(MAX(sort_order),0)+1 as n FROM doc_types WHERE project_id=%s", (pid,), one=True)
     order = r["n"] if r else 0
-    data = {"expected_reply_override": expected_reply_override or {}}
+    ws_id = "ENG"
+    try:
+        proj = get_project(pid) or {}
+        ws_id = str(proj.get("workspace_id") or "ENG").strip().upper()
+    except Exception:
+        ws_id = "ENG"
+    if isinstance(has_reply_cycle, bool):
+        resolved_cycle = has_reply_cycle
+    else:
+        resolved_cycle = bool(_att.doc_type_has_reply_cycle({"code": code, "name": name}, workspace_id=ws_id))
+    data = {
+        "expected_reply_override": expected_reply_override or {},
+        "has_reply_cycle": resolved_cycle,
+    }
     exe("INSERT INTO doc_types(id,project_id,name,code,sort_order,data) VALUES(%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING",
         (code, pid, name, code, order, json.dumps(data)))
     for ck, lbl, ct, ln, so, visible in _doc_type_col_specs(code, name):
@@ -3007,6 +3047,48 @@ def ensure_doc_type_subtype_column(pid, dt_id, list_name):
 def _is_subtype_list_name(list_name):
     ln = str(list_name or "").strip().lower()
     return bool(ln) and (ln == "subtype" or ln.endswith("_subtype"))
+
+
+def resolve_doc_types_for_subtype_list(pid, list_name):
+    """Resolve `dt_id`(s) on `pid` bound to subtype `list_name`."""
+    ln = str(list_name or "").strip().lower()
+    if not pid or not _is_subtype_list_name(ln):
+        return []
+    matched = []
+    seen = set()
+    try:
+        rows = q(
+            """SELECT DISTINCT dt_id FROM columns_config
+               WHERE project_id=%s AND col_type='dropdown' AND LOWER(COALESCE(list_name, ''))=%s""",
+            (pid, ln),
+        ) or []
+        for r in rows:
+            dt_id = str((r or {}).get("dt_id") or "").strip()
+            if dt_id and dt_id not in seen:
+                seen.add(dt_id)
+                matched.append(dt_id)
+    except Exception:
+        pass
+    if matched or ln == "subtype":
+        return matched
+    try:
+        proj = get_project(pid) or {}
+        ws_low = re.sub(r"[^a-z0-9]+", "", str(proj.get("workspace_id") or "ENG").strip().lower()) or "eng"
+        for dt in (get_doc_types(pid) or []):
+            if not isinstance(dt, dict):
+                continue
+            dt_id = str(dt.get("id") or "").strip()
+            if not dt_id or dt_id in seen:
+                continue
+            for raw in (dt.get("code"), dt_id):
+                slug = re.sub(r"[^a-z0-9]+", "", str(raw or "").strip().lower())
+                if slug and ln in (f"{ws_low}_{slug}_subtype", f"hse_{slug}_subtype", f"{slug}_subtype"):
+                    seen.add(dt_id)
+                    matched.append(dt_id)
+                    break
+    except Exception:
+        pass
+    return matched
 
 
 def _disambiguate_ptw_code(base_code, used_codes):
@@ -4185,6 +4267,7 @@ def set_doc_type_drive_cache(pid, dt_id, patch):
         "drive_folder_name",
         "drive_slot_folders",
         "drive_direction_folders",
+        "drive_subtype_folders",
         "folder_synced_at",
     }
     patch = {k: v for k, v in (patch or {}).items() if k in allowed}
@@ -4194,3 +4277,24 @@ def set_doc_type_drive_cache(pid, dt_id, patch):
                 WHERE id=%s AND project_id=%s RETURNING id""",
              (json.dumps(patch), dt_id, pid))
     return bool(rows)
+
+
+def clear_project_drive_caches(pid):
+    """Clear cached Drive folder IDs across all doc_types of `pid` when the project root folder changes."""
+    if not pid:
+        return 0
+    try:
+        return exe(
+            """UPDATE doc_types
+               SET data = COALESCE(data, '{}'::jsonb)
+                   - 'drive_folder_id'
+                   - 'drive_folder_name'
+                   - 'drive_slot_folders'
+                   - 'drive_direction_folders'
+                   - 'drive_subtype_folders'
+                   - 'folder_synced_at'
+               WHERE project_id=%s""",
+            (pid,),
+        )
+    except Exception:
+        return 0

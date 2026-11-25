@@ -514,62 +514,73 @@ class TestPtwDriveSubfolderRouting(unittest.TestCase):
         drive = FakeDrive({"HSE Root": {}})
         store = FakeStore(
             {"drive_folder_id": drive.id_of("HSE Root"), "workspace_id": "HSE"},
-            {"PTW": {"id": "PTW", "code": "PTW", "name": "Permit to Work"}},
+            {"PTW": {"id": "PTW", "code": "PTW", "name": "Permit to Work", "has_reply_cycle": True}},
         )
 
-        # 1. Hot Work Permit creates HSE Root / PTW / Hot Work Permit
+        # 1. Hot Work Permit submission creates HSE Root / PTW - Permit to Work / Hot Work Permit / Submit
         res1 = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "submission", drive, store,
             create_if_missing=True, flat=False, subtype="Hot Work Permit",
         )
         ptw_id = res1["doc_type_folder_id"]
-        hwp_id = res1["folder_id"]
-        self.assertEqual(drive.items[ptw_id]["name"], "PTW")
+        hwp_id = res1["subtype_folder_id"]
+        subm_id = res1["folder_id"]
+        self.assertEqual(drive.items[ptw_id]["name"], "PTW - Permit to Work")
         self.assertEqual(drive.items[ptw_id]["parent"], drive.id_of("HSE Root"))
         self.assertEqual(drive.items[hwp_id]["name"], "Hot Work Permit")
         self.assertEqual(drive.items[hwp_id]["parent"], ptw_id)
+        self.assertEqual(drive.items[subm_id]["name"], "Submit")
+        self.assertEqual(drive.items[subm_id]["parent"], hwp_id)
 
-        # No Submit or Replied folders created for PTW
-        ptw_children = {it["name"] for it in drive.items.values() if it["parent"] == ptw_id}
-        self.assertNotIn("Submit", ptw_children)
-        self.assertNotIn("Replied", ptw_children)
-
-        # 2. Second upload (even approval/closeout slot) for same subtype reuses existing folder ID
-        creates_before = drive.calls["create"]
+        # 2. Approval/closeout upload creates Replied under the same Hot Work Permit subtype folder;
+        #    subsequent submission upload reuses cached Submit with zero new folders
         res2 = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "approval", drive, store,
             create_if_missing=True, flat=False, subtype="Hot Work Permit",
         )
-        self.assertEqual(res2["folder_id"], hwp_id)
+        rep_id = res2["folder_id"]
+        self.assertEqual(drive.items[rep_id]["name"], "Replied")
+        self.assertEqual(drive.items[rep_id]["parent"], hwp_id)
+
+        creates_before = drive.calls["create"]
+        res2_repeat = drive_routing.resolve_upload_destination(
+            "HSE-CFC-P2", "PTW", "submission", drive, store,
+            create_if_missing=True, flat=False, subtype="Hot Work Permit",
+        )
+        self.assertEqual(res2_repeat["folder_id"], subm_id)
         self.assertEqual(drive.calls["create"], creates_before)
 
-        # 3. Cold Work Permit creates separate sibling folder under PTW
+        # 3. Cold Work Permit creates separate sibling folder under PTW with its own Submit slot
         res3 = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "submission", drive, store,
             create_if_missing=True, flat=False, subtype="Cold Work Permit",
         )
-        cwp_id = res3["folder_id"]
+        cwp_id = res3["subtype_folder_id"]
         self.assertEqual(drive.items[cwp_id]["name"], "Cold Work Permit")
         self.assertEqual(drive.items[cwp_id]["parent"], ptw_id)
         self.assertNotEqual(cwp_id, hwp_id)
+        self.assertEqual(drive.items[res3["folder_id"]]["name"], "Submit")
+        self.assertEqual(drive.items[res3["folder_id"]]["parent"], cwp_id)
 
-        # 4. Missing subtype (edge case) safely falls back to parent PTW folder
+        # 4. Missing subtype (edge case) safely routes to Submit under parent PTW folder
         res_empty = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "submission", drive, store,
             create_if_missing=True, flat=False, subtype="",
         )
-        self.assertEqual(res_empty["folder_id"], ptw_id)
+        self.assertEqual(drive.items[res_empty["folder_id"]]["name"], "Submit")
+        self.assertEqual(drive.items[res_empty["folder_id"]]["parent"], ptw_id)
 
-        # 4b. Dynamically added custom permit subtype routes to PTW/<New Subtype Name>/
+        # 4b. Dynamically added custom permit subtype routes to PTW/<New Subtype Name>/Submit
         res_marine = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "submission", drive, store,
             create_if_missing=True, flat=False, subtype="Marine Work Permit",
         )
-        self.assertEqual(drive.items[res_marine["folder_id"]]["name"], "Marine Work Permit")
-        self.assertEqual(drive.items[res_marine["folder_id"]]["parent"], ptw_id)
+        self.assertEqual(drive.items[res_marine["subtype_folder_id"]]["name"], "Marine Work Permit")
+        self.assertEqual(drive.items[res_marine["subtype_folder_id"]]["parent"], ptw_id)
+        self.assertEqual(drive.items[res_marine["folder_id"]]["name"], "Submit")
 
-        # 5. Reuses existing "PTW - Permit to Work" folder if present in legacy Drive layout
-        legacy_drive = FakeDrive({"HSE Root Legacy": {"PTW - Permit to Work": {}}})
+        # 5. Reuses existing "PTW" or "PTW - Permit to Work" folder if present in legacy Drive layout
+        legacy_drive = FakeDrive({"HSE Root Legacy": {"PTW": {}}})
         legacy_store = FakeStore(
             {"drive_folder_id": legacy_drive.id_of("HSE Root Legacy"), "workspace_id": "HSE"},
             {"PTW": {"id": "PTW", "code": "PTW", "name": "Permit to Work"}},
@@ -578,12 +589,14 @@ class TestPtwDriveSubfolderRouting(unittest.TestCase):
             "HSE-CFC-P2", "PTW", "submission", legacy_drive, legacy_store,
             create_if_missing=True, flat=False, subtype="Electrical / Isolation Permit",
         )
-        self.assertEqual(res_leg["doc_type_folder_id"], legacy_drive.id_of("PTW - Permit to Work"))
-        self.assertEqual(legacy_drive.items[res_leg["folder_id"]]["name"], "Electrical - Isolation Permit")
+        self.assertEqual(res_leg["doc_type_folder_id"], legacy_drive.id_of("PTW"))
+        self.assertEqual(legacy_drive.items[res_leg["subtype_folder_id"]]["name"], "Electrical - Isolation Permit")
         self.assertEqual(
-            legacy_drive.items[res_leg["folder_id"]]["parent"],
-            legacy_drive.id_of("PTW - Permit to Work"),
+            legacy_drive.items[res_leg["subtype_folder_id"]]["parent"],
+            legacy_drive.id_of("PTW"),
         )
+        self.assertEqual(legacy_drive.items[res_leg["folder_id"]]["name"], "Submit")
+        self.assertEqual(legacy_drive.items[res_leg["folder_id"]]["parent"], res_leg["subtype_folder_id"])
 
     def test_03_l1_drive_subfolder_sanitization(self):
         drive = FakeDrive({"HSE Root": {}})
@@ -592,10 +605,10 @@ class TestPtwDriveSubfolderRouting(unittest.TestCase):
             {"PTW": {"id": "PTW", "code": "PTW", "name": "Permit to Work"}},
         )
 
-        # Path traversal & slash characters stripped safely
+        # Path traversal & slash characters stripped safely (tested in both flat=True and flat=False)
         r_trav = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "submission", drive, store,
-            create_if_missing=True, flat=False, subtype="../../etc/passwd",
+            create_if_missing=True, flat=True, subtype="../../etc/passwd",
         )
         trav_name = drive.items[r_trav["folder_id"]]["name"]
         self.assertEqual(trav_name, "etc - passwd")
@@ -606,24 +619,24 @@ class TestPtwDriveSubfolderRouting(unittest.TestCase):
         # Backslash and NUL/control characters stripped
         r_ctrl = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "submission", drive, store,
-            create_if_missing=True, flat=False, subtype="Safe\\Sub\x00Name\nLine",
+            create_if_missing=True, flat=True, subtype="Safe\\Sub\x00Name\nLine",
         )
         ctrl_name = drive.items[r_ctrl["folder_id"]]["name"]
         self.assertEqual(ctrl_name, "Safe - Sub Name Line")
         self.assertNotIn("\\", ctrl_name)
         self.assertNotIn("\x00", ctrl_name)
 
-        # Pure traversal string falls back safely to parent PTW folder
+        # Pure traversal string falls back safely to parent PTW folder when flat=True
         r_empty = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "submission", drive, store,
-            create_if_missing=True, flat=False, subtype="../../../",
+            create_if_missing=True, flat=True, subtype="../../../",
         )
         self.assertEqual(r_empty["folder_id"], r_empty["doc_type_folder_id"])
 
         # Length capped at 80 chars
         r_long = drive_routing.resolve_upload_destination(
             "HSE-CFC-P2", "PTW", "submission", drive, store,
-            create_if_missing=True, flat=False, subtype="X" * 120,
+            create_if_missing=True, flat=True, subtype="X" * 120,
         )
         self.assertEqual(len(drive.items[r_long["folder_id"]]["name"]), 80)
 
@@ -632,7 +645,8 @@ class TestPtwDriveSubfolderRouting(unittest.TestCase):
             "HSE-CFC-P2", "PTW", "submission", drive, store,
             create_if_missing=True, flat=False, subtype="Maintenance Work",
         )
-        self.assertEqual(drive.items[r_leg["folder_id"]]["name"], "Maintenance Work")
+        self.assertEqual(drive.items[r_leg["subtype_folder_id"]]["name"], "Maintenance Work")
+        self.assertEqual(drive.items[r_leg["folder_id"]]["name"], "Submit")
 
     def test_02_upload_session_endpoint_passes_ptw_subtype_and_preserves_legacy_links(self):
         drive = FakeDrive({"HSE Root": {}})
@@ -707,8 +721,11 @@ class TestPtwDriveSubfolderRouting(unittest.TestCase):
             data = r.get_json()
             self.assertTrue(data["ok"])
             fid = data["folder_id"]
-            self.assertEqual(drive.items[fid]["name"], "Hot Work Permit")
-            self.assertEqual(drive.items[drive.items[fid]["parent"]]["name"], "PTW")
+            sub_fid = drive.items[fid]["parent"]
+            ptw_fid = drive.items[sub_fid]["parent"]
+            self.assertEqual(drive.items[fid]["name"], "Submit")
+            self.assertEqual(drive.items[sub_fid]["name"], "Hot Work Permit")
+            self.assertEqual(drive.items[ptw_fid]["name"], "PTW - Permit to Work")
             self.assertEqual(created_sessions[-1]["parent"], fid)
 
 
@@ -1108,7 +1125,8 @@ const apiObj = vm.runInNewContext(
   apiObj.setPtwSubtypeFilter('Hot Work Permit');
   assert.strictEqual(apiObj.state.ptwSubtypeFilter, 'Hot Work Permit');
   assert.strictEqual(JSON.stringify(apiObj.state.visibleRows.map(r => r._id)), JSON.stringify(['2']));
-  assert.strictEqual(apiObj.getBatchTargetDrivePath('submission'), 'HSE-CFC-P2 ❯ PTW ❯ Hot Work Permit');
+  assert.strictEqual(apiObj.getBatchTargetDrivePath('submission'), 'HSE-CFC-P2 ❯ PTW ❯ Hot Work Permit ❯ Submit');
+  assert.strictEqual(apiObj.getBatchTargetDrivePath('approval'), 'HSE-CFC-P2 ❯ PTW ❯ Hot Work Permit ❯ Replied');
 
   apiObj.setPtwSubtypeFilter('');
   assert.strictEqual(apiObj.state.visibleRows.length, 2);

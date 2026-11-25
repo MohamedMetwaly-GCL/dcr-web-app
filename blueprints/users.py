@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request
 import re
 
 import db
+import drive_routing
 from auth import (
     current_user,
     require_superadmin,
@@ -442,8 +443,22 @@ def api_workspaces():
                 return jsonify(error="Department Code/ID and Name are required"), 400
                 
             db.create_workspace(ws_id, code, name, name_ar, icon, ws_type, sort_order, description=description)
+            drive_provisioned = []
+            try:
+                ws_projects = db.get_projects(workspace_id=ws_id) or []
+                for p in ws_projects:
+                    p_id = str((p or {}).get("id") or "").strip()
+                    if not p_id:
+                        continue
+                    if not (db.get_doc_types(p_id) or []):
+                        db._seed_project(p_id, ws_id)
+                    prov = drive_routing.provision_project_drive_structure(p_id)
+                    if not prov.get("skipped"):
+                        drive_provisioned.append(prov)
+            except Exception:
+                pass
             db.log_action(u["username"], "WORKSPACE_CREATE" if action == "add" else "WORKSPACE_UPDATE", detail=f"Managed workspace {ws_id} ({name})")
-            return jsonify(ok=True)
+            return jsonify(ok=True, drive_provisioned=drive_provisioned)
             
         elif action == "update":
             ws_id = str(data.get("id") or "").strip().upper()

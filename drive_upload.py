@@ -170,6 +170,22 @@ def trash_file(token, file_id, http=requests):
     return False
 
 
+def rename_file(token, file_id, new_name, fields="id, name", http=requests):
+    """Rename a Drive file or folder via PATCH files/{id}."""
+    if not file_id or not new_name:
+        raise DriveUploadError("file_id and new_name are required", reason="invalid_rename")
+    r = http.patch(
+        "%s/%s" % (FILES_URL, file_id),
+        params={"fields": fields, "supportsAllDrives": "true"},
+        headers=_auth(token, {"Content-Type": "application/json; charset=UTF-8"}),
+        data=json.dumps({"name": new_name}),
+        timeout=30,
+    )
+    if r.status_code not in (200, 204):
+        _raise_for(r, "files.update")
+    return r.json() if getattr(r, "text", "") else {"id": file_id, "name": new_name}
+
+
 def create_resumable_session(token, folder_id, file_name, mime_type, size, origin=None, http=requests):
     """Start a resumable upload. Returns the session URL (valid ~1 week).
 
@@ -295,6 +311,17 @@ class RestDriveAdapter:
                     if r.status_code not in (200, 201):
                         _raise_for(r, "files.create")
                     return r.json()
+                return _RestExec(_run)
+
+            def update(self, fileId, body, fields="id, name", **kw):
+                def _run():
+                    r = outer.http.patch("%s/%s" % (FILES_URL, fileId),
+                                         params={"fields": fields, "supportsAllDrives": "true"},
+                                         headers=_auth(outer.token, {"Content-Type": "application/json; charset=UTF-8"}),
+                                         data=json.dumps(body), timeout=30)
+                    if r.status_code not in (200, 204):
+                        _raise_for(r, "files.update")
+                    return r.json() if getattr(r, "text", "") else {"id": fileId, **dict(body or {})}
                 return _RestExec(_run)
         return _Files()
 

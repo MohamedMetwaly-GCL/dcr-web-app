@@ -219,16 +219,13 @@ def api_create_upload_session():
     if slot in attachments.NOC_SLOTS and ws_id != "ENG":
         return jsonify(error="NOC slots are only available in the Engineering & Projects workspace"), 400
     dt_meta = db.get_doc_type(pid, dt_id) or {}
-    if ws_id == "HSE":
-        has_cycle = attachments.doc_type_allows_approval_slot(dt_meta, ws_id)
-        if slot == attachments.SLOT_APPROVAL and not has_cycle:
+    has_cycle = attachments.doc_type_allows_approval_slot(dt_meta, ws_id)
+    if slot == attachments.SLOT_APPROVAL and not has_cycle:
+        if ws_id == "HSE":
             return jsonify(error="Close-Out attachment slot is only available for PTW, OBS, SVP, INC, and JSA in HSE"), 400
-    else:
-        if slot == attachments.SLOT_APPROVAL and ws_id != "ENG":
-            return jsonify(error="Approval / NOC slots are only available in the Engineering & Projects workspace"), 400
-        has_cycle = attachments.doc_type_has_reply_cycle(dt_meta)
-        if (slot == attachments.SLOT_APPROVAL or slot in attachments.NOC_SLOTS) and not has_cycle:
-            return jsonify(error="This document type has no consultant reply cycle"), 400
+        return jsonify(error="This document type has no consultant reply cycle"), 400
+    if slot in attachments.NOC_SLOTS and not has_cycle:
+        return jsonify(error="This document type has no consultant reply cycle"), 400
 
     rec = None
     if record_id:
@@ -262,7 +259,7 @@ def api_create_upload_session():
         to_party = str(body.get("to_party") or ((rec.get("toParty") or rec.get("to")) if rec else "") or "").strip()
         party = str(body.get("party") or "").strip()
         doc_no = str(body.get("doc_no") or (rec.get("docNo") if rec else "") or clean_name or "").strip()
-        raw_subtype = body.get("subtype") or (rec.get("legacySubtype") if rec else "")
+        raw_subtype = body.get("subtype") or ((rec.get("legacySubtype") or rec.get("subtype")) if rec else "")
         from hse_defaults import normalize_ptw_subtype_value
         subtype = drive_routing.sanitize_drive_folder_segment(normalize_ptw_subtype_value(raw_subtype))
         dest_folder_id = str(body.get("destination_folder_id") or "").strip()

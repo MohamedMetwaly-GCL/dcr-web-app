@@ -603,16 +603,23 @@ def api_drive_sync(pid):
         return jsonify(error="No folder ID provided"), 400
         
     # Save folder_id to project data
+    import drive_routing
+    clean_fid = drive_routing.extract_drive_folder_id(folder_id)
     proj = db.get_project(pid)
     if proj:
-        proj["drive_folder_id"] = folder_id
-        import json
-        db.exe("UPDATE projects SET data=%s WHERE id=%s", (json.dumps(proj), pid))
+        old_fid = drive_routing.extract_drive_folder_id(proj.get("drive_folder_id"))
+        db.update_project_settings(pid, {"drive_folder_id": clean_fid})
+        if old_fid and old_fid != clean_fid:
+            db.clear_project_drive_caches(pid)
+        try:
+            drive_routing.provision_project_drive_structure(pid)
+        except Exception:
+            pass
         
     # Start sync process in background (scoped to pid)
     from drive_service import process_drive_folder
     import threading
-    threading.Thread(target=process_drive_folder, args=(folder_id,), kwargs={"project_id": pid}).start()
+    threading.Thread(target=process_drive_folder, args=(clean_fid,), kwargs={"project_id": pid}).start()
     
     return jsonify(ok=True)
 
@@ -677,7 +684,16 @@ def update_project_settings_route(pid):
         if not body:
             return jsonify(error="Empty payload"), 400
             
+        if "drive_folder_id" in body:
+            import drive_routing
+            body["drive_folder_id"] = drive_routing.extract_drive_folder_id(body.get("drive_folder_id"))
         db.update_project_settings(pid, body)
+        if body.get("drive_folder_id"):
+            try:
+                import drive_routing
+                drive_routing.provision_project_drive_structure(pid)
+            except Exception:
+                pass
         return jsonify(ok=True)
     except Exception as e:
         print(f"[Project Settings POST Error]: {e}")

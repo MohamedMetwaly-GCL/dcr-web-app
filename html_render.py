@@ -14448,8 +14448,17 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
     <div class="mbody">
       <input type="hidden" id="dt-edit-id">
       <div class="fgrid">
-        <div class="fg"><label>{t("reg.dt_code", norm)}</label><input id="dt-code" placeholder="{t("reg.dt_code_ph", norm)}"></div>
-        <div class="fg"><label>{t("reg.dt_name", norm)}</label><input id="dt-name" placeholder="{t("reg.dt_name_ph", norm)}"></div>
+        <div class="fg"><label>{t("reg.dt_code", norm)}</label><input id="dt-code" placeholder="{t("reg.dt_code_ph", norm)}" oninput="onDocTypeMetaInput()"></div>
+        <div class="fg"><label>{t("reg.dt_name", norm)}</label><input id="dt-name" placeholder="{t("reg.dt_name_ph", norm)}" oninput="onDocTypeMetaInput()"></div>
+      </div>
+      <div style="margin-top:10px;padding:8px 10px;background:var(--bg);border:1px solid var(--bd);border-radius:6px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;cursor:pointer">
+          <input type="checkbox" id="dt-has-reply-cycle" onchange="onDocTypeReplyCycleToggle()">
+          <span>{t("reg.dt_has_reply_cycle", norm)}</span>
+        </label>
+        <div style="font-size:10px;color:var(--mu);margin-top:4px;line-height:1.4">
+          {t("reg.dt_has_reply_cycle_note", norm)}
+        </div>
       </div>
       <div class="stitle" style="margin-top:12px">{t("reg.dt_er_override", norm)}</div>
       <div style="font-size:10px;color:var(--mu);margin:-4px 0 8px;padding:6px 8px;background:var(--bg);border-radius:4px">
@@ -18284,44 +18293,43 @@ function canDownloadUI(){{
   if(typeof CAN_DOWNLOAD !== 'undefined') return !!CAN_DOWNLOAD;
   return (typeof CAN_EDIT!=='undefined') && !!CAN_EDIT;
 }}
-function dtHasReplyCycle(dt){{
+function dtHasReplyCycle(dt, wsId){{
   dt = dt || {{}};
   if(typeof dt.has_reply_cycle === 'boolean') return dt.has_reply_cycle;
-  
-  if(!dt.code && typeof state !== 'undefined' && state.tab){{
+  if(typeof dt.has_closeout_slot === 'boolean' && dt.has_closeout_slot) return true;
+
+  if(!dt.code && !dt.id && !dt.name && typeof state !== 'undefined' && state.tab){{
     const curT = String(state.tab).trim().toUpperCase();
     const found = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT);
-    if(found) dt = found;
+    if(found){{
+      dt = found;
+      if(typeof dt.has_reply_cycle === 'boolean') return dt.has_reply_cycle;
+      if(typeof dt.has_closeout_slot === 'boolean' && dt.has_closeout_slot) return true;
+    }}
   }}
-  
-  const curTabStr = (typeof state !== 'undefined' && state.tab) ? String(state.tab).trim().toUpperCase() : '';
+
+  const effWs = String(wsId !== undefined && wsId !== null ? wsId : (dt.workspace_id || (typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : ''))).trim().toUpperCase();
+  const curTabStr = (!dt.code && !dt.id && !dt.name && typeof state !== 'undefined' && state.tab) ? String(state.tab).trim().toUpperCase() : '';
   const code = String(dt.code || dt.id || curTabStr).trim().toUpperCase();
-  const codes = ['SD','DS','MS','IR','MIR','RFI','NOC','ABD','WN','NCN','NCR'];
-  if(codes.includes(code)) return true;
-  
+
+  if((effWs === 'OM' || effWs === 'O&M') && ['WO','PPM','CM','INC','MR','SLA','COR'].includes(code)) return false;
+
+  const replyCodes = ['SD','DS','MS','IR','MIR','RFI','NOC','ABD','WN','NCN','NCR','EI','SI','CVI','PCQ','SVP','PTW','OBS','INC','JSA'];
+  if(replyCodes.includes(code)) return true;
+
+  const noReplyCodes = ['PR','LTR','L','LETTERS','COR','CORRESPONDENCE','MOM','IOM','QS','TBT','FEI','CEV','EVAC','MHR','WKR','WO','PPM','CM','MR','SLA'];
+  if(noReplyCodes.includes(code)) return false;
+
   const name = String(dt.name || '').trim().toLowerCase();
-  if(['instruction','site instruction','engineer instruction','verbal instruction','requisition','purchase','letter','correspondence','minutes','mom','daily report','site log','boq','specs','variation','safety violation'].some(h=>name.includes(h))) return false;
-  if(['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built','work notice','work notification','works notice','non-conformance','non conformance'].some(h=>name.includes(h))) return true;
-  
-  if(typeof state !== 'undefined' && Array.isArray(state.cols)){{
-    const hasReplyCol = state.cols.some(c => {{
-      if(!c) return false;
-      const k = String(c.col_key || '').toLowerCase();
-      const l = String(c.label || '').toLowerCase();
-      return k.includes('reply') || l.includes('reply') || k === 'actualreplydate' || k === 'expectedreplydate';
-    }});
-    if(hasReplyCol) return true;
-  }}
-  return false;
+  if(['requisition','purchase','letter','correspondence','minutes','mom','internal office memo','quantity surveyor','daily report','site log','boq','specs','variation','toolbox','extinguisher','contractor evaluation','evacuation','man-hour','man hour','worker register'].some(h=>name.includes(h))) return false;
+  return ['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built','work notice','work notification','works notice','non-conformance','non conformance','instruction','potential change','safety violation','permit to work','safety observation','job safety analysis'].some(h=>name.includes(h));
 }}
 function tabHasReplyCycle(){{
   const ws = String(typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : 'ENG').trim().toUpperCase();
-  const isEng = !ws || ws === 'NONE' || ws === 'NULL' || ws === 'ENG' || ws.includes('ENG');
-  if(!isEng) return false;
   const curTab = (typeof state !== 'undefined') ? state.tab : '';
   const curT = String(curTab).trim().toUpperCase();
   const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
-  return dtHasReplyCycle(dtObj);
+  return dtHasReplyCycle(dtObj, ws);
 }}
 function isHseCloseoutTab(dtTab){{
   const ws = String(typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : 'ENG').trim().toUpperCase();
@@ -18330,6 +18338,7 @@ function isHseCloseoutTab(dtTab){{
   const curT = String(curTab).trim().toUpperCase();
   const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
   if(typeof dtObj.has_closeout_slot === 'boolean') return dtObj.has_closeout_slot;
+  if(typeof dtObj.has_reply_cycle === 'boolean') return dtObj.has_reply_cycle;
   const code = String(dtObj.code || dtObj.id || curT).trim().toUpperCase();
   return ['PTW','OBS','SVP','INC','JSA'].includes(code);
 }}
@@ -18889,7 +18898,11 @@ async function saveNewSubtype(){{
       if(oldName!==name&&typeof loadRecords==='function')await loadRecords();
       updatePtwSubTabs();
       if(typeof buildHead==='function')buildHead();
-      toast(window.t('hse.subtab.updated_toast',{{name}}),'ok');
+      if(res.drive_rename && res.drive_rename.renamed){{
+        toast(window.t('hse.subtab.updated_drive_toast',{{name}}),'ok');
+      }}else{{
+        toast(window.t('hse.subtab.updated_toast',{{name}}),'ok');
+      }}
       return;
     }}
     const payload={{list_name:cfg.listName,item:name,dt_id:state.tab}};
@@ -18909,7 +18922,11 @@ async function saveNewSubtype(){{
       setPtwSubtypeFilter(savedItem);
       if(typeof buildHead==='function')buildHead();
     }}
-    toast(window.t('hse.subtab.added_toast',{{name:savedItem}}),'ok');
+    if(res.drive_provision && !res.drive_provision.skipped && (res.drive_provision.created>0 || res.drive_provision.existing>0)){{
+      toast(window.t('hse.subtab.added_drive_toast',{{name:savedItem}}),'ok');
+    }}else{{
+      toast(window.t('hse.subtab.added_toast',{{name:savedItem}}),'ok');
+    }}
   }}finally{{
     if(saveBtn)saveBtn.disabled=false;
   }}
@@ -20251,13 +20268,15 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const initPartDTheme=nocPartThemeFor('D',Boolean(cur.part_d));
   const curT=String(typeof state!=='undefined'?state.tab:'').trim().toUpperCase();
   const dtObj=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT || String(d.code||'').trim().toUpperCase()===curT)||{{}};
-  const hasReply=isEng&&dtHasReplyCycle(dtObj);
   const isHseCo=isHseCloseoutTab();
+  const hasReply=!isHseCo&&dtHasReplyCycle(dtObj, ws);
   const isPtwTab=isHsePtwTab();
   const hasDual=hasReply||isHseCo;
+  const activeSubCfg=(typeof getActiveSubtypeConfig==='function')?getActiveSubtypeConfig():null;
+  const subColKey=activeSubCfg?activeSubCfg.colKey:'legacySubtype';
   const getCurrentFormSubtype=()=>{{
-    const subEl=formRoot.querySelector('#f-legacySubtype')||formRoot.querySelector('[name="legacySubtype"]');
-    const raw=(subEl&&subEl.value)?subEl.value:(row?.legacySubtype||'');
+    const subEl=formRoot.querySelector('#f-'+subColKey)||formRoot.querySelector('[name="'+subColKey+'"]')||formRoot.querySelector('#f-legacySubtype')||formRoot.querySelector('[name="legacySubtype"]');
+    const raw=subEl?(subEl.classList&&subEl.classList.contains('ms-con')?(subEl.dataset.value||''):(subEl.value||'')):(row?.[subColKey]||row?.legacySubtype||'');
     return normalizePtwSubtypeValue(raw);
   }};
   const slots=isNoc
@@ -20322,12 +20341,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     folderHint.style.cssText='font-size:9.5px;color:var(--mu);display:flex;align-items:center;gap:3px;margin-top:-2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     const _projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
     const computeCardPathText=()=>{{
-      if(isNoc)return `${{_projLbl}} ❯ NOC ❯ ${{pathSubName}}`;
-      if(isPtwTab){{
-        const sub=getCurrentFormSubtype();
-        return sub?`${{_projLbl}} ❯ PTW ❯ ${{sub}}`:`${{_projLbl}} ❯ PTW`;
-      }}
-      return `${{_projLbl}} ❯ ${{dtName}}${{hasDual?(' ❯ '+pathSubName):''}}`;
+      const sub=getCurrentFormSubtype();
+      const dtLabel=isPtwTab?'PTW':dtName;
+      if(isNoc)return `${{_projLbl}} ❯ NOC${{sub?(' ❯ '+sub):''}} ❯ ${{pathSubName}}`;
+      return `${{_projLbl}} ❯ ${{dtLabel}}${{sub?(' ❯ '+sub):''}}${{hasDual?(' ❯ '+pathSubName):''}}`;
     }};
     const pathStrong=document.createElement('strong');
     pathStrong.style.cssText=`color:${{isDark?'#cbd5e1':'#334155'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
@@ -20339,8 +20356,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     syncCardPathHint();
     folderHint.innerHTML='<span>📁</span> ';
     folderHint.appendChild(pathStrong);
-    if(isPtwTab){{
-      formRoot.addEventListener('dcr:ptw-subtype-changed',syncCardPathHint);
+    formRoot.addEventListener('dcr:ptw-subtype-changed',syncCardPathHint);
+    const subFieldEl=formRoot.querySelector('#f-'+subColKey)||formRoot.querySelector('#f-legacySubtype');
+    if(subFieldEl&&typeof subFieldEl.addEventListener==='function'){{
+      subFieldEl.addEventListener('change',syncCardPathHint);
     }}
     card.appendChild(folderHint);
 
@@ -21305,14 +21324,14 @@ function extractDocNoFromFilename(name, recs){{
 function getBatchTargetDrivePath(slot){{
   const curT=String(state.tab||'').trim().toUpperCase();
   const dt=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT||String(d.code||'').trim().toUpperCase()===curT)||{{}};
-  const dtName=dt.name||dt.code||state.tab||'Documents';
+  const dtName=isHsePtwTab()?'PTW':(dt.name||dt.code||state.tab||'Documents');
   const slotMap={{submission:'Submit',approval:'Replied',part_a:'Part A',part_b:'Part B',part_c:'Part C',part_d:'Part D'}};
   const sub=slotMap[slot]||'Submit';
   const projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
-  if(isHsePtwTab()){{
-    return state.ptwSubtypeFilter ? `${{projLbl}} ❯ PTW ❯ ${{state.ptwSubtypeFilter}}` : `${{projLbl}} ❯ PTW ❯ <Subtype>`;
-  }}
-  return (tabHasReplyCycle()||isHseCloseoutTab()||isNOCTab()) ? `${{projLbl}} ❯ ${{dtName}} ❯ ${{sub}}` : `${{projLbl}} ❯ ${{dtName}}`;
+  const subCfg=(typeof getActiveSubtypeConfig==='function')?getActiveSubtypeConfig():null;
+  const subSeg=subCfg?(state.ptwSubtypeFilter||'<Subtype>'):'';
+  const hasDual=tabHasReplyCycle()||isHseCloseoutTab()||isNOCTab();
+  return `${{projLbl}} ❯ ${{dtName}}${{subSeg?(' ❯ '+subSeg):''}}${{hasDual?(' ❯ '+sub):''}}`;
 }}
 
 function populateBatchDatalist(){{
@@ -22124,14 +22143,20 @@ async function editProject(){{
   // Google Drive
   const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent=window.t('reg.proj_drv_title');body.appendChild(drvTitle);
   const drvGrid=document.createElement('div');drvGrid.className='fgrid';
+  const initDrvBtnHtml = CAN_EDIT ? `
+      <button class="btn btn-pr" id="btn-init-drive-folders" type="button" onclick="initProjectDriveFolders(this)" style="flex:1;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;white-space:nowrap">
+        📁 ${{escHtml(window.t('reg.proj_init_drv_btn'))}}
+      </button>` : '';
   drvGrid.innerHTML=`
     <div class="fg"><label>${{escHtml(window.t('reg.proj_drv_root_id'))}}</label><input id="proj-drive-id" class="bidi-ltr" placeholder="${{escHtml(window.t('reg.proj_drv_root_ph'))}}" value="${{proj.drive_folder_id||''}}"></div>
-    <div class="fg" style="display:flex;align-items:flex-end">
-      <button class="btn btn-sc" type="button" onclick="syncDriveLinks(this)" style="width:100%;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;background:var(--bg)">
+    <div class="fg" style="display:flex;align-items:flex-end;gap:6px">
+      ${{initDrvBtnHtml}}
+      <button class="btn btn-sc" type="button" onclick="syncDriveLinks(this)" style="flex:1;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;background:var(--bg);white-space:nowrap">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
         ${{escHtml(window.t('reg.proj_sync_btn'))}}
       </button>
     </div>
+    <div id="proj-drive-init-status" class="fg full" style="display:none;padding:8px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
   `;
   body.appendChild(drvGrid);
 
@@ -22442,6 +22467,71 @@ async function syncDriveLinks(btn) {{
   }}
 }}
 
+async function initProjectDriveFolders(btn) {{
+  if(!CAN_EDIT){{toast(window.t('common.forbidden'),'er');return;}}
+  let folderId = document.getElementById('proj-drive-id')?.value.trim() || '';
+  if(folderId.includes('/folders/')) folderId = folderId.split('/folders/')[1].split('/')[0].split('?')[0];
+  if(!folderId){{toast(window.t('reg.proj_sync_need_id'),'er');return;}}
+  const statusEl = document.getElementById('proj-drive-init-status');
+  const origHtml = btn ? btn.innerHTML : '';
+  if(btn){{btn.disabled = true; btn.textContent = window.t('reg.proj_init_drv_ing');}}
+  if(statusEl){{
+    statusEl.style.display = 'block';
+    statusEl.style.background = 'var(--bg)';
+    statusEl.style.border = '1px solid var(--bd)';
+    statusEl.style.color = 'var(--tx)';
+    statusEl.textContent = window.t('reg.proj_init_drv_ing');
+  }}
+  try {{
+    const res = await fetch('/api/projects/' + encodeURIComponent(PID) + '/init-drive-folders', {{
+      method: 'POST',
+      credentials: 'include',
+      headers: {{'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}},
+      body: JSON.stringify({{ drive_folder_id: folderId }})
+    }});
+    const r = await res.json().catch(()=>({{}}));
+    if(res.ok && r && (r.ok || typeof r.created === 'number')){{
+      const created = Number(r.created || 0);
+      const existing = Number(r.existing || 0);
+      const errCnt = Array.isArray(r.errors) ? r.errors.length : 0;
+      const msg = errCnt > 0
+        ? window.t('reg.proj_init_drv_partial', {{created, existing, errors: errCnt}})
+        : window.t('reg.proj_init_drv_ok', {{created, existing}});
+      if(statusEl){{
+        statusEl.style.display = 'block';
+        statusEl.style.background = errCnt > 0 ? '#fffbeb' : '#f0fdf4';
+        statusEl.style.border = errCnt > 0 ? '1px solid #fde68a' : '1px solid #bbf7d0';
+        statusEl.style.color = errCnt > 0 ? '#92400e' : '#166534';
+        statusEl.textContent = msg;
+      }}
+      toast(msg, errCnt > 0 ? 'wa' : 'ok');
+      if(typeof loadDTs === 'function') loadDTs(true).catch(()=>null);
+    }} else {{
+      const errMsg = window.t('reg.proj_init_drv_err', {{error: (r && r.error) || res.status}});
+      if(statusEl){{
+        statusEl.style.display = 'block';
+        statusEl.style.background = '#fef2f2';
+        statusEl.style.border = '1px solid #fecaca';
+        statusEl.style.color = '#b91c1c';
+        statusEl.textContent = errMsg;
+      }}
+      toast(errMsg, 'er');
+    }}
+  }} catch(e) {{
+    const errMsg = window.t('reg.proj_init_drv_err', {{error: e.message || 'Network error'}});
+    if(statusEl){{
+      statusEl.style.display = 'block';
+      statusEl.style.background = '#fef2f2';
+      statusEl.style.border = '1px solid #fecaca';
+      statusEl.style.color = '#b91c1c';
+      statusEl.textContent = errMsg;
+    }}
+    toast(errMsg, 'er');
+  }} finally {{
+    if(btn){{btn.disabled = false; btn.innerHTML = origHtml;}}
+  }}
+}}
+
 // Doc Types
 function normalizeDocTypeReplyOverride(dt){{
   const o=dt?.expected_reply_override||{{}};
@@ -22456,6 +22546,23 @@ function toggleDocTypeReplyOverride(){{
   const fields=document.getElementById('dt-er-fields');
   if(fields)fields.style.display=on?'grid':'none';
 }}
+function onDocTypeReplyCycleToggle(){{
+  const rcEl=document.getElementById('dt-has-reply-cycle');
+  if(rcEl)rcEl.dataset.manualEdit='1';
+}}
+function onDocTypeMetaInput(){{
+  const editId=document.getElementById('dt-edit-id')?.value.trim();
+  const rcEl=document.getElementById('dt-has-reply-cycle');
+  if(!rcEl || editId || rcEl.dataset.manualEdit==='1')return;
+  const code=document.getElementById('dt-code')?.value.trim().toUpperCase()||'';
+  const name=document.getElementById('dt-name')?.value.trim()||'';
+  const wsUp=String(typeof WS_ID!=='undefined'&&WS_ID?WS_ID:'ENG').trim().toUpperCase();
+  if(!code && !name){{
+    rcEl.checked=(wsUp==='ENG');
+    return;
+  }}
+  rcEl.checked=dtHasReplyCycle({{code,name}}, wsUp);
+}}
 function setDocTypeModalMode(dt=null){{
   const edit=!!dt;
   document.getElementById('dt-modal-title').textContent=edit?window.t('reg.dt_modal_edit_title'):window.t('reg.dt_modal_add_title');
@@ -22464,6 +22571,12 @@ function setDocTypeModalMode(dt=null){{
   document.getElementById('dt-code').value=edit?(dt.code||dt.id||''):'';
   document.getElementById('dt-name').value=edit?(dt.name||''):'';
   document.getElementById('dt-code').disabled=false;
+  const rcEl=document.getElementById('dt-has-reply-cycle');
+  if(rcEl){{
+    const wsUp=String(typeof WS_ID!=='undefined'&&WS_ID?WS_ID:'ENG').trim().toUpperCase();
+    rcEl.dataset.manualEdit=edit?'1':'';
+    rcEl.checked=edit?dtHasReplyCycle(dt, wsUp):(wsUp==='ENG');
+  }}
   const o=normalizeDocTypeReplyOverride(dt||{{}});
   document.getElementById('dt-er-use').checked=o.use_expected_reply_override;
   document.getElementById('dt-er-rev0').value=o.rev0_reply_days_override;
@@ -22485,13 +22598,25 @@ async function saveDocType(){{
   const code=document.getElementById('dt-code').value.trim().toUpperCase();
   const name=document.getElementById('dt-name').value.trim();
   if(!code||!name){{toast(window.t('reg.dt_req'),'er');return;}}
-  const payload={{code,name,expected_reply_override:collectDocTypeReplyOverride()}};
+  const rcEl=document.getElementById('dt-has-reply-cycle');
+  const has_reply_cycle=rcEl?Boolean(rcEl.checked):dtHasReplyCycle({{code,name}});
+  const payload={{code,name,has_reply_cycle,expected_reply_override:collectDocTypeReplyOverride()}};
   if(editId){{
-    await apiFetch('/api/doc_types/'+PID+'/'+editId,{{method:'PATCH',body:JSON.stringify(payload)}});
-    closeM('dt-modal');await loadDTs(true);toast(window.t('reg.dt_saved'),'ok');
+    const res=await apiFetch('/api/doc_types/'+PID+'/'+editId,{{method:'PATCH',body:JSON.stringify(payload)}});
+    if(!res||res.ok===false)return;
+    closeM('dt-modal');await loadDTs(true);
+    const drvUpdated=Boolean((res.drive_rename&&res.drive_rename.renamed)||(res.drive_provision&&!res.drive_provision.skipped&&res.drive_provision.created>0));
+    toast(window.t(drvUpdated?'reg.dt_saved_drive':'reg.dt_saved'),'ok');
   }}else{{
-    await apiFetch('/api/doc_types/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
-    closeM('dt-modal');await loadDTs();switchTab(code);toast(window.t('reg.dt_added'),'ok');
+    const res=await apiFetch('/api/doc_types/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
+    if(!res||res.ok===false)return;
+    closeM('dt-modal');await loadDTs();switchTab(code);
+    const drvProv=res.drive_provision;
+    if(drvProv&&!drvProv.skipped&&(drvProv.created>0||drvProv.existing>0)){{
+      toast(window.t('reg.dt_added_drive',{{created:drvProv.created||0}}),'ok');
+    }}else{{
+      toast(window.t('reg.dt_added'),'ok');
+    }}
   }}
 }}
 

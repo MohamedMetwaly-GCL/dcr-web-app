@@ -334,7 +334,8 @@ def folder_is_usable(service, folder_id):
 
 
 def create_folder(service, parent_id, name):
-    body = {"name": name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
+    clean_name = sanitize_drive_folder_segment(name, max_len=120) or str(name or "").strip() or "Folder"
+    body = {"name": clean_name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
     res = service.files().create(body=body, fields="id, name", supportsAllDrives=True).execute()
     if res and res.get("id"):
         _FOLDER_USABLE_CACHE[res["id"]] = (time.time(), True)
@@ -342,13 +343,54 @@ def create_folder(service, parent_id, name):
             ts, children = _CHILD_FOLDERS_CACHE[parent_id]
             updated = list(children)
             if not any(str(c.get("id")) == str(res["id"]) for c in updated):
-                updated.append({"id": res["id"], "name": res.get("name") or name})
+                updated.append({"id": res["id"], "name": res.get("name") or clean_name})
             _CHILD_FOLDERS_CACHE[parent_id] = (time.time(), updated)
         else:
             _CHILD_FOLDERS_CACHE.pop(parent_id, None)
     else:
         _CHILD_FOLDERS_CACHE.pop(parent_id, None)
     return res
+
+
+def rename_folder(service, folder_id, new_name, parent_id=None):
+    """Rename an existing Drive folder via PATCH files/{id} and refresh caches."""
+    clean_name = sanitize_drive_folder_segment(new_name, max_len=120)
+    if not folder_id or not clean_name:
+        raise RoutingError("invalid_folder_name")
+    lock_parent = parent_id or folder_id
+    with _get_subfolder_lock(lock_parent, clean_name):
+        res = service.files().update(
+            fileId=folder_id,
+            body={"name": clean_name},
+            fields="id, name",
+            supportsAllDrives=True,
+        ).execute()
+        _FOLDER_USABLE_CACHE[folder_id] = (time.time(), True)
+        if parent_id:
+            invalidate_subfolder_caches(parent_id)
+            _FOLDER_USABLE_CACHE[parent_id] = (time.time(), True)
+        else:
+            invalidate_subfolder_caches()
+            _FOLDER_USABLE_CACHE[folder_id] = (time.time(), True)
+        return res or {"id": folder_id, "name": clean_name}
+
+
+def extract_drive_folder_id(raw_value):
+    """Extract a clean Drive folder ID from a Drive URL or raw ID string."""
+    val = str(raw_value or "").strip()
+    if not val:
+        return ""
+    m = re.search(r"/folders/([a-zA-Z0-9_-]+)", val)
+    return m.group(1) if m else val
+
+
+def format_doc_type_folder_name(code, name):
+    """Format and sanitize a standardized `<CODE> - <Name>` Drive folder segment."""
+    c = sanitize_drive_folder_segment(code, max_len=30)
+    n = sanitize_drive_folder_segment(name, max_len=80)
+    if c and n and c.lower() != n.lower():
+        return sanitize_drive_folder_segment(f"{c} - {n}", max_len=110)
+    return c or n or "Documents"
 
 
 def invalidate_subfolder_caches(parent_id=None):
@@ -451,6 +493,63 @@ def resolve_nested_subfolder(service, root_folder_id, rel_subfolder, create_if_m
 
 
 # ---------------- Orchestration ----------------
+_service_provider = None
+
+
+def get_default_write_service():
+    """Return an authenticated Drive write adapter, or None if Drive credentials are unconfigured."""
+    if _service_provider is not None:
+        return _service_provider()
+    try:
+        import blueprints.drive_uploads as du
+        import drive_upload
+        if du._token_provider is not None or du._http_client is not None:
+            token = du._get_token()
+            if not token:
+                return None
+            return drive_upload.RestDriveAdapter(token, http=du._get_http())
+    except Exception:
+        pass
+    try:
+        import drive_upload
+        creds = drive_upload.get_upload_credentials()
+        token = drive_upload.access_token(creds)
+        if not token:
+            return None
+        return drive_upload.RestDriveAdapter(token)
+    except Exception:
+        return None
+
+
+def _is_noc_doc_type(dt):
+    code = str((dt or {}).get("code") or (dt or {}).get("id") or "").strip().upper()
+    name = str((dt or {}).get("name") or "").strip().lower()
+    return code == "NOC" or "notice of change" in name
+
+
+def _is_ltr_doc_type(dt):
+    code = str((dt or {}).get("code") or (dt or {}).get("id") or "").strip().upper()
+    name = str((dt or {}).get("name") or "").strip().lower()
+    return code in ("LTR", "L", "LETTERS") or "letter" in name
+
+
+def _is_correspondence_doc_type(dt):
+    code = str((dt or {}).get("code") or (dt or {}).get("id") or "").strip().upper()
+    name = str((dt or {}).get("name") or "").strip().lower()
+    return _is_ltr_doc_type(dt) or code in ("COR", "CORRESPONDENCE") or "correspond" in name
+
+
+def _is_bad_rev_folder_name(cached_name, code=""):
+    low = str(cached_name or "").strip().lower()
+    if not low:
+        return False
+    if re.search(r"\b(rev|revision)[._\s-]*\d+\b", low, re.I):
+        return True
+    if code and re.search(r"\b" + re.escape(str(code).strip()) + r"[-_]\d+\b", low, re.I):
+        return True
+    return False
+
+
 def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missing=False,
                                subfolder_name=None, flat=False, direction="", destination_folder_id="",
                                party="", from_party="", to_party="", doc_no="", subtype=""):
@@ -458,31 +557,30 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
 
     store must provide: get_project(pid), get_doc_type(pid, dt_id),
     set_doc_type_drive_cache(pid, dt_id, patch_dict).
-    If subfolder_name is provided, creates/finds a subfolder with that name (e.g. Doc No)
-    inside the destination folder and returns its folder_id.
-    For HSE PTW documents, routes uploads under `<Project HSE Root>/PTW/<Full Subtype Name>/`
-    (or directly `<Project HSE Root>/PTW/` when no subtype is selected).
+    - Reply-cycle document types (`flat=False`) route into
+      `<Project Root>/<DocType Folder>/[<Subtype>/]/Submit` or `Replied` (or `Part A..D` for NOC).
+    - Non-reply-cycle document types (`flat=True`) route directly into
+      `<Project Root>/<DocType Folder>/[<Subtype>/]`.
+    - If `subfolder_name` is provided, creates/finds a sanitized `<DocNo>` subfolder inside the resolved slot.
     """
     if slot not in SLOT_KEYWORDS:
         raise RoutingError("invalid_slot")
     project = store.get_project(pid) or {}
-    root_id = str(project.get("drive_folder_id") or "").strip()
-    if root_id:
-        m = re.search(r"/folders/([a-zA-Z0-9_-]+)", root_id)
-        if m:
-            root_id = m.group(1)
+    root_id = extract_drive_folder_id(project.get("drive_folder_id"))
     if not root_id:
         raise RoutingError("project_has_no_drive_folder")
     dt = store.get_doc_type(pid, dt_id)
     if not dt:
         raise RoutingError("doc_type_not_found")
 
-    is_ptw = str(dt.get("code") or dt_id or "").strip().upper() == "PTW"
+    from hse_defaults import normalize_ptw_subtype_value
+    clean_sub = sanitize_drive_folder_segment(normalize_ptw_subtype_value(subtype))
 
     source = "cache"
     patch = {}
     slot_cache = dict(dt.get("drive_slot_folders") or {})
     dir_cache = dict(dt.get("drive_direction_folders") or {})
+    sub_cache = dict(dt.get("drive_subtype_folders") or {})
     dt_folder_id = ""
 
     d_norm = str(direction or "").lower()
@@ -495,7 +593,7 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
         if folder_is_usable(service, destination_folder_id):
             dt_folder_id = destination_folder_id
             source = "explicit"
-            now_iso = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            now_iso = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
             if dir_key:
                 dir_cache[dir_key] = dt_folder_id
                 patch.update({"drive_direction_folders": dir_cache, "folder_synced_at": now_iso})
@@ -516,76 +614,92 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
         cached_name = str(dt.get("drive_folder_name") or "").lower()
         opposite_inc = is_outgoing and any(k in cached_name for k in ("incom", "receiv", "وارد"))
         opposite_out = is_incoming and any(k in cached_name for k in ("outgo", "issu", "sent", "صادر"))
-        is_bad_rev_folder = bool(
-            cached_name and (
-                re.search(r"\b(rev|revision)[._\s-]*\d+\b", cached_name, re.I) or
-                (dt.get("code") and re.search(r"\b" + re.escape(str(dt.get("code")).strip()) + r"[-_]\d+\b", cached_name, re.I))
-            )
-        )
+        is_bad_rev_folder = _is_bad_rev_folder_name(cached_name, dt.get("code"))
         if cand_id and not (opposite_inc or opposite_out or is_bad_rev_folder) and folder_is_usable(service, cand_id):
             dt_folder_id = cand_id
             source = "cache"
 
     if not dt_folder_id:
-        source = "discovered"
-        folder = match_doc_type_folder(list_child_folders(service, root_id), dt.get("code"), dt.get("name"), direction=direction)
-        if folder is None:
-            if not create_if_missing:
-                raise RoutingError("doc_type_folder_not_found")
-            new_dt_folder_name = "PTW" if is_ptw else ("%s - %s" % (dt.get("code"), dt.get("name")))
-            folder = create_folder(service, root_id, new_dt_folder_name)
-            source = "created"
-        dt_folder_id = folder["id"]
-        slot_cache = {}            # slot folders belong to the old doc type folder
-        now_iso = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        if dir_key:
-            dir_cache[dir_key] = dt_folder_id
-            patch.update({"drive_direction_folders": dir_cache,
-                          "folder_synced_at": now_iso})
-        else:
-            patch.update({"drive_folder_id": dt_folder_id, "drive_folder_name": folder.get("name", ""),
-                          "drive_slot_folders": {},
-                          "folder_synced_at": now_iso})
+        new_dt_folder_name = format_doc_type_folder_name(dt.get("code") or dt_id, dt.get("name"))
+        dt_lock_name = f"{new_dt_folder_name}:{dir_key}" if dir_key else new_dt_folder_name
+        with _get_subfolder_lock(root_id, dt_lock_name):
+            source = "discovered"
+            folder = match_doc_type_folder(list_child_folders(service, root_id), dt.get("code"), dt.get("name"), direction=direction)
+            if folder is None:
+                if not create_if_missing:
+                    raise RoutingError("doc_type_folder_not_found")
+                folder = create_folder(service, root_id, new_dt_folder_name)
+                source = "created"
+            dt_folder_id = folder["id"]
+            slot_cache = {}
+            sub_cache = {}
+            now_iso = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            if dir_key:
+                dir_cache[dir_key] = dt_folder_id
+                patch.update({"drive_direction_folders": dir_cache,
+                              "folder_synced_at": now_iso})
+            else:
+                patch.update({"drive_folder_id": dt_folder_id, "drive_folder_name": folder.get("name", ""),
+                              "drive_slot_folders": {},
+                              "folder_synced_at": now_iso})
 
-    # 2) PTW subtype subfolder / Submit-Replied slot folder
-    if is_ptw:
-        from hse_defaults import normalize_ptw_subtype_value
-        clean_ptw_sub = sanitize_drive_folder_segment(normalize_ptw_subtype_value(subtype))
-        if destination_folder_id and folder_is_usable(service, destination_folder_id):
-            slot_id = destination_folder_id
-        elif clean_ptw_sub:
-            sub_key = f"ptw_subtype:{clean_ptw_sub.lower()}"
-            slot_id = str(slot_cache.get(sub_key) or "").strip()
-            if slot_id and not folder_is_usable(service, slot_id):
-                slot_id = ""
-            if not slot_id:
-                lk = _get_subfolder_lock(dt_folder_id, clean_ptw_sub)
-                with lk:
-                    children = list_child_folders(service, dt_folder_id)
-                    sub = next(
-                        (f for f in children if str(f.get("name", "")).strip().lower() == clean_ptw_sub.lower()),
-                        None,
-                    )
-                    if sub is None:
-                        if not create_if_missing:
-                            raise RoutingError("subfolder_not_found")
-                        sub = create_folder(service, dt_folder_id, clean_ptw_sub)
-                        source = "created"
-                    elif source == "cache":
-                        source = "discovered"
-                    slot_id = sub["id"]
-                    slot_cache[sub_key] = slot_id
-                    patch["drive_slot_folders"] = slot_cache
-        else:
-            # No subtype selected on PTW record: fall back safely to parent PTW folder
-            slot_id = dt_folder_id
+    # 2) Generalized optional Subtype subfolder (<DocType Folder>/<Subtype>/)
+    sub_folder_id = ""
+    sub_key = clean_sub.lower() if clean_sub else ""
+    sub_entry = {}
+    if destination_folder_id and folder_is_usable(service, destination_folder_id):
+        slot_parent_id = destination_folder_id
+    elif clean_sub:
+        raw_sub_entry = sub_cache.get(sub_key)
+        if isinstance(raw_sub_entry, dict):
+            sub_entry = dict(raw_sub_entry)
+            sub_folder_id = str(sub_entry.get("id") or "").strip()
+        elif isinstance(raw_sub_entry, str) and raw_sub_entry.strip():
+            sub_folder_id = raw_sub_entry.strip()
+            sub_entry = {"id": sub_folder_id, "name": clean_sub, "slots": {}}
+        if not sub_folder_id:
+            legacy_ptw_id = str(slot_cache.get(f"ptw_subtype:{sub_key}") or "").strip()
+            if legacy_ptw_id:
+                sub_folder_id = legacy_ptw_id
+                sub_entry = {"id": sub_folder_id, "name": clean_sub, "slots": {}}
+        if sub_folder_id and not folder_is_usable(service, sub_folder_id):
+            sub_folder_id = ""
+            sub_entry = {}
+        if not sub_folder_id:
+            with _get_subfolder_lock(dt_folder_id, clean_sub):
+                children = list_child_folders(service, dt_folder_id)
+                sub_match = next(
+                    (f for f in children if str(f.get("name", "")).strip().lower() == sub_key),
+                    None,
+                )
+                if sub_match is None:
+                    if not create_if_missing:
+                        raise RoutingError("subfolder_not_found")
+                    sub_match = create_folder(service, dt_folder_id, clean_sub)
+                    source = "created"
+                elif source == "cache":
+                    source = "discovered"
+                sub_folder_id = sub_match["id"]
+                sub_entry = {
+                    "id": sub_folder_id,
+                    "name": sub_match.get("name") or clean_sub,
+                    "slots": dict(sub_entry.get("slots") or {}),
+                }
+                sub_cache[sub_key] = sub_entry
+                patch["drive_subtype_folders"] = sub_cache
+        slot_parent_id = sub_folder_id
     else:
-        slot_id = str(slot_cache.get(slot) or "").strip()
-        if destination_folder_id and folder_is_usable(service, destination_folder_id):
-            slot_id = destination_folder_id
-        elif flat:
-            is_letter = str(dt.get("code") or "").upper() in ("LTR", "L", "LETTERS", "COR", "CORRESPONDENCE") or \
-                        any(k in str(dt.get("name") or "").lower() for k in ("letter", "correspond"))
+        slot_parent_id = dt_folder_id
+
+    # 3) Submit / Replied / Part A..D slot folder (or flat destination)
+    slot_id = ""
+    if destination_folder_id and folder_is_usable(service, destination_folder_id):
+        slot_id = destination_folder_id
+    elif flat:
+        if clean_sub:
+            slot_id = slot_parent_id
+        else:
+            is_letter = _is_correspondence_doc_type(dt)
             has_party_or_dir = bool(direction or party or from_party or to_party)
             if is_letter or has_party_or_dir:
                 slot_id = resolve_hierarchical_subfolder(
@@ -595,39 +709,67 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
                 )
             else:
                 slot_id = dt_folder_id
-        elif slot_id and not folder_is_usable(service, slot_id):
-            slot_id = ""
-        if not slot_id:
-            sub = match_slot_folder(list_child_folders(service, dt_folder_id), slot)
-            if sub is None:
-                if not create_if_missing:
-                    raise RoutingError("slot_folder_not_found")
-                sub = create_folder(service, dt_folder_id, SLOT_DEFAULT_NAMES[slot])
-                source = "created"
-            slot_id = sub["id"]
-            slot_cache[slot] = slot_id
-            patch["drive_slot_folders"] = slot_cache
-            if source == "cache":
-                source = "discovered"
+    else:
+        if clean_sub:
+            sub_slots = dict(sub_entry.get("slots") or {})
+            slot_id = str(sub_slots.get(slot) or "").strip()
+            if slot_id and not folder_is_usable(service, slot_id):
+                slot_id = ""
+            if not slot_id:
+                slot_default_name = SLOT_DEFAULT_NAMES[slot]
+                with _get_subfolder_lock(slot_parent_id, slot_default_name):
+                    sub = match_slot_folder(list_child_folders(service, slot_parent_id), slot)
+                    if sub is None:
+                        if not create_if_missing:
+                            raise RoutingError("slot_folder_not_found")
+                        sub = create_folder(service, slot_parent_id, slot_default_name)
+                        source = "created"
+                    elif source == "cache":
+                        source = "discovered"
+                    slot_id = sub["id"]
+                    sub_slots[slot] = slot_id
+                    sub_entry["slots"] = sub_slots
+                    sub_cache[sub_key] = sub_entry
+                    patch["drive_subtype_folders"] = sub_cache
+        else:
+            slot_id = str(slot_cache.get(slot) or "").strip()
+            if slot_id and not folder_is_usable(service, slot_id):
+                slot_id = ""
+            if not slot_id:
+                slot_default_name = SLOT_DEFAULT_NAMES[slot]
+                with _get_subfolder_lock(slot_parent_id, slot_default_name):
+                    sub = match_slot_folder(list_child_folders(service, slot_parent_id), slot)
+                    if sub is None:
+                        if not create_if_missing:
+                            raise RoutingError("slot_folder_not_found")
+                        sub = create_folder(service, slot_parent_id, slot_default_name)
+                        source = "created"
+                    elif source == "cache":
+                        source = "discovered"
+                    slot_id = sub["id"]
+                    slot_cache[slot] = slot_id
+                    patch["drive_slot_folders"] = slot_cache
 
     if patch:
         store.set_doc_type_drive_cache(pid, dt_id, patch)
 
-    # 3) Optional subfolder per document (e.g. DS-CY002P608-00001 REV00)
+    # 4) Optional subfolder per document (e.g. DS-CY002P608-00001 REV00)
     target_folder_id = slot_id
     subfolder_id = None
+    clean_doc_sub = ""
     if subfolder_name:
-        clean_sub = str(subfolder_name).strip()
-        if clean_sub:
-            children = list_child_folders(service, slot_id)
-            match = next((f for f in children if str(f.get("name", "")).strip().lower() == clean_sub.lower()), None)
-            if match is None:
-                if not create_if_missing:
-                    raise RoutingError("subfolder_not_found")
-                match = create_folder(service, slot_id, clean_sub)
-                source = "created"
-            subfolder_id = match["id"]
-            target_folder_id = subfolder_id
+        clean_doc_sub = sanitize_drive_folder_segment(subfolder_name, max_len=120)
+        if clean_doc_sub:
+            with _get_subfolder_lock(slot_id, clean_doc_sub):
+                children = list_child_folders(service, slot_id)
+                match = next((f for f in children if str(f.get("name", "")).strip().lower() == clean_doc_sub.lower()), None)
+                if match is None:
+                    if not create_if_missing:
+                        raise RoutingError("subfolder_not_found")
+                    match = create_folder(service, slot_id, clean_doc_sub)
+                    source = "created"
+                subfolder_id = match["id"]
+                target_folder_id = subfolder_id
 
     result = {
         "folder_id": target_folder_id,
@@ -635,7 +777,460 @@ def resolve_upload_destination(pid, dt_id, slot, service, store, create_if_missi
         "slot_folder_id": slot_id,
         "source": source
     }
+    if sub_folder_id:
+        result["subtype_folder_id"] = sub_folder_id
     if subfolder_id:
         result["subfolder_id"] = subfolder_id
-        result["subfolder_name"] = str(subfolder_name).strip()
+        result["subfolder_name"] = clean_doc_sub
     return result
+
+
+def _collect_active_subtypes_for_doc_type(project_id, ws_id, dt, store, lists_map=None):
+    """Return ordered list of sanitized active subtype names for `(project_id, dt)`."""
+    from hse_defaults import normalize_ptw_subtype_value
+
+    lists_dict = lists_map if isinstance(lists_map, dict) else {}
+    if not lists_dict and hasattr(store, "get_lists"):
+        try:
+            lists_dict = store.get_lists(project_id) or {}
+        except Exception:
+            lists_dict = {}
+
+    code = str(dt.get("code") or dt.get("id") or "").strip().upper()
+    code_low = re.sub(r"[^a-z0-9]+", "_", code.lower()).strip("_")
+    ws_low = re.sub(r"[^a-z0-9]+", "_", str(ws_id or "ENG").strip().lower()).strip("_") or "eng"
+
+    list_name = ""
+    if hasattr(store, "get_columns"):
+        try:
+            cols = store.get_columns(project_id, dt["id"]) or []
+            for c in cols:
+                if not isinstance(c, dict) or c.get("col_type") != "dropdown" or not c.get("list_name"):
+                    continue
+                ck = str(c.get("col_key") or "").strip().lower()
+                ln = str(c.get("list_name") or "").strip()
+                ln_low = ln.lower()
+                if ck in ("legacysubtype", "subtype") or ln_low == "subtype" or ln_low.endswith("_subtype"):
+                    list_name = ln
+                    break
+        except Exception:
+            list_name = ""
+
+    if not list_name and code_low:
+        candidates = [f"{ws_low}_{code_low}_subtype", f"hse_{code_low}_subtype", f"{code_low}_subtype"]
+        for cand in candidates:
+            for existing_ln in lists_dict.keys():
+                if str(existing_ln).strip().lower() == cand.lower():
+                    list_name = existing_ln
+                    break
+            if list_name:
+                break
+
+    raw_items = []
+    if list_name and isinstance(lists_dict.get(list_name), (list, tuple)):
+        raw_items = list(lists_dict.get(list_name) or [])
+    elif not lists_dict and isinstance(dt.get("legacy_subtypes"), dict):
+        raw_items = list(dt["legacy_subtypes"].values())
+
+    out = []
+    seen = set()
+    for item in raw_items:
+        clean = sanitize_drive_folder_segment(normalize_ptw_subtype_value(item))
+        if clean and clean.lower() not in seen:
+            seen.add(clean.lower())
+            out.append(clean)
+    return out
+
+
+def _ensure_slot_children(service, parent_id, slots_to_ensure, existing_slot_map=None):
+    """Ensure each slot in `slots_to_ensure` exists under `parent_id`; return `(updated_map, created_cnt, existing_cnt)`."""
+    slot_map = dict(existing_slot_map or {})
+    created = 0
+    existing = 0
+    for slot in slots_to_ensure:
+        cand_id = str(slot_map.get(slot) or "").strip()
+        if cand_id and folder_is_usable(service, cand_id):
+            existing += 1
+            continue
+        default_name = SLOT_DEFAULT_NAMES[slot]
+        with _get_subfolder_lock(parent_id, default_name):
+            children = list_child_folders(service, parent_id)
+            matched = match_slot_folder(children, slot)
+            if matched is not None:
+                slot_map[slot] = matched["id"]
+                existing += 1
+            else:
+                created_f = create_folder(service, parent_id, default_name)
+                slot_map[slot] = created_f["id"]
+                created += 1
+    return slot_map, created, existing
+
+
+def _ensure_ltr_direction_children(service, dt_folder_id, existing_dir_map=None):
+    """Ensure directional `Sent` and `Received` folders exist under `dt_folder_id` when no company folders exist."""
+    dir_map = dict(existing_dir_map or {})
+    created = 0
+    existing = 0
+    inc_kws = ("in", "incom", "incoming", "receiv", "received", "وارد")
+    out_kws = ("out", "outgo", "outgoing", "sent", "issu", "issued", "صادر")
+
+    with _get_subfolder_lock(dt_folder_id, "ltr_directions"):
+        children = list_child_folders(service, dt_folder_id)
+        inc_hit = next((c for c in children if any(k in _tokens(c.get("name")) for k in inc_kws)), None)
+        out_hit = next((c for c in children if any(k in _tokens(c.get("name")) for k in out_kws)), None)
+        non_dir_children = [
+            c for c in children
+            if not any(k in _tokens(c.get("name")) for k in inc_kws + out_kws)
+        ]
+        # Preserve existing company-first hierarchy (e.g. Style Design / SCAS / EKH) without adding root Sent/Received
+        if non_dir_children and not (inc_hit or out_hit):
+            return dir_map, 0, len(non_dir_children)
+
+        if out_hit:
+            dir_map["outgoing"] = out_hit["id"]
+            existing += 1
+        else:
+            out_f = create_folder(service, dt_folder_id, "Sent")
+            dir_map["outgoing"] = out_f["id"]
+            created += 1
+
+        if inc_hit:
+            dir_map["incoming"] = inc_hit["id"]
+            existing += 1
+        else:
+            inc_f = create_folder(service, dt_folder_id, "Received")
+            dir_map["incoming"] = inc_f["id"]
+            created += 1
+
+    return dir_map, created, existing
+
+
+def provision_project_drive_structure(project_id, only_doc_type_id=None, only_subtype=None, service=None, store=None):
+    """Idempotently provision standardized Drive folders for `project_id`.
+
+    Safely no-ops when `drive_folder_id` is empty or Drive credentials are unconfigured,
+    guaranteeing database CRUD operations never fail offline.
+    """
+    import attachments
+    from hse_defaults import normalize_ptw_subtype_value
+
+    if store is None:
+        import db as store
+
+    try:
+        project = store.get_project(project_id) if hasattr(store, "get_project") else None
+    except Exception:
+        project = None
+    if not isinstance(project, dict) or not project:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
+
+    root_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    if not root_id:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
+
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured", "created": 0, "existing": 0, "errors": []}
+
+    ws_id = str(project.get("workspace_id") or "ENG").strip().upper()
+    dts = []
+    try:
+        if only_doc_type_id:
+            dt_one = store.get_doc_type(project_id, only_doc_type_id) if hasattr(store, "get_doc_type") else None
+            if dt_one:
+                dts = [dt_one]
+        elif hasattr(store, "get_doc_types"):
+            dts = list(store.get_doc_types(project_id) or [])
+    except Exception as e:
+        return {"ok": False, "skipped": False, "created": 0, "existing": 0, "errors": [str(e)]}
+
+    lists_map = {}
+    if hasattr(store, "get_lists"):
+        try:
+            lists_map = store.get_lists(project_id) or {}
+        except Exception:
+            lists_map = {}
+
+    clean_only_sub = sanitize_drive_folder_segment(normalize_ptw_subtype_value(only_subtype)) if only_subtype else ""
+    created_total = 0
+    existing_total = 0
+    errors = []
+
+    for dt in dts:
+        if not isinstance(dt, dict):
+            continue
+        dt_id = dt.get("id") or dt.get("code")
+        code = str(dt.get("code") or dt_id or "").strip()
+        name = str(dt.get("name") or code).strip()
+        if not dt_id:
+            continue
+
+        try:
+            is_noc = _is_noc_doc_type(dt)
+            is_ltr = _is_ltr_doc_type(dt) and ws_id == "ENG"
+            has_cycle = attachments.doc_type_has_reply_cycle(dt, workspace_id=ws_id)
+            now_iso = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+            patch = {"folder_synced_at": now_iso}
+            slot_cache = dict(dt.get("drive_slot_folders") or {})
+            dir_cache = dict(dt.get("drive_direction_folders") or {})
+            sub_cache = dict(dt.get("drive_subtype_folders") or {})
+
+            # Special check for LTR with pre-existing root-level Incoming/Outgoing Letters folders
+            if is_ltr and not clean_only_sub:
+                root_children = list_child_folders(svc, root_id)
+                try:
+                    inc_root = match_doc_type_folder(root_children, code, name, direction="Received")
+                    out_root = match_doc_type_folder(root_children, code, name, direction="Sent")
+                except RoutingError:
+                    inc_root, out_root = None, None
+                if inc_root and out_root and inc_root["id"] != out_root["id"]:
+                    dir_cache["incoming"] = inc_root["id"]
+                    dir_cache["outgoing"] = out_root["id"]
+                    patch["drive_direction_folders"] = dir_cache
+                    existing_total += 2
+                    if hasattr(store, "set_doc_type_drive_cache"):
+                        store.set_doc_type_drive_cache(project_id, dt_id, patch)
+                    continue
+
+            # 1) Ensure <DocType Folder>
+            dt_folder_id = str(dt.get("drive_folder_id") or "").strip()
+            dt_folder_name = str(dt.get("drive_folder_name") or "").strip()
+            if dt_folder_id and (_is_bad_rev_folder_name(dt_folder_name, code) or not folder_is_usable(svc, dt_folder_id)):
+                dt_folder_id = ""
+                slot_cache = {}
+                sub_cache = {}
+
+            target_dt_name = format_doc_type_folder_name(code, name)
+            if dt_folder_id:
+                existing_total += 1
+            else:
+                with _get_subfolder_lock(root_id, target_dt_name):
+                    children = list_child_folders(svc, root_id)
+                    matched_dt = match_doc_type_folder(children, code, name)
+                    if matched_dt is not None:
+                        dt_folder_id = matched_dt["id"]
+                        dt_folder_name = matched_dt.get("name") or target_dt_name
+                        existing_total += 1
+                    else:
+                        created_dt = create_folder(svc, root_id, target_dt_name)
+                        dt_folder_id = created_dt["id"]
+                        dt_folder_name = created_dt.get("name") or target_dt_name
+                        created_total += 1
+                patch["drive_folder_id"] = dt_folder_id
+                patch["drive_folder_name"] = dt_folder_name
+
+            # 2) Determine active subtypes
+            if clean_only_sub:
+                subtypes = [clean_only_sub]
+            else:
+                subtypes = _collect_active_subtypes_for_doc_type(project_id, ws_id, dt, store, lists_map=lists_map)
+
+            slots_needed = ("part_a", "part_b", "part_c", "part_d") if is_noc else (("submission", "approval") if has_cycle else ())
+
+            if subtypes:
+                for sub_name in subtypes:
+                    sub_key = sub_name.lower()
+                    raw_entry = sub_cache.get(sub_key)
+                    sub_entry = dict(raw_entry) if isinstance(raw_entry, dict) else {}
+                    sub_id = str(sub_entry.get("id") or "").strip()
+                    if sub_id and not folder_is_usable(svc, sub_id):
+                        sub_id = ""
+                        sub_entry = {}
+                    if sub_id:
+                        existing_total += 1
+                    else:
+                        with _get_subfolder_lock(dt_folder_id, sub_name):
+                            sub_children = list_child_folders(svc, dt_folder_id)
+                            sub_match = next(
+                                (f for f in sub_children if str(f.get("name", "")).strip().lower() == sub_key),
+                                None,
+                            )
+                            if sub_match is not None:
+                                sub_id = sub_match["id"]
+                                sub_actual_name = sub_match.get("name") or sub_name
+                                existing_total += 1
+                            else:
+                                sub_created = create_folder(svc, dt_folder_id, sub_name)
+                                sub_id = sub_created["id"]
+                                sub_actual_name = sub_created.get("name") or sub_name
+                                created_total += 1
+                        sub_entry["id"] = sub_id
+                        sub_entry["name"] = sub_actual_name
+
+                    if slots_needed:
+                        sub_slots, c_cnt, e_cnt = _ensure_slot_children(svc, sub_id, slots_needed, sub_entry.get("slots"))
+                        created_total += c_cnt
+                        existing_total += e_cnt
+                        sub_entry["slots"] = sub_slots
+                    else:
+                        sub_entry.setdefault("slots", {})
+                    sub_cache[sub_key] = sub_entry
+                patch["drive_subtype_folders"] = sub_cache
+            else:
+                if is_ltr:
+                    dir_cache, c_cnt, e_cnt = _ensure_ltr_direction_children(svc, dt_folder_id, dir_cache)
+                    created_total += c_cnt
+                    existing_total += e_cnt
+                    if dir_cache:
+                        patch["drive_direction_folders"] = dir_cache
+                elif slots_needed:
+                    slot_cache, c_cnt, e_cnt = _ensure_slot_children(svc, dt_folder_id, slots_needed, slot_cache)
+                    created_total += c_cnt
+                    existing_total += e_cnt
+                    patch["drive_slot_folders"] = slot_cache
+
+            if hasattr(store, "set_doc_type_drive_cache"):
+                store.set_doc_type_drive_cache(project_id, dt_id, patch)
+        except Exception as err:
+            errors.append({"dt_id": str(dt_id), "error": str(err)})
+
+    return {
+        "ok": len(errors) == 0,
+        "skipped": False,
+        "project_id": project_id,
+        "created": created_total,
+        "existing": existing_total,
+        "errors": errors,
+    }
+
+
+def rename_doc_type_drive_folder(project_id, dt_id, old_code, old_name, new_code, new_name, service=None, store=None):
+    """Rename the Drive folder for `(project_id, dt_id)` in-place via PATCH files/{id} without duplicates."""
+    if store is None:
+        import db as store
+    try:
+        project = store.get_project(project_id) if hasattr(store, "get_project") else None
+    except Exception:
+        project = None
+    if not isinstance(project, dict) or not project:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder", "renamed": False}
+
+    root_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    if not root_id:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder", "renamed": False}
+
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured", "renamed": False}
+
+    dt = store.get_doc_type(project_id, dt_id) if hasattr(store, "get_doc_type") else {}
+    dt = dt or {}
+    new_folder_name = format_doc_type_folder_name(new_code, new_name)
+
+    folder_id = str(dt.get("drive_folder_id") or "").strip()
+    if folder_id and not folder_is_usable(svc, folder_id):
+        folder_id = ""
+
+    if not folder_id:
+        try:
+            children = list_child_folders(svc, root_id)
+            matched = match_doc_type_folder(children, old_code, old_name)
+            if matched is not None:
+                folder_id = matched["id"]
+        except RoutingError:
+            folder_id = ""
+
+    if not folder_id:
+        return {"ok": True, "skipped": False, "renamed": False, "reason": "folder_not_found"}
+
+    renamed_res = rename_folder(svc, folder_id, new_folder_name, parent_id=root_id)
+    final_name = (renamed_res or {}).get("name") or new_folder_name
+    now_iso = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    if hasattr(store, "set_doc_type_drive_cache"):
+        store.set_doc_type_drive_cache(project_id, dt_id, {
+            "drive_folder_id": folder_id,
+            "drive_folder_name": final_name,
+            "folder_synced_at": now_iso,
+        })
+    return {"ok": True, "skipped": False, "renamed": True, "folder_id": folder_id, "folder_name": final_name}
+
+
+def rename_subtype_drive_folder(project_id, dt_id, old_subtype, new_subtype, service=None, store=None):
+    """Rename a `<Subtype>` subfolder under `<DocType Folder>` in-place via PATCH files/{id} without duplicates."""
+    from hse_defaults import normalize_ptw_subtype_value
+
+    if store is None:
+        import db as store
+
+    old_clean = sanitize_drive_folder_segment(normalize_ptw_subtype_value(old_subtype))
+    new_clean = sanitize_drive_folder_segment(normalize_ptw_subtype_value(new_subtype))
+    if not old_clean or not new_clean or old_clean == new_clean:
+        return {"ok": True, "skipped": True, "reason": "unchanged", "renamed": False}
+
+    try:
+        project = store.get_project(project_id) if hasattr(store, "get_project") else None
+    except Exception:
+        project = None
+    if not isinstance(project, dict) or not project:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder", "renamed": False}
+
+    root_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    if not root_id:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder", "renamed": False}
+
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured", "renamed": False}
+
+    dt = store.get_doc_type(project_id, dt_id) if hasattr(store, "get_doc_type") else None
+    if not isinstance(dt, dict) or not dt:
+        return {"ok": True, "skipped": True, "reason": "doc_type_not_found", "renamed": False}
+
+    dt_folder_id = str(dt.get("drive_folder_id") or "").strip()
+    if dt_folder_id and not folder_is_usable(svc, dt_folder_id):
+        dt_folder_id = ""
+    if not dt_folder_id:
+        try:
+            matched_dt = match_doc_type_folder(list_child_folders(svc, root_id), dt.get("code"), dt.get("name"))
+            if matched_dt is not None:
+                dt_folder_id = matched_dt["id"]
+        except RoutingError:
+            dt_folder_id = ""
+    if not dt_folder_id:
+        return {"ok": True, "skipped": False, "renamed": False, "reason": "doc_type_folder_not_found"}
+
+    sub_cache = dict(dt.get("drive_subtype_folders") or {})
+    slot_cache = dict(dt.get("drive_slot_folders") or {})
+    old_key = old_clean.lower()
+    new_key = new_clean.lower()
+
+    old_entry = dict(sub_cache.get(old_key) or {}) if isinstance(sub_cache.get(old_key), dict) else {}
+    sub_folder_id = str(old_entry.get("id") or slot_cache.get(f"ptw_subtype:{old_key}") or "").strip()
+    if sub_folder_id and not folder_is_usable(svc, sub_folder_id):
+        sub_folder_id = ""
+
+    if not sub_folder_id:
+        children = list_child_folders(svc, dt_folder_id)
+        sub_match = next(
+            (f for f in children if str(f.get("name", "")).strip().lower() == old_key),
+            None,
+        )
+        if sub_match is not None:
+            sub_folder_id = sub_match["id"]
+
+    if not sub_folder_id:
+        return {"ok": True, "skipped": False, "renamed": False, "reason": "subfolder_not_found"}
+
+    renamed_res = rename_folder(svc, sub_folder_id, new_clean, parent_id=dt_folder_id)
+    final_name = (renamed_res or {}).get("name") or new_clean
+
+    if old_key != new_key:
+        sub_cache.pop(old_key, None)
+    sub_cache[new_key] = {
+        "id": sub_folder_id,
+        "name": final_name,
+        "slots": dict(old_entry.get("slots") or {}),
+    }
+    now_iso = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    patch = {
+        "drive_folder_id": dt_folder_id,
+        "drive_subtype_folders": sub_cache,
+        "folder_synced_at": now_iso,
+    }
+    if f"ptw_subtype:{old_key}" in slot_cache:
+        slot_cache.pop(f"ptw_subtype:{old_key}", None)
+        patch["drive_slot_folders"] = slot_cache
+    if hasattr(store, "set_doc_type_drive_cache"):
+        store.set_doc_type_drive_cache(project_id, dt_id, patch)
+    return {"ok": True, "skipped": False, "renamed": True, "folder_id": sub_folder_id, "folder_name": final_name}

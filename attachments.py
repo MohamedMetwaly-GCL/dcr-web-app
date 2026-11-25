@@ -378,25 +378,52 @@ def merge_sync_links(data, sync_links):
 
 
 # ---------------- Document types with / without a consultant reply cycle ----------------
-REPLY_CYCLE_CODES = {"SD", "DS", "MS", "IR", "MIR", "RFI", "NOC", "ABD", "WN", "NCN", "NCR", "EI", "SI", "CVI", "PCQ", "SVP"}
-_NO_CYCLE_NAME_HINTS = ("requisition", "purchase", "letter", "correspondence", "minutes", "mom",
-                        "daily report", "site log", "boq", "specs", "variation")
-_CYCLE_NAME_HINTS = ("shop drawing", "drawing", "material submittal", "submittal", "inspection request",
-                     "request for information", "notice of change", "as-built", "as built",
-                     "work notice", "work notification", "works notice", "non-conformance", "non conformance", "instruction")
+REPLY_CYCLE_CODES = frozenset({
+    "SD", "DS", "MS", "IR", "MIR", "RFI", "NOC", "ABD", "WN", "NCN", "NCR",
+    "EI", "SI", "CVI", "PCQ", "SVP", "PTW", "OBS", "INC", "JSA",
+})
+NO_REPLY_CYCLE_CODES = frozenset({
+    "PR", "LTR", "L", "LETTERS", "COR", "CORRESPONDENCE", "MOM", "IOM", "QS",
+    "TBT", "FEI", "CEV", "EVAC", "MHR", "WKR",
+    "WO", "PPM", "CM", "MR", "SLA",
+})
+OM_DEFAULT_NO_CYCLE_CODES = frozenset({"WO", "PPM", "CM", "INC", "MR", "SLA", "COR"})
+_NO_CYCLE_NAME_HINTS = (
+    "requisition", "purchase", "letter", "correspondence", "minutes", "mom",
+    "internal office memo", "quantity surveyor", "daily report", "site log",
+    "boq", "specs", "variation", "toolbox", "extinguisher", "contractor evaluation",
+    "evacuation", "man-hour", "man hour", "worker register",
+)
+_CYCLE_NAME_HINTS = (
+    "shop drawing", "drawing", "material submittal", "submittal", "inspection request",
+    "request for information", "notice of change", "as-built", "as built",
+    "work notice", "work notification", "works notice", "non-conformance", "non conformance",
+    "instruction", "potential change", "safety violation", "permit to work",
+    "safety observation", "job safety analysis",
+)
 
 
-def doc_type_has_reply_cycle(dt):
-    """True when documents of this type go to the consultant and receive a reply / approval status
-    (Shop Drawings, Material Submittals, IR, RFI, NOC). False for single-party documents
-    (PR, Letters, MOM, Daily Reports). An explicit boolean 'has_reply_cycle' on the doc type wins."""
+def doc_type_has_reply_cycle(dt, workspace_id=None):
+    """True when documents of this type use dual Submit / Replied folders and slots.
+
+    An explicit boolean 'has_reply_cycle' on the doc type always wins across all workspaces.
+    For legacy rows without the flag, falls back deterministically to built-in register rules.
+    """
     dt = dt or {}
     flag = dt.get("has_reply_cycle")
     if isinstance(flag, bool):
         return flag
+    co_flag = dt.get("has_closeout_slot")
+    if isinstance(co_flag, bool) and co_flag:
+        return True
+    ws = str(workspace_id or dt.get("workspace_id") or "").strip().upper()
     code = str(dt.get("code") or dt.get("id") or "").strip().upper()
+    if ws in ("OM", "O&M") and code in OM_DEFAULT_NO_CYCLE_CODES:
+        return False
     if code in REPLY_CYCLE_CODES:
         return True
+    if code in NO_REPLY_CYCLE_CODES:
+        return False
     name = str(dt.get("name") or "").strip().lower()
     if any(h in name for h in _NO_CYCLE_NAME_HINTS):
         return False
@@ -412,18 +439,22 @@ def is_hse_closeout_doc_type(dt):
     flag = dt.get("has_closeout_slot")
     if isinstance(flag, bool):
         return flag
+    rc_flag = dt.get("has_reply_cycle")
+    if isinstance(rc_flag, bool):
+        return rc_flag
     code = str(dt.get("code") or dt.get("id") or "").strip().upper()
     return code in HSE_CLOSEOUT_CODES
 
 
 def doc_type_allows_approval_slot(dt, workspace_id="ENG"):
     """True when SLOT_APPROVAL is permitted for `(dt, workspace_id)`."""
-    ws = str(workspace_id or "ENG").strip().upper()
+    dt = dt or {}
+    if isinstance(dt.get("has_reply_cycle"), bool):
+        return dt["has_reply_cycle"]
+    ws = str(workspace_id or dt.get("workspace_id") or "ENG").strip().upper()
     if ws == "HSE":
         return is_hse_closeout_doc_type(dt)
-    if ws == "ENG":
-        return doc_type_has_reply_cycle(dt)
-    return False
+    return doc_type_has_reply_cycle(dt, workspace_id=ws)
 
 
 def resolve_hse_closeout_status(current_status="", requested_status=""):

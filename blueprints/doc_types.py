@@ -13,7 +13,9 @@ changed from @app.route to @doc_types_bp.route.
 """
 from flask import Blueprint, request, jsonify
 
+import attachments
 import db
+import drive_routing
 from auth import (
     current_user,
     can_edit,
@@ -71,8 +73,29 @@ def api_add_doc_type(pid):
     if dup:
         return jsonify(ok=False, error="Document type code/name already exists"), 400
     override = data.get("expected_reply_override") or {}
-    db.add_doc_type(pid, code, name, override)
-    return jsonify(ok=True)
+    raw_cycle = data.get("has_reply_cycle")
+    has_reply_cycle = raw_cycle if isinstance(raw_cycle, bool) else None
+    try:
+        db.add_doc_type(pid, code, name, override, has_reply_cycle=has_reply_cycle)
+    except TypeError:
+        db.add_doc_type(pid, code, name, override)
+        if isinstance(has_reply_cycle, bool):
+            db.save_doc_type_metadata(pid, code, has_reply_cycle=has_reply_cycle)
+
+    drive_prov = {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
+    try:
+        drive_prov = drive_routing.provision_project_drive_structure(pid, only_doc_type_id=code)
+        proj = db.get_project(pid) or {}
+        ws_id = str(proj.get("workspace_id") or "ENG").strip().upper()
+        for other_p in (db.get_projects(workspace_id=ws_id) or []):
+            other_pid = str((other_p or {}).get("id") or "").strip()
+            if not other_pid or other_pid == pid:
+                continue
+            if db.project_has_doc_type(other_pid, code):
+                drive_routing.provision_project_drive_structure(other_pid, only_doc_type_id=code)
+    except Exception:
+        pass
+    return jsonify(ok=True, drive_provision=drive_prov)
 
 
 @doc_types_bp.route("/api/doc_types/<pid>/<dt_id>", methods=["PATCH"])
@@ -87,7 +110,7 @@ def api_rename_doc_type(pid, dt_id):
     new_name = data.get("name", "").strip()
     if not new_code or not new_name:
         return jsonify(ok=False, error="Code and name required"), 400
-    existing = db.q("SELECT id FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid), one=True)
+    existing = db.q("SELECT id, code, name, data FROM doc_types WHERE id=%s AND project_id=%s", (dt_id, pid), one=True)
     if not existing:
         return jsonify(ok=False, error="Document type not found"), 404
     dup = db.q("""SELECT id FROM doc_types
@@ -95,10 +118,45 @@ def api_rename_doc_type(pid, dt_id):
                   LIMIT 1""", (pid, dt_id, new_code, new_name), one=True)
     if dup:
         return jsonify(ok=False, error="Document type code/name already exists"), 400
+
+    old_dt = db.get_doc_type(pid, dt_id) or existing
+    old_code = str(old_dt.get("code") or dt_id).strip()
+    old_name = str(old_dt.get("name") or "").strip()
+    proj = {}
+    try:
+        proj = db.get_project(pid) or {}
+    except Exception:
+        proj = {}
+    ws_id = str(proj.get("workspace_id") or "ENG").strip().upper()
+    old_has_cycle = attachments.doc_type_has_reply_cycle(old_dt, workspace_id=ws_id)
+
     db.exe("UPDATE doc_types SET code=%s, name=%s WHERE id=%s AND project_id=%s", (new_code, new_name, dt_id, pid))
-    if "expected_reply_override" in data:
-        db.save_doc_type_expected_reply_override(pid, dt_id, data.get("expected_reply_override") or {})
-    return jsonify(ok=True)
+
+    has_override_key = "expected_reply_override" in data
+    raw_cycle = data.get("has_reply_cycle")
+    has_cycle_bool = raw_cycle if isinstance(raw_cycle, bool) else None
+    if has_override_key or has_cycle_bool is not None:
+        db.save_doc_type_metadata(
+            pid,
+            dt_id,
+            expected_reply_override=(data.get("expected_reply_override") or {}) if has_override_key else None,
+            has_reply_cycle=has_cycle_bool,
+        )
+
+    drive_rename = {"ok": True, "skipped": True, "renamed": False}
+    drive_prov = None
+    try:
+        if (old_code, old_name) != (new_code, new_name):
+            drive_rename = drive_routing.rename_doc_type_drive_folder(
+                pid, dt_id, old_code, old_name, new_code, new_name
+            )
+        updated_dt = db.get_doc_type(pid, dt_id) or {"id": dt_id, "code": new_code, "name": new_name}
+        new_has_cycle = attachments.doc_type_has_reply_cycle(updated_dt, workspace_id=ws_id)
+        if (new_has_cycle and not old_has_cycle) or (drive_rename.get("reason") == "folder_not_found"):
+            drive_prov = drive_routing.provision_project_drive_structure(pid, only_doc_type_id=dt_id)
+    except Exception:
+        pass
+    return jsonify(ok=True, drive_rename=drive_rename, drive_provision=drive_prov)
 
 @doc_types_bp.route("/api/doc_types/<pid>/reorder", methods=["POST"])
 def api_reorder_doc_types(pid):
