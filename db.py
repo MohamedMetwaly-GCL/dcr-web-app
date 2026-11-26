@@ -2033,6 +2033,11 @@ def save_project(pid, name, code, extra: dict, workspace_id=None):
         except Exception: current_data = {}
     if isinstance(current_data, dict) and "dashboard_order" in current_data and "dashboard_order" not in extra:
         extra["dashboard_order"] = current_data.get("dashboard_order")
+    if isinstance(current_data, dict) and "auto_provisioned_drive" in current_data and "auto_provisioned_drive" not in extra:
+        old_fid = _extract_drive_folder_id(current_data.get("drive_folder_id"))
+        new_fid = _extract_drive_folder_id(extra.get("drive_folder_id")) if "drive_folder_id" in extra else old_fid
+        if old_fid and new_fid == old_fid:
+            extra["auto_provisioned_drive"] = bool(current_data.get("auto_provisioned_drive"))
     jdata = json.dumps(extra)
     stored_ws = str(current.get("workspace_id") or "ENG").strip().upper() if current else None
     req_ws = str(workspace_id).strip().upper() if (workspace_id is not None and str(workspace_id).strip()) else None
@@ -4176,6 +4181,73 @@ def _extract_drive_folder_id(raw_value):
         return ""
     m = re.search(r"/folders/([a-zA-Z0-9_-]+)", val)
     return m.group(1) if m else val
+
+
+MASTER_DRIVE_ROOT_SETTING_KEY = "drive_master_root_id"
+WORKSPACE_DRIVE_FOLDERS_SETTING_KEY = "workspace_drive_folders"
+
+
+def get_master_drive_root_info():
+    """Return {'master_root_id': str, 'source': 'db'|'env'|'none'}."""
+    db_val = ""
+    try:
+        raw = get_setting(MASTER_DRIVE_ROOT_SETTING_KEY, "")
+        if isinstance(raw, dict):
+            raw = raw.get("master_root_id") or raw.get("folder_id") or ""
+        db_val = _extract_drive_folder_id(raw)
+    except Exception:
+        db_val = ""
+    if db_val:
+        return {"master_root_id": db_val, "source": "db"}
+    env_val = _extract_drive_folder_id(os.environ.get("DRIVE_MASTER_ROOT_ID", "").strip())
+    if env_val:
+        return {"master_root_id": env_val, "source": "env"}
+    return {"master_root_id": "", "source": "none"}
+
+
+def get_master_drive_root_id():
+    """Return the configured global Master Drive Root Folder ID (DB setting with env fallback)."""
+    return get_master_drive_root_info()["master_root_id"]
+
+
+def set_master_drive_root_id(folder_id):
+    """Sanitize and persist the global Master Drive Root Folder ID in app_settings."""
+    clean_id = _extract_drive_folder_id(folder_id)
+    save_setting(MASTER_DRIVE_ROOT_SETTING_KEY, clean_id)
+    return clean_id
+
+
+def get_workspace_drive_folder_id(ws_id):
+    """Return the cached Google Drive folder ID for a workspace/department, or ''."""
+    ws_key = str(ws_id or "").strip().upper()
+    if not ws_key:
+        return ""
+    try:
+        mapping = get_setting(WORKSPACE_DRIVE_FOLDERS_SETTING_KEY, {}) or {}
+    except Exception:
+        mapping = {}
+    if not isinstance(mapping, dict):
+        return ""
+    return _extract_drive_folder_id(mapping.get(ws_key) or "")
+
+
+def set_workspace_drive_folder_id(ws_id, folder_id):
+    """Persist or clear the cached Google Drive folder ID for a workspace/department."""
+    ws_key = str(ws_id or "").strip().upper()
+    if not ws_key:
+        return ""
+    try:
+        cur = get_setting(WORKSPACE_DRIVE_FOLDERS_SETTING_KEY, {}) or {}
+    except Exception:
+        cur = {}
+    mapping = dict(cur) if isinstance(cur, dict) else {}
+    clean_id = _extract_drive_folder_id(folder_id)
+    if clean_id:
+        mapping[ws_key] = clean_id
+    else:
+        mapping.pop(ws_key, None)
+    save_setting(WORKSPACE_DRIVE_FOLDERS_SETTING_KEY, mapping)
+    return clean_id
 
 
 def get_project_ids_for_drive_folder(folder_id):

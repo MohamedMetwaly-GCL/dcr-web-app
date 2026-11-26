@@ -485,6 +485,26 @@ def format_doc_type_folder_name(code, name):
     return c or n or "Documents"
 
 
+def format_workspace_folder_name(ws_id, ws_name=None):
+    """Format and sanitize `<WS_ID> - <Workspace Name>` for a Department/Workspace Drive folder."""
+    c = sanitize_drive_folder_segment(str(ws_id or "").strip().upper(), max_len=30)
+    n = sanitize_drive_folder_segment(ws_name, max_len=80)
+    if c and n and c.lower() != n.lower():
+        return sanitize_drive_folder_segment(f"{c} - {n}", max_len=115)
+    return c or n or "Workspace"
+
+
+def format_project_folder_name(project):
+    """Format and sanitize `<Code> - <Name>` (or `<Name>`) for a Project Drive folder."""
+    if not isinstance(project, dict):
+        return sanitize_drive_folder_segment(project, max_len=115) or "Project"
+    code = sanitize_drive_folder_segment(project.get("code") or "", max_len=30)
+    name = sanitize_drive_folder_segment(project.get("name") or project.get("id") or "", max_len=85)
+    if code and name and code.lower() != name.lower():
+        return sanitize_drive_folder_segment(f"{code} - {name}", max_len=115)
+    return name or code or sanitize_drive_folder_segment(project.get("id") or "", max_len=85) or "Project"
+
+
 def invalidate_subfolder_caches(parent_id=None):
     """Clear child/nested subfolder caches (used when folders are trashed or tests reset state)."""
     if parent_id is None:
@@ -997,11 +1017,241 @@ def _ensure_ltr_direction_children(service, dt_folder_id, existing_dir_map=None)
     return dir_map, created, existing
 
 
+def _get_master_root_id_from_store(store):
+    if hasattr(store, "get_master_drive_root_id"):
+        try:
+            return extract_drive_folder_id(store.get_master_drive_root_id())
+        except Exception:
+            return ""
+    return ""
+
+
+def _ensure_workspace_drive_folder_detail(service, ws_id, ws_name=None, store=None):
+    """Find or create `<Master Root>/<WS_ID> - <Workspace Name>`, returning `(folder_id, created, folder_name)`."""
+    if store is None:
+        import db as store
+    clean_ws_id = str(ws_id or "").strip().upper()
+    if not clean_ws_id:
+        return "", False, ""
+    master_root_id = _get_master_root_id_from_store(store)
+    if not master_root_id:
+        return "", False, ""
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return "", False, ""
+
+    cached_id = ""
+    if hasattr(store, "get_workspace_drive_folder_id"):
+        try:
+            cached_id = extract_drive_folder_id(store.get_workspace_drive_folder_id(clean_ws_id))
+        except Exception:
+            cached_id = ""
+    if cached_id and folder_is_usable(svc, cached_id):
+        return cached_id, False, ""
+
+    resolved_name = ws_name
+    if not resolved_name and hasattr(store, "get_workspace"):
+        try:
+            ws_row = store.get_workspace(clean_ws_id) or {}
+            resolved_name = ws_row.get("name") or ""
+        except Exception:
+            resolved_name = ""
+    target_name = format_workspace_folder_name(clean_ws_id, resolved_name)
+    prefix_low = f"{clean_ws_id.lower()} -"
+
+    with _get_subfolder_lock(master_root_id, clean_ws_id):
+        children = list_child_folders(svc, master_root_id)
+        match = next(
+            (f for f in children if str(f.get("name", "")).strip().lower() == target_name.lower()),
+            None,
+        )
+        if match is None:
+            match = next(
+                (
+                    f for f in children
+                    if str(f.get("name", "")).strip().lower() == clean_ws_id.lower()
+                    or str(f.get("name", "")).strip().lower().startswith(prefix_low)
+                ),
+                None,
+            )
+        if match is not None:
+            fid = match["id"]
+            actual_name = match.get("name") or target_name
+            created = False
+        else:
+            created_f = create_folder(svc, master_root_id, target_name)
+            fid = created_f["id"]
+            actual_name = created_f.get("name") or target_name
+            created = True
+        if hasattr(store, "set_workspace_drive_folder_id"):
+            try:
+                store.set_workspace_drive_folder_id(clean_ws_id, fid)
+            except Exception:
+                pass
+        return fid, created, actual_name
+
+
+def ensure_workspace_drive_folder(service, ws_id, ws_name=None, store=None):
+    """Find or create `<Master Root>/<WS_ID> - <Workspace Name>` and cache its Drive folder ID."""
+    fid, _, _ = _ensure_workspace_drive_folder_detail(service, ws_id, ws_name=ws_name, store=store)
+    return fid
+
+
+def rename_workspace_drive_folder(service, ws_id, new_ws_name, store=None):
+    """Rename a cached or discovered `<Master Root>/<WS_ID> - <Name>` folder in-place via PATCH."""
+    if store is None:
+        import db as store
+    clean_ws_id = str(ws_id or "").strip().upper()
+    if not clean_ws_id or not sanitize_drive_folder_segment(new_ws_name):
+        return {"ok": True, "skipped": True, "reason": "invalid_name", "renamed": False}
+
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured", "renamed": False}
+
+    master_root_id = _get_master_root_id_from_store(store)
+    folder_id = ""
+    if hasattr(store, "get_workspace_drive_folder_id"):
+        try:
+            folder_id = extract_drive_folder_id(store.get_workspace_drive_folder_id(clean_ws_id))
+        except Exception:
+            folder_id = ""
+    if folder_id and not folder_is_usable(svc, folder_id):
+        folder_id = ""
+
+    if not folder_id and master_root_id:
+        prefix_low = f"{clean_ws_id.lower()} -"
+        children = list_child_folders(svc, master_root_id)
+        match = next(
+            (
+                f for f in children
+                if str(f.get("name", "")).strip().lower() == clean_ws_id.lower()
+                or str(f.get("name", "")).strip().lower().startswith(prefix_low)
+            ),
+            None,
+        )
+        if match is not None:
+            folder_id = match["id"]
+
+    if not folder_id:
+        return {"ok": True, "skipped": False, "renamed": False, "reason": "folder_not_found"}
+
+    new_folder_name = format_workspace_folder_name(clean_ws_id, new_ws_name)
+    renamed_res = rename_folder(svc, folder_id, new_folder_name, parent_id=master_root_id or None)
+    final_name = (renamed_res or {}).get("name") or new_folder_name
+    if hasattr(store, "set_workspace_drive_folder_id"):
+        try:
+            store.set_workspace_drive_folder_id(clean_ws_id, folder_id)
+        except Exception:
+            pass
+    return {"ok": True, "skipped": False, "renamed": True, "folder_id": folder_id, "folder_name": final_name}
+
+
+def _ensure_project_drive_folder_detail(service, pid, ws_id=None, store=None):
+    """Ensure a project has a Drive folder; returns `(folder_id, created, folder_name)`."""
+    if store is None:
+        import db as store
+    try:
+        project = store.get_project(pid) if hasattr(store, "get_project") else None
+    except Exception:
+        project = None
+    if not isinstance(project, dict) or not project:
+        return "", False, ""
+
+    existing_fid = extract_drive_folder_id(project.get("drive_folder_id"))
+    if existing_fid:
+        return existing_fid, False, ""
+
+    master_root_id = _get_master_root_id_from_store(store)
+    if not master_root_id:
+        return "", False, ""
+
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return "", False, ""
+
+    eff_ws_id = str(ws_id or project.get("workspace_id") or "ENG").strip().upper()
+    ws_folder_id = ensure_workspace_drive_folder(svc, eff_ws_id, store=store)
+    if not ws_folder_id:
+        return "", False, ""
+
+    target_name = format_project_folder_name(project)
+    alt_name = sanitize_drive_folder_segment(project.get("name") or "", max_len=85)
+    with _get_subfolder_lock(ws_folder_id, target_name):
+        children = list_child_folders(svc, ws_folder_id)
+        match = next(
+            (f for f in children if str(f.get("name", "")).strip().lower() == target_name.lower()),
+            None,
+        )
+        if match is None and alt_name and alt_name.lower() != target_name.lower():
+            match = next(
+                (f for f in children if str(f.get("name", "")).strip().lower() == alt_name.lower()),
+                None,
+            )
+        if match is not None:
+            fid = match["id"]
+            actual_name = match.get("name") or target_name
+            created = False
+        else:
+            created_f = create_folder(svc, ws_folder_id, target_name)
+            fid = created_f["id"]
+            actual_name = created_f.get("name") or target_name
+            created = True
+
+        if hasattr(store, "update_project_settings"):
+            store.update_project_settings(pid, {"drive_folder_id": fid, "auto_provisioned_drive": True})
+        return fid, created, actual_name
+
+
+def ensure_project_drive_folder(service, pid, ws_id=None, store=None):
+    """Return existing `drive_folder_id` unchanged, or auto-provision `<Master Root>/<Workspace>/<Project>`."""
+    fid, _, _ = _ensure_project_drive_folder_detail(service, pid, ws_id=ws_id, store=store)
+    return fid
+
+
+def rename_project_drive_folder(service, pid, new_project_name, store=None, new_project_code=None):
+    """Rename an auto-provisioned project Drive folder in-place via PATCH."""
+    if store is None:
+        import db as store
+    try:
+        project = store.get_project(pid) if hasattr(store, "get_project") else None
+    except Exception:
+        project = None
+    if not isinstance(project, dict) or not project:
+        return {"ok": True, "skipped": True, "reason": "project_not_found", "renamed": False}
+    if not project.get("auto_provisioned_drive"):
+        return {"ok": True, "skipped": True, "reason": "not_auto_provisioned", "renamed": False}
+
+    folder_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    if not folder_id:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder", "renamed": False}
+
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured", "renamed": False}
+    if not folder_is_usable(svc, folder_id):
+        return {"ok": True, "skipped": False, "renamed": False, "reason": "folder_not_found"}
+
+    eff_code = new_project_code if new_project_code is not None else project.get("code")
+    new_folder_name = format_project_folder_name({"id": pid, "code": eff_code, "name": new_project_name})
+    ws_id = str(project.get("workspace_id") or "ENG").strip().upper()
+    ws_folder_id = ""
+    if hasattr(store, "get_workspace_drive_folder_id"):
+        try:
+            ws_folder_id = extract_drive_folder_id(store.get_workspace_drive_folder_id(ws_id))
+        except Exception:
+            ws_folder_id = ""
+    renamed_res = rename_folder(svc, folder_id, new_folder_name, parent_id=ws_folder_id or None)
+    final_name = (renamed_res or {}).get("name") or new_folder_name
+    return {"ok": True, "skipped": False, "renamed": True, "folder_id": folder_id, "folder_name": final_name}
+
+
 def provision_project_drive_structure(project_id, only_doc_type_id=None, only_subtype=None, service=None, store=None):
     """Idempotently provision standardized Drive folders for `project_id`.
 
-    Safely no-ops when `drive_folder_id` is empty or Drive credentials are unconfigured,
-    guaranteeing database CRUD operations never fail offline.
+    If `drive_folder_id` is empty and a global Master Drive Root is configured, automatically
+    provisions `<Master Root>/<Workspace>/<Project>` first. Safely no-ops when neither is
+    configured or Drive credentials are unavailable.
     """
     import attachments
     from hse_defaults import normalize_ptw_subtype_value
@@ -1017,10 +1267,22 @@ def provision_project_drive_structure(project_id, only_doc_type_id=None, only_su
         return {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
 
     root_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    svc = None
     if not root_id:
-        return {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
+        master_root_id = _get_master_root_id_from_store(store)
+        if not master_root_id:
+            return {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
+        svc = service if service is not None else get_default_write_service()
+        if svc is None:
+            return {"ok": True, "skipped": True, "reason": "drive_not_configured", "created": 0, "existing": 0, "errors": []}
+        root_id = ensure_project_drive_folder(svc, project_id, ws_id=project.get("workspace_id"), store=store)
+        if not root_id:
+            return {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
+        project = dict(project)
+        project["drive_folder_id"] = root_id
 
-    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        svc = service if service is not None else get_default_write_service()
     if svc is None:
         return {"ok": True, "skipped": True, "reason": "drive_not_configured", "created": 0, "existing": 0, "errors": []}
 
@@ -1181,8 +1443,134 @@ def provision_project_drive_structure(project_id, only_doc_type_id=None, only_su
         "ok": len(errors) == 0,
         "skipped": False,
         "project_id": project_id,
+        "drive_folder_id": root_id,
         "created": created_total,
         "existing": existing_total,
+        "errors": errors,
+    }
+
+
+def provision_all_workspaces_and_projects(service=None, store=None):
+    """Ensure Drive folders for all workspaces, all projects, and all internal doc-type trees."""
+    if store is None:
+        import db as store
+
+    master_root_id = _get_master_root_id_from_store(store)
+    if not master_root_id:
+        return {
+            "ok": False,
+            "skipped": True,
+            "reason": "no_master_root",
+            "workspaces_created": 0,
+            "workspaces_existing": 0,
+            "projects_created": 0,
+            "projects_existing": 0,
+            "folders_created": 0,
+            "folders_existing": 0,
+            "errors": ["no_master_root"],
+        }
+
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {
+            "ok": False,
+            "skipped": True,
+            "reason": "drive_not_configured",
+            "workspaces_created": 0,
+            "workspaces_existing": 0,
+            "projects_created": 0,
+            "projects_existing": 0,
+            "folders_created": 0,
+            "folders_existing": 0,
+            "errors": ["drive_not_configured"],
+        }
+
+    workspaces_created = 0
+    workspaces_existing = 0
+    projects_created = 0
+    projects_existing = 0
+    folders_created = 0
+    folders_existing = 0
+    errors = []
+
+    raw_workspaces = []
+    if hasattr(store, "get_workspaces"):
+        try:
+            raw_workspaces = list(store.get_workspaces(active_only=False) or [])
+        except TypeError:
+            raw_workspaces = list(store.get_workspaces() or [])
+        except Exception as err:
+            errors.append({"scope": "workspaces", "error": str(err)})
+
+    all_projects = []
+    if hasattr(store, "get_projects"):
+        try:
+            all_projects = list(store.get_projects() or [])
+        except Exception as err:
+            errors.append({"scope": "projects", "error": str(err)})
+
+    ws_map = {}
+    for w in raw_workspaces:
+        if not isinstance(w, dict):
+            continue
+        wid = str(w.get("id") or w.get("code") or "").strip().upper()
+        if wid and wid not in ws_map:
+            ws_map[wid] = w
+    for p in all_projects:
+        if not isinstance(p, dict):
+            continue
+        wid = str(p.get("workspace_id") or "ENG").strip().upper()
+        if wid and wid not in ws_map:
+            ws_map[wid] = {"id": wid, "name": wid}
+
+    seen_pids = set()
+    for wid, ws in ws_map.items():
+        ws_name = ws.get("name") or wid
+        try:
+            ws_fid, ws_created, _ = _ensure_workspace_drive_folder_detail(svc, wid, ws_name=ws_name, store=store)
+            if ws_fid:
+                if ws_created:
+                    workspaces_created += 1
+                else:
+                    workspaces_existing += 1
+        except Exception as err:
+            errors.append({"workspace_id": wid, "error": str(err)})
+
+        ws_projects = [
+            p for p in all_projects
+            if isinstance(p, dict) and str(p.get("workspace_id") or "ENG").strip().upper() == wid
+        ]
+        for p in ws_projects:
+            pid = str(p.get("id") or "").strip()
+            if not pid or pid in seen_pids:
+                continue
+            seen_pids.add(pid)
+            try:
+                p_fid, p_created, _ = _ensure_project_drive_folder_detail(svc, pid, ws_id=wid, store=store)
+                if p_fid:
+                    if p_created:
+                        projects_created += 1
+                    else:
+                        projects_existing += 1
+                prov = provision_project_drive_structure(pid, service=svc, store=store)
+                if not prov.get("skipped"):
+                    folders_created += int(prov.get("created") or 0)
+                    folders_existing += int(prov.get("existing") or 0)
+                    for e in (prov.get("errors") or []):
+                        errors.append({"project_id": pid, "error": e})
+            except Exception as err:
+                errors.append({"project_id": pid, "error": str(err)})
+
+    return {
+        "ok": len(errors) == 0,
+        "skipped": False,
+        "master_root_id": master_root_id,
+        "workspaces_created": workspaces_created,
+        "workspaces_existing": workspaces_existing,
+        "projects_created": projects_created,
+        "projects_existing": projects_existing,
+        "folders_created": folders_created,
+        "folders_existing": folders_existing,
         "errors": errors,
     }
 

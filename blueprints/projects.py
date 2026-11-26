@@ -44,6 +44,11 @@ def api_get_project(pid):
         return jsonify(error="Forbidden"), 403
     p = db.get_project(pid)
     if not p: return jsonify(error="Not found"), 404
+    try:
+        p = dict(p)
+        p["master_drive_root_active"] = bool(db.get_master_drive_root_id())
+    except Exception:
+        pass
     return jsonify(p)
 
 
@@ -57,6 +62,9 @@ def api_save_project(pid):
         return jsonify(ok=False, error="Project not found"), 404
     stored_ws = str(proj.get("workspace_id") or "ENG").strip().upper()
     old_drv_id = drive_routing.extract_drive_folder_id(proj.get("drive_folder_id"))
+    old_name = str(proj.get("name") or "")
+    old_code = str(proj.get("code") or "")
+    was_auto_drv = bool(proj.get("auto_provisioned_drive"))
     data = request.get_json(silent=True) or {}
     name = data.pop("name", pid) or pid
     code = data.pop("code", pid) or pid
@@ -83,13 +91,20 @@ def api_save_project(pid):
         return jsonify(ok=False, error="Project workspace ownership conflict"), 409
     if old_drv_id and old_drv_id != new_drv_id:
         db.clear_project_drive_caches(pid)
+    drive_rename = {"ok": True, "skipped": True, "renamed": False}
+    if was_auto_drv and old_drv_id and new_drv_id == old_drv_id and (str(name) != old_name or str(code) != old_code):
+        try:
+            drive_rename = drive_routing.rename_project_drive_folder(None, pid, name, new_project_code=code)
+        except Exception:
+            drive_rename = {"ok": False, "skipped": False, "renamed": False}
     drive_prov = {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
-    if new_drv_id:
+    has_master_root = bool(db.get_master_drive_root_id()) if hasattr(db, "get_master_drive_root_id") else False
+    if new_drv_id or has_master_root:
         try:
             drive_prov = drive_routing.provision_project_drive_structure(pid)
         except Exception as err:
             drive_prov = {"ok": False, "skipped": False, "created": 0, "existing": 0, "errors": [str(err)]}
-    return jsonify(ok=True, drive_provision=drive_prov)
+    return jsonify(ok=True, drive_provision=drive_prov, drive_rename=drive_rename)
 
 
 api_update_project = api_save_project
@@ -130,7 +145,8 @@ def api_create_project():
         # Generic message: never reveal which workspace owns the colliding ID.
         return jsonify(ok=False, error="Project ID already exists"), 409
     drive_prov = {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
-    if drv_id:
+    has_master_root = bool(db.get_master_drive_root_id()) if hasattr(db, "get_master_drive_root_id") else False
+    if drv_id or has_master_root:
         try:
             drive_prov = drive_routing.provision_project_drive_structure(pid)
         except Exception as err:
@@ -164,7 +180,8 @@ def api_init_project_drive_folders(pid):
             db.clear_project_drive_caches(pid)
         old_fid = req_fid
 
-    if not old_fid:
+    has_master_root = bool(db.get_master_drive_root_id()) if hasattr(db, "get_master_drive_root_id") else False
+    if not old_fid and not has_master_root:
         return jsonify(
             ok=False,
             error="Project has no Drive Folder ID configured",
@@ -198,6 +215,7 @@ def api_init_project_drive_folders(pid):
     return jsonify(
         ok=bool(res.get("ok", True)),
         project_id=pid,
+        drive_folder_id=res.get("drive_folder_id") or old_fid,
         created=int(res.get("created") or 0),
         existing=int(res.get("existing") or 0),
         errors=list(res.get("errors") or []),

@@ -687,13 +687,21 @@ def update_project_settings_route(pid):
         if "drive_folder_id" in body:
             import drive_routing
             body["drive_folder_id"] = drive_routing.extract_drive_folder_id(body.get("drive_folder_id"))
+        old_proj = db.get_project(pid) or {}
         db.update_project_settings(pid, body)
-        if body.get("drive_folder_id"):
-            try:
-                import drive_routing
+        try:
+            import drive_routing
+            if (
+                old_proj.get("auto_provisioned_drive")
+                and body.get("name")
+                and str(body.get("name")) != str(old_proj.get("name") or "")
+            ):
+                drive_routing.rename_project_drive_folder(None, pid, body.get("name"), new_project_code=body.get("code"))
+            has_master_root = bool(db.get_master_drive_root_id()) if hasattr(db, "get_master_drive_root_id") else False
+            if body.get("drive_folder_id") or has_master_root:
                 drive_routing.provision_project_drive_structure(pid)
-            except Exception:
-                pass
+        except Exception:
+            pass
         return jsonify(ok=True)
     except Exception as e:
         print(f"[Project Settings POST Error]: {e}")

@@ -5167,14 +5167,21 @@ window._ACTIVE_PERM_USER = null;
 
 async function openAdmin() {
   try {
-    const [whoami, users, projects, workspaces] = await Promise.all([
+    const [whoami, users, projects, workspaces, masterDrive] = await Promise.all([
       apiFetch('/api/whoami'),
       apiFetch('/api/users'),
       apiFetch('/api/projects'),
-      apiFetch('/api/workspaces')
+      apiFetch('/api/workspaces'),
+      apiFetch('/api/admin/drive-master-root').catch(() => null)
     ]);
     if (!users || !projects) return;
-    _ADMIN_DATA = { whoami: whoami || {}, users: users || [], projects: projects || [], workspaces: workspaces || [] };
+    _ADMIN_DATA = {
+      whoami: whoami || {},
+      users: users || [],
+      projects: projects || [],
+      workspaces: workspaces || [],
+      masterDrive: masterDrive || { master_root_id: '', source: 'none' }
+    };
     
     // Sort projects cleanly by code/name
     _ADMIN_DATA.projects.sort((a,b) => String(a.code || a.id).localeCompare(String(b.code || b.id)));
@@ -5212,6 +5219,34 @@ async function openAdmin() {
     const deptsView = document.createElement('div');
     deptsView.id = 'admin-view-depts';
     deptsView.style.display = 'none';
+
+    // Global Master Google Drive Root Folder Card (visible to Admins)
+    const masterDriveCard = document.createElement('div');
+    masterDriveCard.id = 'admin-master-drive-card';
+    masterDriveCard.style.cssText = 'margin:10px 18px 4px;padding:12px 14px;border:1px solid var(--bd);border-radius:8px;background:var(--surface,var(--bg));';
+    const mdInfo = _ADMIN_DATA.masterDrive || { master_root_id: '', source: 'none' };
+    const mdSrcKey = mdInfo.source === 'db'
+      ? 'admin.master_drive_src_db'
+      : (mdInfo.source === 'env' ? 'admin.master_drive_src_env' : 'admin.master_drive_src_none');
+    const mdSrcFallback = mdInfo.source === 'db'
+      ? 'Source: Admin Settings'
+      : (mdInfo.source === 'env' ? 'Source: Environment Variable' : 'Not configured');
+    masterDriveCard.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+        <div>
+          <strong style="font-size:12.5px;color:var(--tx);">${escHtml(_admT('admin.master_drive_title', null, '☁️ Master Google Drive Root Folder'))}</strong>
+          <div style="font-size:11px;color:var(--mu);margin-top:2px;">${escHtml(_admT('admin.master_drive_desc', null, 'Set one root folder ID/URL (e.g. Gas Chill Workspace Records) to auto-create Department, Project, and Register folders.'))}</div>
+        </div>
+        <span id="admin-master-drive-source" class="badge" style="background:var(--bg);color:var(--mu);border:1px solid var(--bd);font-size:10.5px;">${escHtml(_admT(mdSrcKey, null, mdSrcFallback))}</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="admin-master-drive-root-id" class="tbl-input bidi-ltr" style="flex:1 1 260px;padding:6px 10px;font-size:11.5px;" placeholder="${escHtml(_admT('admin.master_drive_ph', null, 'Paste Master Root Folder ID or Google Drive URL...'))}" value="${escHtml(mdInfo.master_root_id || '')}">
+        <button id="btn-save-master-drive-root" type="button" class="btn btn-pr btn-sm" onclick="saveMasterDriveRoot(this)" style="height:30px;padding:0 12px;font-weight:600;">${escHtml(_admT('admin.master_drive_save', null, 'Save'))}</button>
+        <button id="btn-init-all-drive" type="button" class="btn btn-sc btn-sm" onclick="initAllDriveFolders(this)" style="height:30px;padding:0 12px;font-weight:600;">📁 ${escHtml(_admT('admin.btn_init_all_drive', null, 'Initialize All Departments & Projects'))}</button>
+      </div>
+      <div id="admin-master-drive-status" style="display:none;margin-top:8px;padding:7px 10px;border-radius:6px;font-size:11.5px;font-weight:600;"></div>
+    `;
+    body.appendChild(masterDriveCard);
     body.appendChild(usersView);
     body.appendChild(deptsView);
     
@@ -5365,6 +5400,147 @@ function toggleAuditCard() {
   const card = document.getElementById('admin-audit-card');
   if (card) {
     card.style.display = card.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+async function saveMasterDriveRoot(btn) {
+  const inp = document.getElementById('admin-master-drive-root-id');
+  const statusEl = document.getElementById('admin-master-drive-status');
+  const srcEl = document.getElementById('admin-master-drive-source');
+  let raw = (inp ? inp.value : '').trim();
+  if (raw.includes('/folders/')) {
+    raw = raw.split('/folders/')[1].split('/')[0].split('?')[0];
+  }
+  const origText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = _admT('admin.master_drive_saving', null, 'Saving...');
+  }
+  try {
+    const res = await fetch('/api/admin/drive-master-root', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ master_root_id: raw })
+    });
+    const r = await res.json().catch(() => ({}));
+    if (res.ok && r && r.ok) {
+      if (inp) inp.value = r.master_root_id || '';
+      if (_ADMIN_DATA) {
+        _ADMIN_DATA.masterDrive = { master_root_id: r.master_root_id || '', source: r.source || 'none' };
+      }
+      if (srcEl) {
+        const sk = r.source === 'db' ? 'admin.master_drive_src_db' : (r.source === 'env' ? 'admin.master_drive_src_env' : 'admin.master_drive_src_none');
+        const sf = r.source === 'db' ? 'Source: Admin Settings' : (r.source === 'env' ? 'Source: Environment Variable' : 'Not configured');
+        srcEl.textContent = _admT(sk, null, sf);
+      }
+      const msg = _admT('admin.master_drive_saved', null, '✔ Master Drive Root Folder saved');
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = '#f0fdf4';
+        statusEl.style.border = '1px solid #bbf7d0';
+        statusEl.style.color = '#166534';
+        statusEl.textContent = msg;
+      }
+      toast(msg, 'ok');
+    } else {
+      const errMsg = _admT('admin.master_drive_save_err', { error: (r && r.error) || res.status }, 'Failed to save Master Drive Root: ' + ((r && r.error) || res.status));
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = '#fef2f2';
+        statusEl.style.border = '1px solid #fecaca';
+        statusEl.style.color = '#b91c1c';
+        statusEl.textContent = errMsg;
+      }
+      toast(errMsg, 'er');
+    }
+  } catch (e) {
+    const errMsg = _admT('admin.master_drive_save_err', { error: e.message || 'Network error' }, 'Failed to save Master Drive Root: ' + (e.message || 'Network error'));
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.background = '#fef2f2';
+      statusEl.style.border = '1px solid #fecaca';
+      statusEl.style.color = '#b91c1c';
+      statusEl.textContent = errMsg;
+    }
+    toast(errMsg, 'er');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  }
+}
+
+async function initAllDriveFolders(btn) {
+  const statusEl = document.getElementById('admin-master-drive-status');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = _admT('admin.init_all_drive_ing', null, '⏳ Initializing all departments & projects...');
+  }
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.style.background = 'var(--bg)';
+    statusEl.style.border = '1px solid var(--bd)';
+    statusEl.style.color = 'var(--tx)';
+    statusEl.textContent = _admT('admin.init_all_drive_ing', null, '⏳ Initializing all departments & projects...');
+  }
+  try {
+    const res = await fetch('/api/admin/init-all-drive-folders', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({})
+    });
+    const r = await res.json().catch(() => ({}));
+    if (res.ok && r && (r.ok || typeof r.workspaces_created === 'number')) {
+      const vars = {
+        ws_created: Number(r.workspaces_created || 0),
+        ws_existing: Number(r.workspaces_existing || 0),
+        proj_created: Number(r.projects_created || 0),
+        proj_existing: Number(r.projects_existing || 0),
+        fld_created: Number(r.folders_created || 0),
+        fld_existing: Number(r.folders_existing || 0),
+        errors: Array.isArray(r.errors) ? r.errors.length : 0
+      };
+      const msg = vars.errors > 0
+        ? _admT('admin.init_all_drive_partial', vars, `⚠ Drive hierarchy initialized with ${vars.errors} error(s) — Departments: ${vars.ws_created}/${vars.ws_existing} · Projects: ${vars.proj_created}/${vars.proj_existing} · Registers: ${vars.fld_created}/${vars.fld_existing}`)
+        : _admT('admin.init_all_drive_ok', vars, `✔ Drive hierarchy ready — Departments: ${vars.ws_created} new / ${vars.ws_existing} verified · Projects: ${vars.proj_created} new / ${vars.proj_existing} verified · Registers: ${vars.fld_created} new / ${vars.fld_existing} verified`);
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = vars.errors > 0 ? '#fffbeb' : '#f0fdf4';
+        statusEl.style.border = vars.errors > 0 ? '1px solid #fde68a' : '1px solid #bbf7d0';
+        statusEl.style.color = vars.errors > 0 ? '#92400e' : '#166534';
+        statusEl.textContent = msg;
+      }
+      toast(msg, vars.errors > 0 ? 'wa' : 'ok');
+    } else {
+      const errMsg = _admT('admin.init_all_drive_err', { error: (r && r.error) || res.status }, 'Failed to initialize Drive folders: ' + ((r && r.error) || res.status));
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = '#fef2f2';
+        statusEl.style.border = '1px solid #fecaca';
+        statusEl.style.color = '#b91c1c';
+        statusEl.textContent = errMsg;
+      }
+      toast(errMsg, 'er');
+    }
+  } catch (e) {
+    const errMsg = _admT('admin.init_all_drive_err', { error: e.message || 'Network error' }, 'Failed to initialize Drive folders: ' + (e.message || 'Network error'));
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.background = '#fef2f2';
+      statusEl.style.border = '1px solid #fecaca';
+      statusEl.style.color = '#b91c1c';
+      statusEl.textContent = errMsg;
+    }
+    toast(errMsg, 'er');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
   }
 }
 
@@ -22377,14 +22553,21 @@ async function editProject(){{
   body.appendChild(grid);
   
   // Google Drive
+  window._PROJ_MASTER_DRIVE_ACTIVE = !!proj.master_drive_root_active;
   const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent=window.t('reg.proj_drv_title');body.appendChild(drvTitle);
   const drvGrid=document.createElement('div');drvGrid.className='fgrid';
+  const drvPlaceholder = (!proj.drive_folder_id && proj.master_drive_root_active)
+    ? window.t('reg.proj_drv_auto_ph')
+    : window.t('reg.proj_drv_root_ph');
+  const drvHintHtml = (!proj.drive_folder_id && proj.master_drive_root_active)
+    ? `<div class="fg full" id="proj-drive-auto-hint" style="font-size:10.5px;color:var(--pr);background:var(--bg);padding:5px 8px;border-radius:4px">☁️ ${{escHtml(window.t('reg.proj_drv_auto_hint'))}}</div>`
+    : '';
   const initDrvBtnHtml = CAN_EDIT ? `
       <button class="btn btn-pr" id="btn-init-drive-folders" type="button" onclick="initProjectDriveFolders(this)" style="flex:1;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;white-space:nowrap">
         📁 ${{escHtml(window.t('reg.proj_init_drv_btn'))}}
       </button>` : '';
   drvGrid.innerHTML=`
-    <div class="fg"><label>${{escHtml(window.t('reg.proj_drv_root_id'))}}</label><input id="proj-drive-id" class="bidi-ltr" placeholder="${{escHtml(window.t('reg.proj_drv_root_ph'))}}" value="${{proj.drive_folder_id||''}}"></div>
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_drv_root_id'))}}</label><input id="proj-drive-id" class="bidi-ltr" placeholder="${{escHtml(drvPlaceholder)}}" value="${{proj.drive_folder_id||''}}"></div>
     <div class="fg" style="display:flex;align-items:flex-end;gap:6px">
       ${{initDrvBtnHtml}}
       <button class="btn btn-sc" type="button" onclick="syncDriveLinks(this)" style="flex:1;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;background:var(--bg);white-space:nowrap">
@@ -22392,6 +22575,7 @@ async function editProject(){{
         ${{escHtml(window.t('reg.proj_sync_btn'))}}
       </button>
     </div>
+    ${{drvHintHtml}}
     <div id="proj-drive-init-status" class="fg full" style="display:none;padding:8px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
   `;
   body.appendChild(drvGrid);
@@ -22707,7 +22891,7 @@ async function initProjectDriveFolders(btn) {{
   if(!CAN_EDIT){{toast(window.t('common.forbidden'),'er');return;}}
   let folderId = document.getElementById('proj-drive-id')?.value.trim() || '';
   if(folderId.includes('/folders/')) folderId = folderId.split('/folders/')[1].split('/')[0].split('?')[0];
-  if(!folderId){{toast(window.t('reg.proj_sync_need_id'),'er');return;}}
+  if(!folderId && !window._PROJ_MASTER_DRIVE_ACTIVE){{toast(window.t('reg.proj_sync_need_id'),'er');return;}}
   const statusEl = document.getElementById('proj-drive-init-status');
   const origHtml = btn ? btn.innerHTML : '';
   if(btn){{btn.disabled = true; btn.textContent = window.t('reg.proj_init_drv_ing');}}
@@ -22727,6 +22911,10 @@ async function initProjectDriveFolders(btn) {{
     }});
     const r = await res.json().catch(()=>({{}}));
     if(res.ok && r && (r.ok || typeof r.created === 'number')){{
+      if(r.drive_folder_id){{
+        const drvInpEl = document.getElementById('proj-drive-id');
+        if(drvInpEl && !drvInpEl.value.trim()) drvInpEl.value = r.drive_folder_id;
+      }}
       const created = Number(r.created || 0);
       const existing = Number(r.existing || 0);
       const errCnt = Array.isArray(r.errors) ? r.errors.length : 0;
