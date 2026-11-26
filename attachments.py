@@ -172,6 +172,33 @@ def extract_file_id(url):
     return m.group(1) if m else ""
 
 
+def extract_drive_item_id(url):
+    """Return the Drive file OR folder id from any Drive URL, or ''."""
+    url = _clean_link(url)
+    if not url:
+        return ""
+    m = (
+        re.search(r"/folders/([a-zA-Z0-9_-]+)", url)
+        or re.search(r"/d/([a-zA-Z0-9_-]+)", url)
+        or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url)
+    )
+    return m.group(1) if m else ""
+
+
+LEGACY_LINK_KEYS = ("fileLocation", "drive_link", "driveLink")
+
+
+def extract_legacy_link(data):
+    """Return (key, clean_url) for the first non-empty legacy link field on a record dict."""
+    if not isinstance(data, dict):
+        return "", ""
+    for key in LEGACY_LINK_KEYS:
+        val = _clean_link(data.get(key))
+        if val:
+            return key, val
+    return "", ""
+
+
 def build_attachment_meta(file_id, name, size=0, mime_type="", uploaded_by="", **extra):
     meta = {
         "file_id": file_id,
@@ -203,11 +230,11 @@ def normalize_attachments(data):
             result[ns] = att.get(ns)
     has_noc_part = any(ns in result for ns in NOC_SLOTS)
     if result[SLOT_SUBMISSION] is None and not has_noc_part:
-        legacy = _clean_link(data.get("fileLocation"))
+        _, legacy = extract_legacy_link(data)
         app_entry = result.get(SLOT_APPROVAL) or {}
         app_url = _clean_link(app_entry.get("url"))
-        app_fid = app_entry.get("file_id") or extract_file_id(app_url)
-        leg_fid = extract_file_id(legacy)
+        app_fid = app_entry.get("file_id") or app_entry.get("folder_id") or extract_drive_item_id(app_url)
+        leg_fid = extract_drive_item_id(legacy)
         is_same = bool((legacy and legacy == app_url) or (app_fid and leg_fid and app_fid == leg_fid))
         if legacy and not is_same:
             result[SLOT_SUBMISSION] = {"url": legacy, "legacy": True}
@@ -318,9 +345,114 @@ def _same_sync_target(entry_a, entry_b):
     url_b = _clean_link(entry_b.get("url"))
     if url_a and url_b and url_a == url_b:
         return True
-    fid_a = entry_a.get("file_id") or entry_a.get("folder_id") or extract_file_id(url_a)
-    fid_b = entry_b.get("file_id") or entry_b.get("folder_id") or extract_file_id(url_b)
+    fid_a = entry_a.get("file_id") or entry_a.get("folder_id") or extract_drive_item_id(url_a)
+    fid_b = entry_b.get("file_id") or entry_b.get("folder_id") or extract_drive_item_id(url_b)
     return bool(fid_a and fid_b and fid_a == fid_b)
+
+
+def _clear_matching_legacy_keys(data_dict, target_entry):
+    """Remove any top-level legacy link key whose URL/Drive ID matches `target_entry`."""
+    if not isinstance(data_dict, dict) or not isinstance(target_entry, dict):
+        return False
+    cleared = False
+    for key in LEGACY_LINK_KEYS:
+        val = _clean_link(data_dict.get(key))
+        if val and _same_sync_target({"url": val}, target_entry):
+            data_dict.pop(key, None)
+            cleared = True
+    return cleared
+
+
+def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id="", folder_id="",
+                                 file_name="", mime_type=""):
+    """Safely promote a verified Replied-folder legacy/submission link to `attachments['approval']`.
+
+    Pure function (never mutates `data`). Preserves all metadata and never deletes a distinct
+    submission file or overwrites a distinct DCR-uploaded approval file.
+    Returns `(new_data, changed_bool)`.
+    """
+    if not isinstance(data, dict):
+        return {}, False
+    new = copy.deepcopy(data)
+    att = new.get("attachments") if isinstance(new.get("attachments"), dict) else {}
+    if any(isinstance(att.get(ns), dict) for ns in NOC_SLOTS):
+        return new, False
+
+    item = matched_item if isinstance(matched_item, dict) else {}
+    resolved_mime = str(mime_type or item.get("mimeType") or "").strip()
+    is_folder = bool(
+        folder_id
+        or resolved_mime == "application/vnd.google-apps.folder"
+        or "/folders/" in str(reply_url or item.get("webViewLink") or "")
+    )
+    resolved_id = str(
+        folder_id
+        or file_id
+        or item.get("id")
+        or extract_drive_item_id(reply_url)
+        or extract_drive_item_id(item.get("webViewLink"))
+        or ""
+    ).strip()
+    resolved_url = _clean_link(reply_url or item.get("webViewLink"))
+    if not resolved_url and resolved_id:
+        resolved_url = (
+            "https://drive.google.com/drive/folders/%s" % resolved_id
+            if is_folder
+            else drive_view_url(resolved_id)
+        )
+    if not resolved_url and not resolved_id:
+        return new, False
+
+    target_probe = {"url": resolved_url}
+    if resolved_id:
+        target_probe["folder_id" if is_folder else "file_id"] = resolved_id
+
+    existing_sub = att.get(SLOT_SUBMISSION) if isinstance(att.get(SLOT_SUBMISSION), dict) else None
+    existing_app = att.get(SLOT_APPROVAL) if isinstance(att.get(SLOT_APPROVAL), dict) else None
+
+    sub_matches = bool(existing_sub and _same_sync_target(existing_sub, target_probe))
+    app_matches = bool(existing_app and _same_sync_target(existing_app, target_probe))
+
+    if existing_app and not app_matches and existing_app.get("source") != SYNC_SOURCE:
+        # Never overwrite a distinct DCR-uploaded approval attachment
+        return new, False
+
+    if app_matches:
+        promoted = copy.deepcopy(existing_app)
+    elif sub_matches:
+        promoted = copy.deepcopy(existing_sub)
+        promoted.pop("legacy", None)
+    else:
+        promoted = {}
+
+    if resolved_url and not _clean_link(promoted.get("url")):
+        promoted["url"] = resolved_url
+    elif resolved_url and promoted.get("source") == SYNC_SOURCE:
+        promoted["url"] = resolved_url
+
+    if resolved_id:
+        if is_folder:
+            promoted.setdefault("folder_id", resolved_id)
+            promoted["is_folder"] = True
+        else:
+            promoted.setdefault("file_id", resolved_id)
+
+    resolved_name = str(file_name or item.get("name") or "").strip()
+    if resolved_name and not promoted.get("file_name"):
+        promoted["file_name"] = resolved_name
+    if resolved_mime and not promoted.get("mime_type"):
+        promoted["mime_type"] = resolved_mime
+
+    promoted.setdefault("source", SYNC_SOURCE)
+    promoted["role"] = "reply"
+    promoted["slot_verified"] = True
+
+    new = apply_attachment(new, SLOT_APPROVAL, promoted)
+    if sub_matches:
+        new = remove_attachment(new, SLOT_SUBMISSION)
+    _clear_matching_legacy_keys(new, promoted)
+
+    return new, (new != data)
 
 
 def merge_sync_links(data, sync_links):
@@ -330,7 +462,11 @@ def merge_sync_links(data, sync_links):
     Only slots that are empty OR previously created by sync (source == drive_sync)
     are written. Slots uploaded through DCR (no 'drive_sync' source) are never
     overwritten. `submission` and `approval` are merged independently without ever
-    writing a `Submit` URL into `approval`. fileLocation is not touched here.
+    writing a `Submit` URL into `approval`.
+    When `approval` is synced (and no separate `submission` exists for that target),
+    any duplicate legacy `fileLocation`/`drive_link`/`driveLink` or un-typed `submission`
+    pointing to the exact same Drive item is cleanly promoted/cleared so the record
+    renders as `Reply` without duplication.
     """
     new = copy.deepcopy(data) if isinstance(data, dict) else {}
     prepared = {}
@@ -348,6 +484,8 @@ def merge_sync_links(data, sync_links):
             if not url:
                 continue
             sync_entry = {"url": url, "source": SYNC_SOURCE}
+        if slot == SLOT_APPROVAL:
+            sync_entry.setdefault("role", "reply")
         prepared[slot] = sync_entry
 
     # Guard: never allow a Submit URL to be written into approval
@@ -360,9 +498,13 @@ def merge_sync_links(data, sync_links):
         existing = att.get(slot) if isinstance(att, dict) else None
         if isinstance(existing, dict) and existing.get("source") != SYNC_SOURCE:
             continue
+        if isinstance(existing, dict) and _same_sync_target(existing, sync_entry):
+            merged_entry = copy.deepcopy(existing)
+            merged_entry.update(sync_entry)
+            sync_entry = merged_entry
         new = apply_attachment(new, slot, sync_entry)
 
-    # Self-heal: if approval holds a stale drive_sync copy of the exact same submission URL, clear approval
+    # Self-heal 1: if approval holds a stale drive_sync copy of the exact same submission URL, clear approval
     att_after = new.get("attachments") if isinstance(new.get("attachments"), dict) else {}
     sub_after = att_after.get(SLOT_SUBMISSION)
     app_after = att_after.get(SLOT_APPROVAL)
@@ -374,6 +516,24 @@ def merge_sync_links(data, sync_links):
         and _same_sync_target(sub_after, app_after)
     ):
         new = remove_attachment(new, SLOT_APPROVAL)
+
+    # Self-heal 2: if approval was verified from Drive (Replied folder) and submission/legacy holds
+    # the exact same Drive item (with no Submit file for it), promote cleanly to reply and clear duplicates
+    if SLOT_APPROVAL in prepared and SLOT_SUBMISSION not in prepared and isinstance(app_after, dict):
+        sub_is_dup = isinstance(sub_after, dict) and _same_sync_target(sub_after, app_after)
+        leg_is_dup = any(
+            _clean_link(new.get(k)) and _same_sync_target({"url": _clean_link(new.get(k))}, app_after)
+            for k in LEGACY_LINK_KEYS
+        )
+        if sub_is_dup or leg_is_dup:
+            new, _ = promote_legacy_link_to_reply(
+                new,
+                reply_url=app_after.get("url") or "",
+                file_id=app_after.get("file_id") or "",
+                folder_id=app_after.get("folder_id") or "",
+                file_name=app_after.get("file_name") or "",
+                mime_type=app_after.get("mime_type") or "",
+            )
     return new
 
 

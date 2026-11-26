@@ -4282,6 +4282,7 @@ def update_record_link(doc_no, link, sync_links=None, project_id=None):
     """Update `fileLocation` and slot `attachments` of records matching `(project_id, doc_no)`."""
     import copy
     import json
+    import attachments as _att
     pid = str(project_id or "").strip()
     doc_no_clean = str(doc_no or "").strip()
     if not pid or not doc_no_clean:
@@ -4290,17 +4291,48 @@ def update_record_link(doc_no, link, sync_links=None, project_id=None):
         "SELECT id, data FROM records WHERE project_id = %s AND data->>'docNo' = %s",
         (pid, doc_no_clean),
     ) or []
+    is_approval_only = bool(
+        isinstance(sync_links, dict)
+        and sync_links.get(_att.SLOT_APPROVAL)
+        and not sync_links.get(_att.SLOT_SUBMISSION)
+        and not any(sync_links.get(ns) for ns in _att.NOC_SLOTS)
+    )
     updated = 0
     for r in rows:
         d = copy.deepcopy(r["data"]) if isinstance(r["data"], dict) else {}
-        if link:
+        if link and not is_approval_only:
             d["fileLocation"] = link
         if sync_links:  # additive: merge Submit/Replied links independently without overwriting DCR uploads
-            import attachments as _att
             d = _att.merge_sync_links(d, sync_links)
         exe("UPDATE records SET data=%s WHERE id=%s AND project_id=%s", (json.dumps(d), r["id"], pid))
         updated += 1
     return updated
+
+
+def get_project_records_for_drive_reclassify(project_id):
+    """Return `[{id, data}, ...]` for records in `project_id` that have Drive links/attachments."""
+    pid = str(project_id or "").strip()
+    if not pid:
+        return []
+    return q(
+        "SELECT id, data FROM records WHERE project_id = %s "
+        "AND (data->>'fileLocation' IS NOT NULL OR data->>'drive_link' IS NOT NULL "
+        "OR data->>'driveLink' IS NOT NULL OR data->'attachments' IS NOT NULL)",
+        (pid,),
+    ) or []
+
+
+def update_record_data_scoped(project_id, record_id, data_dict):
+    """Persist updated `data` JSON for a single record strictly scoped to `(project_id, record_id)`."""
+    import json
+    pid = str(project_id or "").strip()
+    rid = str(record_id or "").strip()
+    if not pid or not rid or not isinstance(data_dict, dict):
+        return 0
+    return exe(
+        "UPDATE records SET data=%s WHERE id=%s AND project_id=%s",
+        (json.dumps(data_dict), rid, pid),
+    )
 
 
 # ── Dual attachments (Submission / Approval) - additive, see attachments.py ──

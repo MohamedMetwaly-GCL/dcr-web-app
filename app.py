@@ -617,11 +617,31 @@ def api_drive_sync(pid):
             pass
         
     # Start sync process in background (scoped to pid)
+    reclassify_legacy_links = data.get("reclassify_legacy_links", True)
+    if isinstance(reclassify_legacy_links, str):
+        reclassify_legacy_links = reclassify_legacy_links.strip().lower() not in ("0", "false", "no", "off")
+    else:
+        reclassify_legacy_links = bool(reclassify_legacy_links)
+
     from drive_service import process_drive_folder
     import threading
-    threading.Thread(target=process_drive_folder, args=(clean_fid,), kwargs={"project_id": pid}).start()
+    threading.Thread(
+        target=process_drive_folder,
+        args=(clean_fid,),
+        kwargs={"project_id": pid, "reclassify_legacy_links": reclassify_legacy_links},
+    ).start()
     
-    return jsonify(ok=True)
+    return jsonify(ok=True, reclassify_legacy_links=reclassify_legacy_links)
+
+
+@app.route("/api/drive/reclassify-legacy/<pid>", methods=["POST"])
+def api_drive_reclassify_legacy(pid):
+    u = current_user()
+    if not u or not can_edit(pid):
+        return jsonify(error="Forbidden"), 403
+    from drive_service import reclassify_project_legacy_reply_links
+    summary = reclassify_project_legacy_reply_links(pid, inspect_parents=True)
+    return jsonify(ok=True, **summary)
 
 # ── Distribution Matrix API ──────────────────────────────────────
 @app.route("/api/distribution/<pid>", methods=["GET"])

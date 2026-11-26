@@ -199,12 +199,20 @@ class TestDriveSubmitReplyIsolationBackend(unittest.TestCase):
                 return projects_rows
             if "FROM records" in s:
                 self.assertIn("project_id = %s", s, "update_record_link SELECT must filter by project_id")
-                pid_arg, doc_arg = params[0], params[1]
-                matched = [
-                    {"id": r["id"], "data": r["data"]}
-                    for r in records_store.values()
-                    if r["project_id"] == pid_arg and r["data"].get("docNo") == doc_arg
-                ]
+                if "docNo" in s:
+                    pid_arg, doc_arg = params[0], params[1]
+                    matched = [
+                        {"id": r["id"], "data": r["data"]}
+                        for r in records_store.values()
+                        if r["project_id"] == pid_arg and r["data"].get("docNo") == doc_arg
+                    ]
+                else:
+                    pid_arg = params[0]
+                    matched = [
+                        {"id": r["id"], "data": r["data"]}
+                        for r in records_store.values()
+                        if r["project_id"] == pid_arg
+                    ]
                 return (matched[0] if matched else None) if one else matched
             return None if one else []
 
