@@ -896,5 +896,270 @@ class TestDriveLegacyRoleFix03(unittest.TestCase):
             self.assertEqual(body["reclassify_skipped_sample"][0]["reason"], "confirmed_in_submit_folder")
 
 
+class TestDriveLegacyRoleFix04(unittest.TestCase):
+    """Regression tests for DRIVE-LEGACY-ROLE-FIX-04:
+    1. Stale/broken drive_sync or legacy approval entry + Replied-folder file in submission/fileLocation
+       (not in Submit/) has approval replaced by verified Replied file and submission + fileLocation cleared.
+    2. Genuine DCR-uploaded approval (slot_verified=True) is still protected (preserved_existing_dcr_approval).
+    3. Unlinking submission clears matching fileLocation on save without resurrecting a duplicate link.
+    """
+
+    def test_10_stale_sync_or_legacy_approval_replaced_by_verified_replied_file(self):
+        projects_rows = [{"id": "PEM-058", "data": {"drive_folder_id": "ROOT_CFC"}}]
+        records_store = {
+            "REC-STALE-SYNC-APP": {
+                "id": "REC-STALE-SYNC-APP",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00301 REV00",
+                    "status": "A - Approved",
+                    "fileLocation": "https://drive.google.com/file/d/REP_FILE_301/view",
+                    "attachments": {
+                        "submission": {
+                            "file_id": "REP_FILE_301",
+                            "url": "https://drive.google.com/file/d/REP_FILE_301/view",
+                            "source": "drive_sync",
+                        },
+                        "approval": {
+                            "file_id": "BROKEN_OLD_SYNC_301",
+                            "url": "https://drive.google.com/file/d/BROKEN_OLD_SYNC_301/view",
+                            "source": "drive_sync",
+                        },
+                    },
+                },
+            },
+            "REC-STALE-LEGACY-APP": {
+                "id": "REC-STALE-LEGACY-APP",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00302 REV00",
+                    "status": "B - Approved As Noted",
+                    "fileLocation": "https://drive.google.com/file/d/OLD_SUB_302/view",
+                    "attachments": {
+                        "submission": {
+                            "url": "https://drive.google.com/file/d/OLD_SUB_302/view",
+                            "legacy": True,
+                        },
+                        "approval": {
+                            "url": "https://drive.google.com/file/d/BROKEN_LEGACY_APP_302/view",
+                            "legacy": True,
+                        },
+                    },
+                },
+            },
+        }
+        drive_items = [
+            {
+                "id": "F_DS",
+                "name": "2. Document Submittal (DS)",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["ROOT_CFC"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_DS",
+            },
+            {
+                "id": "F_REP",
+                "name": "Replied",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["F_DS"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_REP",
+            },
+            {
+                "id": "REP_FILE_301",
+                "name": "DS-CY002P608-00301 REV00.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_REP"],
+                "webViewLink": "https://drive.google.com/file/d/REP_FILE_301/view",
+            },
+            {
+                "id": "REP_FILE_302",
+                "name": "DS-CY002P608-00302 REV00.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_REP"],
+                "webViewLink": "https://drive.google.com/file/d/REP_FILE_302/view",
+            },
+        ]
+
+        def fake_q(sql, params=(), one=False):
+            s = " ".join(sql.split())
+            if "FROM projects" in s:
+                return projects_rows
+            if "FROM records" in s:
+                if "docNo" in s:
+                    pid_arg, doc_arg = params[0], params[1]
+                    matched = [
+                        {"id": r["id"], "data": r["data"]}
+                        for r in records_store.values()
+                        if r["project_id"] == pid_arg and r["data"].get("docNo") == doc_arg
+                    ]
+                    return (matched[0] if matched else None) if one else matched
+                pid_arg = params[0]
+                matched = [
+                    {"id": r["id"], "data": r["data"]}
+                    for r in records_store.values()
+                    if r["project_id"] == pid_arg
+                ]
+                return (matched[0] if matched else None) if one else matched
+            return None if one else []
+
+        def fake_exe(sql, params=()):
+            new_data_json, rec_id, pid_arg = params
+            if rec_id in records_store and records_store[rec_id]["project_id"] == pid_arg:
+                records_store[rec_id]["data"] = json.loads(new_data_json)
+            return 1
+
+        svc = _FakeDriveService(drive_items)
+        with patch("db.q", side_effect=fake_q), \
+             patch("db.exe", side_effect=fake_exe), \
+             patch.object(drive_service, "get_drive_service", return_value=svc):
+            res = drive_service.process_drive_folder("ROOT_CFC", project_id="PEM-058")
+
+        # REC-STALE-SYNC-APP is healed during merge_sync_links; REC-STALE-LEGACY-APP (legacy approval)
+        # is replaced & cleared by reclassify_project_legacy_reply_links.
+        self.assertGreaterEqual(res["reclassified_count"], 1)
+        for rid, expected_fid in (("REC-STALE-SYNC-APP", "REP_FILE_301"), ("REC-STALE-LEGACY-APP", "REP_FILE_302")):
+            d = records_store[rid]["data"]
+            self.assertNotIn("fileLocation", d)
+            self.assertNotIn("submission", d.get("attachments", {}))
+            self.assertEqual(d["attachments"]["approval"]["file_id"], expected_fid)
+            self.assertEqual(d["attachments"]["approval"]["role"], "reply")
+            self.assertTrue(d["attachments"]["approval"]["slot_verified"])
+
+    def test_11_genuine_dcr_uploaded_approval_remains_protected(self):
+        records_store = {
+            "REC-PROTECTED-APP": {
+                "id": "REC-PROTECTED-APP",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00303 REV00",
+                    "status": "A - Approved",
+                    "fileLocation": "https://drive.google.com/file/d/OLD_SUB_303/view",
+                    "attachments": {
+                        "submission": {
+                            "url": "https://drive.google.com/file/d/OLD_SUB_303/view",
+                            "legacy": True,
+                        },
+                        "approval": {
+                            "file_id": "DCR_MANUAL_APP_303",
+                            "url": "https://drive.google.com/file/d/DCR_MANUAL_APP_303/view",
+                            "slot_verified": True,
+                            "uploaded_by": "dc_user",
+                            "uploaded_at": "2026-11-20T09:00:00Z",
+                        },
+                    },
+                },
+            }
+        }
+        replied_by_doc = {
+            "DS-CY002P608-00303 REV00": {
+                "id": "DRIVE_REP_303",
+                "name": "DS-CY002P608-00303 REV00.pdf",
+                "mimeType": "application/pdf",
+                "webViewLink": "https://drive.google.com/file/d/DRIVE_REP_303/view",
+                "priority": 2,
+            }
+        }
+
+        def fake_q(sql, params=(), one=False):
+            return [{"id": "REC-PROTECTED-APP", "data": records_store["REC-PROTECTED-APP"]["data"]}]
+
+        with patch("db.q", side_effect=fake_q), \
+             patch("db.exe") as mock_exe:
+            summary = drive_service.reclassify_project_legacy_reply_links(
+                "PEM-058",
+                service=None,
+                replied_items_by_id={},
+                submit_item_ids=set(),
+                inspect_parents=False,
+                replied_by_doc_no=replied_by_doc,
+                submit_doc_nos=set(),
+            )
+
+        self.assertEqual(summary["reclassified"], 0)
+        self.assertEqual(summary["reclassify_skipped_sample"][0]["reason"], "preserved_existing_dcr_approval")
+        mock_exe.assert_not_called()
+        self.assertEqual(
+            records_store["REC-PROTECTED-APP"]["data"]["attachments"]["approval"]["file_id"],
+            "DCR_MANUAL_APP_303",
+        )
+
+    def test_12_unlink_submission_clears_matching_file_location_without_resurrection(self):
+        import html_render
+
+        # 1) Pure helper clears matching fileLocation / drive_link / driveLink (by URL or file ID)
+        rec = {
+            "docNo": "DS-304",
+            "fileLocation": "https://drive.google.com/file/d/SUB_FILE_304/view?usp=sharing",
+            "drive_link": "https://drive.google.com/file/d/SUB_FILE_304/view",
+            "attachments": {
+                "approval": {
+                    "file_id": "APP_FILE_304",
+                    "url": "https://drive.google.com/file/d/APP_FILE_304/view",
+                    "slot_verified": True,
+                }
+            },
+        }
+        unlinked_entry = {
+            "file_id": "SUB_FILE_304",
+            "url": "https://drive.google.com/file/d/SUB_FILE_304/view",
+        }
+        cleaned = attachments.clear_submission_legacy_links(rec, unlinked_entry=unlinked_entry)
+        self.assertNotIn("fileLocation", cleaned)
+        self.assertNotIn("drive_link", cleaned)
+        norm = attachments.normalize_attachments(cleaned)
+        self.assertIsNone(norm["submission"])
+        self.assertIsNotNone(norm["approval"])
+
+        # 2) Backend DELETE /api/drive/attachment/<id>/submission clears fileLocation even with ?usp=sharing
+        rec_row = {
+            "_project_id": "PEM-058",
+            "_dt_id": "DS",
+            "docNo": "DS-304",
+            "fileLocation": "https://drive.google.com/file/d/SUB_FILE_304/view?usp=sharing",
+            "attachments": {
+                "submission": {
+                    "file_id": "SUB_FILE_304",
+                    "url": "https://drive.google.com/file/d/SUB_FILE_304/view",
+                    "slot_verified": True,
+                }
+            },
+        }
+        exe_queries = []
+
+        def fake_q(sql, params=(), one=False):
+            exe_queries.append((sql, params))
+            return [{"id": "REC-304"}]
+
+        client = app_mod.app.test_client()
+        client.set_cookie("dcr_token", "tok_editor")
+        editor = {"username": "dc_editor", "role": "editor"}
+        with patch("blueprints.drive_uploads._check_write_access", return_value=(editor, None)), \
+             patch("db.get_record_by_id", return_value=rec_row), \
+             patch("db.clear_record_attachment", return_value=True), \
+             patch("db.get_record_attachments", return_value={"submission": None, "approval": None}), \
+             patch("db.q", side_effect=fake_q), \
+             patch("db.log_action"):
+            resp = client.delete("/api/drive/attachment/REC-304/submission?mode=unlink")
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_json()
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["fileLocation"], "")
+            self.assertTrue(any("fileLocation" in sql and params[0] == "" for sql, params in exe_queries))
+
+        # 3) Rendered register JS clears flInp & row.fileLocation on submission unlink
+        user = {"username": "dc_editor", "role": "editor"}
+        proj = {"id": "PEM-058", "name": "Test Project", "code": "PEM-058", "workspace_id": "ENG", "status_colors": {}}
+        with patch("html_render.can_edit", return_value=True), \
+             patch("html_render.is_project_admin", return_value=True), \
+             patch("html_render.get_allowed_doc_type_filter", return_value=None), \
+             patch("db.can_user_download", return_value=True), \
+             patch("db.get_user_workspaces", return_value=[{"id": "ENG", "code": "ENG", "name": "Engineering"}]), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.get_doc_types", return_value=[]), \
+             patch("db.get_logo", return_value=None):
+            rendered = html_render.render_register(user, proj, active_ws_id="ENG", lang="en")
+        self.assertIn("const unlinkedEntry=entry;", rendered)
+        self.assertIn("if(s.key==='submission'&&!cur[s.key])", rendered)
+
+
 if __name__ == "__main__":
     unittest.main()

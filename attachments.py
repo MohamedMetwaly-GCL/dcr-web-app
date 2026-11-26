@@ -383,6 +383,49 @@ def _is_verified_submit_attachment(entry, confirmed_not_in_submit=False):
     return False
 
 
+def _is_protected_manual_approval(app_entry):
+    """Return True ONLY when `app_entry` is a genuine manual DCR upload that must never be overwritten.
+
+    Protects `attachments.approval` only when it has a valid URL AND either `slot_verified is True`
+    or (`uploaded_at` is set with `source != 'drive_sync'` and `not legacy`).
+    Stale `drive_sync`, `legacy`, or unverified entries return False so reclassification can replace them.
+    """
+    if not isinstance(app_entry, dict):
+        return False
+    if not _clean_link(app_entry.get("url")):
+        return False
+    if app_entry.get("slot_verified") is True:
+        return True
+    if (
+        app_entry.get("uploaded_at")
+        and app_entry.get("source") != SYNC_SOURCE
+        and not app_entry.get("legacy")
+    ):
+        return True
+    return False
+
+
+def clear_submission_legacy_links(data, unlinked_entry=None):
+    """Clear top-level legacy link keys (`fileLocation`, `drive_link`, `driveLink`) when
+    `submission` is unlinked so saving never resurrects a duplicate `Submit` link.
+
+    If `unlinked_entry` is provided, clears any legacy key matching `unlinked_entry` by URL
+    or Drive item ID. Also clears legacy keys when `attachments` is present without `submission`
+    unless a distinct `approval` slot does not match (or clears to `''` if `fileLocation` matched).
+    Never mutates `data`.
+    """
+    if not isinstance(data, dict):
+        return {}
+    new = copy.deepcopy(data)
+    if isinstance(unlinked_entry, dict) and (
+        _clean_link(unlinked_entry.get("url"))
+        or unlinked_entry.get("file_id")
+        or unlinked_entry.get("folder_id")
+    ):
+        _clear_matching_legacy_keys(new, unlinked_entry)
+    return new
+
+
 def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id="", folder_id="",
                                  file_name="", mime_type="", clear_stale_legacy=False,
                                  confirmed_not_in_submit=False):
@@ -442,7 +485,7 @@ def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id=
     sub_matches = bool(existing_sub and _same_sync_target(existing_sub, target_probe))
     app_matches = bool(existing_app and _same_sync_target(existing_app, target_probe))
 
-    if existing_app and not app_matches and existing_app.get("source") != SYNC_SOURCE:
+    if existing_app and not app_matches and _is_protected_manual_approval(existing_app):
         # Never overwrite a distinct DCR-uploaded approval attachment
         return new, False
 

@@ -1041,7 +1041,7 @@ def api_unlink_attachment(record_id, slot):
             old_name = removed.get("file_name") or removed.get("url") or old_name
         db.set_record_attachment(record_id, slot, promoted)
         updated_att = db.get_record_attachments(record_id)
-        if old_url and cur_loc == old_url:
+        if cur_loc and existing and attachments._same_sync_target(existing, {"url": cur_loc}):
             next_loc = attachments._clean_link((promoted or {}).get("url"))
             db.q("""UPDATE records SET data = data || jsonb_build_object('fileLocation', %s::text), updated_at = NOW()
                     WHERE id = %s RETURNING id""", (next_loc, record_id))
@@ -1083,9 +1083,9 @@ def api_unlink_attachment(record_id, slot):
         db.clear_record_attachment(record_id, slot)
         updated_att = db.get_record_attachments(record_id)
 
-        if old_url and cur_loc == old_url:
+        if cur_loc and existing and attachments._same_sync_target(existing, {"url": cur_loc}):
             next_loc = ""
-            if isinstance(updated_att, dict):
+            if slot != attachments.SLOT_SUBMISSION and isinstance(updated_att, dict):
                 for cand_slot in ("part_d", "part_c", "part_b", "part_a", "approval", "submission"):
                     if cand_slot == slot:
                         continue

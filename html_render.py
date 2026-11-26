@@ -21098,13 +21098,40 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?mode='+encodeURIComponent(mode),{{method:'DELETE'}});
             const j=await r.json().catch(()=>({{}}));
             if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
+            const unlinkedEntry=entry;
             cur[s.key]=(j.attachments&&j.attachments[s.key])?j.attachments[s.key]:null;
+            const _extId=(u)=>{{
+              const str=String(u||'').trim();
+              if(!str)return '';
+              const m=str.match(/\\/folders\\/([a-zA-Z0-9_-]+)/)||str.match(/\\/d\\/([a-zA-Z0-9_-]+)/)||str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+              return m?m[1]:'';
+            }};
+            const _sameTarget=(aUrl,bEntry)=>{{
+              const au=String(aUrl||'').trim();
+              if(!au||!bEntry)return false;
+              const bu=String(bEntry.url||'').trim();
+              if(bu&&au===bu)return true;
+              const aid=_extId(au);
+              const bid=String(bEntry.file_id||bEntry.folder_id||_extId(bu)||'').trim();
+              return Boolean(aid&&bid&&aid===bid);
+            }};
+            const flInp=document.getElementById('f-fileLocation');
+            if(s.key==='submission'&&!cur[s.key]){{
+              const curFl=flInp?flInp.value:(row?row.fileLocation:'');
+              if(_sameTarget(curFl,unlinkedEntry)){{
+                if(flInp)flInp.value='';
+                if(row)row.fileLocation='';
+              }}
+              if(row){{
+                if(_sameTarget(row.drive_link,unlinkedEntry))row.drive_link='';
+                if(_sameTarget(row.driveLink,unlinkedEntry))row.driveLink='';
+              }}
+            }}
             if(row){{
               row.attachments=j.attachments||{{}};
-              if(typeof j.fileLocation==='string')row.fileLocation=j.fileLocation;
+              if(typeof j.fileLocation==='string'&&(s.key!=='submission'||!_sameTarget(j.fileLocation,unlinkedEntry)))row.fileLocation=j.fileLocation;
             }}
-            const flInp=document.getElementById('f-fileLocation');
-            if(flInp&&typeof j.fileLocation==='string')flInp.value=j.fileLocation;
+            if(flInp&&typeof j.fileLocation==='string'&&(s.key!=='submission'||!_sameTarget(j.fileLocation,unlinkedEntry)))flInp.value=j.fileLocation;
             renderSlotInfo(cur[s.key],null);
             renderRows();
             _showDriveUnlinkToast(j,mode,{{slot:s.key,restoredPrev:Boolean(cur[s.key])}});
