@@ -14,6 +14,7 @@ import datetime
 import threading
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
+DELETED_ARCHIVE_FOLDER_NAME = "_DCR_Deleted"
 
 # Drive folder names that mean each slot (same keywords drive_service.get_item_priority uses)
 SLOT_KEYWORDS = {
@@ -373,6 +374,97 @@ def rename_folder(service, folder_id, new_name, parent_id=None):
             invalidate_subfolder_caches()
             _FOLDER_USABLE_CACHE[folder_id] = (time.time(), True)
         return res or {"id": folder_id, "name": clean_name}
+
+
+def ensure_deleted_archive_folder(service, project_root_id):
+    """Find or create `<Project Root>/_DCR_Deleted` with thread-safe locking and supportsAllDrives."""
+    root_id = extract_drive_folder_id(project_root_id)
+    if not root_id:
+        raise RoutingError("project_has_no_drive_folder")
+    with _get_subfolder_lock(root_id, DELETED_ARCHIVE_FOLDER_NAME):
+        children = list_child_folders(service, root_id)
+        match = next(
+            (f for f in children if str(f.get("name", "")).strip().lower() == DELETED_ARCHIVE_FOLDER_NAME.lower()),
+            None,
+        )
+        if match is not None:
+            return match
+        return create_folder(service, root_id, DELETED_ARCHIVE_FOLDER_NAME)
+
+
+def archive_drive_item(service, project_root_id, item_id, original_name=None):
+    """Move a Drive file or folder into `<Project Root>/_DCR_Deleted`, avoiding name collisions."""
+    clean_item_id = str(item_id or "").strip()
+    if not clean_item_id:
+        raise RoutingError("invalid_item_id")
+    archive_folder = ensure_deleted_archive_folder(service, project_root_id)
+    archive_folder_id = str(archive_folder["id"]).strip()
+
+    meta = service.files().get(
+        fileId=clean_item_id,
+        fields="id,name,parents,trashed",
+        supportsAllDrives=True,
+    ).execute() or {}
+    current_name = str(original_name or meta.get("name") or "").strip()
+
+    existing_names = set()
+    try:
+        q = "'%s' in parents and trashed = false" % archive_folder_id
+        existing_res = service.files().list(
+            q=q,
+            fields="nextPageToken, files(id, name)",
+            pageSize=1000,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute() or {}
+        for f in (existing_res.get("files") or []):
+            if str(f.get("id") or "") != clean_item_id:
+                fname = str(f.get("name") or "").strip().lower()
+                if fname:
+                    existing_names.add(fname)
+    except Exception:
+        existing_names = set()
+
+    new_name = None
+    if current_name and current_name.lower() in existing_names:
+        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        candidate = f"{ts}__{current_name}"
+        if candidate.lower() in existing_names:
+            ms = datetime.datetime.now(datetime.timezone.utc).strftime("%f")[:3]
+            candidate = f"{ts}-{ms}__{current_name}"
+        new_name = candidate
+
+    cur_parents = [str(p) for p in (meta.get("parents") or []) if str(p)]
+    old_parents = [p for p in cur_parents if p != archive_folder_id]
+
+    update_kwargs = {
+        "fileId": clean_item_id,
+        "body": ({"name": new_name} if new_name else {}),
+        "fields": "id,name,parents,trashed",
+        "supportsAllDrives": True,
+    }
+    if archive_folder_id not in cur_parents:
+        update_kwargs["addParents"] = archive_folder_id
+    if old_parents:
+        update_kwargs["removeParents"] = ",".join(old_parents)
+
+    if update_kwargs.get("addParents") or update_kwargs.get("removeParents") or new_name:
+        moved = service.files().update(**update_kwargs).execute() or {}
+    else:
+        moved = meta
+
+    for pid in old_parents:
+        invalidate_subfolder_caches(pid)
+    invalidate_subfolder_caches(archive_folder_id)
+
+    return {
+        "ok": True,
+        "item_id": clean_item_id,
+        "archive_folder_id": archive_folder_id,
+        "archive_folder_name": archive_folder.get("name") or DELETED_ARCHIVE_FOLDER_NAME,
+        "name": moved.get("name") or new_name or current_name,
+        "renamed": bool(new_name),
+    }
 
 
 def extract_drive_folder_id(raw_value):

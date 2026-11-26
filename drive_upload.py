@@ -186,6 +186,43 @@ def rename_file(token, file_id, new_name, fields="id, name", http=requests):
     return r.json() if getattr(r, "text", "") else {"id": file_id, "name": new_name}
 
 
+def move_file(token, file_id, dest_folder_id, new_name=None, http=requests):
+    """Move a Drive file or folder to `dest_folder_id` (optionally renaming it)."""
+    if not file_id or not dest_folder_id:
+        raise DriveUploadError("file_id and dest_folder_id are required", reason="invalid_move")
+    meta = get_file(token, file_id, fields="id,name,parents,trashed", http=http)
+    cur_parents = [str(p) for p in (meta.get("parents") or []) if str(p)]
+    old_parents = [p for p in cur_parents if p != str(dest_folder_id)]
+    if str(dest_folder_id) in cur_parents and not old_parents and not new_name:
+        return meta
+    params = {
+        "fields": "id,name,parents,trashed",
+        "supportsAllDrives": "true",
+    }
+    if str(dest_folder_id) not in cur_parents:
+        params["addParents"] = str(dest_folder_id)
+    if old_parents:
+        params["removeParents"] = ",".join(old_parents)
+    body = {"name": new_name} if new_name else {}
+    r = http.patch(
+        "%s/%s" % (FILES_URL, file_id),
+        params=params,
+        headers=_auth(token, {"Content-Type": "application/json; charset=UTF-8"}),
+        data=json.dumps(body),
+        timeout=30,
+    )
+    if r.status_code not in (200, 204):
+        _raise_for(r, "files.move")
+    if getattr(r, "text", ""):
+        return r.json()
+    return {
+        "id": file_id,
+        "name": new_name or meta.get("name", ""),
+        "parents": [str(dest_folder_id)],
+        "trashed": bool(meta.get("trashed", False)),
+    }
+
+
 def create_resumable_session(token, folder_id, file_name, mime_type, size, origin=None, http=requests):
     """Start a resumable upload. Returns the session URL (valid ~1 week).
 
@@ -313,16 +350,25 @@ class RestDriveAdapter:
                     return r.json()
                 return _RestExec(_run)
 
-            def update(self, fileId, body, fields="id, name", **kw):
+            def update(self, fileId, body=None, fields="id, name", addParents=None, removeParents=None, **kw):
                 def _run():
+                    params = {"fields": fields, "supportsAllDrives": "true"}
+                    if addParents:
+                        params["addParents"] = addParents
+                    if removeParents:
+                        params["removeParents"] = removeParents
+                    payload = dict(body or {})
                     r = outer.http.patch("%s/%s" % (FILES_URL, fileId),
-                                         params={"fields": fields, "supportsAllDrives": "true"},
+                                         params=params,
                                          headers=_auth(outer.token, {"Content-Type": "application/json; charset=UTF-8"}),
-                                         data=json.dumps(body), timeout=30)
+                                         data=json.dumps(payload), timeout=30)
                     if r.status_code not in (200, 204):
                         _raise_for(r, "files.update")
-                    return r.json() if getattr(r, "text", "") else {"id": fileId, **dict(body or {})}
+                    return r.json() if getattr(r, "text", "") else {"id": fileId, **payload}
                 return _RestExec(_run)
+
+            def move(self, fileId, destFolderId, newName=None):
+                return _RestExec(lambda: move_file(outer.token, fileId, destFolderId, new_name=newName, http=outer.http))
         return _Files()
 
 

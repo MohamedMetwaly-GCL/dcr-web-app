@@ -4259,6 +4259,42 @@ def clear_record_attachment(record_id, slot):
     return bool(rows)
 
 
+def count_other_records_referencing_drive_item(project_id, exclude_record_id, item_id="", url=""):
+    """Count other records in `project_id` whose `attachments` or `fileLocation` reference `item_id` or `url`."""
+    pid = str(project_id or "").strip()
+    excl = str(exclude_record_id or "").strip()
+    iid = str(item_id or "").strip()
+    clean_url = str(url or "").strip()
+    if not pid or (not iid and not clean_url):
+        return 0
+    params = [pid]
+    excl_sql = ""
+    if excl:
+        excl_sql = "AND id != %s"
+        params.append(excl)
+    match_clauses = []
+    if iid:
+        match_clauses.append(
+            "(STRPOS(COALESCE((data->'attachments')::text, ''), %s) > 0 "
+            "OR STRPOS(COALESCE(data->>'fileLocation', ''), %s) > 0)"
+        )
+        params.extend([iid, iid])
+    if clean_url:
+        match_clauses.append(
+            "(STRPOS(COALESCE((data->'attachments')::text, ''), %s) > 0 "
+            "OR COALESCE(data->>'fileLocation', '') = %s)"
+        )
+        params.extend([clean_url, clean_url])
+    sql = (
+        f"SELECT COUNT(*) AS cnt FROM records "
+        f"WHERE project_id = %s {excl_sql} AND ({' OR '.join(match_clauses)})"
+    )
+    row = q(sql, tuple(params), one=True)
+    if not row:
+        return 0
+    return int(row.get("cnt") or 0)
+
+
 # ── Drive folder routing cache (doc_types.data) - additive, see drive_routing.py ──
 def set_doc_type_drive_cache(pid, dt_id, patch):
     """Merge Drive routing keys into doc_types.data atomically; other keys are untouched."""

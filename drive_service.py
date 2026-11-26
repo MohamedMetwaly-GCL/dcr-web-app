@@ -109,7 +109,9 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None):
                 q=query,
                 fields="nextPageToken, files(id, name, mimeType, parents, webViewLink)",
                 pageSize=1000,
-                pageToken=page_token
+                pageToken=page_token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
             ).execute()
             
             items = results.get('files', [])
@@ -118,6 +120,10 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None):
                 # Identify which folder in our batch is the parent of this item
                 parent_id = next((p for p in item.get('parents', []) if p in path_map), None)
                 if not parent_id: continue
+
+                # Skip _DCR_Deleted archive folders/items before traversal or doc_no extraction
+                if str(item.get('name') or '').strip().lower() == '_dcr_deleted':
+                    continue
                 
                 # Build the Full Path
                 item_full_path = f"{path_map[parent_id]} / {item['name']}"

@@ -20230,6 +20230,227 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
   return {{submission: sub, approval: app, is_flat_doc: Boolean(sub && sub.is_flat_doc)}};
 }}
 
+function openDriveUnlinkModal(opts={{}}){{
+  return new Promise(resolve=>{{
+    const prev=document.getElementById('drive-unlink-modal');
+    if(prev && prev.parentNode)prev.parentNode.removeChild(prev);
+    const isDark=typeof document!=='undefined'&&document.body&&document.body.classList.contains('dark');
+    const isRtl=(typeof document!=='undefined'&&((document.documentElement&&document.documentElement.dir==='rtl')||(document.body&&document.body.classList.contains('rtl'))));
+    const slotLabel=opts.slotTitle||opts.slot||'';
+    const itemName=opts.itemName||slotLabel||'Attachment';
+    const isSync=Boolean(opts.isSync);
+    const isArchivedRev=Boolean(opts.isArchivedRev);
+    const hasHistory=Boolean(opts.hasHistory);
+    const revLabel=opts.revLabel||'';
+
+    const overlay=document.createElement('div');
+    overlay.id='drive-unlink-modal';
+    overlay.setAttribute('role','dialog');
+    overlay.setAttribute('aria-modal','true');
+    overlay.setAttribute('aria-labelledby','drive-unlink-modal-title');
+    overlay.dir=isRtl?'rtl':'ltr';
+    overlay.style.cssText='position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,0.58);display:flex;align-items:center;justify-content:center;padding:16px';
+
+    const panel=document.createElement('div');
+    panel.style.cssText=`width:100%;max-width:460px;border-radius:12px;padding:18px 20px;box-shadow:0 20px 50px rgba(15,23,42,0.35);background:${{isDark?'#0f172a':'#ffffff'}};color:${{isDark?'#e2e8f0':'#0f172a'}};border:1px solid ${{isDark?'#334155':'#cbd5e1'}};display:flex;flex-direction:column;gap:12px;text-align:${{isRtl?'right':'left'}}`;
+
+    const hdr=document.createElement('div');
+    hdr.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px';
+    const titleEl=document.createElement('h3');
+    titleEl.id='drive-unlink-modal-title';
+    titleEl.style.cssText='margin:0;font-size:15px;font-weight:800';
+    titleEl.textContent=isArchivedRev
+      ? window.t('form.unlink_modal_title_rev',{{rev:revLabel}})
+      : window.t('form.unlink_modal_title');
+    const closeBtn=document.createElement('button');
+    closeBtn.type='button';
+    closeBtn.id='drive-unlink-close-btn';
+    closeBtn.setAttribute('aria-label',window.t('form.unlink_cancel'));
+    closeBtn.textContent='✕';
+    closeBtn.style.cssText=`border:none;background:transparent;color:${{isDark?'#94a3b8':'#64748b'}};font-size:15px;font-weight:700;cursor:pointer;padding:2px 6px;border-radius:6px`;
+    hdr.appendChild(titleEl);
+    hdr.appendChild(closeBtn);
+    panel.appendChild(hdr);
+
+    const subEl=document.createElement('div');
+    subEl.style.cssText=`font-size:12px;line-height:1.45;color:${{isDark?'#cbd5e1':'#334155'}}`;
+    subEl.textContent=window.t('form.unlink_modal_subtitle',{{name:itemName,slot:slotLabel}});
+    panel.appendChild(subEl);
+
+    if(hasHistory && !isArchivedRev){{
+      const rNote=document.createElement('div');
+      rNote.style.cssText=`font-size:11px;padding:6px 8px;border-radius:6px;background:${{isDark?'rgba(37,99,235,0.16)':'#eff6ff'}};color:${{isDark?'#93c5fd':'#1d4ed8'}};border:1px solid ${{isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}`;
+      rNote.textContent=window.t('form.unlink_modal_restore_note');
+      panel.appendChild(rNote);
+    }}
+
+    const choices=[
+      {{
+        value:'archive',
+        title:window.t('form.unlink_mode_archive_title'),
+        desc:window.t('form.unlink_mode_archive_desc'),
+        badge:window.t('form.unlink_recommended'),
+        accent:'#2563eb',
+        confirmKey:'form.unlink_confirm_archive',
+        danger:false
+      }},
+      {{
+        value:'unlink',
+        title:window.t('form.unlink_mode_unlink_title'),
+        desc:window.t('form.unlink_mode_unlink_desc'),
+        note:window.t('form.unlink_mode_unlink_sync_note'),
+        accent:'#0f766e',
+        confirmKey:'form.unlink_confirm_unlink',
+        danger:false
+      }},
+      {{
+        value:'trash',
+        title:window.t('form.unlink_mode_trash_title'),
+        desc:window.t('form.unlink_mode_trash_desc'),
+        accent:'#dc2626',
+        confirmKey:'form.unlink_confirm_trash',
+        danger:true
+      }}
+    ];
+
+    let selected='archive';
+    const cardEls=[];
+    const listWrap=document.createElement('div');
+    listWrap.style.cssText='display:flex;flex-direction:column;gap:8px';
+
+    const confirmBtn=document.createElement('button');
+    confirmBtn.type='button';
+    confirmBtn.id='drive-unlink-confirm-btn';
+
+    const syncSelectionUI=()=>{{
+      const activeChoice=choices.find(c=>c.value===selected)||choices[0];
+      cardEls.forEach(item=>{{
+        const isSel=(item.choice.value===selected);
+        item.input.checked=isSel;
+        item.label.style.borderColor=isSel?item.choice.accent:(isDark?'#334155':'#cbd5e1');
+        item.label.style.background=isSel
+          ? (item.choice.danger?(isDark?'rgba(220,38,38,0.16)':'#fef2f2'):(isDark?'rgba(37,99,235,0.14)':'#eff6ff'))
+          : (isDark?'#1e293b':'#f8fafc');
+      }});
+      confirmBtn.textContent=window.t(activeChoice.confirmKey);
+      confirmBtn.style.cssText=`padding:7px 14px;border-radius:7px;border:none;font-size:12px;font-weight:700;cursor:pointer;color:#ffffff;background:${{activeChoice.danger?'#dc2626':'#2563eb'}}`;
+    }};
+
+    choices.forEach(ch=>{{
+      const lbl=document.createElement('label');
+      lbl.dataset.unlinkMode=ch.value;
+      lbl.style.cssText='display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:8px;border:1.5px solid transparent;cursor:pointer;transition:all .12s';
+      const inp=document.createElement('input');
+      inp.type='radio';
+      inp.name='drive-unlink-mode';
+      inp.value=ch.value;
+      inp.checked=(ch.value===selected);
+      inp.style.cssText='margin-top:3px;flex-shrink:0;cursor:pointer';
+      inp.onchange=()=>{{selected=ch.value;syncSelectionUI();}};
+      lbl.onclick=()=>{{selected=ch.value;syncSelectionUI();}};
+
+      const txtBox=document.createElement('div');
+      txtBox.style.cssText='display:flex;flex-direction:column;gap:3px;flex:1;min-width:0';
+      const topRow=document.createElement('div');
+      topRow.style.cssText='display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+      const tSpan=document.createElement('span');
+      tSpan.style.cssText='font-size:12.5px;font-weight:700';
+      tSpan.textContent=ch.title;
+      topRow.appendChild(tSpan);
+      if(ch.badge){{
+        const bEl=document.createElement('span');
+        bEl.style.cssText='font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:#2563eb;color:#ffffff';
+        bEl.textContent=ch.badge;
+        topRow.appendChild(bEl);
+      }}
+      txtBox.appendChild(topRow);
+      const dEl=document.createElement('div');
+      dEl.style.cssText=`font-size:11px;line-height:1.4;color:${{isDark?'#94a3b8':'#475569'}}`;
+      dEl.textContent=ch.desc;
+      txtBox.appendChild(dEl);
+      if(ch.note){{
+        const nEl=document.createElement('div');
+        nEl.style.cssText=`font-size:10.5px;line-height:1.35;margin-top:2px;color:${{isSync?(isDark?'#fbbf24':'#b45309'):(isDark?'#94a3b8':'#64748b')}};font-weight:${{isSync?'600':'400'}}`;
+        nEl.textContent=ch.note;
+        txtBox.appendChild(nEl);
+      }}
+      lbl.appendChild(inp);
+      lbl.appendChild(txtBox);
+      listWrap.appendChild(lbl);
+      cardEls.push({{choice:ch,label:lbl,input:inp}});
+    }});
+    panel.appendChild(listWrap);
+
+    const footer=document.createElement('div');
+    footer.style.cssText='display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:4px';
+    const cancelBtn=document.createElement('button');
+    cancelBtn.type='button';
+    cancelBtn.id='drive-unlink-cancel-btn';
+    cancelBtn.textContent=window.t('form.unlink_cancel');
+    cancelBtn.style.cssText=`padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${{isDark?'#475569':'#cbd5e1'}};background:${{isDark?'#1e293b':'#ffffff'}};color:${{isDark?'#e2e8f0':'#334155'}}`;
+    footer.appendChild(cancelBtn);
+    footer.appendChild(confirmBtn);
+    panel.appendChild(footer);
+    overlay.appendChild(panel);
+
+    let done=false;
+    const finish=(val)=>{{
+      if(done)return;
+      done=true;
+      if(typeof document!=='undefined'&&typeof document.removeEventListener==='function'){{
+        document.removeEventListener('keydown',onKey);
+      }}
+      if(overlay.parentNode)overlay.parentNode.removeChild(overlay);
+      resolve(val);
+    }};
+    const onKey=(ev)=>{{if(ev&&ev.key==='Escape')finish(null);}};
+    closeBtn.onclick=()=>finish(null);
+    cancelBtn.onclick=()=>finish(null);
+    overlay.onclick=(ev)=>{{if(ev&&ev.target===overlay)finish(null);}};
+    confirmBtn.onclick=()=>finish(selected);
+    if(typeof document!=='undefined'&&typeof document.addEventListener==='function'){{
+      document.addEventListener('keydown',onKey);
+    }}
+
+    syncSelectionUI();
+    document.body.appendChild(overlay);
+  }});
+}}
+
+function _showDriveUnlinkToast(j,mode,opts={{}}){{
+  const slot=opts.slot||'';
+  const revLabel=opts.revLabel||'';
+  const isArchivedRev=Boolean(opts.isArchivedRev);
+  const restoredPrev=Boolean(opts.restoredPrev);
+  if(j && j.shared_reference_preserved){{
+    toast(window.t('form.unlinked_shared_preserved',{{slot}}),'wn');
+    return;
+  }}
+  if(j && j.drive_warning){{
+    toast(window.t('form.unlinked_drive_warning',{{slot,warn:j.drive_warning}}),'wn');
+    return;
+  }}
+  const applied=(j && j.mode)?j.mode:(mode||'archive');
+  if(isArchivedRev){{
+    if(applied==='archive')toast(window.t('form.unlinked_rev_archived',{{rev:revLabel}}),'ok');
+    else if(applied==='unlink')toast(window.t('form.unlinked_rev_only',{{rev:revLabel}}),'ok');
+    else toast(window.t('noc.archived_removed',{{rev:revLabel}}),'ok');
+    return;
+  }}
+  if(restoredPrev){{
+    toast(window.t('form.unlinked_restored',{{slot}}),'ok');
+    return;
+  }}
+  if(applied==='archive'){{
+    toast(window.t('form.unlinked_archived',{{slot}}),'ok');
+  }}else if(applied==='unlink'){{
+    if(j && j.sync_relink_warning)toast(window.t('form.unlinked_only_sync_warn',{{slot}}),'wn');
+    else toast(window.t('form.unlinked_only',{{slot}}),'ok');
+  }}else{{
+    toast(window.t('form.unlinked_trashed',{{slot}}),'ok');
+  }}
+}}
+
 function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}}){{
   state.pendingDriveAttachments={{}};
   state.activeDriveUploads=0;
@@ -20518,17 +20739,26 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             hx.textContent='✕';
             hx.title=window.t('noc.remove_archived_title',{{rev:hLbl}});
             hx.onclick=async()=>{{
-              if(!confirm(window.t('noc.confirm_remove_archived',{{slot:s.key,rev:hLbl}})))return;
+              const mode=await openDriveUnlinkModal({{
+                slot:s.key,
+                slotTitle:s.title,
+                itemName:dLabel,
+                isSync:String(h.source||'').toLowerCase()==='drive_sync',
+                isArchivedRev:true,
+                hasHistory:false,
+                revLabel:hLbl
+              }});
+              if(!mode)return;
               hx.disabled=true;
               try{{
-                const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?rev='+encodeURIComponent(String(hRev)),{{method:'DELETE'}});
+                const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?rev='+encodeURIComponent(String(hRev))+'&mode='+encodeURIComponent(mode),{{method:'DELETE'}});
                 const j=await r.json().catch(()=>({{}}));
                 if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
                 cur[s.key]=(j.attachments&&j.attachments[s.key])?j.attachments[s.key]:null;
                 if(row){{row.attachments=j.attachments||{{}};}}
                 renderSlotInfo(cur[s.key],null);
                 renderRows();
-                toast(window.t('noc.archived_removed',{{rev:hLbl}}),'ok');
+                _showDriveUnlinkToast(j,mode,{{slot:s.key,revLabel:hLbl,isArchivedRev:true}});
               }}catch(e){{
                 hx.disabled=false;
                 toast(window.t('noc.archived_remove_failed',{{err:e.message||e}}),'er');
@@ -20628,15 +20858,21 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         unBtn.style.cssText='padding:1px 5px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
         unBtn.textContent='✕';
         const hasHist=Array.isArray(entry.history)&&entry.history.length>0;
-        unBtn.title=hasHist?window.t('form.confirm_unlink_rev',{{slot:s.key,rev:formatNocRevLabel(_curRev)}}):window.t('form.confirm_unlink',{{slot:s.key}});
+        unBtn.title=window.t('form.unlink_modal_title');
         unBtn.onclick=async()=>{{
-          const msg=hasHist
-            ? window.t('form.confirm_unlink_rev',{{slot:s.key,rev:formatNocRevLabel(_curRev)}})
-            : window.t('form.confirm_unlink',{{slot:s.key}});
-          if(!confirm(msg))return;
+          const mode=await openDriveUnlinkModal({{
+            slot:s.key,
+            slotTitle:s.title,
+            itemName:entry.folder_name||entry.file_name||s.title,
+            isSync:String(entry.source||'').toLowerCase()==='drive_sync',
+            isArchivedRev:false,
+            hasHistory:hasHist,
+            revLabel:hasHist?formatNocRevLabel(_curRev):''
+          }});
+          if(!mode)return;
           unBtn.disabled=true;
           try{{
-            const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key),{{method:'DELETE'}});
+            const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?mode='+encodeURIComponent(mode),{{method:'DELETE'}});
             const j=await r.json().catch(()=>({{}}));
             if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
             cur[s.key]=(j.attachments&&j.attachments[s.key])?j.attachments[s.key]:null;
@@ -20648,7 +20884,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             if(flInp&&typeof j.fileLocation==='string')flInp.value=j.fileLocation;
             renderSlotInfo(cur[s.key],null);
             renderRows();
-            toast(cur[s.key]?window.t('form.unlinked_restored',{{slot:s.key}}):window.t('form.unlinked_trashed',{{slot:s.key}}),'ok');
+            _showDriveUnlinkToast(j,mode,{{slot:s.key,restoredPrev:Boolean(cur[s.key])}});
           }}catch(e){{
             unBtn.disabled=false;
             toast(window.t('form.unlink_failed',{{err:e.message||e}}),'er');
