@@ -44,6 +44,12 @@ _FOOTER_STOP_KEYWORDS = (
     "approved material submittal",
     "الميزانيه تسمح",
     "سلطات الاعتماد",
+    "يعتمد",
+    "العضو المنتدب",
+)
+
+_MS_ROW_LABEL_RE = re.compile(
+    r"^(?:approved\s+(?:m\.?\s*s\.?|material\s*submittals?)|المستندات\s*المعتمده)(?=$|[\s:\-–—.,;/])"
 )
 
 _FOOTER_SKIP_KEYWORDS = (
@@ -82,6 +88,10 @@ def _norm_arabic(text: str) -> str:
 def _clean_text(text: str) -> str:
     lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in (text or "").splitlines()]
     return "\n".join(ln for ln in lines if ln)
+
+
+def _collapse_single_line(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip())
 
 
 def _extract_p_text(p_elem: ET.Element) -> str:
@@ -206,6 +216,8 @@ def _extract_after_label(
                 if ":" in ln:
                     after = ln.split(":", 1)[1].strip()
                     if after:
+                        if not single_line and line_idx + 1 < len(lines):
+                            return "\n".join([after] + lines[line_idx + 1 :])
                         return after
                 if line_idx + 1 < len(lines):
                     return lines[line_idx + 1] if single_line else "\n".join(lines[line_idx + 1 :])
@@ -233,7 +245,14 @@ def _extract_header_metadata(
 
     doc_no_pats = (r"رقم\s*اشعار\s*الاحتياج", r"رقم\s*الاشعار", r"\bpr\s*no\.?\b", r"\bpr\s*number\b")
     date_pats = (r"تاريخ\s*ورود\s*الاشعار", r"تاريخ\s*الطلب", r"تاريخ\s*الاشعار", r"\bissued\s*date\b", r"\bpr\s*date\b", r"\bdate\b")
-    ms_pats = (r"approved\s*material\s*submittal", r"\bms\s*ref\b", r"material\s*submittal", r"\brfi\s*ref\b")
+    ms_pats = (
+        r"approved\s*material\s*submittals?",
+        r"approved\s*m\.?\s*s\.?(?=$|[\s:\-–—.,;/])",
+        r"\bms\s*ref\b",
+        r"material\s*submittal",
+        r"\brfi\s*ref\b",
+        r"المستندات\s*المعتمده",
+    )
     title_pats = (r"^title\b", r"^subject\b", r"^الموضوع\b")
 
     ms_refs: List[str] = []
@@ -333,13 +352,33 @@ def _is_footer_skip(row_norm: str) -> bool:
     return any(kw in row_norm for kw in _FOOTER_SKIP_KEYWORDS)
 
 
+def _extract_ms_refs_from_row(non_empty: List[str]) -> Optional[List[str]]:
+    """Detect an in-table Approved M.S / MS stop row and extract its reference lines."""
+    lines = [ln.strip() for cell in non_empty for ln in cell.splitlines() if ln.strip()]
+    if not lines:
+        return None
+    if not _MS_ROW_LABEL_RE.match(_norm_arabic(lines[0])):
+        return None
+
+    refs: List[str] = []
+    if ":" in lines[0]:
+        after = lines[0].split(":", 1)[1].strip()
+        if after:
+            refs.append(after)
+    for ln in lines[1:]:
+        if ln and ln not in refs:
+            refs.append(ln)
+    return refs
+
+
 def _extract_items_from_table(
     rows: List[Dict[str, Any]],
     header_idx: int,
     col_map: Dict[str, int],
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+) -> Tuple[List[Dict[str, Any]], List[str], List[str]]:
     items: List[Dict[str, Any]] = []
     warnings: List[str] = []
+    ms_refs: List[str] = []
 
     sr_col = col_map.get("sr")
     desc_col = col_map["desc"]
@@ -360,6 +399,11 @@ def _extract_items_from_table(
         if not non_empty:
             continue
 
+        row_ms_refs = _extract_ms_refs_from_row(non_empty)
+        if row_ms_refs is not None:
+            ms_refs.extend(row_ms_refs)
+            break
+
         row_norm = _norm_arabic(" ".join(non_empty))
         if _is_footer_stop(row_norm):
             break
@@ -367,16 +411,16 @@ def _extract_items_from_table(
             continue
 
         sr_val = _get(sr_col)
-        desc_val = _get(desc_col)
+        desc_val = _collapse_single_line(_get(desc_col))
         qty_val = _get(qty_col)
         unit_val = _get(unit_col)
-        remarks_val = _get(remarks_col)
+        remarks_val = _collapse_single_line(_get(remarks_col))
 
         # Detect merged section header spanning across the description column (or whole row)
         merged_header_text = ""
         if not desc_val and not qty_val and not unit_val:
             for start_col, span_len, text in spans:
-                t = text.strip()
+                t = _collapse_single_line(text)
                 if t and span_len >= 2 and (start_col <= desc_col < start_col + span_len or len(non_empty) == 1):
                     if not re.fullmatch(r"\d+", _to_ascii_digits(t)):
                         merged_header_text = t
@@ -408,7 +452,7 @@ def _extract_items_from_table(
                 "remarks": remarks_val,
             })
 
-    return items, warnings
+    return items, warnings, ms_refs
 
 
 def parse_pr_docx(raw_bytes: bytes) -> Dict[str, Any]:
@@ -462,9 +506,15 @@ def parse_pr_docx(raw_bytes: bytes) -> Dict[str, Any]:
             col_map = _match_header_columns(row["cells"])
             if col_map is not None:
                 found_items_table = True
-                tbl_items, tbl_warnings = _extract_items_from_table(tbl_rows, idx, col_map)
+                tbl_items, tbl_warnings, tbl_ms_refs = _extract_items_from_table(tbl_rows, idx, col_map)
                 all_items.extend(tbl_items)
                 warnings.extend(tbl_warnings)
+                if tbl_ms_refs:
+                    existing_ms = [ln.strip() for ln in header["msRef"].splitlines() if ln.strip()]
+                    for ref in tbl_ms_refs:
+                        if ref not in existing_ms:
+                            existing_ms.append(ref)
+                    header["msRef"] = "\n".join(existing_ms)
                 break
 
     if not found_items_table:

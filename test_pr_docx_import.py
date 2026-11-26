@@ -319,6 +319,113 @@ class DocxParserTests(unittest.TestCase):
                     parse_pr_docx(raw)
             self.assertIn("DOCTYPE/ENTITY", str(ctx.exception))
 
+    def test_in_table_approved_ms_merged_row_populates_ms_ref_and_stops_items(self):
+        xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>م</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>بيان المطلوب</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>الكمية</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>الوحدة</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:gridSpan w:val="4"/></w:tcPr><w:p><w:r><w:t>Fire Fighting System</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Sprinkler Head Upright</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>50</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>No</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:gridSpan w:val="4"/></w:tcPr>
+          <w:p><w:r><w:t>Approved M.S</w:t></w:r></w:p>
+          <w:p><w:r><w:t>PEM064-MS-025 REV00: Sprinkler heads...</w:t></w:r></w:p>
+          <w:p><w:r><w:t>PEM064-MS-030 REV00: Fire hose Cabinets.</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>الميزانية تسمح</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>سلطات الاعتماد والتوقيع</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>يعتمد</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>العضو المنتدب</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+"""
+        raw = _build_docx_bytes(xml)
+        result = parse_pr_docx(raw)
+        self.assertEqual(
+            result["header"]["msRef"],
+            "PEM064-MS-025 REV00: Sprinkler heads...\nPEM064-MS-030 REV00: Fire hose Cabinets.",
+        )
+        self.assertEqual(
+            result["items"],
+            [
+                {"row_type": "header", "item_name": "Fire Fighting System"},
+                {
+                    "row_type": "item",
+                    "item_name": "Sprinkler Head Upright",
+                    "unit": "No",
+                    "quantity": 50,
+                    "remarks": "",
+                },
+            ],
+        )
+
+    def test_multi_paragraph_item_and_section_header_joined_with_spaces(self):
+        xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Sr</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Description</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Qty</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Unit</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:gridSpan w:val="4"/></w:tcPr>
+          <w:p><w:r><w:t>Section A</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Portable Fire Extinguishers</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc>
+        <w:tc>
+          <w:p><w:r><w:t>FE-01</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Dry Powder ABC / 6 Kg</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc><w:p><w:r><w:t>8</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>No</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+"""
+        raw = _build_docx_bytes(xml)
+        result = parse_pr_docx(raw)
+        self.assertEqual(
+            result["items"],
+            [
+                {"row_type": "header", "item_name": "Section A Portable Fire Extinguishers"},
+                {
+                    "row_type": "item",
+                    "item_name": "FE-01 Dry Powder ABC / 6 Kg",
+                    "unit": "No",
+                    "quantity": 8,
+                    "remarks": "",
+                },
+            ],
+        )
+
 
 class ParsePrDocxEndpointTests(unittest.TestCase):
     @classmethod
