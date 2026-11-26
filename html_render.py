@@ -5513,6 +5513,29 @@ async function initAllDriveFolders(btn) {
         statusEl.style.border = vars.errors > 0 ? '1px solid #fde68a' : '1px solid #bbf7d0';
         statusEl.style.color = vars.errors > 0 ? '#92400e' : '#166534';
         statusEl.textContent = msg;
+        if (Array.isArray(r.errors) && r.errors.length > 0 && typeof document.createElement === 'function' && typeof statusEl.appendChild === 'function') {
+          const fmtErr = (item) => {
+            if (item == null) return '';
+            if (typeof item !== 'object') return String(item);
+            const scope = item.project_id || item.workspace_id || item.ws_id || '';
+            const inner = (item.error && typeof item.error === 'object') ? item.error : {};
+            const target = inner.dt_id || inner.subtype || inner.folder || item.dt_id || item.subtype || item.folder || '';
+            const rawReason = (typeof item.error === 'string' ? item.error : (inner.error || inner.message || inner.reason)) || item.message || item.reason || '';
+            const reason = typeof rawReason === 'string' ? rawReason : (rawReason != null ? String(rawReason) : '');
+            if (scope && target) return scope + ' \u2192 ' + target + (reason ? ': ' + reason : '');
+            if (scope) return scope + (reason ? ': ' + reason : '');
+            if (target) return target + (reason ? ': ' + reason : '');
+            return reason || JSON.stringify(item);
+          };
+          const ul = document.createElement('ul');
+          ul.style.cssText = 'margin: 6px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.5;';
+          for (const item of r.errors) {
+            const li = document.createElement('li');
+            li.textContent = fmtErr(item);
+            ul.appendChild(li);
+          }
+          statusEl.appendChild(ul);
+        }
       }
       toast(msg, vars.errors > 0 ? 'wa' : 'ok');
     } else {
@@ -22927,6 +22950,29 @@ async function initProjectDriveFolders(btn) {{
         statusEl.style.border = errCnt > 0 ? '1px solid #fde68a' : '1px solid #bbf7d0';
         statusEl.style.color = errCnt > 0 ? '#92400e' : '#166534';
         statusEl.textContent = msg;
+        if(Array.isArray(r.errors) && r.errors.length > 0 && typeof document.createElement === 'function' && typeof statusEl.appendChild === 'function'){{
+          const fmtErr = (item) => {{
+            if(item == null) return '';
+            if(typeof item !== 'object') return String(item);
+            const scope = item.project_id || item.workspace_id || item.ws_id || '';
+            const inner = (item.error && typeof item.error === 'object') ? item.error : {{}};
+            const target = inner.dt_id || inner.subtype || inner.folder || item.dt_id || item.subtype || item.folder || '';
+            const rawReason = (typeof item.error === 'string' ? item.error : (inner.error || inner.message || inner.reason)) || item.message || item.reason || '';
+            const reason = typeof rawReason === 'string' ? rawReason : (rawReason != null ? String(rawReason) : '');
+            if(scope && target) return scope + ' \u2192 ' + target + (reason ? ': ' + reason : '');
+            if(scope) return scope + (reason ? ': ' + reason : '');
+            if(target) return target + (reason ? ': ' + reason : '');
+            return reason || JSON.stringify(item);
+          }};
+          const ul = document.createElement('ul');
+          ul.style.cssText = 'margin: 6px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.5;';
+          for(const item of r.errors){{
+            const li = document.createElement('li');
+            li.textContent = fmtErr(item);
+            ul.appendChild(li);
+          }}
+          statusEl.appendChild(ul);
+        }}
       }}
       toast(msg, errCnt > 0 ? 'wa' : 'ok');
       if(typeof loadDTs === 'function') loadDTs(true).catch(()=>null);

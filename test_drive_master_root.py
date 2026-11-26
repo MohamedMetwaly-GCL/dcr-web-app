@@ -752,6 +752,130 @@ vm.runInContext({json.dumps(js_code)}, ctx);
         self.assertIn("cleared", res["clearedStatus"])
         self.assertEqual(res["clearedSrc"], "Not configured")
 
+    def test_init_all_drive_folders_node_vm_error_list_and_clear(self):
+        """Regression test: initAllDriveFolders renders per-item errors in a safe <ul>/<li> list
+        below the summary line and clears the list when a subsequent run returns errors: []."""
+        src = html_render.SHARED_JS
+        m = re.search(
+            r"(async function initAllDriveFolders\(btn\)[\s\S]*?\n\})",
+            src,
+        )
+        self.assertIsNotNone(m, "Could not extract initAllDriveFolders from SHARED_JS")
+        js_code = m.group(1)
+
+        node_script = f"""
+const vm = require('vm');
+const statusEl = {{
+  style: {{}},
+  _text: '',
+  children: [],
+  get textContent() {{ return this._text; }},
+  set textContent(v) {{ this._text = String(v); this.children = []; }},
+  appendChild(child) {{ this.children.push(child); }},
+}};
+let nextResp = null;
+const ctx = {{
+  document: {{
+    getElementById: (id) => (id === 'admin-master-drive-status' ? statusEl : null),
+    createElement: (tag) => ({{
+      tagName: tag.toUpperCase(),
+      style: {{ cssText: '' }},
+      children: [],
+      textContent: '',
+      appendChild(c) {{ this.children.push(c); }},
+    }}),
+  }},
+  toast: () => {{}},
+  _admT: (k, vars, fb) => {{
+    let out = fb || k;
+    if (vars) {{
+      for (const [vk, vv] of Object.entries(vars)) out = out.replaceAll('{{' + vk + '}}', String(vv));
+    }}
+    return out;
+  }},
+  fetch: async () => ({{ ok: true, status: 200, json: async () => nextResp }}),
+}};
+vm.createContext(ctx);
+vm.runInContext({json.dumps(js_code)}, ctx);
+(async () => {{
+  const btn = {{ disabled: false, innerHTML: 'Init', textContent: 'Init' }};
+  // 1. Partial/error response with nested project/dt_id error
+  nextResp = {{
+    ok: false,
+    workspaces_created: 0, workspaces_existing: 8,
+    projects_created: 0, projects_existing: 11,
+    folders_created: 0, folders_existing: 449,
+    errors: [{{ project_id: 'PM002', error: {{ dt_id: 'SD-EKH', error: 'ambiguous' }} }}],
+  }};
+  await ctx.initAllDriveFolders(btn);
+  const run1 = {{
+    text: statusEl.textContent,
+    bg: statusEl.style.background,
+    children: JSON.parse(JSON.stringify(statusEl.children)),
+  }};
+
+  // 2. Subsequent error response with workspace-level & string errors
+  nextResp = {{
+    ok: false,
+    workspaces_created: 0, workspaces_existing: 8,
+    projects_created: 0, projects_existing: 11,
+    folders_created: 0, folders_existing: 449,
+    errors: [{{ workspace_id: 'WS-ENG', error: 'permission denied' }}, 'unexpected timeout'],
+  }};
+  await ctx.initAllDriveFolders(btn);
+  const run2 = {{
+    children: JSON.parse(JSON.stringify(statusEl.children)),
+  }};
+
+  // 3. Subsequent clean run clears the <ul> list
+  nextResp = {{
+    ok: true,
+    workspaces_created: 0, workspaces_existing: 8,
+    projects_created: 0, projects_existing: 11,
+    folders_created: 0, folders_existing: 449,
+    errors: [],
+  }};
+  await ctx.initAllDriveFolders(btn);
+  const run3 = {{
+    text: statusEl.textContent,
+    bg: statusEl.style.background,
+    childrenCount: statusEl.children.length,
+  }};
+
+  console.log(JSON.stringify({{ run1, run2, run3 }}));
+}})();
+"""
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tf:
+            tf.write(node_script)
+            tf_path = tf.name
+        try:
+            proc = subprocess.run(["node", tf_path], capture_output=True, text=True, check=True, timeout=15)
+        finally:
+            os.unlink(tf_path)
+
+        res = json.loads(proc.stdout.strip())
+        self.assertIn("1 error(s)", res["run1"]["text"])
+        self.assertIn("0/8", res["run1"]["text"])
+        self.assertIn("0/11", res["run1"]["text"])
+        self.assertIn("0/449", res["run1"]["text"])
+        self.assertEqual(res["run1"]["bg"], "#fffbeb")
+        self.assertEqual(len(res["run1"]["children"]), 1)
+        ul1 = res["run1"]["children"][0]
+        self.assertEqual(ul1["tagName"], "UL")
+        self.assertEqual(len(ul1["children"]), 1)
+        self.assertEqual(ul1["children"][0]["tagName"], "LI")
+        self.assertEqual(ul1["children"][0]["textContent"], "PM002 \u2192 SD-EKH: ambiguous")
+
+        ul2 = res["run2"]["children"][0]
+        self.assertEqual([li["textContent"] for li in ul2["children"]], [
+            "WS-ENG: permission denied",
+            "unexpected timeout",
+        ])
+
+        self.assertIn("0 new / 8 verified", res["run3"]["text"])
+        self.assertEqual(res["run3"]["bg"], "#f0fdf4")
+        self.assertEqual(res["run3"]["childrenCount"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
