@@ -623,7 +623,7 @@ def api_drive_sync(pid):
     else:
         reclassify_legacy_links = bool(reclassify_legacy_links)
 
-    from drive_service import process_drive_folder
+    from drive_service import process_drive_folder, get_last_sync_diagnostics
     import threading
     threading.Thread(
         target=process_drive_folder,
@@ -631,7 +631,13 @@ def api_drive_sync(pid):
         kwargs={"project_id": pid, "reclassify_legacy_links": reclassify_legacy_links},
     ).start()
     
-    return jsonify(ok=True, reclassify_legacy_links=reclassify_legacy_links)
+    last_diag = get_last_sync_diagnostics(pid)
+    return jsonify(
+        ok=True,
+        reclassify_legacy_links=reclassify_legacy_links,
+        reclassified_count=last_diag.get("reclassified_count", 0),
+        reclassify_skipped_sample=last_diag.get("reclassify_skipped_sample", []),
+    )
 
 
 @app.route("/api/drive/reclassify-legacy/<pid>", methods=["POST"])

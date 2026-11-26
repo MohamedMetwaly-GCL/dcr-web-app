@@ -363,19 +363,29 @@ def _clear_matching_legacy_keys(data_dict, target_entry):
     return cleared
 
 
-def _is_verified_submit_attachment(entry):
-    """Return True when `entry` is a verified DCR Submit upload that must never be replaced."""
+def _is_verified_submit_attachment(entry, confirmed_not_in_submit=False):
+    """Return True when `entry` is a verified DCR Submit upload that must never be replaced.
+
+    An explicit `slot_verified=True` always protects the submission slot.
+    Legacy/imported entries that merely have `uploaded_at` (without `slot_verified=True`)
+    are protected when Drive Submit-folder presence is unknown (`confirmed_not_in_submit=False`),
+    but may be promoted/replaced when a Drive sync has confirmed the document is NOT in
+    `Submit/` and IS in `Replied/` (`confirmed_not_in_submit=True`).
+    """
     if not isinstance(entry, dict):
         return False
     if entry.get("slot_verified") is True:
         return True
+    if confirmed_not_in_submit:
+        return False
     if entry.get("uploaded_at") and not entry.get("legacy") and entry.get("source") != SYNC_SOURCE:
         return True
     return False
 
 
 def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id="", folder_id="",
-                                 file_name="", mime_type="", clear_stale_legacy=False):
+                                 file_name="", mime_type="", clear_stale_legacy=False,
+                                 confirmed_not_in_submit=False):
     """Safely promote a verified Replied-folder legacy/submission link to `attachments['approval']`.
 
     Pure function (never mutates `data`). Preserves all metadata and never deletes a distinct
@@ -423,7 +433,9 @@ def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id=
     existing_sub = att.get(SLOT_SUBMISSION) if isinstance(att.get(SLOT_SUBMISSION), dict) else None
     existing_app = att.get(SLOT_APPROVAL) if isinstance(att.get(SLOT_APPROVAL), dict) else None
 
-    if clear_stale_legacy and _is_verified_submit_attachment(existing_sub):
+    if clear_stale_legacy and _is_verified_submit_attachment(
+        existing_sub, confirmed_not_in_submit=confirmed_not_in_submit
+    ):
         # Safety: never replace/clear a verified DCR Submit upload
         return new, False
 
@@ -465,7 +477,11 @@ def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id=
     promoted["slot_verified"] = True
 
     new = apply_attachment(new, SLOT_APPROVAL, promoted)
-    if sub_matches or (clear_stale_legacy and existing_sub and not _is_verified_submit_attachment(existing_sub)):
+    if sub_matches or (
+        clear_stale_legacy
+        and existing_sub
+        and not _is_verified_submit_attachment(existing_sub, confirmed_not_in_submit=confirmed_not_in_submit)
+    ):
         new = remove_attachment(new, SLOT_SUBMISSION)
     if clear_stale_legacy:
         for key in LEGACY_LINK_KEYS:

@@ -683,5 +683,218 @@ class TestDriveLegacyRoleFix02(unittest.TestCase):
         self.assertIn("isStatusLikeField(c)", fn_body)
 
 
+class TestDriveLegacyRoleFix03(unittest.TestCase):
+    """Regression tests for DRIVE-LEGACY-ROLE-FIX-03:
+    1. Filenames with REV variants (e.g. DS-CY002P608-00260_REV00.pdf, DS-CY002P608-00260 REV01.pdf,
+       MS-CY002P608-00021-REV 02.pdf) in Replied/ match DB docNo without cross-revision collision.
+    2. Legacy/imported record with uploaded_at set (no slot_verified=True and NOT in Submit/)
+       is promoted cleanly to Reply and clears Subm when matched in Replied/.
+    3. Genuine Submit/ file stays Subm untouched and is reported in reclassify_skipped_sample.
+    4. Sync diagnostics (reclassified_count + reclassify_skipped_sample) are returned by
+       process_drive_folder, /api/drive/sync/<pid>, and /api/drive/reclassify-legacy/<pid>.
+    """
+
+    def test_09_rev_filename_variants_and_legacy_uploaded_at_reclassification_with_diagnostics(self):
+        projects_rows = [{"id": "PEM-058", "data": {"drive_folder_id": "ROOT_CFC"}}]
+        records_store = {
+            # 1) Legacy record with uploaded_at (no slot_verified=True), Drive file uses underscore _REV00
+            "REC-DS-260-R00": {
+                "id": "REC-DS-260-R00",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00260 REV00",
+                    "status": "B - Approved As Noted",
+                    "attachments": {
+                        "submission": {
+                            "file_id": "LEGACY_IMPORTED_260_R00",
+                            "url": "https://drive.google.com/file/d/LEGACY_IMPORTED_260_R00/view",
+                            "uploaded_at": "2026-01-15T08:30:00Z",
+                            "uploaded_by": "legacy_migrator",
+                        }
+                    },
+                },
+            },
+            # 2) Separate revision REV01 on same base docNo -> must match ONLY REV01 PDF
+            "REC-DS-260-R01": {
+                "id": "REC-DS-260-R01",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00260 REV01",
+                    "status": "A - Approved",
+                    "fileLocation": "https://drive.google.com/file/d/OLD_STALE_260_R01/view",
+                },
+            },
+            # 3) MS record with hyphen/space REV variant in Drive filename + legacy uploaded_at
+            "REC-MS-021-R02": {
+                "id": "REC-MS-021-R02",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "MS-CY002P608-00021 REV02",
+                    "status": "A - Approved",
+                    "fileLocation": "https://drive.google.com/file/d/LEGACY_MS_021/view",
+                    "attachments": {
+                        "submission": {
+                            "file_id": "LEGACY_MS_021",
+                            "url": "https://drive.google.com/file/d/LEGACY_MS_021/view",
+                            "uploaded_at": "2026-02-01T12:00:00Z",
+                        }
+                    },
+                },
+            },
+            # 4) Genuine Submit/ file -> must stay Subm untouched and appear in reclassify_skipped_sample
+            "REC-GENUINE-SUB": {
+                "id": "REC-GENUINE-SUB",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00999 REV00",
+                    "status": "Under Review",
+                    "fileLocation": "https://drive.google.com/file/d/GENUINE_SUB_999/view",
+                },
+            },
+        }
+        drive_items = [
+            {
+                "id": "F_DS",
+                "name": "2. Document Submittal (DS)",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["ROOT_CFC"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_DS",
+            },
+            {
+                "id": "F_SUB",
+                "name": "Submit",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["F_DS"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_SUB",
+            },
+            {
+                "id": "F_REP",
+                "name": "Replied",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["F_DS"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_REP",
+            },
+            {
+                "id": "REP_DS_260_R00",
+                "name": "DS-CY002P608-00260_REV00.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_REP"],
+                "webViewLink": "https://drive.google.com/file/d/REP_DS_260_R00/view",
+            },
+            {
+                "id": "REP_DS_260_R01",
+                "name": "DS-CY002P608-00260 REV01.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_REP"],
+                "webViewLink": "https://drive.google.com/file/d/REP_DS_260_R01/view",
+            },
+            {
+                "id": "REP_MS_021_R02",
+                "name": "MS-CY002P608-00021-REV 02.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_REP"],
+                "webViewLink": "https://drive.google.com/file/d/REP_MS_021_R02/view",
+            },
+            {
+                "id": "GENUINE_SUB_999",
+                "name": "DS-CY002P608-00999 REV00.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_SUB"],
+                "webViewLink": "https://drive.google.com/file/d/GENUINE_SUB_999/view",
+            },
+        ]
+
+        def fake_q(sql, params=(), one=False):
+            s = " ".join(sql.split())
+            if "FROM projects" in s:
+                return projects_rows
+            if "FROM records" in s:
+                if "docNo" in s:
+                    pid_arg, doc_arg = params[0], params[1]
+                    matched = [
+                        {"id": r["id"], "data": r["data"]}
+                        for r in records_store.values()
+                        if r["project_id"] == pid_arg and r["data"].get("docNo") == doc_arg
+                    ]
+                    return (matched[0] if matched else None) if one else matched
+                pid_arg = params[0]
+                matched = [
+                    {"id": r["id"], "data": r["data"]}
+                    for r in records_store.values()
+                    if r["project_id"] == pid_arg
+                ]
+                return (matched[0] if matched else None) if one else matched
+            return None if one else []
+
+        def fake_exe(sql, params=()):
+            new_data_json, rec_id, pid_arg = params
+            if rec_id in records_store and records_store[rec_id]["project_id"] == pid_arg:
+                records_store[rec_id]["data"] = json.loads(new_data_json)
+            return 1
+
+        svc = _FakeDriveService(drive_items)
+        with patch("db.q", side_effect=fake_q), \
+             patch("db.exe", side_effect=fake_exe), \
+             patch.object(drive_service, "get_drive_service", return_value=svc):
+            sync_result = drive_service.process_drive_folder("ROOT_CFC", project_id="PEM-058")
+
+        # Verify diagnostics returned by process_drive_folder
+        self.assertIsInstance(sync_result, dict)
+        self.assertEqual(sync_result["reclassified_count"], 3)
+        self.assertEqual(len(sync_result["reclassify_skipped_sample"]), 1)
+        self.assertEqual(sync_result["reclassify_skipped_sample"][0]["docNo"], "DS-CY002P608-00999 REV00")
+        self.assertEqual(sync_result["reclassify_skipped_sample"][0]["reason"], "confirmed_in_submit_folder")
+
+        # 1) DS-CY002P608-00260 REV00 (legacy uploaded_at, underscore _REV00) promoted to Reply, Subm cleared
+        d_r00 = records_store["REC-DS-260-R00"]["data"]
+        self.assertNotIn("submission", d_r00.get("attachments", {}))
+        self.assertEqual(d_r00["attachments"]["approval"]["file_id"], "REP_DS_260_R00")
+        self.assertEqual(d_r00["attachments"]["approval"]["role"], "reply")
+        self.assertTrue(d_r00["attachments"]["approval"]["slot_verified"])
+
+        # 2) DS-CY002P608-00260 REV01 matched ONLY REV01 PDF (no collision with REV00)
+        d_r01 = records_store["REC-DS-260-R01"]["data"]
+        self.assertNotIn("fileLocation", d_r01)
+        self.assertNotIn("submission", d_r01.get("attachments", {}))
+        self.assertEqual(d_r01["attachments"]["approval"]["file_id"], "REP_DS_260_R01")
+
+        # 3) MS-CY002P608-00021 REV02 (hyphen/space REV variant + legacy uploaded_at) promoted to Reply, Subm cleared
+        d_ms = records_store["REC-MS-021-R02"]["data"]
+        self.assertNotIn("fileLocation", d_ms)
+        self.assertNotIn("submission", d_ms.get("attachments", {}))
+        self.assertEqual(d_ms["attachments"]["approval"]["file_id"], "REP_MS_021_R02")
+        self.assertEqual(d_ms["attachments"]["approval"]["role"], "reply")
+
+        # 4) Genuine Submit/ file stays Subm untouched
+        d_sub = records_store["REC-GENUINE-SUB"]["data"]
+        self.assertEqual(d_sub["attachments"]["submission"]["url"], "https://drive.google.com/file/d/GENUINE_SUB_999/view")
+        self.assertNotIn("approval", d_sub["attachments"])
+
+        # 5) /api/drive/sync/<pid> exposes cached diagnostics (reclassified_count & reclassify_skipped_sample)
+        client = app_mod.app.test_client()
+        client.set_cookie("dcr_token", "tok_editor")
+        editor = {"username": "dc_editor", "role": "editor"}
+
+        class _NoopThread:
+            def __init__(self, target=None, args=(), kwargs=None):
+                pass
+            def start(self):
+                pass
+
+        with patch("db.get_session", return_value=editor), \
+             patch("app.can_view_project", return_value=True), \
+             patch("app.can_edit", return_value=True), \
+             patch("db.get_project", return_value={"id": "PEM-058", "drive_folder_id": "ROOT_CFC"}), \
+             patch("db.update_project_settings"), \
+             patch("drive_routing.provision_project_drive_structure"), \
+             patch("threading.Thread", side_effect=_NoopThread):
+            r_sync = client.post("/api/drive/sync/PEM-058", json={"folder_id": "ROOT_CFC"})
+            self.assertEqual(r_sync.status_code, 200)
+            body = r_sync.get_json()
+            self.assertEqual(body["reclassified_count"], 3)
+            self.assertEqual(len(body["reclassify_skipped_sample"]), 1)
+            self.assertEqual(body["reclassify_skipped_sample"][0]["reason"], "confirmed_in_submit_folder")
+
+
 if __name__ == "__main__":
     unittest.main()

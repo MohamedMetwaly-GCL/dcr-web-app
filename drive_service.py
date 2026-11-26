@@ -43,16 +43,19 @@ def get_drive_service():
 def extract_doc_no(name):
     """
     Extracts the document number from a file/folder name.
-    Supports robust dynamic segments (e.g., MAT-EASTMAIN-B08-FF-001 REV00).
+    Supports robust dynamic segments (e.g., MAT-EASTMAIN-B08-FF-001 REV00,
+    DS-CY002P608-00260_REV00.pdf, MS-CY002P608-00021-REV 02.pdf).
     Requires at least one dash and ending with digits (optionally a letter).
     """
-    # 1. Match WITH Revision (e.g., ...-001 REV00)
-    m = re.search(r'((?:[A-Z0-9]+-)+\d+[A-Z]?\s+REV\d+)', name, re.IGNORECASE)
-    if m: 
-        return m.group(1).upper()
-    
+    raw = str(name or "")
+    # 1. Match WITH Revision (supports space, underscore, or hyphen before REV and optional space before digits)
+    m = re.search(r'((?:[A-Z0-9]+-)+\d+[A-Z]?)(?:[\s_-]+)(REV\s*\d+)', raw, re.IGNORECASE)
+    if m:
+        rev_part = re.sub(r'\s+', '', m.group(2).upper())
+        return f"{m.group(1).upper()} {rev_part}"
+
     # 2. Match WITHOUT Revision (e.g., ...-001)
-    m = re.search(r'((?:[A-Z0-9]+-)+\d+[A-Z]?)', name, re.IGNORECASE)
+    m = re.search(r'((?:[A-Z0-9]+-)+\d+[A-Z]?)', raw, re.IGNORECASE)
     return m.group(1).upper() if m else None
 
 def get_item_priority(full_path, mime_type):
@@ -138,9 +141,79 @@ def is_drive_item_in_replied_folder(service, item_id, folder_cache=None, max_dep
     return False, item_meta
 
 
+_LAST_SYNC_DIAGNOSTICS = {}
+
+
+def get_last_sync_diagnostics(project_id):
+    """Return the latest cached Drive sync diagnostics dict for `project_id` (or defaults)."""
+    pid = str(project_id or "").strip()
+    diag = _LAST_SYNC_DIAGNOSTICS.get(pid)
+    if isinstance(diag, dict):
+        return dict(diag)
+    return {"reclassified_count": 0, "reclassify_skipped_sample": []}
+
+
 def _normalize_doc_no(value):
     """Normalize a document number for case/whitespace-insensitive matching."""
-    return re.sub(r"\s+", " ", str(value or "").strip()).upper()
+    s = re.sub(r"\s+", " ", str(value or "").strip()).upper()
+    # Normalize `..._REV00` / `...-REV00` / `... REV 00` -> `... REV00`
+    s = re.sub(r"[\s_-]+REV[\s_-]*(\d+)\b", r" REV\1", s)
+    return s
+
+
+def _compact_doc_key(value):
+    """Return an alphanumeric-only uppercase key for separator-agnostic matching."""
+    return re.sub(r"[^A-Z0-9]+", "", str(value or "").upper())
+
+
+def _strip_file_extension(name):
+    """Remove trailing common file extension (e.g., .pdf, .zip, .dwg) without mangling doc numbers."""
+    s = str(name or "").strip()
+    m = re.match(r"^(.*)\.(pdf|zip|rar|7z|dwg|dxf|doc|docx|xls|xlsx|ppt|pptx|png|jpg|jpeg|tif|tiff|csv|txt)$", s, re.IGNORECASE)
+    return m.group(1).strip() if m else s
+
+
+def _doc_no_lookup_keys(name_or_doc_no, rev_field=None):
+    """Return canonical normalized lookup keys for a Drive filename or DB record `(docNo, rev)`.
+
+    Indexes BOTH:
+    - Normalized filename stem (minus extension) & its compact alphanumeric key
+    - Parsed `doc_no` (+ `REVxx` when present) & its compact key
+    - Optional combined `docNo + REVxx` when DB stores revision in a separate `rev`/`revision` field
+    Never emits a bare `docNo` without `REVxx` when `REVxx` is already present, preventing
+    cross-revision collisions (e.g., `REV00` vs `REV01`).
+    """
+    keys = []
+
+    def _add(val):
+        norm = _normalize_doc_no(val)
+        if norm and norm not in keys:
+            keys.append(norm)
+        comp = _compact_doc_key(norm)
+        if comp and comp not in keys:
+            keys.append(comp)
+
+    raw = str(name_or_doc_no or "").strip()
+    if not raw:
+        return keys
+
+    stem = _strip_file_extension(raw)
+    _add(stem)
+
+    parsed = extract_doc_no(stem)
+    if parsed:
+        _add(parsed)
+
+    rev_str = str(rev_field or "").strip()
+    if rev_str and not re.search(r"\bREV\s*\d+\b", stem, re.IGNORECASE):
+        m_rev = re.search(r"(\d+)", rev_str)
+        if m_rev:
+            rev_num = int(m_rev.group(1))
+            base = parsed or stem
+            _add(f"{base} REV{rev_num:02d}")
+            _add(f"{base} REV{rev_num}")
+
+    return keys
 
 
 def reclassify_project_legacy_reply_links(
@@ -155,29 +228,64 @@ def reclassify_project_legacy_reply_links(
     """Promote legacy/un-typed `fileLocation`/`drive_link`/`submission` links in `project_id`
     to `attachments['approval']` (`role='reply'`) when verified to reside inside a `Replied` folder,
     or when an un-verified stale legacy link (not in `Submit`) matches a verified `Replied` file
-    by normalized `docNo` (`replied_by_doc_no`, with no separate file in `submit_doc_nos`).
+    by normalized `docNo`/stem (`replied_by_doc_no`, with no separate file in `submit_doc_nos`).
 
-    Returns summary dict: `{'scanned', 'reclassified', 'skipped', 'errors', 'record_ids'}`.
+    Returns summary dict:
+      `{'scanned', 'reclassified', 'reclassified_count', 'skipped', 'errors', 'record_ids', 'reclassify_skipped_sample'}`.
     """
     import attachments as _att
     import db
 
     pid = str(project_id or "").strip()
-    summary = {"scanned": 0, "reclassified": 0, "skipped": 0, "errors": 0, "record_ids": []}
+    summary = {
+        "scanned": 0,
+        "reclassified": 0,
+        "reclassified_count": 0,
+        "skipped": 0,
+        "errors": 0,
+        "record_ids": [],
+        "reclassify_skipped_sample": [],
+    }
     if not pid:
         return summary
+
+    def _record_skip(rec_id, rec_data, reason):
+        summary["skipped"] += 1
+        if len(summary["reclassify_skipped_sample"]) < 10:
+            summary["reclassify_skipped_sample"].append({
+                "record_id": rec_id,
+                "docNo": str((rec_data or {}).get("docNo") or ""),
+                "reason": reason,
+            })
 
     if service is None and inspect_parents:
         service = get_drive_service()
 
     replied_map = replied_items_by_id if isinstance(replied_items_by_id, dict) else {}
     submit_ids = set(submit_item_ids or ())
-    replied_doc_map = {
-        _normalize_doc_no(k): v
-        for k, v in (replied_by_doc_no.items() if isinstance(replied_by_doc_no, dict) else ())
-        if _normalize_doc_no(k) and isinstance(v, dict)
-    }
-    submit_docs = {_normalize_doc_no(d) for d in (submit_doc_nos or ()) if _normalize_doc_no(d)}
+    drive_tree_scanned = bool(
+        replied_by_doc_no is not None
+        or submit_doc_nos is not None
+        or replied_items_by_id is not None
+        or submit_item_ids is not None
+    )
+
+    replied_doc_map = {}
+    if isinstance(replied_by_doc_no, dict):
+        for k, v in replied_by_doc_no.items():
+            if not isinstance(v, dict):
+                continue
+            for lk in _doc_no_lookup_keys(k):
+                replied_doc_map.setdefault(lk, v)
+            if v.get("name"):
+                for lk in _doc_no_lookup_keys(v.get("name")):
+                    replied_doc_map.setdefault(lk, v)
+
+    submit_docs = set()
+    for d in (submit_doc_nos or ()):
+        for lk in _doc_no_lookup_keys(d):
+            submit_docs.add(lk)
+
     folder_cache = {}
 
     rows = db.get_project_records_for_drive_reclassify(pid) or []
@@ -190,14 +298,16 @@ def reclassify_project_legacy_reply_links(
 
         att = rec_data.get("attachments") if isinstance(rec_data.get("attachments"), dict) else {}
         if any(isinstance(att.get(ns), dict) for ns in _att.NOC_SLOTS):
-            summary["skipped"] += 1
+            _record_skip(rec_id, rec_data, "noc_4part_record")
             continue
 
         # Collect candidate un-typed/legacy/submission link targets on this record
         candidates = []
         sub_entry = att.get(_att.SLOT_SUBMISSION) if isinstance(att.get(_att.SLOT_SUBMISSION), dict) else None
-        sub_is_verified = _att._is_verified_submit_attachment(sub_entry)
-        if sub_entry and not sub_is_verified:
+        sub_explicitly_verified = bool(sub_entry and sub_entry.get("slot_verified") is True)
+        has_unverified_sub_or_legacy = False
+
+        if sub_entry and not sub_explicitly_verified:
             sub_url = _att._clean_link(sub_entry.get("url"))
             sub_id = str(
                 sub_entry.get("file_id")
@@ -205,6 +315,8 @@ def reclassify_project_legacy_reply_links(
                 or _att.extract_drive_item_id(sub_url)
                 or ""
             ).strip()
+            if sub_id or sub_url:
+                has_unverified_sub_or_legacy = True
             if sub_id:
                 candidates.append((sub_id, sub_url))
 
@@ -212,16 +324,23 @@ def reclassify_project_legacy_reply_links(
             leg_url = _att._clean_link(rec_data.get(key))
             if not leg_url:
                 continue
+            has_unverified_sub_or_legacy = True
             leg_id = _att.extract_drive_item_id(leg_url)
             if leg_id and not any(cid == leg_id for cid, _ in candidates):
                 candidates.append((leg_id, leg_url))
 
-        if not candidates:
-            summary["skipped"] += 1
+        if sub_explicitly_verified and not candidates:
+            _record_skip(rec_id, rec_data, "verified_submit_slot")
+            continue
+
+        if not candidates and not has_unverified_sub_or_legacy:
+            _record_skip(rec_id, rec_data, "no_legacy_or_submission_link")
             continue
 
         promoted_any = False
         cur_data = rec_data
+        any_in_submit = any(cid in submit_ids for cid, _ in candidates)
+
         for item_id, item_url in candidates:
             # Safety: if this item also exists in a Submit folder, never reclassify it to reply
             if item_id in submit_ids:
@@ -253,29 +372,43 @@ def reclassify_project_legacy_reply_links(
                 cur_data = new_data
                 promoted_any = True
 
-        # Fallback: reconcile un-verified stale legacy links whose stored file_id differs from
-        # the current file in Replied, when docNo matches a verified Replied file and NOT Submit.
-        if not promoted_any and not sub_is_verified and replied_doc_map:
-            norm_doc = _normalize_doc_no(cur_data.get("docNo"))
-            any_in_submit = any(cid in submit_ids for cid, _ in candidates)
-            if norm_doc and norm_doc in replied_doc_map and norm_doc not in submit_docs and not any_in_submit:
-                matched_doc_item = replied_doc_map[norm_doc]
-                new_data, changed = _att.promote_legacy_link_to_reply(
-                    cur_data,
-                    matched_item=matched_doc_item,
-                    reply_url=matched_doc_item.get("webViewLink") or "",
-                    clear_stale_legacy=True,
-                )
-                if changed:
-                    cur_data = new_data
-                    promoted_any = True
+        skip_reason = "not_found_in_replied"
+        if any_in_submit:
+            skip_reason = "confirmed_in_submit_folder"
+
+        # Fallback: reconcile un-verified stale legacy/submission links whose stored file_id differs
+        # from the current file in Replied, when docNo/stem matches a verified Replied file and NOT Submit.
+        if not promoted_any and not sub_explicitly_verified and replied_doc_map:
+            rec_rev = cur_data.get("rev") if cur_data.get("rev") is not None else cur_data.get("revision")
+            doc_keys = _doc_no_lookup_keys(cur_data.get("docNo"), rev_field=rec_rev)
+            doc_in_submit = any(k in submit_docs for k in doc_keys)
+            if doc_in_submit or any_in_submit:
+                skip_reason = "confirmed_in_submit_folder"
+            else:
+                matched_doc_item = next((replied_doc_map[k] for k in doc_keys if k in replied_doc_map), None)
+                if matched_doc_item is not None:
+                    new_data, changed = _att.promote_legacy_link_to_reply(
+                        cur_data,
+                        matched_item=matched_doc_item,
+                        reply_url=matched_doc_item.get("webViewLink") or "",
+                        clear_stale_legacy=True,
+                        confirmed_not_in_submit=drive_tree_scanned,
+                    )
+                    if changed:
+                        cur_data = new_data
+                        promoted_any = True
+                    else:
+                        skip_reason = "preserved_existing_dcr_approval"
+        elif not promoted_any and sub_explicitly_verified:
+            skip_reason = "verified_submit_slot"
 
         if promoted_any:
             db.update_record_data_scoped(pid, rec_id, cur_data)
             summary["reclassified"] += 1
+            summary["reclassified_count"] = summary["reclassified"]
             summary["record_ids"].append(rec_id)
         else:
-            summary["skipped"] += 1
+            _record_skip(rec_id, rec_data, skip_reason)
 
     return summary
 
@@ -341,22 +474,29 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None, re
 
                 # Track every item discovered inside Replied vs Submit folders (even if filename has no docNo)
                 kind = classify_path_kind(item_full_path)
+                priority = get_item_priority(item_full_path, item['mimeType'])
+                item_name = item.get('name') or ''
                 if kind == 'approval' and item.get('id'):
-                    replied_items_by_id[item['id']] = {
+                    rep_entry = {
                         'id': item['id'],
-                        'name': item.get('name') or '',
+                        'name': item_name,
                         'mimeType': item.get('mimeType') or '',
                         'webViewLink': item.get('webViewLink') or '',
+                        'priority': priority,
                     }
+                    replied_items_by_id[item['id']] = rep_entry
+                    for lk in _doc_no_lookup_keys(item_name):
+                        prev_rep = replied_by_doc_no.get(lk)
+                        if prev_rep is None or priority < prev_rep['priority']:
+                            replied_by_doc_no[lk] = rep_entry
                 elif kind == 'submission' and item.get('id'):
                     submit_item_ids.add(item['id'])
+                    for lk in _doc_no_lookup_keys(item_name):
+                        submit_doc_nos.add(lk)
                 
                 # Extract Document Number
-                doc_no = extract_doc_no(item['name'])
+                doc_no = extract_doc_no(item_name)
                 if doc_no:
-                    # Apply Priority Logic using the FULL PATH
-                    priority = get_item_priority(item_full_path, item['mimeType'])
-                    
                     if doc_no not in doc_map or priority < doc_map[doc_no]['priority']:
                         doc_map[doc_no] = {
                             'link': item['webViewLink'],
@@ -365,19 +505,21 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None, re
 
                     # Additive: also track the best Submit/Replied and per-part revisions separately
                     if kind:
-                        norm_doc = _normalize_doc_no(doc_no)
-                        if kind == 'approval' and norm_doc:
-                            prev_rep = replied_by_doc_no.get(norm_doc)
-                            if prev_rep is None or priority < prev_rep['priority']:
-                                replied_by_doc_no[norm_doc] = {
-                                    'id': item.get('id') or '',
-                                    'name': item.get('name') or '',
-                                    'mimeType': item.get('mimeType') or '',
-                                    'webViewLink': item.get('webViewLink') or '',
-                                    'priority': priority,
-                                }
-                        elif kind == 'submission' and norm_doc:
-                            submit_doc_nos.add(norm_doc)
+                        if kind == 'approval':
+                            rep_doc_entry = {
+                                'id': item.get('id') or '',
+                                'name': item_name,
+                                'mimeType': item.get('mimeType') or '',
+                                'webViewLink': item.get('webViewLink') or '',
+                                'priority': priority,
+                            }
+                            for lk in _doc_no_lookup_keys(doc_no):
+                                prev_rep = replied_by_doc_no.get(lk)
+                                if prev_rep is None or priority < prev_rep['priority']:
+                                    replied_by_doc_no[lk] = rep_doc_entry
+                        elif kind == 'submission':
+                            for lk in _doc_no_lookup_keys(doc_no):
+                                submit_doc_nos.add(lk)
 
                         if kind in ("part_a", "part_b", "part_c", "part_d"):
                             from attachments import format_rev_label
@@ -425,10 +567,12 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None, re
                         sync_links[part_slot] = top_entry
                 db.update_record_link(doc_no, data['link'], sync_links, project_id=pid)
 
+    total_reclassified = 0
+    combined_skipped_sample = []
     if reclassify_legacy_links and target_pids:
         for pid in target_pids:
             try:
-                reclassify_project_legacy_reply_links(
+                rec_summary = reclassify_project_legacy_reply_links(
                     pid,
                     service=service,
                     replied_items_by_id=replied_items_by_id,
@@ -437,8 +581,24 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None, re
                     replied_by_doc_no=replied_by_doc_no,
                     submit_doc_nos=submit_doc_nos,
                 )
+                pid_count = int(rec_summary.get("reclassified_count", rec_summary.get("reclassified", 0)) or 0)
+                pid_sample = list(rec_summary.get("reclassify_skipped_sample") or [])[:10]
+                total_reclassified += pid_count
+                for item in pid_sample:
+                    if len(combined_skipped_sample) < 10:
+                        combined_skipped_sample.append(item)
+                _LAST_SYNC_DIAGNOSTICS[pid] = {
+                    "reclassified_count": pid_count,
+                    "reclassify_skipped_sample": pid_sample,
+                }
             except Exception as exc:
                 print(f"[Drive Legacy Reclassify Warning] project={pid}: {exc}")
+
+    return {
+        "ok": True,
+        "reclassified_count": total_reclassified,
+        "reclassify_skipped_sample": combined_skipped_sample,
+    }
 
 # ==========================================
 # 3. Webhook Registration (Run once per folder)
