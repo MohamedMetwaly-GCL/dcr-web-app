@@ -334,6 +334,7 @@ class TestDriveMasterRoot(unittest.TestCase):
             data = res.get_json()
             self.assertTrue(data["ok"])
             self.assertFalse(data["drive_provision"]["skipped"])
+            drive_routing.wait_for_background_provisioning()
 
             # Verify `<Master Root>/HSE - Health & Safety/CP01 - Cairo Plant`
             ws_folder = self.drive.child_by_name(self.master_root_id, "HSE - Health & Safety")

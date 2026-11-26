@@ -144,14 +144,39 @@ def api_create_project():
             pass
         # Generic message: never reveal which workspace owns the colliding ID.
         return jsonify(ok=False, error="Project ID already exists"), 409
-    drive_prov = {"ok": True, "skipped": True, "reason": "no_drive_folder", "created": 0, "existing": 0, "errors": []}
+    drive_prov = {
+        "ok": True,
+        "skipped": True,
+        "reason": "no_drive_folder",
+        "drive_folder_id": drv_id or "",
+        "drive_provisioning_background": False,
+        "created": 0,
+        "existing": 0,
+        "errors": [],
+    }
     has_master_root = bool(db.get_master_drive_root_id()) if hasattr(db, "get_master_drive_root_id") else False
+    sync_provisioning = bool(data.get("sync_provisioning", False))
     if drv_id or has_master_root:
         try:
-            drive_prov = drive_routing.provision_project_drive_structure(pid)
+            drive_prov = drive_routing.provision_new_project_drive_tree(
+                pid, background=not sync_provisioning
+            )
         except Exception as err:
-            drive_prov = {"ok": False, "skipped": False, "created": 0, "existing": 0, "errors": [str(err)]}
-    return jsonify(ok=True, drive_provision=drive_prov)
+            drive_prov = {
+                "ok": False,
+                "skipped": False,
+                "drive_folder_id": drv_id or "",
+                "drive_provisioning_background": False,
+                "created": 0,
+                "existing": 0,
+                "errors": [str(err)],
+            }
+    return jsonify(
+        ok=True,
+        drive_folder_id=drive_prov.get("drive_folder_id") or drv_id or "",
+        drive_provisioning_background=bool(drive_prov.get("drive_provisioning_background", False)),
+        drive_provision=drive_prov,
+    )
 
 
 @projects_bp.route("/api/projects/<pid>/init-drive-folders", methods=["POST"])

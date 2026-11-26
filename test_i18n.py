@@ -962,6 +962,25 @@ class TestI18nFix03CompactTopbar(unittest.TestCase):
         self.assertEqual(i18n.get_client_dict("en")["drive.badge_file"], "File")
         self.assertEqual(i18n.get_client_dict("ar")["drive.badge_file"], "ملف")
 
+    def test_common_add_and_all_html_render_static_t_keys_covered(self):
+        import pathlib
+        import re
+
+        self.assertEqual(i18n.t("common.add", "en"), "Add")
+        self.assertEqual(i18n.t("common.add", "ar"), "إضافة")
+        self.assertEqual(i18n.get_client_dict("en")["common.add"], "Add")
+        self.assertEqual(i18n.get_client_dict("ar")["common.add"], "إضافة")
+
+        html_src = pathlib.Path("html_render.py").read_text(encoding="utf-8")
+        static_keys = sorted(set(re.findall(r"""\bt\(\s*['"]([a-zA-Z0-9_.-]+)['"]\s*[,)]""", html_src)))
+        self.assertGreater(len(static_keys), 500)
+        en_dict = i18n.TRANSLATIONS["en"]
+        ar_dict = i18n.TRANSLATIONS["ar"]
+        missing_en = [k for k in static_keys if k not in en_dict]
+        missing_ar = [k for k in static_keys if k not in ar_dict]
+        self.assertEqual(missing_en, [], f"Missing EN translations for static keys: {missing_en}")
+        self.assertEqual(missing_ar, [], f"Missing AR translations for static keys: {missing_ar}")
+
 
 if __name__ == "__main__":
     unittest.main()

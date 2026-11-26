@@ -1126,5 +1126,116 @@ const api = vm.runInNewContext(
             )
 
 
+class TestFastBackgroundProjectCreation(unittest.TestCase):
+    """Regression coverage for DRIVE-PERF-I18N-FIX-06: fast project creation + background subfolder provisioning."""
+
+    def test_post_create_project_provisions_root_sync_and_subfolders_in_background(self):
+        drive = ThreadSafeFakeDrive({"MasterRoot": {}})
+        master_root_id = drive.id_of("MasterRoot")
+
+        projects = {}
+        doc_types = {}
+
+        def _create_project(pid, name, code, creator="", workspace_id="ENG", client="", **kw):
+            projects[pid] = {
+                "id": pid,
+                "name": name,
+                "code": code,
+                "workspace_id": workspace_id,
+                "client": client,
+                "drive_folder_id": kw.get("drive_folder_id", ""),
+            }
+            doc_types[pid] = [
+                {"id": "SD", "code": "SD", "name": "Shop Drawing", "has_reply_cycle": True, "drive_slot_folders": {}},
+                {"id": "IR", "code": "IR", "name": "Inspection Request", "has_reply_cycle": True, "drive_slot_folders": {}},
+            ]
+
+        def _get_project(pid):
+            return copy.deepcopy(projects.get(pid))
+
+        def _update_project_settings(pid, patch_dict):
+            if pid in projects:
+                projects[pid].update(patch_dict)
+
+        def _get_doc_types(pid):
+            return copy.deepcopy(doc_types.get(pid, []))
+
+        def _set_dt_cache(pid, dt_id, patch_dict):
+            for dt in doc_types.get(pid, []):
+                if dt["id"] == dt_id:
+                    dt.update(patch_dict)
+
+        service_calls = []
+
+        class _ThreadLocalDriveWrapper:
+            def __init__(self, inner):
+                self.inner = inner
+                self.thread_id = threading.get_ident()
+
+            def files(self):
+                return self.inner.files()
+
+        def _make_service():
+            wrapper = _ThreadLocalDriveWrapper(drive)
+            service_calls.append(wrapper)
+            return wrapper
+
+        super_user = {"username": "admin", "role": "superadmin"}
+        client = app_mod.app.test_client()
+        client.set_cookie("dcr_token", "synthetic-test-token")
+        ajax_headers = {"X-Requested-With": "XMLHttpRequest"}
+
+        with patch.object(drive_routing, "_service_provider", _make_service), \
+             patch("db.get_session", return_value=super_user), \
+             patch("db.get_master_drive_root_id", return_value=master_root_id), \
+             patch("db.create_project", side_effect=_create_project), \
+             patch("db.get_project", side_effect=_get_project), \
+             patch("db.update_project_settings", side_effect=_update_project_settings), \
+             patch("db.get_workspace", return_value={"id": "ENG", "code": "ENG", "name": "Engineering", "drive_folder_id": ""}), \
+             patch("db.update_workspace", return_value=None), \
+             patch("db.get_doc_types", side_effect=_get_doc_types), \
+             patch("db.get_lists", return_value={}), \
+             patch("db.set_doc_type_drive_cache", side_effect=_set_dt_cache):
+            resp = client.post(
+                "/api/projects/create",
+                headers=ajax_headers,
+                json={
+                    "id": "FAST01",
+                    "name": "Fast Plant",
+                    "code": "FP01",
+                    "workspace_id": "ENG",
+                    "drive_folder_id": "",
+                },
+            )
+            self.assertEqual(resp.status_code, 200)
+            payload = resp.get_json()
+            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["drive_folder_id"])
+            self.assertTrue(payload["drive_provisioning_background"])
+            self.assertTrue(payload["drive_provision"]["drive_provisioning_background"])
+            self.assertFalse(payload["drive_provision"]["skipped"])
+            self.assertEqual(projects["FAST01"]["drive_folder_id"], payload["drive_folder_id"])
+            self.assertTrue(projects["FAST01"].get("auto_provisioned_drive"))
+
+            # Wait deterministically for the background daemon thread to complete
+            drive_routing.wait_for_background_provisioning(timeout=5.0)
+
+        # Must have built at least 2 distinct service instances: foreground thread + background thread
+        self.assertGreaterEqual(len(service_calls), 2)
+        self.assertNotEqual(service_calls[0].thread_id, service_calls[1].thread_id)
+        self.assertIsNot(service_calls[0], service_calls[1])
+
+        # Verify DocType + Submit/Replied subfolders were created in background
+        proj_fid = payload["drive_folder_id"]
+        sd_folder = drive.child_by_name(proj_fid, "SD - Shop Drawing")
+        self.assertIsNotNone(sd_folder)
+        self.assertIsNotNone(drive.child_by_name(sd_folder["id"], "Submit"))
+        self.assertIsNotNone(drive.child_by_name(sd_folder["id"], "Replied"))
+        ir_folder = drive.child_by_name(proj_fid, "IR - Inspection Request")
+        self.assertIsNotNone(ir_folder)
+        self.assertIsNotNone(drive.child_by_name(ir_folder["id"], "Submit"))
+        self.assertIsNotNone(drive.child_by_name(ir_folder["id"], "Replied"))
+
+
 if __name__ == "__main__":
     unittest.main()

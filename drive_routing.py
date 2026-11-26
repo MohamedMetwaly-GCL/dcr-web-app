@@ -11,7 +11,10 @@ Design rules
 """
 import re
 import datetime
+import logging
 import threading
+
+logger = logging.getLogger(__name__)
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 DELETED_ARCHIVE_FOLDER_NAME = "_DCR_Deleted"
@@ -1447,6 +1450,131 @@ def provision_project_drive_structure(project_id, only_doc_type_id=None, only_su
         "created": created_total,
         "existing": existing_total,
         "errors": errors,
+    }
+
+
+_bg_provision_lock = threading.Lock()
+_bg_provision_threads = []
+
+
+def wait_for_background_provisioning(timeout=5.0):
+    """Join any active background Drive provisioning threads (primarily for deterministic tests)."""
+    with _bg_provision_lock:
+        threads = [t for t in _bg_provision_threads if t.is_alive()]
+    for t in threads:
+        t.join(timeout=timeout)
+    with _bg_provision_lock:
+        _bg_provision_threads[:] = [t for t in _bg_provision_threads if t.is_alive()]
+
+
+def provision_new_project_drive_tree(project_id, background=True, service=None, store=None):
+    """Fast-path Drive provisioning for newly created projects.
+
+    Synchronously ensures only `<Master Root>/<Workspace>/<Project>` (1-2 API calls)
+    so `drive_folder_id` is persisted and returned immediately. When `background=True`,
+    all DocType + Submit/Replied subfolder provisioning runs in a daemon thread with
+    its own fresh Drive service instance (`get_default_write_service()`).
+    """
+    if store is None:
+        import db as store
+
+    try:
+        project = store.get_project(project_id) if hasattr(store, "get_project") else None
+    except Exception:
+        project = None
+    if not isinstance(project, dict) or not project:
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "no_drive_folder",
+            "drive_folder_id": "",
+            "drive_provisioning_background": False,
+            "created": 0,
+            "existing": 0,
+            "errors": [],
+        }
+
+    root_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    folder_created = False
+    svc = service
+
+    if not root_id:
+        master_root_id = _get_master_root_id_from_store(store)
+        if not master_root_id:
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "no_drive_folder",
+                "drive_folder_id": "",
+                "drive_provisioning_background": False,
+                "created": 0,
+                "existing": 0,
+                "errors": [],
+            }
+        if svc is None:
+            svc = get_default_write_service()
+        if svc is None:
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "drive_not_configured",
+                "drive_folder_id": "",
+                "drive_provisioning_background": False,
+                "created": 0,
+                "existing": 0,
+                "errors": [],
+            }
+        root_id, folder_created, _ = _ensure_project_drive_folder_detail(
+            svc, project_id, ws_id=project.get("workspace_id"), store=store
+        )
+        if not root_id:
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "no_drive_folder",
+                "drive_folder_id": "",
+                "drive_provisioning_background": False,
+                "created": 0,
+                "existing": 0,
+                "errors": [],
+            }
+
+    if not background:
+        res = provision_project_drive_structure(project_id, service=svc, store=store)
+        res["drive_provisioning_background"] = False
+        res.setdefault("drive_folder_id", root_id)
+        return res
+
+    # Thread-safety rule: never share the parent thread's Drive service across threads.
+    # Build a fresh Drive service instance inside the background daemon thread.
+    def _worker():
+        try:
+            bg_svc = get_default_write_service()
+            if bg_svc is None:
+                return
+            provision_project_drive_structure(project_id, service=bg_svc, store=store)
+        except Exception as exc:
+            logger.exception("Background Drive subfolder provisioning failed for project %s: %s", project_id, exc)
+
+    t = threading.Thread(
+        target=_worker,
+        name=f"drive-prov-{project_id}",
+        daemon=True,
+    )
+    with _bg_provision_lock:
+        _bg_provision_threads[:] = [th for th in _bg_provision_threads if th.is_alive()]
+        _bg_provision_threads.append(t)
+    t.start()
+
+    return {
+        "ok": True,
+        "skipped": False,
+        "project_id": project_id,
+        "drive_folder_id": root_id,
+        "drive_provisioning_background": True,
+        "created": 1 if folder_created else 0,
+        "existing": 0 if folder_created else 1,
+        "errors": [],
     }
 
 
