@@ -1,7 +1,5 @@
 import os
 import re
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
 from attachments import classify_path_kind
 
 # ==========================================
@@ -16,6 +14,8 @@ def get_drive_service():
     Falls back to local service_account.json file (for Local Development).
     """
     import json
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
     env_creds = os.environ.get('GOOGLE_CREDENTIALS_JSON')
     
     if env_creds:
@@ -57,28 +57,27 @@ def extract_doc_no(name):
 
 def get_item_priority(full_path, mime_type):
     """
-    Priority Logic (lower = Higher priority):
+    Priority Logic (lower = Higher priority), inspecting directory segments ONLY (excluding basename):
     For NOC 4-Part structure: Part D > Part C > Part B > Part A
     For Dual-slot structure: Reply Folder (1) > Reply File (2) > Submit Folder (3) > Submit File (4)
     """
-    path_lower = full_path.lower()
     is_folder = (mime_type == 'application/vnd.google-apps.folder')
+    kind = classify_path_kind(full_path)
 
-    m = re.search(r'\bpart[\s_-]*([abcd])\b', path_lower)
-    if m:
-        part_letter = m.group(1)
+    if kind in ("part_a", "part_b", "part_c", "part_d"):
+        part_letter = kind.split("_")[-1]
         part_rank = {'d': 1, 'c': 3, 'b': 5, 'a': 7}.get(part_letter, 7)
         return part_rank if is_folder else (part_rank + 1)
 
-    if re.search(r'\b(reply|replied|approval|approved)\b', path_lower):
+    if kind == 'approval':
         return 1 if is_folder else 2
-    elif re.search(r'\b(submit|submission)\b', path_lower):
+    if kind == 'submission':
         return 3 if is_folder else 4
 
     # If neither, treat as lowest priority
     return 9
 
-def process_drive_folder(folder_id, root_folder_name="Root"):
+def process_drive_folder(folder_id, root_folder_name="Root", project_id=None):
     """
     Scans a Google Drive folder recursively using Batched BFS to avoid rate limits,
     builds the full path for each item, applies Priority Logic, and updates the DB.
@@ -110,7 +109,9 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
                 q=query,
                 fields="nextPageToken, files(id, name, mimeType, parents, webViewLink)",
                 pageSize=1000,
-                pageToken=page_token
+                pageToken=page_token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
             ).execute()
             
             items = results.get('files', [])
@@ -119,6 +120,10 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
                 # Identify which folder in our batch is the parent of this item
                 parent_id = next((p for p in item.get('parents', []) if p in path_map), None)
                 if not parent_id: continue
+
+                # Skip _DCR_Deleted archive folders/items before traversal or doc_no extraction
+                if str(item.get('name') or '').strip().lower() == '_dcr_deleted':
+                    continue
                 
                 # Build the Full Path
                 item_full_path = f"{path_map[parent_id]} / {item['name']}"
@@ -164,23 +169,28 @@ def process_drive_folder(folder_id, root_folder_name="Root"):
             if not page_token:
                 break
                 
-    # Update Database with the strongest links found
+    # Update Database with the strongest links found, strictly scoped to the folder's project(s)
     if doc_map:
         import db
-        for doc_no, data in doc_map.items():
-            sync_links = {k: v['link'] for k, v in slot_map.get(doc_no, {}).items()}
-            for part_slot, rev_dict in part_rev_map.get(doc_no, {}).items():
-                ordered_revs = sorted(rev_dict.values(), key=lambda x: (-x['rev'], x['priority']))
-                if ordered_revs:
-                    top_entry = dict(ordered_revs[0])
-                    top_entry.pop('priority', None)
-                    if len(ordered_revs) > 1:
-                        top_entry['history'] = [
-                            {k: v for k, v in older.items() if k != 'priority'}
-                            for older in ordered_revs[1:]
-                        ]
-                    sync_links[part_slot] = top_entry
-            db.update_record_link(doc_no, data['link'], sync_links)
+        if project_id and str(project_id).strip():
+            target_pids = [str(project_id).strip()]
+        else:
+            target_pids = db.get_project_ids_for_drive_folder(folder_id)
+        for pid in target_pids:
+            for doc_no, data in doc_map.items():
+                sync_links = {k: v['link'] for k, v in slot_map.get(doc_no, {}).items()}
+                for part_slot, rev_dict in part_rev_map.get(doc_no, {}).items():
+                    ordered_revs = sorted(rev_dict.values(), key=lambda x: (-x['rev'], x['priority']))
+                    if ordered_revs:
+                        top_entry = dict(ordered_revs[0])
+                        top_entry.pop('priority', None)
+                        if len(ordered_revs) > 1:
+                            top_entry['history'] = [
+                                {k: v for k, v in older.items() if k != 'priority'}
+                                for older in ordered_revs[1:]
+                            ]
+                        sync_links[part_slot] = top_entry
+                db.update_record_link(doc_no, data['link'], sync_links, project_id=pid)
 
 # ==========================================
 # 3. Webhook Registration (Run once per folder)
@@ -213,6 +223,8 @@ def get_drive_write_service():
     Drive calls (done in drive_routing.py).
     """
     import json
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
     env_creds = os.environ.get('GOOGLE_CREDENTIALS_JSON')
     try:
         if env_creds:

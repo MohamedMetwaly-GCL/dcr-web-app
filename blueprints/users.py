@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request
 import re
 
 import db
+import drive_routing
 from auth import (
     current_user,
     require_superadmin,
@@ -442,13 +443,33 @@ def api_workspaces():
                 return jsonify(error="Department Code/ID and Name are required"), 400
                 
             db.create_workspace(ws_id, code, name, name_ar, icon, ws_type, sort_order, description=description)
+            ws_drive_folder_id = ""
+            try:
+                ws_drive_folder_id = drive_routing.ensure_workspace_drive_folder(None, ws_id, ws_name=name)
+            except Exception:
+                ws_drive_folder_id = ""
+            drive_provisioned = []
+            try:
+                ws_projects = db.get_projects(workspace_id=ws_id) or []
+                for p in ws_projects:
+                    p_id = str((p or {}).get("id") or "").strip()
+                    if not p_id:
+                        continue
+                    if not (db.get_doc_types(p_id) or []):
+                        db._seed_project(p_id, ws_id)
+                    prov = drive_routing.provision_project_drive_structure(p_id)
+                    if not prov.get("skipped"):
+                        drive_provisioned.append(prov)
+            except Exception:
+                pass
             db.log_action(u["username"], "WORKSPACE_CREATE" if action == "add" else "WORKSPACE_UPDATE", detail=f"Managed workspace {ws_id} ({name})")
-            return jsonify(ok=True)
+            return jsonify(ok=True, drive_folder_id=ws_drive_folder_id, drive_provisioned=drive_provisioned)
             
         elif action == "update":
             ws_id = str(data.get("id") or "").strip().upper()
             if not ws_id:
                 return jsonify(error="Department ID is required"), 400
+            old_ws = db.get_workspace(ws_id) if hasattr(db, "get_workspace") else None
             code = str(data.get("code") or "").strip().upper() if data.get("code") else None
             name = str(data.get("name") or "").strip() if data.get("name") else None
             name_ar = str(data.get("name_ar") or "").strip() if data.get("name_ar") is not None else None
@@ -460,8 +481,14 @@ def api_workspaces():
                 except: pass
             is_active = data.get("is_active")
             db.update_workspace(ws_id, code=code, name=name, name_ar=name_ar, icon=icon, sort_order=sort_order, is_active=is_active, description=description)
+            drive_rename = {"ok": True, "skipped": True, "renamed": False}
+            if name and (not old_ws or str(old_ws.get("name") or "").strip() != name):
+                try:
+                    drive_rename = drive_routing.rename_workspace_drive_folder(None, ws_id, name)
+                except Exception:
+                    drive_rename = {"ok": False, "skipped": False, "renamed": False}
             db.log_action(u["username"], "WORKSPACE_UPDATE", detail=f"Updated workspace {ws_id} ({name or ''})")
-            return jsonify(ok=True)
+            return jsonify(ok=True, drive_rename=drive_rename)
             
         return jsonify(error="Unknown action"), 400
 
@@ -499,3 +526,65 @@ def api_change_own_pw():
     db.change_pw(u["username"], pw)
     db.log_action(u["username"], "PASSWORD_CHANGE", detail="User changed own password")
     return jsonify(ok=True)
+
+
+@users_bp.route("/api/admin/drive-master-root", methods=["GET", "POST"])
+@require_admin
+def api_admin_drive_master_root():
+    u = current_user() or {"username": "admin"}
+    if request.method == "GET":
+        info = db.get_master_drive_root_info()
+        return jsonify(ok=True, master_root_id=info["master_root_id"], source=info["source"])
+
+    body = request.get_json(silent=True) or {}
+    raw_val = body.get("master_root_id") if "master_root_id" in body else body.get("folder_id", "")
+    clean_id = drive_routing.extract_drive_folder_id(raw_val)
+    if str(raw_val or "").strip() and not clean_id:
+        return jsonify(ok=False, error="Invalid Google Drive folder ID or URL"), 400
+    saved_id = db.set_master_drive_root_id(clean_id)
+    db.log_action(
+        u.get("username", "admin"),
+        "DRIVE_MASTER_ROOT_UPDATE",
+        detail=f"Updated global Master Drive Root Folder ID to '{saved_id or '(cleared)'}'",
+    )
+    info = db.get_master_drive_root_info()
+    resp = {"ok": True, "master_root_id": info["master_root_id"], "source": info["source"]}
+    if body.get("auto_provision") and info["master_root_id"]:
+        try:
+            resp["provision"] = drive_routing.provision_all_workspaces_and_projects()
+        except Exception as err:
+            resp["provision"] = {"ok": False, "errors": [str(err)]}
+    return jsonify(resp)
+
+
+@users_bp.route("/api/admin/init-all-drive-folders", methods=["POST"])
+@require_admin
+def api_admin_init_all_drive_folders():
+    u = current_user() or {"username": "admin"}
+    res = drive_routing.provision_all_workspaces_and_projects()
+    if res.get("skipped") and res.get("reason") == "no_master_root":
+        return jsonify(
+            ok=False,
+            error="Master Drive Root Folder ID is not configured",
+            **{k: v for k, v in res.items() if k != "ok"},
+        ), 400
+    if res.get("skipped") and res.get("reason") == "drive_not_configured":
+        return jsonify(
+            ok=False,
+            error="Google Drive credentials are not configured",
+            **{k: v for k, v in res.items() if k != "ok"},
+        ), 503
+    try:
+        db.log_action(
+            u.get("username", "admin"),
+            "DRIVE_INIT_ALL",
+            detail=(
+                f"Initialized all Drive folders: workspaces({res.get('workspaces_created', 0)} new/"
+                f"{res.get('workspaces_existing', 0)} existing), projects({res.get('projects_created', 0)} new/"
+                f"{res.get('projects_existing', 0)} existing), folders({res.get('folders_created', 0)} new/"
+                f"{res.get('folders_existing', 0)} existing)"
+            ),
+        )
+    except Exception:
+        pass
+    return jsonify(res)

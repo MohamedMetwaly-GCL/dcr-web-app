@@ -4,7 +4,7 @@ Endpoints:
   POST /api/drive/upload-session   -- authorize upload, resolve Drive folder, create resumable session
   POST /api/drive/upload-chunk     -- optional chunk-proxy fallback (<=16 MB per chunk, zero full buffering)
   POST /api/drive/upload-complete  -- verify uploaded file on Drive, attach to record, write Audit Log
-  DELETE /api/drive/attachment/<record_id>/<slot> -- unlink attachment and move old Drive file/folder to Trash
+  DELETE /api/drive/attachment/<record_id>/<slot> -- unlink attachment (mode=archive|unlink|trash)
 """
 import logging
 import os
@@ -98,6 +98,47 @@ def sanitize_upload_filename(raw_name):
     return name, ""
 
 
+VALID_DELETE_MODES = ("archive", "unlink", "trash")
+
+
+def _resolve_entry_drive_target(entry):
+    """Extract `(item_id, is_folder)` from an attachment entry, including `drive_sync` URLs."""
+    if not isinstance(entry, dict):
+        return "", False
+    folder_id = str(entry.get("folder_id") or "").strip()
+    if folder_id:
+        return folder_id, True
+    file_id = str(entry.get("file_id") or "").strip()
+    if file_id:
+        return file_id, bool(entry.get("is_folder"))
+    url = str(entry.get("url") or entry.get("folder_url") or "").strip()
+    if not url:
+        return "", bool(entry.get("is_folder"))
+    m = re.search(r"/folders/([a-zA-Z0-9_-]+)", url)
+    if m:
+        return m.group(1), True
+    m = re.search(r"/file/d/([a-zA-Z0-9_-]+)", url)
+    if m:
+        return m.group(1), False
+    m = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url)
+    if m:
+        return m.group(1), bool(entry.get("is_folder"))
+    return "", bool(entry.get("is_folder"))
+
+
+def _get_project_drive_root_id(project_id):
+    """Resolve the Google Drive root folder ID for `project_id`, or empty string if unconfigured."""
+    if not project_id:
+        return ""
+    try:
+        proj = db.get_project(project_id)
+        if isinstance(proj, dict):
+            return drive_routing.extract_drive_folder_id(proj.get("drive_folder_id"))
+    except Exception:
+        pass
+    return ""
+
+
 def _collect_protected_ids(entry):
     """Collect Drive file/folder IDs belonging to an attachment entry or its archived history."""
     ids = set()
@@ -107,6 +148,9 @@ def _collect_protected_ids(entry):
         val = str(entry.get(key) or "").strip()
         if val:
             ids.add(val)
+    target_id, _ = _resolve_entry_drive_target(entry)
+    if target_id:
+        ids.add(target_id)
     for f in (entry.get("files") or []):
         if isinstance(f, dict):
             fid = str(f.get("id") or f.get("file_id") or "").strip()
@@ -160,11 +204,243 @@ def _trash_old_attachment(entry, exclude_id="", files_only=False, exclude_ids=No
                 except Exception:
                     pass
             return
-        target_id = str(entry.get("folder_id") or entry.get("file_id") or "").strip()
+        target_id, _ = _resolve_entry_drive_target(entry)
         if target_id and target_id not in protected:
             drive_upload.trash_file(token, target_id, http=http)
     except Exception as e:
         logger.warning("Could not move old Drive attachment to trash: %s", e)
+
+
+def _format_drive_error_warning(err, action_label="modify"):
+    """Build a user-safe warning message when a Drive move/trash fails (especially 403/404)."""
+    status = getattr(err, "status", None)
+    if status == 403:
+        return (
+            f"Attachment was unlinked from DCR, but Google Drive denied permission (HTTP 403) "
+            f"to {action_label} the item."
+        )
+    if status == 404:
+        return (
+            "Attachment was unlinked from DCR; the file or folder was already missing or moved "
+            "on Google Drive (HTTP 404)."
+        )
+    return f"Attachment was unlinked from DCR, but Google Drive {action_label} failed: {err}"
+
+
+def _dispose_drive_attachment(
+    entry,
+    mode="archive",
+    project_id="",
+    exclude_record_id="",
+    exclude_id="",
+    files_only=False,
+    exclude_ids=None,
+    trash_child_folders_under=None,
+    exclude_folder_ids=None,
+    check_shared=True,
+    fallback_to_trash=False,
+):
+    """Dispose of an attachment's Drive object(s) according to `mode` (`archive` | `unlink` | `trash`).
+
+    Never raises on Drive 403/404 or transient errors: callers always finish the DCR DB unlink
+    and surface `drive_warning`, `shared_reference_preserved`, or `sync_relink_warning`.
+    """
+    mode = str(mode or "archive").strip().lower()
+    if mode not in VALID_DELETE_MODES:
+        mode = "archive"
+    res = {
+        "mode_requested": mode,
+        "mode_applied": mode,
+        "drive_action": "none",
+        "shared_reference_preserved": False,
+        "sync_relink_warning": False,
+        "drive_warning": "",
+    }
+    if not isinstance(entry, dict):
+        return res
+
+    is_sync_entry = (str(entry.get("source") or "").strip().lower() == "drive_sync")
+    if mode == "unlink":
+        res["drive_action"] = "unlinked"
+        if is_sync_entry:
+            res["sync_relink_warning"] = True
+        return res
+
+    if entry.get("legacy"):
+        res["drive_action"] = "unlinked"
+        return res
+
+    protected = set(str(x).strip() for x in (exclude_ids or ()) if x)
+    if exclude_id:
+        protected.add(str(exclude_id).strip())
+    for h in (entry.get("history") or []):
+        protected.update(_collect_protected_ids(h))
+
+    if not files_only:
+        target_id, _ = _resolve_entry_drive_target(entry)
+        target_url = attachments._clean_link(entry.get("url") or entry.get("folder_url"))
+        if not target_id or target_id in protected:
+            return res
+        if check_shared and project_id:
+            try:
+                other_refs = db.count_other_records_referencing_drive_item(
+                    project_id, exclude_record_id, item_id=target_id, url=target_url
+                )
+            except Exception:
+                other_refs = 0
+            if other_refs > 0:
+                res["mode_applied"] = "unlink"
+                res["drive_action"] = "skipped"
+                res["shared_reference_preserved"] = True
+                res["drive_warning"] = (
+                    "This Drive item is still referenced by another DCR record, so it was "
+                    "unlinked from this record only and preserved on Google Drive."
+                )
+                return res
+    else:
+        target_id = ""
+
+    http = _get_http()
+    if getattr(http, "patch", None) is None:
+        return res
+
+    try:
+        token = _get_token()
+    except Exception as e:
+        logger.warning("Could not obtain Drive token for attachment disposal: %s", e)
+        res["drive_action"] = "warning"
+        res["drive_warning"] = _format_drive_error_warning(e, action_label=mode)
+        return res
+
+    if mode == "archive":
+        root_id = _get_project_drive_root_id(project_id)
+        if not root_id:
+            if fallback_to_trash:
+                _trash_old_attachment(
+                    entry,
+                    exclude_id=exclude_id,
+                    files_only=files_only,
+                    exclude_ids=exclude_ids,
+                    trash_child_folders_under=trash_child_folders_under,
+                    exclude_folder_ids=exclude_folder_ids,
+                )
+                res["mode_applied"] = "trash"
+                res["drive_action"] = "trashed"
+                return res
+            res["mode_applied"] = "unlink"
+            res["drive_action"] = "warning"
+            res["drive_warning"] = (
+                "Project has no Google Drive root folder configured; attachment was unlinked "
+                "from DCR only."
+            )
+            return res
+
+        service = drive_upload.RestDriveAdapter(token, http=http)
+        warnings = []
+        archived_any = False
+
+        if files_only and isinstance(entry.get("files"), list):
+            has_nested = any(isinstance(f, dict) and f.get("subfolder") for f in entry["files"])
+            for f in entry["files"]:
+                if not isinstance(f, dict):
+                    continue
+                fid = str(f.get("id") or f.get("file_id") or "").strip()
+                if not fid or fid in protected:
+                    continue
+                try:
+                    drive_routing.archive_drive_item(service, root_id, fid, original_name=f.get("name"))
+                    archived_any = True
+                except drive_upload.DriveUploadError as e:
+                    warnings.append(_format_drive_error_warning(e, action_label="archive"))
+                except Exception as e:
+                    warnings.append(_format_drive_error_warning(e, action_label="archive"))
+            if trash_child_folders_under and has_nested:
+                keep_folders = set(str(x).strip() for x in (exclude_folder_ids or ()) if x)
+                keep_folders.update(protected)
+                try:
+                    for child in drive_routing.list_child_folders(service, trash_child_folders_under):
+                        cid = str(child.get("id") or "").strip()
+                        if cid and cid not in keep_folders:
+                            try:
+                                drive_routing.archive_drive_item(
+                                    service, root_id, cid, original_name=child.get("name")
+                                )
+                                archived_any = True
+                            except Exception as e:
+                                warnings.append(_format_drive_error_warning(e, action_label="archive"))
+                    drive_routing.invalidate_subfolder_caches(trash_child_folders_under)
+                except Exception as e:
+                    warnings.append(_format_drive_error_warning(e, action_label="archive"))
+        else:
+            orig_name = entry.get("folder_name") or entry.get("file_name") or None
+            try:
+                drive_routing.archive_drive_item(service, root_id, target_id, original_name=orig_name)
+                archived_any = True
+            except drive_upload.DriveUploadError as e:
+                logger.warning("Drive archive failed for %s: %s", target_id, e)
+                warnings.append(_format_drive_error_warning(e, action_label="archive"))
+            except Exception as e:
+                logger.warning("Drive archive failed for %s: %s", target_id, e)
+                warnings.append(_format_drive_error_warning(e, action_label="archive"))
+
+        if warnings:
+            res["drive_warning"] = warnings[0]
+            res["drive_action"] = "warning" if not archived_any else "archived"
+        elif archived_any:
+            res["drive_action"] = "archived"
+        return res
+
+    # mode == "trash"
+    warnings = []
+    trashed_any = False
+    if files_only and isinstance(entry.get("files"), list):
+        has_nested = any(isinstance(f, dict) and f.get("subfolder") for f in entry["files"])
+        for f in entry["files"]:
+            if not isinstance(f, dict):
+                continue
+            fid = str(f.get("id") or f.get("file_id") or "").strip()
+            if not fid or fid in protected:
+                continue
+            try:
+                drive_upload.trash_file(token, fid, http=http)
+                trashed_any = True
+            except drive_upload.DriveUploadError as e:
+                warnings.append(_format_drive_error_warning(e, action_label="trash"))
+            except Exception as e:
+                warnings.append(_format_drive_error_warning(e, action_label="trash"))
+        if trash_child_folders_under and has_nested:
+            keep_folders = set(str(x).strip() for x in (exclude_folder_ids or ()) if x)
+            keep_folders.update(protected)
+            try:
+                service = drive_upload.RestDriveAdapter(token, http=http)
+                for child in drive_routing.list_child_folders(service, trash_child_folders_under):
+                    cid = str(child.get("id") or "").strip()
+                    if cid and cid not in keep_folders:
+                        try:
+                            drive_upload.trash_file(token, cid, http=http)
+                            trashed_any = True
+                        except Exception as e:
+                            warnings.append(_format_drive_error_warning(e, action_label="trash"))
+                drive_routing.invalidate_subfolder_caches(trash_child_folders_under)
+            except Exception as e:
+                warnings.append(_format_drive_error_warning(e, action_label="trash"))
+    else:
+        try:
+            drive_upload.trash_file(token, target_id, http=http)
+            trashed_any = True
+        except drive_upload.DriveUploadError as e:
+            logger.warning("Drive trash failed for %s: %s", target_id, e)
+            warnings.append(_format_drive_error_warning(e, action_label="trash"))
+        except Exception as e:
+            logger.warning("Drive trash failed for %s: %s", target_id, e)
+            warnings.append(_format_drive_error_warning(e, action_label="trash"))
+
+    if warnings:
+        res["drive_warning"] = warnings[0]
+        res["drive_action"] = "warning" if not trashed_any else "trashed"
+    elif trashed_any:
+        res["drive_action"] = "trashed"
+    return res
 
 
 def _check_write_access(pid, dt_id):
@@ -219,16 +495,13 @@ def api_create_upload_session():
     if slot in attachments.NOC_SLOTS and ws_id != "ENG":
         return jsonify(error="NOC slots are only available in the Engineering & Projects workspace"), 400
     dt_meta = db.get_doc_type(pid, dt_id) or {}
-    if ws_id == "HSE":
-        has_cycle = attachments.doc_type_allows_approval_slot(dt_meta, ws_id)
-        if slot == attachments.SLOT_APPROVAL and not has_cycle:
+    has_cycle = attachments.doc_type_allows_approval_slot(dt_meta, ws_id)
+    if slot == attachments.SLOT_APPROVAL and not has_cycle:
+        if ws_id == "HSE":
             return jsonify(error="Close-Out attachment slot is only available for PTW, OBS, SVP, INC, and JSA in HSE"), 400
-    else:
-        if slot == attachments.SLOT_APPROVAL and ws_id != "ENG":
-            return jsonify(error="Approval / NOC slots are only available in the Engineering & Projects workspace"), 400
-        has_cycle = attachments.doc_type_has_reply_cycle(dt_meta)
-        if (slot == attachments.SLOT_APPROVAL or slot in attachments.NOC_SLOTS) and not has_cycle:
-            return jsonify(error="This document type has no consultant reply cycle"), 400
+        return jsonify(error="This document type has no consultant reply cycle"), 400
+    if slot in attachments.NOC_SLOTS and not has_cycle:
+        return jsonify(error="This document type has no consultant reply cycle"), 400
 
     rec = None
     if record_id:
@@ -262,7 +535,7 @@ def api_create_upload_session():
         to_party = str(body.get("to_party") or ((rec.get("toParty") or rec.get("to")) if rec else "") or "").strip()
         party = str(body.get("party") or "").strip()
         doc_no = str(body.get("doc_no") or (rec.get("docNo") if rec else "") or clean_name or "").strip()
-        raw_subtype = body.get("subtype") or (rec.get("legacySubtype") if rec else "")
+        raw_subtype = body.get("subtype") or ((rec.get("legacySubtype") or rec.get("subtype")) if rec else "")
         from hse_defaults import normalize_ptw_subtype_value
         subtype = drive_routing.sanitize_drive_folder_segment(normalize_ptw_subtype_value(raw_subtype))
         dest_folder_id = str(body.get("destination_folder_id") or "").strip()
@@ -502,13 +775,18 @@ def api_upload_complete():
     else:
         if extra.get("is_folder"):
             if replace_existing and existing_slot:
-                # First file of a replacement folder upload: trash previous active files & obsolete subfolders
-                _trash_old_attachment(
+                # First file of a replacement folder upload: archive previous active files & obsolete subfolders
+                _dispose_drive_attachment(
                     existing_slot,
+                    mode="archive",
+                    project_id=pid,
+                    exclude_record_id=record_id,
                     exclude_id=file_id,
                     files_only=True,
                     trash_child_folders_under=extra.get("folder_id"),
                     exclude_folder_ids=t.get("ancestor_folder_ids") or (),
+                    check_shared=True,
+                    fallback_to_trash=True,
                 )
                 files_list = []
             elif same_active_folder:
@@ -535,7 +813,15 @@ def api_upload_complete():
         else:
             # Single-file upload replacing an existing attachment in the same slot (active rev only)
             if existing_slot:
-                _trash_old_attachment(existing_slot, exclude_id=file_id)
+                _dispose_drive_attachment(
+                    existing_slot,
+                    mode="archive",
+                    project_id=pid,
+                    exclude_record_id=record_id,
+                    exclude_id=file_id,
+                    check_shared=True,
+                    fallback_to_trash=True,
+                )
 
         # Preserve active revision number and archived history across folder appends / active overwrites
         cur_rev = (
@@ -609,11 +895,25 @@ def api_upload_complete():
 
 @drive_uploads_bp.route("/api/drive/attachment/<record_id>/<slot>", methods=["DELETE"])
 def api_unlink_attachment(record_id, slot):
-    """Unlink an attachment slot (or specific ?rev=<n>) from a record and move its Drive object to Trash."""
+    """Unlink an attachment slot (or specific ?rev=<n>) from a record.
+
+    Supports `mode` via query param (`?mode=archive|unlink|trash`) or JSON body:
+      - `archive` (default): unlink from DCR DB and move Drive file/folder to `<Project Root>/_DCR_Deleted`.
+      - `unlink`: unlink from DCR DB only, leaving the Drive file/folder in place.
+      - `trash`: unlink from DCR DB and move Drive file/folder to Google Drive Trash.
+    """
     record_id = str(record_id or "").strip()
     slot = str(slot or "").strip().lower()
     if slot not in attachments.SLOTS:
         return jsonify(error=f"Invalid slot '{slot}'. Must be one of {attachments.SLOTS}."), 400
+
+    req_body = request.get_json(silent=True) or {}
+    raw_mode = request.args.get("mode")
+    if raw_mode is None or str(raw_mode).strip() == "":
+        raw_mode = req_body.get("mode") if isinstance(req_body, dict) else None
+    mode = str(raw_mode or "archive").strip().lower()
+    if mode not in VALID_DELETE_MODES:
+        return jsonify(error=f"Invalid mode '{mode}'. Must be one of {VALID_DELETE_MODES}."), 400
 
     rec = db.get_record_by_id(record_id)
     if not rec:
@@ -632,6 +932,58 @@ def api_unlink_attachment(record_id, slot):
     old_name = (existing or {}).get("file_name") or (existing or {}).get("url") or slot
     old_url = attachments._clean_link((existing or {}).get("url"))
 
+    def _audit_action_suffix(dres):
+        if dres.get("shared_reference_preserved"):
+            return "unlinked from DCR only (shared Drive reference preserved)"
+        applied = dres.get("mode_applied") or mode
+        if applied == "archive":
+            return "archived to _DCR_Deleted"
+        if applied == "trash":
+            return "moved to Google Drive Trash"
+        return "unlinked from DCR only"
+
+    def _build_delete_response(updated_att, file_loc, dres):
+        payload = {
+            "ok": True,
+            "record_id": record_id,
+            "slot": slot,
+            "mode": dres.get("mode_applied") or mode,
+            "drive_action": dres.get("drive_action") or "none",
+            "attachments": updated_att,
+            "fileLocation": file_loc,
+        }
+        if dres.get("shared_reference_preserved"):
+            payload["shared_reference_preserved"] = True
+        if dres.get("sync_relink_warning"):
+            payload["sync_relink_warning"] = True
+        if dres.get("drive_warning"):
+            payload["drive_warning"] = dres["drive_warning"]
+        return jsonify(payload)
+
+    def _merge_dispose(agg, item_res):
+        if not item_res:
+            return agg
+        if item_res.get("shared_reference_preserved"):
+            agg["shared_reference_preserved"] = True
+            agg["mode_applied"] = "unlink"
+        if item_res.get("sync_relink_warning"):
+            agg["sync_relink_warning"] = True
+        if item_res.get("drive_warning") and not agg.get("drive_warning"):
+            agg["drive_warning"] = item_res["drive_warning"]
+        if item_res.get("drive_action") in ("archived", "trashed", "unlinked", "skipped", "warning"):
+            if agg.get("drive_action") in (None, "none"):
+                agg["drive_action"] = item_res["drive_action"]
+        return agg
+
+    dispose_res = {
+        "mode_requested": mode,
+        "mode_applied": mode,
+        "drive_action": "none",
+        "shared_reference_preserved": False,
+        "sync_relink_warning": False,
+        "drive_warning": "",
+    }
+
     if req_rev_raw is not None and str(req_rev_raw).strip() != "" and isinstance(existing, dict):
         req_rev = attachments.parse_rev_number(req_rev_raw, -1)
         if req_rev != active_rev:
@@ -643,7 +995,14 @@ def api_unlink_attachment(record_id, slot):
             if not target_snap:
                 return jsonify(error=f"Revision {attachments.format_rev_label(req_rev)} not found"), 404
             active_protected = _collect_protected_ids(attachments.strip_entry_history(existing))
-            _trash_old_attachment(target_snap, exclude_ids=active_protected)
+            dispose_res = _dispose_drive_attachment(
+                target_snap,
+                mode=mode,
+                project_id=pid,
+                exclude_record_id=record_id,
+                exclude_ids=active_protected,
+                check_shared=True,
+            )
             new_hist = [h for h in raw_hist if not (isinstance(h, dict) and attachments.get_attachment_rev(h) == req_rev)]
             updated_slot = dict(existing)
             if new_hist:
@@ -660,18 +1019,25 @@ def api_unlink_attachment(record_id, slot):
                     field_name=f"attachments.{slot}",
                     old_value=f"{target_snap.get('rev_label') or ''} {target_snap.get('file_name') or ''}".strip(),
                     new_value="",
-                    detail=f"Removed archived {slot} revision REV{req_rev:02d} and moved to Google Drive Trash",
+                    detail=f"Removed archived {slot} revision REV{req_rev:02d} ({_audit_action_suffix(dispose_res)})",
                 )
             except Exception:
                 pass
-            return jsonify(ok=True, record_id=record_id, slot=slot, attachments=updated_att, fileLocation=rec.get("fileLocation", ""))
+            return _build_delete_response(updated_att, rec.get("fileLocation", ""), dispose_res)
 
     cur_loc = attachments._clean_link(rec.get("fileLocation"))
     next_loc = cur_loc
     if existing and not delete_all and isinstance(existing.get("history"), list) and existing.get("history"):
         promoted, removed = attachments.pop_active_revision(existing)
         if removed:
-            _trash_old_attachment(removed, exclude_ids=_collect_protected_ids(promoted))
+            dispose_res = _dispose_drive_attachment(
+                removed,
+                mode=mode,
+                project_id=pid,
+                exclude_record_id=record_id,
+                exclude_ids=_collect_protected_ids(promoted),
+                check_shared=True,
+            )
             old_name = removed.get("file_name") or removed.get("url") or old_name
         db.set_record_attachment(record_id, slot, promoted)
         updated_att = db.get_record_attachments(record_id)
@@ -681,15 +1047,38 @@ def api_unlink_attachment(record_id, slot):
                     WHERE id = %s RETURNING id""", (next_loc, record_id))
     else:
         if existing:
-            # If deleting everything (?all=1) and history exists, strip history so _trash_old_attachment removes active and optionally archived items
             if delete_all and isinstance(existing.get("history"), list):
                 for h in existing.get("history"):
                     if isinstance(h, dict):
-                        _trash_old_attachment(h)
+                        _merge_dispose(
+                            dispose_res,
+                            _dispose_drive_attachment(
+                                h,
+                                mode=mode,
+                                project_id=pid,
+                                exclude_record_id=record_id,
+                                check_shared=True,
+                            ),
+                        )
                 stripped = attachments.strip_entry_history(existing)
-                _trash_old_attachment(stripped)
+                _merge_dispose(
+                    dispose_res,
+                    _dispose_drive_attachment(
+                        stripped,
+                        mode=mode,
+                        project_id=pid,
+                        exclude_record_id=record_id,
+                        check_shared=True,
+                    ),
+                )
             else:
-                _trash_old_attachment(existing)
+                dispose_res = _dispose_drive_attachment(
+                    existing,
+                    mode=mode,
+                    project_id=pid,
+                    exclude_record_id=record_id,
+                    check_shared=True,
+                )
 
         db.clear_record_attachment(record_id, slot)
         updated_att = db.get_record_attachments(record_id)
@@ -717,15 +1106,9 @@ def api_unlink_attachment(record_id, slot):
             field_name=f"attachments.{slot}",
             old_value=str(old_name),
             new_value="",
-            detail=f"Removed {slot} attachment '{old_name}' and moved to Google Drive Trash",
+            detail=f"Removed {slot} attachment '{old_name}' ({_audit_action_suffix(dispose_res)})",
         )
     except Exception:
         pass
 
-    return jsonify(
-        ok=True,
-        record_id=record_id,
-        slot=slot,
-        attachments=updated_att,
-        fileLocation=next_loc,
-    )
+    return _build_delete_response(updated_att, next_loc, dispose_res)

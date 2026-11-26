@@ -257,23 +257,70 @@ def remove_attachment(data, slot):
 SYNC_SOURCE = "drive_sync"
 
 
-def classify_path_kind(full_path):
-    """'part_a'..'part_d' if path contains 'part a'..'part d',
-    'approval' if the Drive path contains 'reply' or 'replied' or 'approval',
-    'submission' if it contains 'submit' or 'submission' (strictly excluding 'submittal'),
-    else None (general document without a separate cycle folder).
+def _extract_dir_segments(full_path):
+    """Return clean directory path segments for `full_path`, excluding the item's own basename."""
+    raw = str(full_path or "").replace("\\", "/").strip()
+    if not raw:
+        return []
+    has_trailing_sep = raw.endswith("/")
+    parts = [seg.strip() for seg in raw.split("/")]
+    if has_trailing_sep:
+        return [seg for seg in parts if seg]
+    if len(parts) <= 1:
+        return []
+    return [seg for seg in parts[:-1] if seg]
 
-    Same precedence as drive_service.get_item_priority (part_d..part_a / reply wins over submit).
+
+_PART_DIR_RE = re.compile(r"(?:^|[^a-z0-9])part[\s_-]*([abcd])(?:$|[^a-z0-9])", re.IGNORECASE)
+_APPROVAL_DIR_RE = re.compile(r"(?:^|[^a-z0-9])(reply|replied|approval|approved)(?:$|[^a-z0-9])", re.IGNORECASE)
+_SUBMIT_DIR_RE = re.compile(r"(?:^|[^a-z0-9])(submit|submission)(?:$|[^a-z0-9])", re.IGNORECASE)
+
+
+def classify_path_kind(full_path):
+    """Classify a Drive path into `'part_a'..'part_d'`, `'approval'`, `'submission'`, or `None`.
+
+    Matches slot keywords strictly against **directory path segments** (excluding the file/item's
+    own basename), so a file such as `DS-001_For_Approval.pdf` inside `Submit/` is classified as
+    `'submission'` and never `'approval'`. Strictly excludes `'submittal'` from `'submit'`.
     """
-    p = (full_path or "").lower()
-    m = re.search(r"\bpart[\s_-]*([abcd])\b", p)
-    if m:
-        return "part_" + m.group(1)
-    if re.search(r"\b(reply|replied|approval|approved)\b", p):
-        return SLOT_APPROVAL
-    if re.search(r"\b(submit|submission)\b", p):
-        return SLOT_SUBMISSION
+    dir_segments = _extract_dir_segments(full_path)
+    if not dir_segments:
+        return None
+
+    # 1) NOC 4-part directory segments (deepest segment wins)
+    for seg in reversed(dir_segments):
+        m = _PART_DIR_RE.search(seg)
+        if m:
+            return "part_" + m.group(1).lower()
+
+    # 2) Dedicated slot directory segments (e.g. 'Submit', '01 - Replied') take precedence
+    #    over document-named child folders (e.g. 'DS-001 For Approval REV00').
+    for seg in reversed(dir_segments):
+        unindexed = re.sub(r"^\d+[\s._-]+", "", seg).strip().lower()
+        if unindexed in ("reply", "replied", "approval", "approved"):
+            return SLOT_APPROVAL
+        if unindexed in ("submit", "submission"):
+            return SLOT_SUBMISSION
+
+    # 3) General keyword matching on directory segments only (deepest segment wins)
+    for seg in reversed(dir_segments):
+        if _APPROVAL_DIR_RE.search(seg):
+            return SLOT_APPROVAL
+        if _SUBMIT_DIR_RE.search(seg):
+            return SLOT_SUBMISSION
     return None
+
+
+def _same_sync_target(entry_a, entry_b):
+    if not isinstance(entry_a, dict) or not isinstance(entry_b, dict):
+        return False
+    url_a = _clean_link(entry_a.get("url"))
+    url_b = _clean_link(entry_b.get("url"))
+    if url_a and url_b and url_a == url_b:
+        return True
+    fid_a = entry_a.get("file_id") or entry_a.get("folder_id") or extract_file_id(url_a)
+    fid_b = entry_b.get("file_id") or entry_b.get("folder_id") or extract_file_id(url_b)
+    return bool(fid_a and fid_b and fid_a == fid_b)
 
 
 def merge_sync_links(data, sync_links):
@@ -282,9 +329,11 @@ def merge_sync_links(data, sync_links):
     sync_links: {'submission': url|dict|None, ...}.
     Only slots that are empty OR previously created by sync (source == drive_sync)
     are written. Slots uploaded through DCR (no 'drive_sync' source) are never
-    overwritten. fileLocation is not touched here.
+    overwritten. `submission` and `approval` are merged independently without ever
+    writing a `Submit` URL into `approval`. fileLocation is not touched here.
     """
     new = copy.deepcopy(data) if isinstance(data, dict) else {}
+    prepared = {}
     for slot in SLOTS:
         raw_val = (sync_links or {}).get(slot)
         if isinstance(raw_val, dict):
@@ -299,34 +348,82 @@ def merge_sync_links(data, sync_links):
             if not url:
                 continue
             sync_entry = {"url": url, "source": SYNC_SOURCE}
+        prepared[slot] = sync_entry
+
+    # Guard: never allow a Submit URL to be written into approval
+    if SLOT_SUBMISSION in prepared and SLOT_APPROVAL in prepared:
+        if _same_sync_target(prepared[SLOT_SUBMISSION], prepared[SLOT_APPROVAL]):
+            prepared.pop(SLOT_APPROVAL, None)
+
+    for slot, sync_entry in prepared.items():
         att = new.get("attachments")
         existing = att.get(slot) if isinstance(att, dict) else None
         if isinstance(existing, dict) and existing.get("source") != SYNC_SOURCE:
             continue
         new = apply_attachment(new, slot, sync_entry)
+
+    # Self-heal: if approval holds a stale drive_sync copy of the exact same submission URL, clear approval
+    att_after = new.get("attachments") if isinstance(new.get("attachments"), dict) else {}
+    sub_after = att_after.get(SLOT_SUBMISSION)
+    app_after = att_after.get(SLOT_APPROVAL)
+    if (
+        isinstance(sub_after, dict)
+        and isinstance(app_after, dict)
+        and app_after.get("source") == SYNC_SOURCE
+        and SLOT_APPROVAL not in prepared
+        and _same_sync_target(sub_after, app_after)
+    ):
+        new = remove_attachment(new, SLOT_APPROVAL)
     return new
 
 
 # ---------------- Document types with / without a consultant reply cycle ----------------
-REPLY_CYCLE_CODES = {"SD", "DS", "MS", "IR", "MIR", "RFI", "NOC", "ABD", "WN", "NCN", "NCR", "EI", "SI", "CVI", "PCQ", "SVP"}
-_NO_CYCLE_NAME_HINTS = ("requisition", "purchase", "letter", "correspondence", "minutes", "mom",
-                        "daily report", "site log", "boq", "specs", "variation")
-_CYCLE_NAME_HINTS = ("shop drawing", "drawing", "material submittal", "submittal", "inspection request",
-                     "request for information", "notice of change", "as-built", "as built",
-                     "work notice", "work notification", "works notice", "non-conformance", "non conformance", "instruction")
+REPLY_CYCLE_CODES = frozenset({
+    "SD", "DS", "MS", "IR", "MIR", "RFI", "NOC", "ABD", "WN", "NCN", "NCR",
+    "EI", "SI", "CVI", "PCQ", "SVP", "PTW", "OBS", "INC", "JSA",
+})
+NO_REPLY_CYCLE_CODES = frozenset({
+    "PR", "LTR", "L", "LETTERS", "COR", "CORRESPONDENCE", "MOM", "IOM", "QS",
+    "TBT", "FEI", "CEV", "EVAC", "MHR", "WKR",
+    "WO", "PPM", "CM", "MR", "SLA",
+})
+OM_DEFAULT_NO_CYCLE_CODES = frozenset({"WO", "PPM", "CM", "INC", "MR", "SLA", "COR"})
+_NO_CYCLE_NAME_HINTS = (
+    "requisition", "purchase", "letter", "correspondence", "minutes", "mom",
+    "internal office memo", "quantity surveyor", "daily report", "site log",
+    "boq", "specs", "variation", "toolbox", "extinguisher", "contractor evaluation",
+    "evacuation", "man-hour", "man hour", "worker register",
+)
+_CYCLE_NAME_HINTS = (
+    "shop drawing", "drawing", "material submittal", "submittal", "inspection request",
+    "request for information", "notice of change", "as-built", "as built",
+    "work notice", "work notification", "works notice", "non-conformance", "non conformance",
+    "instruction", "potential change", "safety violation", "permit to work",
+    "safety observation", "job safety analysis",
+)
 
 
-def doc_type_has_reply_cycle(dt):
-    """True when documents of this type go to the consultant and receive a reply / approval status
-    (Shop Drawings, Material Submittals, IR, RFI, NOC). False for single-party documents
-    (PR, Letters, MOM, Daily Reports). An explicit boolean 'has_reply_cycle' on the doc type wins."""
+def doc_type_has_reply_cycle(dt, workspace_id=None):
+    """True when documents of this type use dual Submit / Replied folders and slots.
+
+    An explicit boolean 'has_reply_cycle' on the doc type always wins across all workspaces.
+    For legacy rows without the flag, falls back deterministically to built-in register rules.
+    """
     dt = dt or {}
     flag = dt.get("has_reply_cycle")
     if isinstance(flag, bool):
         return flag
+    co_flag = dt.get("has_closeout_slot")
+    if isinstance(co_flag, bool) and co_flag:
+        return True
+    ws = str(workspace_id or dt.get("workspace_id") or "").strip().upper()
     code = str(dt.get("code") or dt.get("id") or "").strip().upper()
+    if ws in ("OM", "O&M") and code in OM_DEFAULT_NO_CYCLE_CODES:
+        return False
     if code in REPLY_CYCLE_CODES:
         return True
+    if code in NO_REPLY_CYCLE_CODES:
+        return False
     name = str(dt.get("name") or "").strip().lower()
     if any(h in name for h in _NO_CYCLE_NAME_HINTS):
         return False
@@ -342,18 +439,22 @@ def is_hse_closeout_doc_type(dt):
     flag = dt.get("has_closeout_slot")
     if isinstance(flag, bool):
         return flag
+    rc_flag = dt.get("has_reply_cycle")
+    if isinstance(rc_flag, bool):
+        return rc_flag
     code = str(dt.get("code") or dt.get("id") or "").strip().upper()
     return code in HSE_CLOSEOUT_CODES
 
 
 def doc_type_allows_approval_slot(dt, workspace_id="ENG"):
     """True when SLOT_APPROVAL is permitted for `(dt, workspace_id)`."""
-    ws = str(workspace_id or "ENG").strip().upper()
+    dt = dt or {}
+    if isinstance(dt.get("has_reply_cycle"), bool):
+        return dt["has_reply_cycle"]
+    ws = str(workspace_id or dt.get("workspace_id") or "ENG").strip().upper()
     if ws == "HSE":
         return is_hse_closeout_doc_type(dt)
-    if ws == "ENG":
-        return doc_type_has_reply_cycle(dt)
-    return False
+    return doc_type_has_reply_cycle(dt, workspace_id=ws)
 
 
 def resolve_hse_closeout_status(current_status="", requested_status=""):

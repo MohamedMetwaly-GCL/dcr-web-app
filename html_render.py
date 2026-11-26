@@ -5164,14 +5164,21 @@ window._ACTIVE_PERM_USER = null;
 
 async function openAdmin() {
   try {
-    const [whoami, users, projects, workspaces] = await Promise.all([
+    const [whoami, users, projects, workspaces, masterDrive] = await Promise.all([
       apiFetch('/api/whoami'),
       apiFetch('/api/users'),
       apiFetch('/api/projects'),
-      apiFetch('/api/workspaces')
+      apiFetch('/api/workspaces'),
+      apiFetch('/api/admin/drive-master-root').catch(() => null)
     ]);
     if (!users || !projects) return;
-    _ADMIN_DATA = { whoami: whoami || {}, users: users || [], projects: projects || [], workspaces: workspaces || [] };
+    _ADMIN_DATA = {
+      whoami: whoami || {},
+      users: users || [],
+      projects: projects || [],
+      workspaces: workspaces || [],
+      masterDrive: masterDrive || { master_root_id: '', source: 'none' }
+    };
     
     // Sort projects cleanly by code/name
     _ADMIN_DATA.projects.sort((a,b) => String(a.code || a.id).localeCompare(String(b.code || b.id)));
@@ -5209,6 +5216,34 @@ async function openAdmin() {
     const deptsView = document.createElement('div');
     deptsView.id = 'admin-view-depts';
     deptsView.style.display = 'none';
+
+    // Global Master Google Drive Root Folder Card (visible to Admins)
+    const masterDriveCard = document.createElement('div');
+    masterDriveCard.id = 'admin-master-drive-card';
+    masterDriveCard.style.cssText = 'margin:10px 18px 4px;padding:12px 14px;border:1px solid var(--bd);border-radius:8px;background:var(--surface,var(--bg));';
+    const mdInfo = _ADMIN_DATA.masterDrive || { master_root_id: '', source: 'none' };
+    const mdSrcKey = mdInfo.source === 'db'
+      ? 'admin.master_drive_src_db'
+      : (mdInfo.source === 'env' ? 'admin.master_drive_src_env' : 'admin.master_drive_src_none');
+    const mdSrcFallback = mdInfo.source === 'db'
+      ? 'Source: Admin Settings'
+      : (mdInfo.source === 'env' ? 'Source: Environment Variable' : 'Not configured');
+    masterDriveCard.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+        <div>
+          <strong style="font-size:12.5px;color:var(--tx);">${escHtml(_admT('admin.master_drive_title', null, '☁️ Master Google Drive Root Folder'))}</strong>
+          <div style="font-size:11px;color:var(--mu);margin-top:2px;">${escHtml(_admT('admin.master_drive_desc', null, 'Set one root folder ID/URL (e.g. Gas Chill Workspace Records) to auto-create Department, Project, and Register folders.'))}</div>
+        </div>
+        <span id="admin-master-drive-source" class="badge" style="background:var(--bg);color:var(--mu);border:1px solid var(--bd);font-size:10.5px;">${escHtml(_admT(mdSrcKey, null, mdSrcFallback))}</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="admin-master-drive-root-id" class="tbl-input bidi-ltr" style="flex:1 1 260px;padding:6px 10px;font-size:11.5px;" placeholder="${escHtml(_admT('admin.master_drive_ph', null, 'Paste Master Root Folder ID or Google Drive URL...'))}" value="${escHtml(mdInfo.master_root_id || '')}">
+        <button id="btn-save-master-drive-root" type="button" class="btn btn-pr btn-sm" onclick="saveMasterDriveRoot(this)" style="height:30px;padding:0 12px;font-weight:600;">${escHtml(_admT('admin.master_drive_save', null, 'Save'))}</button>
+        <button id="btn-init-all-drive" type="button" class="btn btn-sc btn-sm" onclick="initAllDriveFolders(this)" style="height:30px;padding:0 12px;font-weight:600;">📁 ${escHtml(_admT('admin.btn_init_all_drive', null, 'Initialize All Departments & Projects'))}</button>
+      </div>
+      <div id="admin-master-drive-status" style="display:none;margin-top:8px;padding:7px 10px;border-radius:6px;font-size:11.5px;font-weight:600;"></div>
+    `;
+    body.appendChild(masterDriveCard);
     body.appendChild(usersView);
     body.appendChild(deptsView);
     
@@ -5362,6 +5397,147 @@ function toggleAuditCard() {
   const card = document.getElementById('admin-audit-card');
   if (card) {
     card.style.display = card.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+async function saveMasterDriveRoot(btn) {
+  const inp = document.getElementById('admin-master-drive-root-id');
+  const statusEl = document.getElementById('admin-master-drive-status');
+  const srcEl = document.getElementById('admin-master-drive-source');
+  let raw = (inp ? inp.value : '').trim();
+  if (raw.includes('/folders/')) {
+    raw = raw.split('/folders/')[1].split('/')[0].split('?')[0];
+  }
+  const origText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = _admT('admin.master_drive_saving', null, 'Saving...');
+  }
+  try {
+    const res = await fetch('/api/admin/drive-master-root', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ master_root_id: raw })
+    });
+    const r = await res.json().catch(() => ({}));
+    if (res.ok && r && r.ok) {
+      if (inp) inp.value = r.master_root_id || '';
+      if (_ADMIN_DATA) {
+        _ADMIN_DATA.masterDrive = { master_root_id: r.master_root_id || '', source: r.source || 'none' };
+      }
+      if (srcEl) {
+        const sk = r.source === 'db' ? 'admin.master_drive_src_db' : (r.source === 'env' ? 'admin.master_drive_src_env' : 'admin.master_drive_src_none');
+        const sf = r.source === 'db' ? 'Source: Admin Settings' : (r.source === 'env' ? 'Source: Environment Variable' : 'Not configured');
+        srcEl.textContent = _admT(sk, null, sf);
+      }
+      const msg = _admT('admin.master_drive_saved', null, '✔ Master Drive Root Folder saved');
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = '#f0fdf4';
+        statusEl.style.border = '1px solid #bbf7d0';
+        statusEl.style.color = '#166534';
+        statusEl.textContent = msg;
+      }
+      toast(msg, 'ok');
+    } else {
+      const errMsg = _admT('admin.master_drive_save_err', { error: (r && r.error) || res.status }, 'Failed to save Master Drive Root: ' + ((r && r.error) || res.status));
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = '#fef2f2';
+        statusEl.style.border = '1px solid #fecaca';
+        statusEl.style.color = '#b91c1c';
+        statusEl.textContent = errMsg;
+      }
+      toast(errMsg, 'er');
+    }
+  } catch (e) {
+    const errMsg = _admT('admin.master_drive_save_err', { error: e.message || 'Network error' }, 'Failed to save Master Drive Root: ' + (e.message || 'Network error'));
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.background = '#fef2f2';
+      statusEl.style.border = '1px solid #fecaca';
+      statusEl.style.color = '#b91c1c';
+      statusEl.textContent = errMsg;
+    }
+    toast(errMsg, 'er');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  }
+}
+
+async function initAllDriveFolders(btn) {
+  const statusEl = document.getElementById('admin-master-drive-status');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = _admT('admin.init_all_drive_ing', null, '⏳ Initializing all departments & projects...');
+  }
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.style.background = 'var(--bg)';
+    statusEl.style.border = '1px solid var(--bd)';
+    statusEl.style.color = 'var(--tx)';
+    statusEl.textContent = _admT('admin.init_all_drive_ing', null, '⏳ Initializing all departments & projects...');
+  }
+  try {
+    const res = await fetch('/api/admin/init-all-drive-folders', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({})
+    });
+    const r = await res.json().catch(() => ({}));
+    if (res.ok && r && (r.ok || typeof r.workspaces_created === 'number')) {
+      const vars = {
+        ws_created: Number(r.workspaces_created || 0),
+        ws_existing: Number(r.workspaces_existing || 0),
+        proj_created: Number(r.projects_created || 0),
+        proj_existing: Number(r.projects_existing || 0),
+        fld_created: Number(r.folders_created || 0),
+        fld_existing: Number(r.folders_existing || 0),
+        errors: Array.isArray(r.errors) ? r.errors.length : 0
+      };
+      const msg = vars.errors > 0
+        ? _admT('admin.init_all_drive_partial', vars, `⚠ Drive hierarchy initialized with ${vars.errors} error(s) — Departments: ${vars.ws_created}/${vars.ws_existing} · Projects: ${vars.proj_created}/${vars.proj_existing} · Registers: ${vars.fld_created}/${vars.fld_existing}`)
+        : _admT('admin.init_all_drive_ok', vars, `✔ Drive hierarchy ready — Departments: ${vars.ws_created} new / ${vars.ws_existing} verified · Projects: ${vars.proj_created} new / ${vars.proj_existing} verified · Registers: ${vars.fld_created} new / ${vars.fld_existing} verified`);
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = vars.errors > 0 ? '#fffbeb' : '#f0fdf4';
+        statusEl.style.border = vars.errors > 0 ? '1px solid #fde68a' : '1px solid #bbf7d0';
+        statusEl.style.color = vars.errors > 0 ? '#92400e' : '#166534';
+        statusEl.textContent = msg;
+      }
+      toast(msg, vars.errors > 0 ? 'wa' : 'ok');
+    } else {
+      const errMsg = _admT('admin.init_all_drive_err', { error: (r && r.error) || res.status }, 'Failed to initialize Drive folders: ' + ((r && r.error) || res.status));
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = '#fef2f2';
+        statusEl.style.border = '1px solid #fecaca';
+        statusEl.style.color = '#b91c1c';
+        statusEl.textContent = errMsg;
+      }
+      toast(errMsg, 'er');
+    }
+  } catch (e) {
+    const errMsg = _admT('admin.init_all_drive_err', { error: e.message || 'Network error' }, 'Failed to initialize Drive folders: ' + (e.message || 'Network error'));
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.background = '#fef2f2';
+      statusEl.style.border = '1px solid #fecaca';
+      statusEl.style.color = '#b91c1c';
+      statusEl.textContent = errMsg;
+    }
+    toast(errMsg, 'er');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
   }
 }
 
@@ -14445,8 +14621,17 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
     <div class="mbody">
       <input type="hidden" id="dt-edit-id">
       <div class="fgrid">
-        <div class="fg"><label>{t("reg.dt_code", norm)}</label><input id="dt-code" placeholder="{t("reg.dt_code_ph", norm)}"></div>
-        <div class="fg"><label>{t("reg.dt_name", norm)}</label><input id="dt-name" placeholder="{t("reg.dt_name_ph", norm)}"></div>
+        <div class="fg"><label>{t("reg.dt_code", norm)}</label><input id="dt-code" placeholder="{t("reg.dt_code_ph", norm)}" oninput="onDocTypeMetaInput()"></div>
+        <div class="fg"><label>{t("reg.dt_name", norm)}</label><input id="dt-name" placeholder="{t("reg.dt_name_ph", norm)}" oninput="onDocTypeMetaInput()"></div>
+      </div>
+      <div style="margin-top:10px;padding:8px 10px;background:var(--bg);border:1px solid var(--bd);border-radius:6px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;cursor:pointer">
+          <input type="checkbox" id="dt-has-reply-cycle" onchange="onDocTypeReplyCycleToggle()">
+          <span>{t("reg.dt_has_reply_cycle", norm)}</span>
+        </label>
+        <div style="font-size:10px;color:var(--mu);margin-top:4px;line-height:1.4">
+          {t("reg.dt_has_reply_cycle_note", norm)}
+        </div>
       </div>
       <div class="stitle" style="margin-top:12px">{t("reg.dt_er_override", norm)}</div>
       <div style="font-size:10px;color:var(--mu);margin:-4px 0 8px;padding:6px 8px;background:var(--bg);border-radius:4px">
@@ -16047,6 +16232,7 @@ function renderRows(){{
           const _eye=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
           const _dl=`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
           const _chip=(label,slot,entry,color,bg,name,themeObj,revNum=null)=>{{
+            const _effSlot=(entry&&entry.legacy&&!(row&&row.attachments&&row.attachments[slot]))?'legacy':slot;
             const sp=document.createElement('span');
             const isMix=Boolean(themeObj&&themeObj.mixed);
             const bdStyle=isMix
@@ -16066,15 +16252,15 @@ function renderRows(){{
               lbl.appendChild(rBadge);
             }}
             lbl.title='View '+name;
-            lbl.onclick=(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}};
+            lbl.onclick=(ev)=>{{ev.preventDefault();openDocViewer(row._id,_effSlot,{{label:name}});}};
             if(isMix)lbl.style.color=themeObj.color;
             sp.appendChild(lbl);
             const v=document.createElement('a');
             v.className='view-file-icon';v.style.cssText='display:inline-flex;align-items:center;padding:0 1px;cursor:pointer'+(isMix?';color:'+themeObj.color2:'');
             v.href='#';v.title='View '+name;v.innerHTML=_eye;
-            v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,slot,{{label:name}});}});
+            v.addEventListener('click',(ev)=>{{ev.preventDefault();openDocViewer(row._id,_effSlot,{{label:name}});}});
             sp.appendChild(v);
-            const dh=canDownloadUI()?docDownloadHref(row._id,slot,entry):'';
+            const dh=canDownloadUI()?docDownloadHref(row._id,_effSlot,entry):'';
             if(dh){{
               const d=document.createElement('a');
               d.className='dl-file-icon';d.style.cssText='display:inline-flex;align-items:center;padding:0 1px;cursor:pointer'+(isMix?';color:'+themeObj.color2:'');
@@ -18280,44 +18466,43 @@ function canDownloadUI(){{
   if(typeof CAN_DOWNLOAD !== 'undefined') return !!CAN_DOWNLOAD;
   return (typeof CAN_EDIT!=='undefined') && !!CAN_EDIT;
 }}
-function dtHasReplyCycle(dt){{
+function dtHasReplyCycle(dt, wsId){{
   dt = dt || {{}};
   if(typeof dt.has_reply_cycle === 'boolean') return dt.has_reply_cycle;
-  
-  if(!dt.code && typeof state !== 'undefined' && state.tab){{
+  if(typeof dt.has_closeout_slot === 'boolean' && dt.has_closeout_slot) return true;
+
+  if(!dt.code && !dt.id && !dt.name && typeof state !== 'undefined' && state.tab){{
     const curT = String(state.tab).trim().toUpperCase();
     const found = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT);
-    if(found) dt = found;
+    if(found){{
+      dt = found;
+      if(typeof dt.has_reply_cycle === 'boolean') return dt.has_reply_cycle;
+      if(typeof dt.has_closeout_slot === 'boolean' && dt.has_closeout_slot) return true;
+    }}
   }}
-  
-  const curTabStr = (typeof state !== 'undefined' && state.tab) ? String(state.tab).trim().toUpperCase() : '';
+
+  const effWs = String(wsId !== undefined && wsId !== null ? wsId : (dt.workspace_id || (typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : ''))).trim().toUpperCase();
+  const curTabStr = (!dt.code && !dt.id && !dt.name && typeof state !== 'undefined' && state.tab) ? String(state.tab).trim().toUpperCase() : '';
   const code = String(dt.code || dt.id || curTabStr).trim().toUpperCase();
-  const codes = ['SD','DS','MS','IR','MIR','RFI','NOC','ABD','WN','NCN','NCR'];
-  if(codes.includes(code)) return true;
-  
+
+  if((effWs === 'OM' || effWs === 'O&M') && ['WO','PPM','CM','INC','MR','SLA','COR'].includes(code)) return false;
+
+  const replyCodes = ['SD','DS','MS','IR','MIR','RFI','NOC','ABD','WN','NCN','NCR','EI','SI','CVI','PCQ','SVP','PTW','OBS','INC','JSA'];
+  if(replyCodes.includes(code)) return true;
+
+  const noReplyCodes = ['PR','LTR','L','LETTERS','COR','CORRESPONDENCE','MOM','IOM','QS','TBT','FEI','CEV','EVAC','MHR','WKR','WO','PPM','CM','MR','SLA'];
+  if(noReplyCodes.includes(code)) return false;
+
   const name = String(dt.name || '').trim().toLowerCase();
-  if(['instruction','site instruction','engineer instruction','verbal instruction','requisition','purchase','letter','correspondence','minutes','mom','daily report','site log','boq','specs','variation','safety violation'].some(h=>name.includes(h))) return false;
-  if(['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built','work notice','work notification','works notice','non-conformance','non conformance'].some(h=>name.includes(h))) return true;
-  
-  if(typeof state !== 'undefined' && Array.isArray(state.cols)){{
-    const hasReplyCol = state.cols.some(c => {{
-      if(!c) return false;
-      const k = String(c.col_key || '').toLowerCase();
-      const l = String(c.label || '').toLowerCase();
-      return k.includes('reply') || l.includes('reply') || k === 'actualreplydate' || k === 'expectedreplydate';
-    }});
-    if(hasReplyCol) return true;
-  }}
-  return false;
+  if(['requisition','purchase','letter','correspondence','minutes','mom','internal office memo','quantity surveyor','daily report','site log','boq','specs','variation','toolbox','extinguisher','contractor evaluation','evacuation','man-hour','man hour','worker register'].some(h=>name.includes(h))) return false;
+  return ['shop drawing','drawing','material submittal','submittal','inspection request','request for information','notice of change','as-built','as built','work notice','work notification','works notice','non-conformance','non conformance','instruction','potential change','safety violation','permit to work','safety observation','job safety analysis'].some(h=>name.includes(h));
 }}
 function tabHasReplyCycle(){{
   const ws = String(typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : 'ENG').trim().toUpperCase();
-  const isEng = !ws || ws === 'NONE' || ws === 'NULL' || ws === 'ENG' || ws.includes('ENG');
-  if(!isEng) return false;
   const curTab = (typeof state !== 'undefined') ? state.tab : '';
   const curT = String(curTab).trim().toUpperCase();
   const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
-  return dtHasReplyCycle(dtObj);
+  return dtHasReplyCycle(dtObj, ws);
 }}
 function isHseCloseoutTab(dtTab){{
   const ws = String(typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : 'ENG').trim().toUpperCase();
@@ -18326,6 +18511,7 @@ function isHseCloseoutTab(dtTab){{
   const curT = String(curTab).trim().toUpperCase();
   const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
   if(typeof dtObj.has_closeout_slot === 'boolean') return dtObj.has_closeout_slot;
+  if(typeof dtObj.has_reply_cycle === 'boolean') return dtObj.has_reply_cycle;
   const code = String(dtObj.code || dtObj.id || curT).trim().toUpperCase();
   return ['PTW','OBS','SVP','INC','JSA'].includes(code);
 }}
@@ -18885,7 +19071,11 @@ async function saveNewSubtype(){{
       if(oldName!==name&&typeof loadRecords==='function')await loadRecords();
       updatePtwSubTabs();
       if(typeof buildHead==='function')buildHead();
-      toast(window.t('hse.subtab.updated_toast',{{name}}),'ok');
+      if(res.drive_rename && res.drive_rename.renamed){{
+        toast(window.t('hse.subtab.updated_drive_toast',{{name}}),'ok');
+      }}else{{
+        toast(window.t('hse.subtab.updated_toast',{{name}}),'ok');
+      }}
       return;
     }}
     const payload={{list_name:cfg.listName,item:name,dt_id:state.tab}};
@@ -18905,7 +19095,11 @@ async function saveNewSubtype(){{
       setPtwSubtypeFilter(savedItem);
       if(typeof buildHead==='function')buildHead();
     }}
-    toast(window.t('hse.subtab.added_toast',{{name:savedItem}}),'ok');
+    if(res.drive_provision && !res.drive_provision.skipped && (res.drive_provision.created>0 || res.drive_provision.existing>0)){{
+      toast(window.t('hse.subtab.added_drive_toast',{{name:savedItem}}),'ok');
+    }}else{{
+      toast(window.t('hse.subtab.added_toast',{{name:savedItem}}),'ok');
+    }}
   }}finally{{
     if(saveBtn)saveBtn.disabled=false;
   }}
@@ -20136,12 +20330,40 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
     return {{submission: sub, approval: app, part_a, part_b, part_c, part_d}};
   }}
 
-  // An explicit new DCR upload has file_id, or uploaded_at without legacy flag
-  const isVerifiedSubm = (e) => Boolean(e && (e.file_id || (e.uploaded_at && !e.legacy)));
+  // Verified slot assignment: DCR upload (file_id / folder_id / non-legacy uploaded_at) or Drive sync
+  const isVerifiedSubm = (e) => Boolean(e && (
+    e.file_id || e.folder_id ||
+    (e.uploaded_at && !e.legacy) ||
+    e.source === 'drive_sync' ||
+    e.slot_verified === true
+  ));
 
-  // If submission is a genuine DCR upload, NEVER convert it to approval
+  const _extractDriveId = (u) => {{
+    const s = String(u || '').trim();
+    if(!s) return '';
+    const m = s.match(/\\/folders\\/([a-zA-Z0-9_-]+)/) || s.match(/\\/d\\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    return m ? m[1] : '';
+  }};
+
+  const curTab = dtTab || (typeof state !== 'undefined' ? state.tab : '');
+  const curT = String(curTab).trim().toUpperCase();
+  const dtObj = (typeof state !== 'undefined' && state.dtList || []).find(d =>
+    String(d.id).trim().toUpperCase() === curT ||
+    String(d.code || '').trim().toUpperCase() === curT
+  ) || {{}};
+  const isFlatDocType = !dtHasReplyCycle(dtObj) && !isHseCloseoutTab(dtTab);
+
   if(sub && isVerifiedSubm(sub)){{
-    return {{submission: sub, approval: app}};
+    if(app){{
+      const subUrl = String(sub.url || '').trim().toLowerCase();
+      const appUrl = String(app.url || '').trim().toLowerCase();
+      const subId = sub.file_id || sub.folder_id || _extractDriveId(sub.url);
+      const appId = app.file_id || app.folder_id || _extractDriveId(app.url);
+      if((subUrl && appUrl && subUrl === appUrl) || (subId && appId && subId === appId)){{
+        app = null;
+      }}
+    }}
+    return {{submission: sub, approval: app, is_flat_doc: Boolean(sub.is_flat_doc || isFlatDocType)}};
   }}
 
   if(!sub && !app && hasLeg){{
@@ -20153,24 +20375,253 @@ function _normalizeRowAttachments(row, dtTab, explicitUrl){{
     }} else {{
       sub = {{url: leg, file_name: 'Current Drive Link', legacy: true}};
     }}
+  }} else if(!sub && app && hasLeg){{
+    const appUrl = String(app.url || '').trim().toLowerCase();
+    const appId = app.file_id || app.folder_id || _extractDriveId(app.url);
+    const legId = _extractDriveId(leg);
+    const isSameAsApp = Boolean((appUrl && leg.toLowerCase() === appUrl) || (appId && legId && appId === legId));
+    if(!isSameAsApp){{
+      sub = isFlatDocType
+        ? {{url: leg, file_name: 'Document', legacy: true, is_flat_doc: true}}
+        : {{url: leg, file_name: 'Current Drive Link', legacy: true}};
+    }}
   }} else if(sub && !app && !isVerifiedSubm(sub)){{
-    const subUrl = (sub && (sub.url || '')) || leg;
-    const kind = classifyLegacyLinkKind(row, dtTab || state.tab, subUrl);
-    if(kind === 'approval'){{
-      app = {{...sub, file_name: sub.file_name || 'Consultant Reply', legacy: true, consultant_status: row.status || sub.consultant_status || ''}};
-      sub = null;
-    }} else if(kind === 'doc'){{
-      sub = {{...sub, file_name: sub.file_name || 'Document', legacy: true, is_flat_doc: true}};
+    // Never re-classify an existing submission slot entry into approval based on row.status
+    if(isFlatDocType){{
+      sub = {{...sub, file_name: sub.file_name || 'Document', legacy: Boolean(sub.legacy), is_flat_doc: true}};
     }}
   }}
   if(sub && app){{
     const subUrl = String(sub.url || '').trim().toLowerCase();
     const appUrl = String(app.url || '').trim().toLowerCase();
-    if(sub.legacy || subUrl === appUrl || (sub.file_id && app.file_id && sub.file_id === app.file_id)){{
+    const subId = sub.file_id || sub.folder_id || _extractDriveId(sub.url);
+    const appId = app.file_id || app.folder_id || _extractDriveId(app.url);
+    if((subUrl && appUrl && subUrl === appUrl) || (subId && appId && subId === appId)){{
       sub = null;
     }}
   }}
   return {{submission: sub, approval: app, is_flat_doc: Boolean(sub && sub.is_flat_doc)}};
+}}
+
+function openDriveUnlinkModal(opts={{}}){{
+  return new Promise(resolve=>{{
+    const prev=document.getElementById('drive-unlink-modal');
+    if(prev && prev.parentNode)prev.parentNode.removeChild(prev);
+    const isDark=typeof document!=='undefined'&&document.body&&document.body.classList.contains('dark');
+    const isRtl=(typeof document!=='undefined'&&((document.documentElement&&document.documentElement.dir==='rtl')||(document.body&&document.body.classList.contains('rtl'))));
+    const slotLabel=opts.slotTitle||opts.slot||'';
+    const itemName=opts.itemName||slotLabel||'Attachment';
+    const isSync=Boolean(opts.isSync);
+    const isArchivedRev=Boolean(opts.isArchivedRev);
+    const hasHistory=Boolean(opts.hasHistory);
+    const revLabel=opts.revLabel||'';
+
+    const overlay=document.createElement('div');
+    overlay.id='drive-unlink-modal';
+    overlay.setAttribute('role','dialog');
+    overlay.setAttribute('aria-modal','true');
+    overlay.setAttribute('aria-labelledby','drive-unlink-modal-title');
+    overlay.dir=isRtl?'rtl':'ltr';
+    overlay.style.cssText='position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,0.58);display:flex;align-items:center;justify-content:center;padding:16px';
+
+    const panel=document.createElement('div');
+    panel.style.cssText=`width:100%;max-width:460px;border-radius:12px;padding:18px 20px;box-shadow:0 20px 50px rgba(15,23,42,0.35);background:${{isDark?'#0f172a':'#ffffff'}};color:${{isDark?'#e2e8f0':'#0f172a'}};border:1px solid ${{isDark?'#334155':'#cbd5e1'}};display:flex;flex-direction:column;gap:12px;text-align:${{isRtl?'right':'left'}}`;
+
+    const hdr=document.createElement('div');
+    hdr.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px';
+    const titleEl=document.createElement('h3');
+    titleEl.id='drive-unlink-modal-title';
+    titleEl.style.cssText='margin:0;font-size:15px;font-weight:800';
+    titleEl.textContent=isArchivedRev
+      ? window.t('form.unlink_modal_title_rev',{{rev:revLabel}})
+      : window.t('form.unlink_modal_title');
+    const closeBtn=document.createElement('button');
+    closeBtn.type='button';
+    closeBtn.id='drive-unlink-close-btn';
+    closeBtn.setAttribute('aria-label',window.t('form.unlink_cancel'));
+    closeBtn.textContent='✕';
+    closeBtn.style.cssText=`border:none;background:transparent;color:${{isDark?'#94a3b8':'#64748b'}};font-size:15px;font-weight:700;cursor:pointer;padding:2px 6px;border-radius:6px`;
+    hdr.appendChild(titleEl);
+    hdr.appendChild(closeBtn);
+    panel.appendChild(hdr);
+
+    const subEl=document.createElement('div');
+    subEl.style.cssText=`font-size:12px;line-height:1.45;color:${{isDark?'#cbd5e1':'#334155'}}`;
+    subEl.textContent=window.t('form.unlink_modal_subtitle',{{name:itemName,slot:slotLabel}});
+    panel.appendChild(subEl);
+
+    if(hasHistory && !isArchivedRev){{
+      const rNote=document.createElement('div');
+      rNote.style.cssText=`font-size:11px;padding:6px 8px;border-radius:6px;background:${{isDark?'rgba(37,99,235,0.16)':'#eff6ff'}};color:${{isDark?'#93c5fd':'#1d4ed8'}};border:1px solid ${{isDark?'rgba(59,130,246,0.35)':'#bfdbfe'}}`;
+      rNote.textContent=window.t('form.unlink_modal_restore_note');
+      panel.appendChild(rNote);
+    }}
+
+    const choices=[
+      {{
+        value:'archive',
+        title:window.t('form.unlink_mode_archive_title'),
+        desc:window.t('form.unlink_mode_archive_desc'),
+        badge:window.t('form.unlink_recommended'),
+        accent:'#2563eb',
+        confirmKey:'form.unlink_confirm_archive',
+        danger:false
+      }},
+      {{
+        value:'unlink',
+        title:window.t('form.unlink_mode_unlink_title'),
+        desc:window.t('form.unlink_mode_unlink_desc'),
+        note:window.t('form.unlink_mode_unlink_sync_note'),
+        accent:'#0f766e',
+        confirmKey:'form.unlink_confirm_unlink',
+        danger:false
+      }},
+      {{
+        value:'trash',
+        title:window.t('form.unlink_mode_trash_title'),
+        desc:window.t('form.unlink_mode_trash_desc'),
+        accent:'#dc2626',
+        confirmKey:'form.unlink_confirm_trash',
+        danger:true
+      }}
+    ];
+
+    let selected='archive';
+    const cardEls=[];
+    const listWrap=document.createElement('div');
+    listWrap.style.cssText='display:flex;flex-direction:column;gap:8px';
+
+    const confirmBtn=document.createElement('button');
+    confirmBtn.type='button';
+    confirmBtn.id='drive-unlink-confirm-btn';
+
+    const syncSelectionUI=()=>{{
+      const activeChoice=choices.find(c=>c.value===selected)||choices[0];
+      cardEls.forEach(item=>{{
+        const isSel=(item.choice.value===selected);
+        item.input.checked=isSel;
+        item.label.style.borderColor=isSel?item.choice.accent:(isDark?'#334155':'#cbd5e1');
+        item.label.style.background=isSel
+          ? (item.choice.danger?(isDark?'rgba(220,38,38,0.16)':'#fef2f2'):(isDark?'rgba(37,99,235,0.14)':'#eff6ff'))
+          : (isDark?'#1e293b':'#f8fafc');
+      }});
+      confirmBtn.textContent=window.t(activeChoice.confirmKey);
+      confirmBtn.style.cssText=`padding:7px 14px;border-radius:7px;border:none;font-size:12px;font-weight:700;cursor:pointer;color:#ffffff;background:${{activeChoice.danger?'#dc2626':'#2563eb'}}`;
+    }};
+
+    choices.forEach(ch=>{{
+      const lbl=document.createElement('label');
+      lbl.dataset.unlinkMode=ch.value;
+      lbl.style.cssText='display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:8px;border:1.5px solid transparent;cursor:pointer;transition:all .12s';
+      const inp=document.createElement('input');
+      inp.type='radio';
+      inp.name='drive-unlink-mode';
+      inp.value=ch.value;
+      inp.checked=(ch.value===selected);
+      inp.style.cssText='margin-top:3px;flex-shrink:0;cursor:pointer';
+      inp.onchange=()=>{{selected=ch.value;syncSelectionUI();}};
+      lbl.onclick=()=>{{selected=ch.value;syncSelectionUI();}};
+
+      const txtBox=document.createElement('div');
+      txtBox.style.cssText='display:flex;flex-direction:column;gap:3px;flex:1;min-width:0';
+      const topRow=document.createElement('div');
+      topRow.style.cssText='display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+      const tSpan=document.createElement('span');
+      tSpan.style.cssText='font-size:12.5px;font-weight:700';
+      tSpan.textContent=ch.title;
+      topRow.appendChild(tSpan);
+      if(ch.badge){{
+        const bEl=document.createElement('span');
+        bEl.style.cssText='font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:#2563eb;color:#ffffff';
+        bEl.textContent=ch.badge;
+        topRow.appendChild(bEl);
+      }}
+      txtBox.appendChild(topRow);
+      const dEl=document.createElement('div');
+      dEl.style.cssText=`font-size:11px;line-height:1.4;color:${{isDark?'#94a3b8':'#475569'}}`;
+      dEl.textContent=ch.desc;
+      txtBox.appendChild(dEl);
+      if(ch.note){{
+        const nEl=document.createElement('div');
+        nEl.style.cssText=`font-size:10.5px;line-height:1.35;margin-top:2px;color:${{isSync?(isDark?'#fbbf24':'#b45309'):(isDark?'#94a3b8':'#64748b')}};font-weight:${{isSync?'600':'400'}}`;
+        nEl.textContent=ch.note;
+        txtBox.appendChild(nEl);
+      }}
+      lbl.appendChild(inp);
+      lbl.appendChild(txtBox);
+      listWrap.appendChild(lbl);
+      cardEls.push({{choice:ch,label:lbl,input:inp}});
+    }});
+    panel.appendChild(listWrap);
+
+    const footer=document.createElement('div');
+    footer.style.cssText='display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:4px';
+    const cancelBtn=document.createElement('button');
+    cancelBtn.type='button';
+    cancelBtn.id='drive-unlink-cancel-btn';
+    cancelBtn.textContent=window.t('form.unlink_cancel');
+    cancelBtn.style.cssText=`padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${{isDark?'#475569':'#cbd5e1'}};background:${{isDark?'#1e293b':'#ffffff'}};color:${{isDark?'#e2e8f0':'#334155'}}`;
+    footer.appendChild(cancelBtn);
+    footer.appendChild(confirmBtn);
+    panel.appendChild(footer);
+    overlay.appendChild(panel);
+
+    let done=false;
+    const finish=(val)=>{{
+      if(done)return;
+      done=true;
+      if(typeof document!=='undefined'&&typeof document.removeEventListener==='function'){{
+        document.removeEventListener('keydown',onKey);
+      }}
+      if(overlay.parentNode)overlay.parentNode.removeChild(overlay);
+      resolve(val);
+    }};
+    const onKey=(ev)=>{{if(ev&&ev.key==='Escape')finish(null);}};
+    closeBtn.onclick=()=>finish(null);
+    cancelBtn.onclick=()=>finish(null);
+    overlay.onclick=(ev)=>{{if(ev&&ev.target===overlay)finish(null);}};
+    confirmBtn.onclick=()=>finish(selected);
+    if(typeof document!=='undefined'&&typeof document.addEventListener==='function'){{
+      document.addEventListener('keydown',onKey);
+    }}
+
+    syncSelectionUI();
+    document.body.appendChild(overlay);
+  }});
+}}
+
+function _showDriveUnlinkToast(j,mode,opts={{}}){{
+  const slot=opts.slot||'';
+  const revLabel=opts.revLabel||'';
+  const isArchivedRev=Boolean(opts.isArchivedRev);
+  const restoredPrev=Boolean(opts.restoredPrev);
+  if(j && j.shared_reference_preserved){{
+    toast(window.t('form.unlinked_shared_preserved',{{slot}}),'wn');
+    return;
+  }}
+  if(j && j.drive_warning){{
+    toast(window.t('form.unlinked_drive_warning',{{slot,warn:j.drive_warning}}),'wn');
+    return;
+  }}
+  const applied=(j && j.mode)?j.mode:(mode||'archive');
+  if(isArchivedRev){{
+    if(applied==='archive')toast(window.t('form.unlinked_rev_archived',{{rev:revLabel}}),'ok');
+    else if(applied==='unlink')toast(window.t('form.unlinked_rev_only',{{rev:revLabel}}),'ok');
+    else toast(window.t('noc.archived_removed',{{rev:revLabel}}),'ok');
+    return;
+  }}
+  if(restoredPrev){{
+    toast(window.t('form.unlinked_restored',{{slot}}),'ok');
+    return;
+  }}
+  if(applied==='archive'){{
+    toast(window.t('form.unlinked_archived',{{slot}}),'ok');
+  }}else if(applied==='unlink'){{
+    if(j && j.sync_relink_warning)toast(window.t('form.unlinked_only_sync_warn',{{slot}}),'wn');
+    else toast(window.t('form.unlinked_only',{{slot}}),'ok');
+  }}else{{
+    toast(window.t('form.unlinked_trashed',{{slot}}),'ok');
+  }}
 }}
 
 function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}}){{
@@ -20211,13 +20662,15 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   const initPartDTheme=nocPartThemeFor('D',Boolean(cur.part_d));
   const curT=String(typeof state!=='undefined'?state.tab:'').trim().toUpperCase();
   const dtObj=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT || String(d.code||'').trim().toUpperCase()===curT)||{{}};
-  const hasReply=isEng&&dtHasReplyCycle(dtObj);
   const isHseCo=isHseCloseoutTab();
+  const hasReply=!isHseCo&&dtHasReplyCycle(dtObj, ws);
   const isPtwTab=isHsePtwTab();
   const hasDual=hasReply||isHseCo;
+  const activeSubCfg=(typeof getActiveSubtypeConfig==='function')?getActiveSubtypeConfig():null;
+  const subColKey=activeSubCfg?activeSubCfg.colKey:'legacySubtype';
   const getCurrentFormSubtype=()=>{{
-    const subEl=formRoot.querySelector('#f-legacySubtype')||formRoot.querySelector('[name="legacySubtype"]');
-    const raw=(subEl&&subEl.value)?subEl.value:(row?.legacySubtype||'');
+    const subEl=formRoot.querySelector('#f-'+subColKey)||formRoot.querySelector('[name="'+subColKey+'"]')||formRoot.querySelector('#f-legacySubtype')||formRoot.querySelector('[name="legacySubtype"]');
+    const raw=subEl?(subEl.classList&&subEl.classList.contains('ms-con')?(subEl.dataset.value||''):(subEl.value||'')):(row?.[subColKey]||row?.legacySubtype||'');
     return normalizePtwSubtypeValue(raw);
   }};
   const slots=isNoc
@@ -20282,12 +20735,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     folderHint.style.cssText='font-size:9.5px;color:var(--mu);display:flex;align-items:center;gap:3px;margin-top:-2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     const _projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
     const computeCardPathText=()=>{{
-      if(isNoc)return `${{_projLbl}} ❯ NOC ❯ ${{pathSubName}}`;
-      if(isPtwTab){{
-        const sub=getCurrentFormSubtype();
-        return sub?`${{_projLbl}} ❯ PTW ❯ ${{sub}}`:`${{_projLbl}} ❯ PTW`;
-      }}
-      return `${{_projLbl}} ❯ ${{dtName}}${{hasDual?(' ❯ '+pathSubName):''}}`;
+      const sub=getCurrentFormSubtype();
+      const dtLabel=isPtwTab?'PTW':dtName;
+      if(isNoc)return `${{_projLbl}} ❯ NOC${{sub?(' ❯ '+sub):''}} ❯ ${{pathSubName}}`;
+      return `${{_projLbl}} ❯ ${{dtLabel}}${{sub?(' ❯ '+sub):''}}${{hasDual?(' ❯ '+pathSubName):''}}`;
     }};
     const pathStrong=document.createElement('strong');
     pathStrong.style.cssText=`color:${{isDark?'#cbd5e1':'#334155'}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
@@ -20299,8 +20750,10 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
     syncCardPathHint();
     folderHint.innerHTML='<span>📁</span> ';
     folderHint.appendChild(pathStrong);
-    if(isPtwTab){{
-      formRoot.addEventListener('dcr:ptw-subtype-changed',syncCardPathHint);
+    formRoot.addEventListener('dcr:ptw-subtype-changed',syncCardPathHint);
+    const subFieldEl=formRoot.querySelector('#f-'+subColKey)||formRoot.querySelector('#f-legacySubtype');
+    if(subFieldEl&&typeof subFieldEl.addEventListener==='function'){{
+      subFieldEl.addEventListener('change',syncCardPathHint);
     }}
     card.appendChild(folderHint);
 
@@ -20459,17 +20912,26 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             hx.textContent='✕';
             hx.title=window.t('noc.remove_archived_title',{{rev:hLbl}});
             hx.onclick=async()=>{{
-              if(!confirm(window.t('noc.confirm_remove_archived',{{slot:s.key,rev:hLbl}})))return;
+              const mode=await openDriveUnlinkModal({{
+                slot:s.key,
+                slotTitle:s.title,
+                itemName:dLabel,
+                isSync:String(h.source||'').toLowerCase()==='drive_sync',
+                isArchivedRev:true,
+                hasHistory:false,
+                revLabel:hLbl
+              }});
+              if(!mode)return;
               hx.disabled=true;
               try{{
-                const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?rev='+encodeURIComponent(String(hRev)),{{method:'DELETE'}});
+                const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?rev='+encodeURIComponent(String(hRev))+'&mode='+encodeURIComponent(mode),{{method:'DELETE'}});
                 const j=await r.json().catch(()=>({{}}));
                 if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
                 cur[s.key]=(j.attachments&&j.attachments[s.key])?j.attachments[s.key]:null;
                 if(row){{row.attachments=j.attachments||{{}};}}
                 renderSlotInfo(cur[s.key],null);
                 renderRows();
-                toast(window.t('noc.archived_removed',{{rev:hLbl}}),'ok');
+                _showDriveUnlinkToast(j,mode,{{slot:s.key,revLabel:hLbl,isArchivedRev:true}});
               }}catch(e){{
                 hx.disabled=false;
                 toast(window.t('noc.archived_remove_failed',{{err:e.message||e}}),'er');
@@ -20539,7 +21001,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
       statusLine.appendChild(nameSpan);
 
       const _recId=row&&row._id?row._id:(state.editId||'');
-      const _slotKey=entry.legacy?'legacy':s.key;
+      const _slotKey=(entry.legacy&&!(row&&row.attachments&&row.attachments[s.key]))?'legacy':s.key;
       const _curRev=isNoc?getNocPartRev(entry):undefined;
       const vA=document.createElement('a');
       vA.href=_recId?'#':vUrl;
@@ -20569,15 +21031,21 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         unBtn.style.cssText='padding:1px 5px;border-radius:4px;background:#fff;border:1px solid #fca5a5;color:#dc2626;font-weight:700;font-size:10px;cursor:pointer';
         unBtn.textContent='✕';
         const hasHist=Array.isArray(entry.history)&&entry.history.length>0;
-        unBtn.title=hasHist?window.t('form.confirm_unlink_rev',{{slot:s.key,rev:formatNocRevLabel(_curRev)}}):window.t('form.confirm_unlink',{{slot:s.key}});
+        unBtn.title=window.t('form.unlink_modal_title');
         unBtn.onclick=async()=>{{
-          const msg=hasHist
-            ? window.t('form.confirm_unlink_rev',{{slot:s.key,rev:formatNocRevLabel(_curRev)}})
-            : window.t('form.confirm_unlink',{{slot:s.key}});
-          if(!confirm(msg))return;
+          const mode=await openDriveUnlinkModal({{
+            slot:s.key,
+            slotTitle:s.title,
+            itemName:entry.folder_name||entry.file_name||s.title,
+            isSync:String(entry.source||'').toLowerCase()==='drive_sync',
+            isArchivedRev:false,
+            hasHistory:hasHist,
+            revLabel:hasHist?formatNocRevLabel(_curRev):''
+          }});
+          if(!mode)return;
           unBtn.disabled=true;
           try{{
-            const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key),{{method:'DELETE'}});
+            const r=await fetch('/api/drive/attachment/'+encodeURIComponent(state.editId)+'/'+encodeURIComponent(s.key)+'?mode='+encodeURIComponent(mode),{{method:'DELETE'}});
             const j=await r.json().catch(()=>({{}}));
             if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
             cur[s.key]=(j.attachments&&j.attachments[s.key])?j.attachments[s.key]:null;
@@ -20589,7 +21057,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             if(flInp&&typeof j.fileLocation==='string')flInp.value=j.fileLocation;
             renderSlotInfo(cur[s.key],null);
             renderRows();
-            toast(cur[s.key]?window.t('form.unlinked_restored',{{slot:s.key}}):window.t('form.unlinked_trashed',{{slot:s.key}}),'ok');
+            _showDriveUnlinkToast(j,mode,{{slot:s.key,restoredPrev:Boolean(cur[s.key])}});
           }}catch(e){{
             unBtn.disabled=false;
             toast(window.t('form.unlink_failed',{{err:e.message||e}}),'er');
@@ -20634,10 +21102,13 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           return;
         }}
         upBtn.disabled=true;
+        progWrap.dataset.hasError='';
         progWrap.style.display='flex';
+        progBarInner.style.background=s.color;
+        progBarInner.style.animation='';
         progBarInner.style.width='0%';
         progTxt.style.color='#475569';
-        progTxt.textContent=window.t('form.starting_upload');
+        progTxt.textContent=_formatDriveStageText('preparing',0,f.size||0,'');
         state.activeDriveUploads=(state.activeDriveUploads||0)+1;
         const dirEl=formRoot.querySelector('#f-direction')||formRoot.querySelector('[name="direction"]');
         const formDir=(dirEl&&dirEl.value)?dirEl.value:(row?.direction||'');
@@ -20650,11 +21121,13 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         const formSubtype=getCurrentFormSubtype();
         const revOpts=getUploadRevOpts(cur[s.key]);
         try{{
-          const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label)=>{{
+          const res=await uploadFileToDriveSlot(s.key,f,row,(done,total,label,stage)=>{{
             const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-            progBarInner.style.width=pct+'%';
-            progTxt.textContent=label||(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
-          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, subtype: formSubtype, rev_mode: revOpts.rev_mode, part_rev: revOpts.part_rev}});
+            const isPrep=(stage==='preparing'&&pct===0);
+            progBarInner.style.width=isPrep?'30%':(pct+'%');
+            progBarInner.style.animation=isPrep?'aiPulse 1.2s ease-in-out infinite':'';
+            progTxt.textContent=_formatDriveStageText(stage||'uploading',done,total,label);
+          }}, {{direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, subtype: formSubtype, rev_mode: revOpts.rev_mode, part_rev: revOpts.part_rev, signal: slotAbortCtrl?slotAbortCtrl.signal:undefined}});
           if(res&&res.pending){{
             state.pendingDriveAttachments[s.key]=res;
             renderSlotInfo(cur[s.key],res);
@@ -20678,14 +21151,24 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             toast(window.t('form.file_uploaded_linked',{{slot:s.key}}),'ok');
           }}
         }}catch(e){{
-          progTxt.style.color='#dc2626';
-          const errMsg = String(e.message || e || '');
-          const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
-            ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
-            : (e.message || e);
-          progTxt.textContent=window.t('form.upload_failed',{{err:friendly}});
-          toast(window.t('form.upload_failed_toast',{{err:friendly}}), 'er');
+          progBarInner.style.animation='';
+          if(e.name==='AbortError'||cancelSlotUpload){{
+            progWrap.dataset.hasError='';
+            toast('Upload stopped','wa');
+          }}else{{
+            progWrap.dataset.hasError='1';
+            progBarInner.style.background='#dc2626';
+            progTxt.style.color='#dc2626';
+            const errMsg = String(e.message || e || '');
+            const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
+              ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
+              : (e.message || e);
+            progTxt.textContent=window.t('form.upload_failed',{{err:friendly}});
+            progWrap.style.display='flex';
+            toast(window.t('form.upload_failed_toast',{{err:friendly}}), 'er');
+          }}
         }}finally{{
+          progBarInner.style.animation='';
           state.activeDriveUploads=Math.max(0,(state.activeDriveUploads||1)-1);
           upBtn.disabled=false;
           fileInp.value='';
@@ -20732,7 +21215,7 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
           await origFileChange();
         }} finally {{
           upBtn.style.display='';fldBtn.style.display='';
-          progWrap.style.display='none';
+          if(progWrap.dataset.hasError!=='1')progWrap.style.display='none';
           slotAbortCtrl=null;
         }}
       }};
@@ -20759,11 +21242,16 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
         slotAbortCtrl = new AbortController();
         slotStopBtn.disabled = false; slotStopBtn.textContent = '⏹ Stop';
         upBtn.style.display = 'none'; fldBtn.style.display = 'none';
+        progWrap.dataset.hasError = '';
         progWrap.style.display = 'flex';
-        progBarInner.style.width = '0%';
+        progBarInner.style.background = s.color;
+        progBarInner.style.animation = 'aiPulse 1.2s ease-in-out infinite';
+        progBarInner.style.width = '30%';
         progTxt.style.color = '#475569';
-        progTxt.textContent = skippedJunk > 0 ? `Filtered out ${{skippedJunk}} junk file(s). Uploading ${{fls.length}} files...` : `Starting folder upload (${{fls.length}} files)...`;
+        progTxt.textContent = skippedJunk > 0 ? `Filtered out ${{skippedJunk}} junk file(s). Uploading ${{fls.length}} files...` : _formatDriveStageText('preparing', 0, 0, '');
         state.activeDriveUploads = (state.activeDriveUploads || 0) + 1;
+        const totalFolderBytes = fls.reduce((sum, itemFile) => sum + (itemFile.size || 0), 0);
+        let uploadedFolderBytes = 0;
         try {{
           let lastRes = null;
           let uploadedCount = 0;
@@ -20785,11 +21273,23 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             const docNoEl=formRoot.querySelector('#f-docNo')||formRoot.querySelector('[name="docNo"]')||formRoot.querySelector('#f-nocNo')||formRoot.querySelector('[name="nocNo"]');
             const formDocNo=(docNoEl&&docNoEl.value)?docNoEl.value:(row?.docNo||row?.nocNo||'');
             const formSubtype=getCurrentFormSubtype();
-            lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label) => {{
-              const overall = Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
-              progBarInner.style.width = overall + '%';
-              progTxt.textContent = `Uploading file ${{fi + 1}}/${{fls.length}}: ${{f.name}} (${{overall}}%)`;
+            lastRes = await uploadFileToDriveSlot(s.key, f, row, (done, total, label, stage) => {{
+              const activeDone = Math.min(done || 0, f.size || total || 0);
+              const overallBytes = uploadedFolderBytes + activeDone;
+              const overall = totalFolderBytes > 0
+                ? Math.min(100, Math.round((overallBytes / totalFolderBytes) * 100))
+                : Math.round(((fi + (total > 0 ? done / total : 0)) / fls.length) * 100);
+              const isPrep = (stage === 'preparing' && overallBytes === 0);
+              progBarInner.style.width = isPrep ? '30%' : (overall + '%');
+              progBarInner.style.animation = isPrep ? 'aiPulse 1.2s ease-in-out infinite' : '';
+              const ar = _isArLang();
+              const prefix = ar
+                ? `ملف ${{fi + 1}} من ${{fls.length}}: ${{f.name}} — ${{overall}}%`
+                : `File ${{fi + 1}} / ${{fls.length}}: ${{f.name}} — ${{overall}}%`;
+              const stageSuffix = (stage && stage !== 'uploading') ? (' — ' + _formatDriveStageText(stage, done, total, label)) : '';
+              progTxt.textContent = prefix + stageSuffix;
             }}, {{subfolder_name: subName, link_as_folder: true, replace_existing: (fi === 0), rel_subfolder: relSub, rev_mode: (fi === 0 ? revOpts.rev_mode : 'overwrite'), part_rev: revOpts.part_rev, direction: formDir, from_party: formFrom, to_party: formTo, doc_no: formDocNo, subtype: formSubtype, signal: slotAbortCtrl.signal}});
+            uploadedFolderBytes += (f.size || 0);
             if(lastRes && lastRes.pending) pendingItems.push(lastRes);
             uploadedCount++;
           }}
@@ -20819,19 +21319,27 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
             }}
           }}
         }} catch(e) {{
+          progBarInner.style.animation = '';
           if(e.name === 'AbortError' || cancelSlotUpload) {{
+            progWrap.dataset.hasError = '';
             toast('Folder upload stopped', 'wa');
           }} else {{
+            progWrap.dataset.hasError = '1';
+            progBarInner.style.background = '#dc2626';
+            progTxt.style.color = '#dc2626';
             const errMsg = String(e.message || e || '');
             const friendly = (errMsg.includes('project_has_no_drive_folder') || errMsg.includes('drive_folder'))
               ? 'لم يتم تحديد معرّف مجلد الدرايف لهذا المشروع (يرجى إدخال Drive Root Folder ID في إعدادات المشروع)'
               : (e.message || e);
+            progTxt.textContent = window.t('form.upload_failed', {{err: friendly}});
+            progWrap.style.display = 'flex';
             toast('Folder upload error: ' + friendly, 'er');
           }}
         }} finally {{
+          progBarInner.style.animation = '';
           state.activeDriveUploads = Math.max(0, (state.activeDriveUploads || 1) - 1);
           upBtn.style.display = ''; fldBtn.style.display = '';
-          progWrap.style.display = 'none';
+          if(progWrap.dataset.hasError !== '1') progWrap.style.display = 'none';
           folderInp.value = '';
           slotAbortCtrl = null;
         }}
@@ -20866,35 +21374,138 @@ function mountDriveAttachmentsBox(formRoot,sectionBodies,row,opts={{}},ctx={{}})
   secBody.insertBefore(wrap,secBody.firstChild);
 }}
 
+function _isArLang(){{
+  try{{
+    return (typeof window!=='undefined'&&window.DCR_LANG==='ar')||(typeof document!=='undefined'&&document.documentElement&&document.documentElement.getAttribute('lang')==='ar');
+  }}catch(_e){{return false;}}
+}}
+
+function _formatDriveStageText(stage,done,total,label){{
+  if(label)return label;
+  const ar=_isArLang();
+  const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+  if(stage==='preparing'){{
+    return ar?'جاري تجهيز مجلد Drive...':'Preparing Drive folder...';
+  }}
+  if(stage==='forwarding'){{
+    return ar?'جاري النقل إلى Google Drive...':'Transferring to Google Drive...';
+  }}
+  if(stage==='linking'){{
+    return ar?'جاري ربط الملف بالسجل...':'Linking file to record...';
+  }}
+  const sz=total>0?(pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')'):(pct+'%');
+  return ar?(sz+' — جاري الرفع...'):(sz+' — Uploading...');
+}}
+
+function _xhrSendBlob(opts){{
+  const {{url,method,headers,body,signal,onUploadProgress,onUploadComplete}}=opts||{{}};
+  return new Promise((resolve,reject)=>{{
+    if(signal&&signal.aborted){{
+      reject(new DOMException('Upload aborted by user','AbortError'));
+      return;
+    }}
+    const xhr=new XMLHttpRequest();
+    xhr.open(method||'PUT',url,true);
+    if(headers){{
+      Object.keys(headers).forEach((k)=>{{
+        xhr.setRequestHeader(k,headers[k]);
+      }});
+    }}
+    let settled=false;
+    let onAbort=null;
+    const cleanup=()=>{{
+      if(signal&&onAbort){{
+        try{{signal.removeEventListener('abort',onAbort);}}catch(_e){{}}
+      }}
+    }};
+    onAbort=()=>{{
+      if(settled)return;
+      settled=true;
+      cleanup();
+      try{{xhr.abort();}}catch(_e){{}}
+      reject(new DOMException('Upload aborted by user','AbortError'));
+    }};
+    if(signal){{
+      signal.addEventListener('abort',onAbort,{{once:true}});
+    }}
+    if(xhr.upload){{
+      xhr.upload.onprogress=(ev)=>{{
+        if(settled)return;
+        if(ev&&ev.lengthComputable&&typeof onUploadProgress==='function'){{
+          onUploadProgress(ev.loaded,ev.total);
+        }}
+      }};
+      xhr.upload.onload=()=>{{
+        if(settled)return;
+        if(typeof onUploadComplete==='function'){{
+          onUploadComplete();
+        }}
+      }};
+    }}
+    xhr.onload=()=>{{
+      if(settled)return;
+      settled=true;
+      cleanup();
+      resolve({{
+        status:xhr.status,
+        responseText:xhr.responseText||'',
+        getResponseHeader:(name)=>{{
+          try{{return xhr.getResponseHeader(name);}}catch(_e){{return null;}}
+        }}
+      }});
+    }};
+    xhr.onerror=()=>{{
+      if(settled)return;
+      settled=true;
+      cleanup();
+      reject(new Error('Network error during upload'));
+    }};
+    xhr.onabort=()=>{{
+      if(settled)return;
+      settled=true;
+      cleanup();
+      reject(new DOMException('Upload aborted by user','AbortError'));
+    }};
+    xhr.send(body);
+  }});
+}}
+
 async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,onProgress,useProxyRef,signal){{
   if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
   const end=Math.min(offset+chunkSize,file.size);
+  const chunkLen=Math.max(0,end-offset);
   const blob=file.slice(offset,end);
   const contentRange=`bytes ${{offset}}-${{end-1}}/${{file.size}}`;
   for(let attempt=0;attempt<5;attempt++){{
     if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
     try{{
       if(!useProxyRef.proxy){{
-        const r=await fetch(sessionUrl,{{
+        const r=await _xhrSendBlob({{
+          url:sessionUrl,
           method:'PUT',
           headers:{{'Content-Range':contentRange}},
           body:blob,
-          signal:signal
+          signal:signal,
+          onUploadProgress:(loaded,total)=>{{
+            const effTotal=total>0?total:chunkLen;
+            const cappedLoaded=effTotal>0?Math.min(loaded,Math.floor(effTotal*0.99)):0;
+            if(typeof onProgress==='function')onProgress(Math.min(offset+cappedLoaded,file.size),file.size,'','uploading');
+          }}
         }});
         if(r.status===308){{
-          const rng=r.headers.get('Range')||'';
+          const rng=r.getResponseHeader('Range')||'';
           const nextOff=rng.includes('-')?(parseInt(rng.split('-')[1],10)+1):end;
-          onProgress(nextOff,file.size);
+          if(typeof onProgress==='function')onProgress(nextOff,file.size,'','uploading');
           return {{done:false,offset:nextOff}};
         }}
         if(r.status===200||r.status===201){{
-          const j=await r.json();
-          onProgress(file.size,file.size);
+          let j={{}};
+          try{{j=JSON.parse(r.responseText||'{{}}');}}catch(_e){{}}
+          if(typeof onProgress==='function')onProgress(file.size,file.size,'','uploading');
           return {{done:true,fileId:j.id}};
         }}
-        if(r.status>=500||r.status===429)throw new Error('Drive HTTP '+r.status);
-        const errTxt=await r.text();
-        throw new Error('Drive upload error ('+r.status+'): '+errTxt.slice(0,160));
+        if(r.status>=500||r.status===429||r.status===0)throw new Error('Drive HTTP '+r.status);
+        throw new Error('Drive upload error ('+r.status+'): '+String(r.responseText||'').slice(0,160));
       }}
     }}catch(directErr){{
       if(directErr.name==='AbortError'||(signal&&signal.aborted))throw directErr;
@@ -20907,20 +21518,31 @@ async function _sendDriveChunkWithRetry(sessionUrl,ticket,file,offset,chunkSize,
     }}
     if(useProxyRef.proxy){{
       if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
-      const pr=await fetch('/api/drive/upload-chunk',{{
+      const pr=await _xhrSendBlob({{
+        url:'/api/drive/upload-chunk',
         method:'POST',
         headers:{{'X-Upload-Ticket':ticket,'X-Content-Range':contentRange}},
         body:blob,
-        signal:signal
+        signal:signal,
+        onUploadProgress:(loaded,total)=>{{
+          const effTotal=total>0?total:chunkLen;
+          const cappedLoaded=effTotal>0?Math.min(loaded,Math.floor(effTotal*0.95)):0;
+          if(typeof onProgress==='function')onProgress(Math.min(offset+cappedLoaded,file.size),file.size,'','uploading');
+        }},
+        onUploadComplete:()=>{{
+          const capped95=chunkLen>0?Math.floor(chunkLen*0.95):0;
+          if(typeof onProgress==='function')onProgress(Math.min(offset+capped95,file.size),file.size,'','forwarding');
+        }}
       }});
-      const pj=await pr.json().catch(()=>({{}}));
-      if(!pr.ok)throw new Error(pj.error||('Chunk upload failed ('+pr.status+')'));
+      let pj={{}};
+      try{{pj=JSON.parse(pr.responseText||'{{}}');}}catch(_e){{}}
+      if(pr.status<200||pr.status>=300)throw new Error(pj.error||('Chunk upload failed ('+pr.status+')'));
       if(pj.done&&pj.file&&pj.file.id){{
-        onProgress(file.size,file.size);
+        if(typeof onProgress==='function')onProgress(file.size,file.size,'','uploading');
         return {{done:true,fileId:pj.file.id}};
       }}
       const nextOff=pj.offset||end;
-      onProgress(nextOff,file.size);
+      if(typeof onProgress==='function')onProgress(nextOff,file.size,'','uploading');
       return {{done:false,offset:nextOff}};
     }}
   }}
@@ -20960,6 +21582,7 @@ function promptDriveFolderChoice(candidates, dtName){{
 async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
   const signal=extraOpts.signal||null;
   if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
+  if(typeof onProgress==='function')onProgress(0,file.size||0,'','preparing');
   const sessPayload = {{
     project_id: PID,
     dt_id: state.tab,
@@ -20997,7 +21620,7 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
   }}
   if(!sessRes.ok||!sess.ok)throw new Error(sess.hint||sess.error||('Could not start upload ('+sessRes.status+')'));
 
-  const chunkSize=sess.chunk_size||(8*1024*1024);
+  const chunkSize=sess.chunk_size||(2*1024*1024);
   const useProxyRef={{proxy:false}};
   let offset=0, fileId='';
   while(offset<file.size){{
@@ -21025,7 +21648,7 @@ async function uploadFileToDriveSlot(slot,file,row,onProgress,extraOpts={{}}){{
     }};
   }}
   if(signal&&signal.aborted)throw new DOMException('Upload aborted by user','AbortError');
-  onProgress(file.size,file.size,'Linking file to record...');
+  if(typeof onProgress==='function')onProgress(file.size,file.size,'','linking');
   const cmpRes=await fetch('/api/drive/upload-complete',{{
     method:'POST',
     headers:{{'Content-Type':'application/json'}},
@@ -21110,14 +21733,14 @@ function extractDocNoFromFilename(name, recs){{
 function getBatchTargetDrivePath(slot){{
   const curT=String(state.tab||'').trim().toUpperCase();
   const dt=(state.dtList||[]).find(d=>String(d.id).trim().toUpperCase()===curT||String(d.code||'').trim().toUpperCase()===curT)||{{}};
-  const dtName=dt.name||dt.code||state.tab||'Documents';
+  const dtName=isHsePtwTab()?'PTW':(dt.name||dt.code||state.tab||'Documents');
   const slotMap={{submission:'Submit',approval:'Replied',part_a:'Part A',part_b:'Part B',part_c:'Part C',part_d:'Part D'}};
   const sub=slotMap[slot]||'Submit';
   const projLbl=(typeof PROJ_CODE!=='undefined'&&PROJ_CODE)?PROJ_CODE:PID;
-  if(isHsePtwTab()){{
-    return state.ptwSubtypeFilter ? `${{projLbl}} ❯ PTW ❯ ${{state.ptwSubtypeFilter}}` : `${{projLbl}} ❯ PTW ❯ <Subtype>`;
-  }}
-  return (tabHasReplyCycle()||isHseCloseoutTab()||isNOCTab()) ? `${{projLbl}} ❯ ${{dtName}} ❯ ${{sub}}` : `${{projLbl}} ❯ ${{dtName}}`;
+  const subCfg=(typeof getActiveSubtypeConfig==='function')?getActiveSubtypeConfig():null;
+  const subSeg=subCfg?(state.ptwSubtypeFilter||'<Subtype>'):'';
+  const hasDual=tabHasReplyCycle()||isHseCloseoutTab()||isNOCTab();
+  return `${{projLbl}} ❯ ${{dtName}}${{subSeg?(' ❯ '+subSeg):''}}${{hasDual?(' ❯ '+sub):''}}`;
 }}
 
 function populateBatchDatalist(){{
@@ -21178,12 +21801,14 @@ function updateBatchControlsState(){{
 function updateBatchOverallProgress(){{
   const q=state.batchQueue||[];
   const matched=q.filter(it=>it.recordId);
-  const done=q.filter(it=>it.status==='done').length;
+  const done=matched.filter(it=>it.status==='done').length;
+  const active=matched.find(it=>it.status==='uploading');
+  const activeFrac=active?(Math.max(0,Math.min(100,Number(active.pct)||0))/100):0;
   const total=matched.length||1;
   const ovBar=document.getElementById('batch-drv-overall-bar');
   const ovPct=document.getElementById('batch-drv-overall-pct');
   const ovTxt=document.getElementById('batch-drv-overall-txt');
-  const pct=Math.min(100,Math.round((done/total)*100));
+  const pct=Math.min(100,Math.round(((done+activeFrac)/total)*100));
   if(ovBar)ovBar.style.width=pct+'%';
   if(ovPct)ovPct.textContent=pct+'%';
   if(ovTxt)ovTxt.textContent=window.t('drive.batch_completed_n',{{done,total}});
@@ -21622,6 +22247,8 @@ async function startBatchDriveUpload(){{
             const revLbl=formatNocRevLabel(batchPartRev||0);
             subName=baseDoc?`${{baseDoc}} - Part ${{pLet}} ${{revLbl}}`:`${{item.folderName||('Part_'+pLet)}} ${{revLbl}}`;
           }}
+          const totalFolderBytes=files.reduce((sum,f)=>sum+(f.size||0),0);
+          let uploadedFolderBytes=0;
           let fDone=0;
           let lastRes=null;
           for(let fi=0;fi<files.length;fi++){{
@@ -21629,12 +22256,22 @@ async function startBatchDriveUpload(){{
             const subFile=files[fi];
             const relParts=(subFile.webkitRelativePath||'').split('/').filter(Boolean);
             const relSub=relParts.length>2?relParts.slice(1,-1).join('/'):'';
-            lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl)=>{{
-              const subPct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-              item.pct=Math.round(((fi+(total>0?done/total:0))/files.length)*100);
-              item.msg=`Uploading file ${{fi+1}}/${{files.length}}: ${{subFile.name}} (${{item.pct}}%)`;
+            lastRes=await uploadFileToDriveSlot(slot,subFile,row,(done,total,lbl,stage)=>{{
+              const activeDone=Math.min(done||0,subFile.size||total||0);
+              const overallBytes=uploadedFolderBytes+activeDone;
+              item.pct=totalFolderBytes>0
+                ?Math.min(100,Math.round((overallBytes/totalFolderBytes)*100))
+                :Math.round(((fi+(total>0?done/total:0))/files.length)*100);
+              const ar=_isArLang();
+              const prefix=ar
+                ?`ملف ${{fi+1}} من ${{files.length}}: ${{subFile.name}} — ${{item.pct}}%`
+                :`File ${{fi+1}} / ${{files.length}}: ${{subFile.name}} — ${{item.pct}}%`;
+              const stageSuffix=(stage&&stage!=='uploading')?(' — '+_formatDriveStageText(stage,done,total,lbl)):'';
+              item.msg=prefix+stageSuffix;
               if(cell)updateBatchRowStatusCell(cell,item);
+              updateBatchOverallProgress();
             }},{{subfolder_name:subName,link_as_folder:true,replace_existing:(fi===0),rel_subfolder:relSub,rev_mode:(fi===0?batchRevMode:'overwrite'),part_rev:batchPartRev,signal:state.batchCurrentAbort.signal}});
+            uploadedFolderBytes+=(subFile.size||0);
             fDone++;
           }}
           if(state.batchCancel||item.status==='cancelled'){{
@@ -21649,9 +22286,9 @@ async function startBatchDriveUpload(){{
             newlyDone++;
           }}
         }}else{{
-          const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl)=>{{
+          const res=await uploadFileToDriveSlot(slot,item.file,row,(done,total,lbl,stage)=>{{
             item.pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-            item.msg=lbl||(item.pct+'% ('+_fmtBytes(done)+' / '+_fmtBytes(total)+')');
+            item.msg=_formatDriveStageText(stage||'uploading',done,total,lbl);
             if(cell)updateBatchRowStatusCell(cell,item);
             updateBatchOverallProgress();
           }},{{rev_mode:batchRevMode,part_rev:batchPartRev,signal:state.batchCurrentAbort.signal}});
@@ -21913,16 +22550,30 @@ async function editProject(){{
   body.appendChild(grid);
   
   // Google Drive
+  window._PROJ_MASTER_DRIVE_ACTIVE = !!proj.master_drive_root_active;
   const drvTitle=document.createElement('div');drvTitle.className='stitle';drvTitle.textContent=window.t('reg.proj_drv_title');body.appendChild(drvTitle);
   const drvGrid=document.createElement('div');drvGrid.className='fgrid';
+  const drvPlaceholder = (!proj.drive_folder_id && proj.master_drive_root_active)
+    ? window.t('reg.proj_drv_auto_ph')
+    : window.t('reg.proj_drv_root_ph');
+  const drvHintHtml = (!proj.drive_folder_id && proj.master_drive_root_active)
+    ? `<div class="fg full" id="proj-drive-auto-hint" style="font-size:10.5px;color:var(--pr);background:var(--bg);padding:5px 8px;border-radius:4px">☁️ ${{escHtml(window.t('reg.proj_drv_auto_hint'))}}</div>`
+    : '';
+  const initDrvBtnHtml = CAN_EDIT ? `
+      <button class="btn btn-pr" id="btn-init-drive-folders" type="button" onclick="initProjectDriveFolders(this)" style="flex:1;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;white-space:nowrap">
+        📁 ${{escHtml(window.t('reg.proj_init_drv_btn'))}}
+      </button>` : '';
   drvGrid.innerHTML=`
-    <div class="fg"><label>${{escHtml(window.t('reg.proj_drv_root_id'))}}</label><input id="proj-drive-id" class="bidi-ltr" placeholder="${{escHtml(window.t('reg.proj_drv_root_ph'))}}" value="${{proj.drive_folder_id||''}}"></div>
-    <div class="fg" style="display:flex;align-items:flex-end">
-      <button class="btn btn-sc" type="button" onclick="syncDriveLinks(this)" style="width:100%;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;background:var(--bg)">
+    <div class="fg"><label>${{escHtml(window.t('reg.proj_drv_root_id'))}}</label><input id="proj-drive-id" class="bidi-ltr" placeholder="${{escHtml(drvPlaceholder)}}" value="${{proj.drive_folder_id||''}}"></div>
+    <div class="fg" style="display:flex;align-items:flex-end;gap:6px">
+      ${{initDrvBtnHtml}}
+      <button class="btn btn-sc" type="button" onclick="syncDriveLinks(this)" style="flex:1;height:32px;display:flex;justify-content:center;align-items:center;gap:6px;background:var(--bg);white-space:nowrap">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
         ${{escHtml(window.t('reg.proj_sync_btn'))}}
       </button>
     </div>
+    ${{drvHintHtml}}
+    <div id="proj-drive-init-status" class="fg full" style="display:none;padding:8px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
   `;
   body.appendChild(drvGrid);
 
@@ -22233,6 +22884,75 @@ async function syncDriveLinks(btn) {{
   }}
 }}
 
+async function initProjectDriveFolders(btn) {{
+  if(!CAN_EDIT){{toast(window.t('common.forbidden'),'er');return;}}
+  let folderId = document.getElementById('proj-drive-id')?.value.trim() || '';
+  if(folderId.includes('/folders/')) folderId = folderId.split('/folders/')[1].split('/')[0].split('?')[0];
+  if(!folderId && !window._PROJ_MASTER_DRIVE_ACTIVE){{toast(window.t('reg.proj_sync_need_id'),'er');return;}}
+  const statusEl = document.getElementById('proj-drive-init-status');
+  const origHtml = btn ? btn.innerHTML : '';
+  if(btn){{btn.disabled = true; btn.textContent = window.t('reg.proj_init_drv_ing');}}
+  if(statusEl){{
+    statusEl.style.display = 'block';
+    statusEl.style.background = 'var(--bg)';
+    statusEl.style.border = '1px solid var(--bd)';
+    statusEl.style.color = 'var(--tx)';
+    statusEl.textContent = window.t('reg.proj_init_drv_ing');
+  }}
+  try {{
+    const res = await fetch('/api/projects/' + encodeURIComponent(PID) + '/init-drive-folders', {{
+      method: 'POST',
+      credentials: 'include',
+      headers: {{'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}},
+      body: JSON.stringify({{ drive_folder_id: folderId }})
+    }});
+    const r = await res.json().catch(()=>({{}}));
+    if(res.ok && r && (r.ok || typeof r.created === 'number')){{
+      if(r.drive_folder_id){{
+        const drvInpEl = document.getElementById('proj-drive-id');
+        if(drvInpEl && !drvInpEl.value.trim()) drvInpEl.value = r.drive_folder_id;
+      }}
+      const created = Number(r.created || 0);
+      const existing = Number(r.existing || 0);
+      const errCnt = Array.isArray(r.errors) ? r.errors.length : 0;
+      const msg = errCnt > 0
+        ? window.t('reg.proj_init_drv_partial', {{created, existing, errors: errCnt}})
+        : window.t('reg.proj_init_drv_ok', {{created, existing}});
+      if(statusEl){{
+        statusEl.style.display = 'block';
+        statusEl.style.background = errCnt > 0 ? '#fffbeb' : '#f0fdf4';
+        statusEl.style.border = errCnt > 0 ? '1px solid #fde68a' : '1px solid #bbf7d0';
+        statusEl.style.color = errCnt > 0 ? '#92400e' : '#166534';
+        statusEl.textContent = msg;
+      }}
+      toast(msg, errCnt > 0 ? 'wa' : 'ok');
+      if(typeof loadDTs === 'function') loadDTs(true).catch(()=>null);
+    }} else {{
+      const errMsg = window.t('reg.proj_init_drv_err', {{error: (r && r.error) || res.status}});
+      if(statusEl){{
+        statusEl.style.display = 'block';
+        statusEl.style.background = '#fef2f2';
+        statusEl.style.border = '1px solid #fecaca';
+        statusEl.style.color = '#b91c1c';
+        statusEl.textContent = errMsg;
+      }}
+      toast(errMsg, 'er');
+    }}
+  }} catch(e) {{
+    const errMsg = window.t('reg.proj_init_drv_err', {{error: e.message || 'Network error'}});
+    if(statusEl){{
+      statusEl.style.display = 'block';
+      statusEl.style.background = '#fef2f2';
+      statusEl.style.border = '1px solid #fecaca';
+      statusEl.style.color = '#b91c1c';
+      statusEl.textContent = errMsg;
+    }}
+    toast(errMsg, 'er');
+  }} finally {{
+    if(btn){{btn.disabled = false; btn.innerHTML = origHtml;}}
+  }}
+}}
+
 // Doc Types
 function normalizeDocTypeReplyOverride(dt){{
   const o=dt?.expected_reply_override||{{}};
@@ -22247,6 +22967,23 @@ function toggleDocTypeReplyOverride(){{
   const fields=document.getElementById('dt-er-fields');
   if(fields)fields.style.display=on?'grid':'none';
 }}
+function onDocTypeReplyCycleToggle(){{
+  const rcEl=document.getElementById('dt-has-reply-cycle');
+  if(rcEl)rcEl.dataset.manualEdit='1';
+}}
+function onDocTypeMetaInput(){{
+  const editId=document.getElementById('dt-edit-id')?.value.trim();
+  const rcEl=document.getElementById('dt-has-reply-cycle');
+  if(!rcEl || editId || rcEl.dataset.manualEdit==='1')return;
+  const code=document.getElementById('dt-code')?.value.trim().toUpperCase()||'';
+  const name=document.getElementById('dt-name')?.value.trim()||'';
+  const wsUp=String(typeof WS_ID!=='undefined'&&WS_ID?WS_ID:'ENG').trim().toUpperCase();
+  if(!code && !name){{
+    rcEl.checked=(wsUp==='ENG');
+    return;
+  }}
+  rcEl.checked=dtHasReplyCycle({{code,name}}, wsUp);
+}}
 function setDocTypeModalMode(dt=null){{
   const edit=!!dt;
   document.getElementById('dt-modal-title').textContent=edit?window.t('reg.dt_modal_edit_title'):window.t('reg.dt_modal_add_title');
@@ -22255,6 +22992,12 @@ function setDocTypeModalMode(dt=null){{
   document.getElementById('dt-code').value=edit?(dt.code||dt.id||''):'';
   document.getElementById('dt-name').value=edit?(dt.name||''):'';
   document.getElementById('dt-code').disabled=false;
+  const rcEl=document.getElementById('dt-has-reply-cycle');
+  if(rcEl){{
+    const wsUp=String(typeof WS_ID!=='undefined'&&WS_ID?WS_ID:'ENG').trim().toUpperCase();
+    rcEl.dataset.manualEdit=edit?'1':'';
+    rcEl.checked=edit?dtHasReplyCycle(dt, wsUp):(wsUp==='ENG');
+  }}
   const o=normalizeDocTypeReplyOverride(dt||{{}});
   document.getElementById('dt-er-use').checked=o.use_expected_reply_override;
   document.getElementById('dt-er-rev0').value=o.rev0_reply_days_override;
@@ -22276,13 +23019,25 @@ async function saveDocType(){{
   const code=document.getElementById('dt-code').value.trim().toUpperCase();
   const name=document.getElementById('dt-name').value.trim();
   if(!code||!name){{toast(window.t('reg.dt_req'),'er');return;}}
-  const payload={{code,name,expected_reply_override:collectDocTypeReplyOverride()}};
+  const rcEl=document.getElementById('dt-has-reply-cycle');
+  const has_reply_cycle=rcEl?Boolean(rcEl.checked):dtHasReplyCycle({{code,name}});
+  const payload={{code,name,has_reply_cycle,expected_reply_override:collectDocTypeReplyOverride()}};
   if(editId){{
-    await apiFetch('/api/doc_types/'+PID+'/'+editId,{{method:'PATCH',body:JSON.stringify(payload)}});
-    closeM('dt-modal');await loadDTs(true);toast(window.t('reg.dt_saved'),'ok');
+    const res=await apiFetch('/api/doc_types/'+PID+'/'+editId,{{method:'PATCH',body:JSON.stringify(payload)}});
+    if(!res||res.ok===false)return;
+    closeM('dt-modal');await loadDTs(true);
+    const drvUpdated=Boolean((res.drive_rename&&res.drive_rename.renamed)||(res.drive_provision&&!res.drive_provision.skipped&&res.drive_provision.created>0));
+    toast(window.t(drvUpdated?'reg.dt_saved_drive':'reg.dt_saved'),'ok');
   }}else{{
-    await apiFetch('/api/doc_types/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
-    closeM('dt-modal');await loadDTs();switchTab(code);toast(window.t('reg.dt_added'),'ok');
+    const res=await apiFetch('/api/doc_types/'+PID,{{method:'POST',body:JSON.stringify(payload)}});
+    if(!res||res.ok===false)return;
+    closeM('dt-modal');await loadDTs();switchTab(code);
+    const drvProv=res.drive_provision;
+    if(drvProv&&!drvProv.skipped&&(drvProv.created>0||drvProv.existing>0)){{
+      toast(window.t('reg.dt_added_drive',{{created:drvProv.created||0}}),'ok');
+    }}else{{
+      toast(window.t('reg.dt_added'),'ok');
+    }}
   }}
 }}
 

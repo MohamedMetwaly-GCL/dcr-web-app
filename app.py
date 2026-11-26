@@ -603,16 +603,23 @@ def api_drive_sync(pid):
         return jsonify(error="No folder ID provided"), 400
         
     # Save folder_id to project data
+    import drive_routing
+    clean_fid = drive_routing.extract_drive_folder_id(folder_id)
     proj = db.get_project(pid)
     if proj:
-        proj["drive_folder_id"] = folder_id
-        import json
-        db.exe("UPDATE projects SET data=%s WHERE id=%s", (json.dumps(proj), pid))
+        old_fid = drive_routing.extract_drive_folder_id(proj.get("drive_folder_id"))
+        db.update_project_settings(pid, {"drive_folder_id": clean_fid})
+        if old_fid and old_fid != clean_fid:
+            db.clear_project_drive_caches(pid)
+        try:
+            drive_routing.provision_project_drive_structure(pid)
+        except Exception:
+            pass
         
-    # Start sync process in background
+    # Start sync process in background (scoped to pid)
     from drive_service import process_drive_folder
     import threading
-    threading.Thread(target=process_drive_folder, args=(folder_id,)).start()
+    threading.Thread(target=process_drive_folder, args=(clean_fid,), kwargs={"project_id": pid}).start()
     
     return jsonify(ok=True)
 
@@ -677,7 +684,24 @@ def update_project_settings_route(pid):
         if not body:
             return jsonify(error="Empty payload"), 400
             
+        if "drive_folder_id" in body:
+            import drive_routing
+            body["drive_folder_id"] = drive_routing.extract_drive_folder_id(body.get("drive_folder_id"))
+        old_proj = db.get_project(pid) or {}
         db.update_project_settings(pid, body)
+        try:
+            import drive_routing
+            if (
+                old_proj.get("auto_provisioned_drive")
+                and body.get("name")
+                and str(body.get("name")) != str(old_proj.get("name") or "")
+            ):
+                drive_routing.rename_project_drive_folder(None, pid, body.get("name"), new_project_code=body.get("code"))
+            has_master_root = bool(db.get_master_drive_root_id()) if hasattr(db, "get_master_drive_root_id") else False
+            if body.get("drive_folder_id") or has_master_root:
+                drive_routing.provision_project_drive_structure(pid)
+        except Exception:
+            pass
         return jsonify(ok=True)
     except Exception as e:
         print(f"[Project Settings POST Error]: {e}")
@@ -1152,7 +1176,7 @@ def drive_polling_job():
                 folder_id = p.get("data", {}).get("drive_folder_id")
                 if folder_id:
                     from drive_service import process_drive_folder
-                    process_drive_folder(folder_id)
+                    process_drive_folder(folder_id, project_id=p.get("id"))
         except Exception as e:
             print(f"[Drive Polling Error]: {e}")
 
