@@ -5421,7 +5421,7 @@ async function saveMasterDriveRoot(btn) {
       body: JSON.stringify({ master_root_id: raw })
     });
     const r = await res.json().catch(() => ({}));
-    if (res.ok && r && r.ok) {
+    if (res.ok && r && r.ok && (!raw || r.master_root_id)) {
       if (inp) inp.value = r.master_root_id || '';
       if (_ADMIN_DATA) {
         _ADMIN_DATA.masterDrive = { master_root_id: r.master_root_id || '', source: r.source || 'none' };
@@ -5431,7 +5431,9 @@ async function saveMasterDriveRoot(btn) {
         const sf = r.source === 'db' ? 'Source: Admin Settings' : (r.source === 'env' ? 'Source: Environment Variable' : 'Not configured');
         srcEl.textContent = _admT(sk, null, sf);
       }
-      const msg = _admT('admin.master_drive_saved', null, '✔ Master Drive Root Folder saved');
+      const msg = r.master_root_id
+        ? _admT('admin.master_drive_saved', null, '✔ Master Drive Root Folder saved')
+        : _admT('admin.master_drive_cleared', null, '✔ Master Drive Root Folder cleared');
       if (statusEl) {
         statusEl.style.display = 'block';
         statusEl.style.background = '#f0fdf4';
@@ -5441,7 +5443,8 @@ async function saveMasterDriveRoot(btn) {
       }
       toast(msg, 'ok');
     } else {
-      const errMsg = _admT('admin.master_drive_save_err', { error: (r && r.error) || res.status }, 'Failed to save Master Drive Root: ' + ((r && r.error) || res.status));
+      const errDetail = (r && r.error) || (res.ok && raw && !(r && r.master_root_id) ? 'Failed to persist Master Drive Root' : res.status);
+      const errMsg = _admT('admin.master_drive_save_err', { error: errDetail }, 'Failed to save Master Drive Root: ' + errDetail);
       if (statusEl) {
         statusEl.style.display = 'block';
         statusEl.style.background = '#fef2f2';

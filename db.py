@@ -4160,7 +4160,14 @@ def get_setting(key, default=None):
     if not r or "value" not in r: return default
     import json
     v = r["value"]
-    return v if not isinstance(v, str) else json.loads(v)
+    if isinstance(v, str):
+        # psycopg2 decodes jsonb string scalars directly to str; only json.loads raw JSON text
+        if v.startswith(("{", "[", '"')) or v in ("true", "false", "null"):
+            try:
+                return json.loads(v)
+            except Exception:
+                return v
+    return v
 
 def save_setting(key, value):
     import json

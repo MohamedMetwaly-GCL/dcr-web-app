@@ -503,6 +503,7 @@ class TestDriveMasterRoot(unittest.TestCase):
             "admin.master_drive_save",
             "admin.master_drive_saving",
             "admin.master_drive_saved",
+            "admin.master_drive_cleared",
             "admin.master_drive_save_err",
             "admin.master_drive_src_db",
             "admin.master_drive_src_env",
@@ -608,6 +609,148 @@ vm.runInContext({json.dumps(js_code)}, ctx);
         self.assertIn("18 new / 4 verified", res["statusText"])
         self.assertFalse(res["saveBtnDisabled"])
         self.assertFalse(res["initBtnDisabled"])
+
+    def test_db_get_setting_jsonb_string_roundtrip_and_api(self):
+        """Regression test: psycopg2 returns JSONB string scalars as Python str;
+        db.get_setting must not crash with JSONDecodeError and clear master_root_id."""
+        pg_jsonb_store = {}
+
+        def fake_exe(sql, params=()):
+            if "INSERT INTO app_settings" in sql:
+                key, json_text = params
+                # PostgreSQL ::jsonb parses json_text, and psycopg2 returns decoded Python value
+                pg_jsonb_store[key] = json.loads(json_text)
+
+        def fake_q(sql, params=(), one=False):
+            if "FROM app_settings" in sql:
+                key = params[0]
+                if key not in pg_jsonb_store:
+                    return None if one else []
+                row = {"value": copy.deepcopy(pg_jsonb_store[key])}
+                return row if one else [row]
+            return None if one else []
+
+        admin_user = {"username": "admin", "role": "superadmin"}
+        with patch.object(db, "exe", side_effect=fake_exe), \
+             patch.object(db, "q", side_effect=fake_q), \
+             patch("db.get_session", return_value=admin_user), \
+             patch.object(db, "is_user_workspace_admin", return_value=False), \
+             patch.object(db, "log_action", side_effect=self.store.log_action):
+            # Save via POST /api/admin/drive-master-root with full Drive URL
+            r_post = self.client.post(
+                "/api/admin/drive-master-root",
+                json={"master_root_id": "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz?usp=sharing"},
+                headers=self.ajax,
+            )
+            self.assertEqual(r_post.status_code, 200)
+            body_post = r_post.get_json()
+            self.assertEqual(body_post, {
+                "ok": True,
+                "master_root_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+                "source": "db",
+            })
+
+            # GET /api/admin/drive-master-root must return the persisted ID (survives modal reopen)
+            r_get = self.client.get("/api/admin/drive-master-root", headers=self.ajax)
+            self.assertEqual(r_get.status_code, 200)
+            self.assertEqual(r_get.get_json(), {
+                "ok": True,
+                "master_root_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+                "source": "db",
+            })
+
+            # Numeric-looking string IDs and list/dict settings also round-trip cleanly
+            db.save_setting("holidays", ["2026-01-01"])
+            self.assertEqual(db.get_setting("holidays"), ["2026-01-01"])
+            db.save_setting("numeric_str", "123456")
+            self.assertEqual(db.get_setting("numeric_str"), "123456")
+
+            # Explicit clear via empty string returns source="none"
+            r_clear = self.client.post(
+                "/api/admin/drive-master-root",
+                json={"master_root_id": ""},
+                headers=self.ajax,
+            )
+            self.assertEqual(r_clear.status_code, 200)
+            self.assertEqual(r_clear.get_json(), {
+                "ok": True,
+                "master_root_id": "",
+                "source": "none",
+            })
+
+    def test_save_master_drive_root_node_vm_clear_and_mismatch_guard(self):
+        """Regression test: saveMasterDriveRoot preserves ID, handles clear status,
+        and rejects silent empty response when a non-empty ID was submitted."""
+        src = html_render.SHARED_JS
+        m = re.search(
+            r"(async function saveMasterDriveRoot\(btn\)[\s\S]*?\nasync function initAllDriveFolders\(btn\))",
+            src,
+        )
+        self.assertIsNotNone(m)
+        js_code = m.group(1).rsplit("\nasync function initAllDriveFolders", 1)[0]
+
+        node_script = f"""
+const vm = require('vm');
+const elements = {{
+  'admin-master-drive-root-id': {{ value: '1AbCdEfGhIjKlMnOpQrStUvWxYz' }},
+  'admin-master-drive-status': {{ style: {{}}, textContent: '' }},
+  'admin-master-drive-source': {{ textContent: 'Not configured' }},
+}};
+let nextResp = null;
+const ctx = {{
+  _ADMIN_DATA: {{ masterDrive: {{ master_root_id: '', source: 'none' }} }},
+  document: {{ getElementById: (id) => elements[id] || null }},
+  toast: () => {{}},
+  _admT: (k, vars, fb) => fb || k,
+  fetch: async () => ({{ ok: true, status: 200, json: async () => nextResp }}),
+}};
+vm.createContext(ctx);
+vm.runInContext({json.dumps(js_code)}, ctx);
+(async () => {{
+  const btn = {{ disabled: false, textContent: 'Save' }};
+  // 1. Silent empty response when non-empty ID submitted -> error, does NOT clear input
+  nextResp = {{ ok: true, master_root_id: '', source: 'none' }};
+  await ctx.saveMasterDriveRoot(btn);
+  const errStatus = elements['admin-master-drive-status'].textContent;
+  const valAfterErr = elements['admin-master-drive-root-id'].value;
+
+  // 2. Successful save -> preserves ID, sets Source: Admin Settings, shows saved
+  nextResp = {{ ok: true, master_root_id: '1AbCdEfGhIjKlMnOpQrStUvWxYz', source: 'db' }};
+  await ctx.saveMasterDriveRoot(btn);
+  const savedStatus = elements['admin-master-drive-status'].textContent;
+  const savedSrc = elements['admin-master-drive-source'].textContent;
+  const valAfterSave = elements['admin-master-drive-root-id'].value;
+
+  // 3. Explicit clear -> clears input, sets Not configured, shows cleared
+  elements['admin-master-drive-root-id'].value = '';
+  nextResp = {{ ok: true, master_root_id: '', source: 'none' }};
+  await ctx.saveMasterDriveRoot(btn);
+  const clearedStatus = elements['admin-master-drive-status'].textContent;
+  const clearedSrc = elements['admin-master-drive-source'].textContent;
+
+  console.log(JSON.stringify({{
+    errStatus, valAfterErr,
+    savedStatus, savedSrc, valAfterSave,
+    clearedStatus, clearedSrc,
+  }}));
+}})();
+"""
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tf:
+            tf.write(node_script)
+            tf_path = tf.name
+        try:
+            proc = subprocess.run(["node", tf_path], capture_output=True, text=True, check=True, timeout=15)
+        finally:
+            os.unlink(tf_path)
+
+        res = json.loads(proc.stdout.strip())
+        self.assertIn("Failed to save Master Drive Root", res["errStatus"])
+        self.assertEqual(res["valAfterErr"], "1AbCdEfGhIjKlMnOpQrStUvWxYz")
+        self.assertIn("saved", res["savedStatus"])
+        self.assertEqual(res["savedSrc"], "Source: Admin Settings")
+        self.assertEqual(res["valAfterSave"], "1AbCdEfGhIjKlMnOpQrStUvWxYz")
+        self.assertIn("cleared", res["clearedStatus"])
+        self.assertEqual(res["clearedSrc"], "Not configured")
 
 
 if __name__ == "__main__":
