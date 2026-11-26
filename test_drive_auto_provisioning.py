@@ -99,12 +99,13 @@ class ThreadSafeFakeDrive:
                 def _run():
                     assert kw.get("supportsAllDrives") is True
                     pid = q.split("'")[1]
+                    only_folders = drive_routing.FOLDER_MIME in q
                     with outer._lock:
                         outer.calls["list"] += 1
                         res = [
-                            {"id": it["id"], "name": it["name"]}
+                            {"id": it["id"], "name": it["name"], "mimeType": it["mimeType"]}
                             for it in outer.items.values()
-                            if it["parent"] == pid and not it["trashed"] and it["mimeType"] == drive_routing.FOLDER_MIME
+                            if it["parent"] == pid and not it["trashed"] and (not only_folders or it["mimeType"] == drive_routing.FOLDER_MIME)
                         ]
                     return {"files": res}
 
@@ -713,21 +714,22 @@ class TestAutoTriggersRenameInitAndPermissions(unittest.TestCase):
                     civil_fld["id"],
                 )
 
-            # 7) Deleting a sub-tab and deleting a tab in DCR NEVER deletes or trashes anything on Drive
+            # 7) Deleting an empty sub-tab and empty tab trashes their empty Drive folders without hard-deleting
             folder_count_before = len(drive.items)
             with patch("db.remove_list_item"), patch("db.delete_doc_type"):
                 r_del_sub = self.client.delete("/api/lists/ENG-P1", json={
                     "list_name": "eng_tq_subtype", "item": "Structural Works"
                 })
                 self.assertEqual(r_del_sub.status_code, 200)
+                self.assertEqual(r_del_sub.get_json()["drive_cleanup"]["action"], "trashed")
                 r_del_dt = self.client.delete("/api/doc_types/ENG-P1/TQ")
                 self.assertEqual(r_del_dt.status_code, 200)
+                self.assertEqual(r_del_dt.get_json()["drive_cleanup"]["action"], "trashed")
 
             self.assertEqual(drive.calls["delete"], 0)
-            self.assertEqual(drive.calls["trash"], 0)
             self.assertEqual(len(drive.items), folder_count_before)
-            self.assertFalse(drive.items[tq_fld["id"]]["trashed"])
-            self.assertFalse(drive.items[civil_fld["id"]]["trashed"])
+            self.assertTrue(drive.items[tq_fld["id"]]["trashed"])
+            self.assertTrue(drive.items[civil_fld["id"]]["trashed"])
 
     def test_05_init_drive_folders_endpoint_permissions_and_provisioning(self):
         drive = ThreadSafeFakeDrive({"Init Root": {}})

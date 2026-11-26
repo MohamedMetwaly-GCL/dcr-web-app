@@ -139,8 +139,30 @@ def api_reorder_list_items(pid):
 def api_remove_list_item(pid):
     if not can_edit(pid): return jsonify(error="LOGIN_REQUIRED"), 403
     data = request.get_json(silent=True) or {}
-    db.remove_list_item(pid, data.get("list_name",""), data.get("item",""))
-    return jsonify(ok=True)
+    list_name = str(data.get("list_name", "") or "").strip()
+    item = str(data.get("item", "") or "").strip()
+    dt_id = str(data.get("dt_id", "") or "").strip()
+    db.remove_list_item(pid, list_name, item)
+    drive_cleanup = {"ok": True, "skipped": True, "reason": "not_subtype_list"}
+    if item and db._is_subtype_list_name(list_name):
+        try:
+            proj = db.get_project(pid)
+            target_dt_ids = [dt_id] if dt_id else db.resolve_doc_types_for_subtype_list(pid, list_name)
+            results = []
+            for t_dt in (target_dt_ids or []):
+                dt = db.get_doc_type(pid, t_dt)
+                if dt:
+                    results.append(drive_routing.cleanup_subtype_drive_folder(proj, dt, item, store=db))
+            if results:
+                drive_cleanup = results[0] if len(results) == 1 else {
+                    "ok": all(r.get("ok", True) for r in results),
+                    "results": results,
+                }
+            else:
+                drive_cleanup = {"ok": True, "skipped": True, "reason": "doc_type_not_found"}
+        except Exception as err:
+            drive_cleanup = {"ok": False, "action": "error", "error": str(err)}
+    return jsonify(ok=True, drive_cleanup=drive_cleanup)
 
 
 @lists_bp.route("/api/lists_meta/<pid>")

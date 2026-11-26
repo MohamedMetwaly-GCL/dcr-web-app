@@ -1714,3 +1714,187 @@ def rename_subtype_drive_folder(project_id, dt_id, old_subtype, new_subtype, ser
     if hasattr(store, "set_doc_type_drive_cache"):
         store.set_doc_type_drive_cache(project_id, dt_id, patch)
     return {"ok": True, "skipped": False, "renamed": True, "folder_id": sub_folder_id, "folder_name": final_name}
+
+
+def folder_has_any_files(service, folder_id, max_depth=5):
+    """Return True if `folder_id` (or any subfolder up to `max_depth`) contains a non-folder file."""
+    root_id = str(folder_id or "").strip()
+    if not root_id:
+        return False
+    queue = [(root_id, 0)]
+    visited = {root_id}
+    while queue:
+        cur_id, depth = queue.pop(0)
+        q = "'%s' in parents and trashed = false" % cur_id
+        token = None
+        while True:
+            res = service.files().list(
+                q=q,
+                fields="nextPageToken, files(id, name, mimeType)",
+                pageSize=1000,
+                pageToken=token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            ).execute() or {}
+            for f in (res.get("files") or []):
+                if f.get("mimeType") != FOLDER_MIME:
+                    return True
+                cid = str(f.get("id") or "").strip()
+                if cid and depth < max_depth and cid not in visited:
+                    visited.add(cid)
+                    queue.append((cid, depth + 1))
+            token = res.get("nextPageToken")
+            if not token:
+                break
+    return False
+
+
+def cleanup_or_archive_drive_folder(service, folder_id, archive_parent_id=None):
+    """Trash `folder_id` if its subtree has zero files; otherwise archive it into `_DCR_Deleted`."""
+    clean_fid = extract_drive_folder_id(folder_id) or str(folder_id or "").strip()
+    if not clean_fid:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder"}
+    if service is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured", "folder_id": clean_fid}
+    try:
+        if not folder_is_usable(service, clean_fid):
+            return {"ok": True, "skipped": True, "reason": "folder_not_found", "folder_id": clean_fid}
+        has_files = folder_has_any_files(service, clean_fid)
+        clean_archive_parent = extract_drive_folder_id(archive_parent_id) or str(archive_parent_id or "").strip()
+        if has_files and clean_archive_parent:
+            archived = archive_drive_item(service, clean_archive_parent, clean_fid)
+            _FOLDER_USABLE_CACHE.pop(clean_fid, None)
+            return {
+                "ok": True,
+                "action": "archived",
+                "folder_id": clean_fid,
+                "archive_folder_id": archived.get("archive_folder_id"),
+                "name": archived.get("name"),
+            }
+        service.files().update(
+            fileId=clean_fid,
+            body={"trashed": True},
+            fields="id, name, trashed",
+            supportsAllDrives=True,
+        ).execute()
+        _FOLDER_USABLE_CACHE.pop(clean_fid, None)
+        if clean_archive_parent:
+            invalidate_subfolder_caches(clean_archive_parent)
+        else:
+            invalidate_subfolder_caches()
+        return {"ok": True, "action": "trashed", "folder_id": clean_fid}
+    except Exception as err:
+        return {"ok": False, "action": "error", "folder_id": clean_fid, "error": str(err)}
+
+
+def _resolve_doc_type_folder_for_cleanup(service, root_id, dt):
+    """Resolve a DocType folder ID inside `root_id`, returning `(folder_id, skip_reason)`."""
+    dt_dict = dt if isinstance(dt, dict) else {}
+    dt_folder_id = str(dt_dict.get("drive_folder_id") or "").strip()
+    if dt_folder_id and folder_is_usable(service, dt_folder_id):
+        return dt_folder_id, None
+    try:
+        matched = match_doc_type_folder(
+            list_child_folders(service, root_id),
+            dt_dict.get("code"),
+            dt_dict.get("name"),
+        )
+    except RoutingError:
+        return "", "ambiguous"
+    if matched is None:
+        return "", "folder_not_found"
+    return matched["id"], None
+
+
+def cleanup_project_drive_folder(project, service=None, store=None):
+    """Safely trash or archive an auto-provisioned project's Drive folder on deletion."""
+    if not isinstance(project, dict) or not project:
+        return {"ok": True, "skipped": True, "reason": "project_not_found"}
+    if project.get("auto_provisioned_drive") is not True:
+        return {"ok": True, "skipped": True, "reason": "not_auto_provisioned"}
+    folder_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    if not folder_id:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder"}
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured", "folder_id": folder_id}
+    if store is None:
+        import db as store
+    master_root_id = _get_master_root_id_from_store(store)
+    return cleanup_or_archive_drive_folder(svc, folder_id, archive_parent_id=master_root_id or None)
+
+
+def cleanup_doc_type_drive_folder(project, dt, service=None):
+    """Safely trash or archive a DocType folder inside `project.drive_folder_id` on tab deletion."""
+    if not isinstance(project, dict) or not project:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder"}
+    root_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    if not root_id:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder"}
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured"}
+    dt_folder_id, skip_reason = _resolve_doc_type_folder_for_cleanup(svc, root_id, dt)
+    if not dt_folder_id:
+        return {"ok": True, "skipped": True, "reason": skip_reason or "folder_not_found"}
+    return cleanup_or_archive_drive_folder(svc, dt_folder_id, archive_parent_id=root_id)
+
+
+def cleanup_subtype_drive_folder(project, dt, subtype_name, service=None, store=None):
+    """Safely trash or archive a Sub-Tab folder inside a DocType folder on sub-tab deletion."""
+    from hse_defaults import normalize_ptw_subtype_value
+
+    if store is None:
+        import db as store
+    clean_sub = sanitize_drive_folder_segment(normalize_ptw_subtype_value(subtype_name))
+    if not clean_sub:
+        return {"ok": True, "skipped": True, "reason": "invalid_subtype"}
+    if not isinstance(project, dict) or not project:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder"}
+    root_id = extract_drive_folder_id(project.get("drive_folder_id"))
+    if not root_id:
+        return {"ok": True, "skipped": True, "reason": "no_drive_folder"}
+    svc = service if service is not None else get_default_write_service()
+    if svc is None:
+        return {"ok": True, "skipped": True, "reason": "drive_not_configured"}
+    if not isinstance(dt, dict) or not dt:
+        return {"ok": True, "skipped": True, "reason": "doc_type_not_found"}
+
+    dt_folder_id, skip_reason = _resolve_doc_type_folder_for_cleanup(svc, root_id, dt)
+    if not dt_folder_id:
+        return {"ok": True, "skipped": True, "reason": skip_reason or "doc_type_folder_not_found"}
+
+    sub_cache = dict(dt.get("drive_subtype_folders") or {})
+    slot_cache = dict(dt.get("drive_slot_folders") or {})
+    sub_key = clean_sub.lower()
+
+    sub_entry = dict(sub_cache.get(sub_key) or {}) if isinstance(sub_cache.get(sub_key), dict) else {}
+    sub_folder_id = str(sub_entry.get("id") or slot_cache.get(f"ptw_subtype:{sub_key}") or "").strip()
+    if sub_folder_id and not folder_is_usable(svc, sub_folder_id):
+        sub_folder_id = ""
+
+    if not sub_folder_id:
+        children = list_child_folders(svc, dt_folder_id)
+        matches = [f for f in children if str(f.get("name", "")).strip().lower() == sub_key]
+        if len(matches) > 1:
+            return {"ok": True, "skipped": True, "reason": "ambiguous"}
+        if len(matches) == 1:
+            sub_folder_id = matches[0]["id"]
+
+    if not sub_folder_id:
+        return {"ok": True, "skipped": True, "reason": "subfolder_not_found"}
+
+    res = cleanup_or_archive_drive_folder(svc, sub_folder_id, archive_parent_id=root_id)
+    if res.get("ok") and not res.get("skipped") and hasattr(store, "set_doc_type_drive_cache"):
+        try:
+            sub_cache.pop(sub_key, None)
+            patch = {"drive_subtype_folders": sub_cache}
+            if f"ptw_subtype:{sub_key}" in slot_cache:
+                slot_cache.pop(f"ptw_subtype:{sub_key}", None)
+                patch["drive_slot_folders"] = slot_cache
+            dt_id = dt.get("id") or dt.get("code")
+            if project.get("id") and dt_id:
+                store.set_doc_type_drive_cache(project["id"], dt_id, patch)
+        except Exception:
+            pass
+    return res

@@ -183,5 +183,20 @@ def api_delete_doc_type(pid, dt_id):
         except Exception:
             pass
         return jsonify(error="Document type access denied"), 403
+    proj = None
+    dt = None
+    try:
+        proj = db.get_project(pid)
+        dt = db.get_doc_type(pid, dt_id)
+    except Exception:
+        pass
     db.delete_doc_type(pid, dt_id)
-    return jsonify(ok=True)
+    drive_cleanup = {"ok": True, "skipped": True, "reason": "no_drive_folder"}
+    try:
+        drive_cleanup = drive_routing.cleanup_doc_type_drive_folder(
+            proj,
+            dt or {"id": dt_id, "code": dt_id, "name": ""},
+        )
+    except Exception as err:
+        drive_cleanup = {"ok": False, "action": "error", "error": str(err)}
+    return jsonify(ok=True, drive_cleanup=drive_cleanup)

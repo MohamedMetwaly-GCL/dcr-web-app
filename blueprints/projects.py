@@ -292,12 +292,17 @@ def api_reorder_projects():
 @require_admin
 def api_delete_project(pid):
     u = current_user()
+    proj = db.get_project(pid)
     if not is_superadmin(u):
-        proj = db.get_project(pid)
         if not proj:
             return jsonify(ok=False, error="Project not found"), 404
         admin_ws = [str(w).strip().upper() for w in (db.get_admin_workspaces_for_user(u["username"]) or [])]
         if str(proj.get("workspace_id") or "ENG").strip().upper() not in admin_ws:
             return jsonify(ok=False, error="Cannot delete project from another workspace"), 403
     db.delete_project(pid)
-    return jsonify(ok=True)
+    drive_cleanup = {"ok": True, "skipped": True, "reason": "not_auto_provisioned"}
+    try:
+        drive_cleanup = drive_routing.cleanup_project_drive_folder(proj, store=db)
+    except Exception as err:
+        drive_cleanup = {"ok": False, "action": "error", "error": str(err)}
+    return jsonify(ok=True, drive_cleanup=drive_cleanup)
