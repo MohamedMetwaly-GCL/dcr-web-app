@@ -417,5 +417,271 @@ class TestDriveSyncLegacyReclassification(unittest.TestCase):
             self.assertEqual(started_kwargs[-1][2].get("reclassify_legacy_links"), False)
 
 
+class TestDriveLegacyRoleFix02(unittest.TestCase):
+    """Regression tests for DRIVE-LEGACY-ROLE-FIX-02:
+    1. Stale legacy file_id (not in Submit) whose docNo matches a PDF in Replied is promoted to Reply and clears Subm.
+    2. Verified Submit upload (slot_verified=True) or file inside Submit is NEVER overwritten by Replied.
+    3. Status-less doc types (like EI) render neutral File (drive.badge_file) instead of Subm, while status-enabled
+       doc types (like DS) keep Subm.
+    """
+
+    def test_06_stale_legacy_file_id_matched_in_replied_promotes_to_reply_and_clears_subm(self):
+        projects_rows = [{"id": "PEM-058", "data": {"drive_folder_id": "ROOT_CFC"}}]
+        records_store = {
+            "REC-STALE-260": {
+                "id": "REC-STALE-260",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00260 REV00",
+                    "status": "B - Approved As Noted",
+                    "fileLocation": "https://drive.google.com/file/d/OLD_STALE_COPY_260/view",
+                    "attachments": {
+                        "submission": {
+                            "url": "https://drive.google.com/file/d/OLD_STALE_COPY_260/view",
+                            "legacy": True,
+                        }
+                    },
+                },
+            },
+        }
+        drive_items = [
+            {
+                "id": "F_DS",
+                "name": "2. Document Submittal (DS)",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["ROOT_CFC"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_DS",
+            },
+            {
+                "id": "F_SUB",
+                "name": "Submit",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["F_DS"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_SUB",
+            },
+            {
+                "id": "F_REP",
+                "name": "Replied",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["F_DS"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_REP",
+            },
+            {
+                "id": "NEW_REPLIED_260",
+                "name": "DS-CY002P608-00260 REV00.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_REP"],
+                "webViewLink": "https://drive.google.com/file/d/NEW_REPLIED_260/view",
+            },
+        ]
+
+        def fake_q(sql, params=(), one=False):
+            s = " ".join(sql.split())
+            if "FROM projects" in s:
+                return projects_rows
+            if "FROM records" in s:
+                if "docNo" in s:
+                    pid_arg, doc_arg = params[0], params[1]
+                    matched = [
+                        {"id": r["id"], "data": r["data"]}
+                        for r in records_store.values()
+                        if r["project_id"] == pid_arg and r["data"].get("docNo") == doc_arg
+                    ]
+                    return (matched[0] if matched else None) if one else matched
+                pid_arg = params[0]
+                matched = [
+                    {"id": r["id"], "data": r["data"]}
+                    for r in records_store.values()
+                    if r["project_id"] == pid_arg
+                ]
+                return (matched[0] if matched else None) if one else matched
+            return None if one else []
+
+        def fake_exe(sql, params=()):
+            new_data_json, rec_id, pid_arg = params
+            if rec_id in records_store and records_store[rec_id]["project_id"] == pid_arg:
+                records_store[rec_id]["data"] = json.loads(new_data_json)
+            return 1
+
+        svc = _FakeDriveService(drive_items)
+        with patch("db.q", side_effect=fake_q), \
+             patch("db.exe", side_effect=fake_exe), \
+             patch.object(drive_service, "get_drive_service", return_value=svc):
+            drive_service.process_drive_folder("ROOT_CFC", project_id="PEM-058")
+
+        d = records_store["REC-STALE-260"]["data"]
+        self.assertNotIn("fileLocation", d)
+        self.assertNotIn("submission", d.get("attachments", {}))
+        app_entry = d["attachments"]["approval"]
+        self.assertEqual(app_entry["role"], "reply")
+        self.assertTrue(app_entry["slot_verified"])
+        self.assertEqual(app_entry["file_id"], "NEW_REPLIED_260")
+        self.assertEqual(app_entry["url"], "https://drive.google.com/file/d/NEW_REPLIED_260/view")
+        self.assertEqual(app_entry["file_name"], "DS-CY002P608-00260 REV00.pdf")
+
+        norm = attachments.normalize_attachments(d)
+        self.assertIsNone(norm["submission"])
+        self.assertIsNotNone(norm["approval"])
+        self.assertEqual(norm["approval"]["file_id"], "NEW_REPLIED_260")
+
+    def test_07_verified_submit_or_file_in_submit_never_overwritten_by_replied(self):
+        projects_rows = [{"id": "PEM-058", "data": {"drive_folder_id": "ROOT_CFC"}}]
+        records_store = {
+            # Case A: slot_verified=True DCR Submit upload must NEVER be cleared even when Replied has same docNo
+            "REC-VERIFIED-SUB": {
+                "id": "REC-VERIFIED-SUB",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00261 REV00",
+                    "status": "A - Approved",
+                    "attachments": {
+                        "submission": {
+                            "file_id": "DCR_UPLOADED_SUB_261",
+                            "url": "https://drive.google.com/file/d/DCR_UPLOADED_SUB_261/view",
+                            "slot_verified": True,
+                            "uploaded_by": "dc_user",
+                            "uploaded_at": "2026-11-26T10:00:00Z",
+                        }
+                    },
+                },
+            },
+            # Case B: File confirmed inside Submit folder must NEVER be overwritten by Replied
+            "REC-IN-SUBMIT-FOLDER": {
+                "id": "REC-IN-SUBMIT-FOLDER",
+                "project_id": "PEM-058",
+                "data": {
+                    "docNo": "DS-CY002P608-00262 REV00",
+                    "status": "B - Approved As Noted",
+                    "fileLocation": "https://drive.google.com/file/d/GENUINE_SUB_262/view",
+                },
+            },
+        }
+        drive_items = [
+            {
+                "id": "F_DS",
+                "name": "2. Document Submittal (DS)",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["ROOT_CFC"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_DS",
+            },
+            {
+                "id": "F_SUB",
+                "name": "Submit",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["F_DS"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_SUB",
+            },
+            {
+                "id": "F_REP",
+                "name": "Replied",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["F_DS"],
+                "webViewLink": "https://drive.google.com/drive/folders/F_REP",
+            },
+            {
+                "id": "REP_261",
+                "name": "DS-CY002P608-00261 REV00.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_REP"],
+                "webViewLink": "https://drive.google.com/file/d/REP_261/view",
+            },
+            {
+                "id": "GENUINE_SUB_262",
+                "name": "DS-CY002P608-00262 REV00.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_SUB"],
+                "webViewLink": "https://drive.google.com/file/d/GENUINE_SUB_262/view",
+            },
+            {
+                "id": "REP_262",
+                "name": "DS-CY002P608-00262 REV00.pdf",
+                "mimeType": "application/pdf",
+                "parents": ["F_REP"],
+                "webViewLink": "https://drive.google.com/file/d/REP_262/view",
+            },
+        ]
+
+        def fake_q(sql, params=(), one=False):
+            s = " ".join(sql.split())
+            if "FROM projects" in s:
+                return projects_rows
+            if "FROM records" in s:
+                if "docNo" in s:
+                    pid_arg, doc_arg = params[0], params[1]
+                    matched = [
+                        {"id": r["id"], "data": r["data"]}
+                        for r in records_store.values()
+                        if r["project_id"] == pid_arg and r["data"].get("docNo") == doc_arg
+                    ]
+                    return (matched[0] if matched else None) if one else matched
+                pid_arg = params[0]
+                matched = [
+                    {"id": r["id"], "data": r["data"]}
+                    for r in records_store.values()
+                    if r["project_id"] == pid_arg
+                ]
+                return (matched[0] if matched else None) if one else matched
+            return None if one else []
+
+        def fake_exe(sql, params=()):
+            new_data_json, rec_id, pid_arg = params
+            if rec_id in records_store and records_store[rec_id]["project_id"] == pid_arg:
+                records_store[rec_id]["data"] = json.loads(new_data_json)
+            return 1
+
+        svc = _FakeDriveService(drive_items)
+        with patch("db.q", side_effect=fake_q), \
+             patch("db.exe", side_effect=fake_exe), \
+             patch.object(drive_service, "get_drive_service", return_value=svc):
+            drive_service.process_drive_folder("ROOT_CFC", project_id="PEM-058")
+
+        # Case A: verified submission preserved alongside synced approval
+        d261 = records_store["REC-VERIFIED-SUB"]["data"]
+        self.assertEqual(d261["attachments"]["submission"]["file_id"], "DCR_UPLOADED_SUB_261")
+        self.assertTrue(d261["attachments"]["submission"]["slot_verified"])
+        self.assertEqual(d261["attachments"]["approval"]["url"], "https://drive.google.com/file/d/REP_261/view")
+
+        # Case B: genuine Submit file preserved alongside synced approval
+        d262 = records_store["REC-IN-SUBMIT-FOLDER"]["data"]
+        self.assertEqual(d262["attachments"]["submission"]["url"], "https://drive.google.com/file/d/GENUINE_SUB_262/view")
+        self.assertEqual(d262["attachments"]["approval"]["url"], "https://drive.google.com/file/d/REP_262/view")
+
+    def test_08_neutral_file_badge_for_statusless_doc_types_and_subm_for_status_types(self):
+        import html_render
+        import i18n
+
+        # 1) Verify i18n keys for EN & AR
+        self.assertEqual(i18n.t("drive.badge_file", "en"), "File")
+        self.assertEqual(i18n.t("drive.badge_file", "ar"), "ملف")
+
+        # 2) Verify rendered register page JS wires tabHasStatusField() and drive.badge_file
+        user = {"username": "dc_editor", "role": "editor"}
+        proj = {"id": "PEM-058", "name": "Test Project", "code": "PEM-058", "workspace_id": "ENG", "status_colors": {}}
+        with patch("html_render.can_edit", return_value=True), \
+             patch("html_render.is_project_admin", return_value=True), \
+             patch("html_render.get_allowed_doc_type_filter", return_value=None), \
+             patch("db.can_user_download", return_value=True), \
+             patch("db.get_user_workspaces", return_value=[{"id": "ENG", "code": "ENG", "name": "Engineering"}]), \
+             patch("db.get_projects_for_user", return_value=[proj]), \
+             patch("db.get_doc_types", return_value=[]), \
+             patch("db.get_logo", return_value=None):
+            rendered_en = html_render.render_register(user, proj, active_ws_id="ENG", lang="en")
+            rendered_ar = html_render.render_register(user, proj, active_ws_id="ENG", lang="ar")
+
+        self.assertIn("function tabHasStatusField(", rendered_en)
+        self.assertIn("const _hasStatusField = tabHasStatusField();", rendered_en)
+        self.assertIn("else if(!_hasStatusField){", rendered_en)
+        self.assertIn("window.t('drive.badge_file')", rendered_en)
+        self.assertIn('"drive.badge_file": "File"', rendered_en)
+        self.assertIn('"drive.badge_file": "ملف"', rendered_ar)
+
+        # 3) Verify status-less EI vs status-enabled DS logic matches exact JS helper semantics
+        m_fn = re.search(r"function tabHasStatusField\(dtObj, cols\)\{.*?\n\}", rendered_en, re.DOTALL)
+        self.assertIsNotNone(m_fn, "tabHasStatusField JS helper must be present in rendered HTML")
+        fn_body = m_fn.group(0)
+        self.assertIn("Array.isArray(dt.fields)", fn_body)
+        self.assertIn("isStatusLikeField(c)", fn_body)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -363,12 +363,25 @@ def _clear_matching_legacy_keys(data_dict, target_entry):
     return cleared
 
 
+def _is_verified_submit_attachment(entry):
+    """Return True when `entry` is a verified DCR Submit upload that must never be replaced."""
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("slot_verified") is True:
+        return True
+    if entry.get("uploaded_at") and not entry.get("legacy") and entry.get("source") != SYNC_SOURCE:
+        return True
+    return False
+
+
 def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id="", folder_id="",
-                                 file_name="", mime_type=""):
+                                 file_name="", mime_type="", clear_stale_legacy=False):
     """Safely promote a verified Replied-folder legacy/submission link to `attachments['approval']`.
 
     Pure function (never mutates `data`). Preserves all metadata and never deletes a distinct
-    submission file or overwrites a distinct DCR-uploaded approval file.
+    verified submission file or overwrites a distinct DCR-uploaded approval file.
+    When `clear_stale_legacy=True`, also clears any un-verified legacy `submission` / top-level
+    legacy link keys whose stored Drive ID differed from the verified `Replied` file.
     Returns `(new_data, changed_bool)`.
     """
     if not isinstance(data, dict):
@@ -410,6 +423,10 @@ def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id=
     existing_sub = att.get(SLOT_SUBMISSION) if isinstance(att.get(SLOT_SUBMISSION), dict) else None
     existing_app = att.get(SLOT_APPROVAL) if isinstance(att.get(SLOT_APPROVAL), dict) else None
 
+    if clear_stale_legacy and _is_verified_submit_attachment(existing_sub):
+        # Safety: never replace/clear a verified DCR Submit upload
+        return new, False
+
     sub_matches = bool(existing_sub and _same_sync_target(existing_sub, target_probe))
     app_matches = bool(existing_app and _same_sync_target(existing_app, target_probe))
 
@@ -448,9 +465,14 @@ def promote_legacy_link_to_reply(data, matched_item=None, reply_url="", file_id=
     promoted["slot_verified"] = True
 
     new = apply_attachment(new, SLOT_APPROVAL, promoted)
-    if sub_matches:
+    if sub_matches or (clear_stale_legacy and existing_sub and not _is_verified_submit_attachment(existing_sub)):
         new = remove_attachment(new, SLOT_SUBMISSION)
-    _clear_matching_legacy_keys(new, promoted)
+    if clear_stale_legacy:
+        for key in LEGACY_LINK_KEYS:
+            if _clean_link(new.get(key)):
+                new.pop(key, None)
+    else:
+        _clear_matching_legacy_keys(new, promoted)
 
     return new, (new != data)
 

@@ -138,15 +138,24 @@ def is_drive_item_in_replied_folder(service, item_id, folder_cache=None, max_dep
     return False, item_meta
 
 
+def _normalize_doc_no(value):
+    """Normalize a document number for case/whitespace-insensitive matching."""
+    return re.sub(r"\s+", " ", str(value or "").strip()).upper()
+
+
 def reclassify_project_legacy_reply_links(
     project_id,
     service=None,
     replied_items_by_id=None,
     submit_item_ids=None,
     inspect_parents=True,
+    replied_by_doc_no=None,
+    submit_doc_nos=None,
 ):
     """Promote legacy/un-typed `fileLocation`/`drive_link`/`submission` links in `project_id`
-    to `attachments['approval']` (`role='reply'`) when verified to reside inside a `Replied` folder.
+    to `attachments['approval']` (`role='reply'`) when verified to reside inside a `Replied` folder,
+    or when an un-verified stale legacy link (not in `Submit`) matches a verified `Replied` file
+    by normalized `docNo` (`replied_by_doc_no`, with no separate file in `submit_doc_nos`).
 
     Returns summary dict: `{'scanned', 'reclassified', 'skipped', 'errors', 'record_ids'}`.
     """
@@ -163,6 +172,12 @@ def reclassify_project_legacy_reply_links(
 
     replied_map = replied_items_by_id if isinstance(replied_items_by_id, dict) else {}
     submit_ids = set(submit_item_ids or ())
+    replied_doc_map = {
+        _normalize_doc_no(k): v
+        for k, v in (replied_by_doc_no.items() if isinstance(replied_by_doc_no, dict) else ())
+        if _normalize_doc_no(k) and isinstance(v, dict)
+    }
+    submit_docs = {_normalize_doc_no(d) for d in (submit_doc_nos or ()) if _normalize_doc_no(d)}
     folder_cache = {}
 
     rows = db.get_project_records_for_drive_reclassify(pid) or []
@@ -181,7 +196,8 @@ def reclassify_project_legacy_reply_links(
         # Collect candidate un-typed/legacy/submission link targets on this record
         candidates = []
         sub_entry = att.get(_att.SLOT_SUBMISSION) if isinstance(att.get(_att.SLOT_SUBMISSION), dict) else None
-        if sub_entry:
+        sub_is_verified = _att._is_verified_submit_attachment(sub_entry)
+        if sub_entry and not sub_is_verified:
             sub_url = _att._clean_link(sub_entry.get("url"))
             sub_id = str(
                 sub_entry.get("file_id")
@@ -237,6 +253,23 @@ def reclassify_project_legacy_reply_links(
                 cur_data = new_data
                 promoted_any = True
 
+        # Fallback: reconcile un-verified stale legacy links whose stored file_id differs from
+        # the current file in Replied, when docNo matches a verified Replied file and NOT Submit.
+        if not promoted_any and not sub_is_verified and replied_doc_map:
+            norm_doc = _normalize_doc_no(cur_data.get("docNo"))
+            any_in_submit = any(cid in submit_ids for cid, _ in candidates)
+            if norm_doc and norm_doc in replied_doc_map and norm_doc not in submit_docs and not any_in_submit:
+                matched_doc_item = replied_doc_map[norm_doc]
+                new_data, changed = _att.promote_legacy_link_to_reply(
+                    cur_data,
+                    matched_item=matched_doc_item,
+                    reply_url=matched_doc_item.get("webViewLink") or "",
+                    clear_stale_legacy=True,
+                )
+                if changed:
+                    cur_data = new_data
+                    promoted_any = True
+
         if promoted_any:
             db.update_record_data_scoped(pid, rec_id, cur_data)
             summary["reclassified"] += 1
@@ -262,6 +295,8 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None, re
     part_rev_map = {}  # doc_no -> {slot: {rev_int: {'url': ..., 'priority': ..., 'rev': rev_int, 'rev_label': ...}}}
     replied_items_by_id = {}  # item_id -> item metadata for all files/folders inside Replied/
     submit_item_ids = set()   # item_ids for all files/folders inside Submit/
+    replied_by_doc_no = {}    # norm_doc_no -> best item metadata found inside Replied/
+    submit_doc_nos = set()    # norm_doc_no for all items found inside Submit/
     
     while queue:
         # Batch up to 15 folders per API query to dramatically reduce API calls
@@ -330,6 +365,20 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None, re
 
                     # Additive: also track the best Submit/Replied and per-part revisions separately
                     if kind:
+                        norm_doc = _normalize_doc_no(doc_no)
+                        if kind == 'approval' and norm_doc:
+                            prev_rep = replied_by_doc_no.get(norm_doc)
+                            if prev_rep is None or priority < prev_rep['priority']:
+                                replied_by_doc_no[norm_doc] = {
+                                    'id': item.get('id') or '',
+                                    'name': item.get('name') or '',
+                                    'mimeType': item.get('mimeType') or '',
+                                    'webViewLink': item.get('webViewLink') or '',
+                                    'priority': priority,
+                                }
+                        elif kind == 'submission' and norm_doc:
+                            submit_doc_nos.add(norm_doc)
+
                         if kind in ("part_a", "part_b", "part_c", "part_d"):
                             from attachments import format_rev_label
                             rev_matches = re.findall(r"\b(?:rev|r)\s*[-_.]?\s*(\d+)\b", item_full_path, re.IGNORECASE)
@@ -385,6 +434,8 @@ def process_drive_folder(folder_id, root_folder_name="Root", project_id=None, re
                     replied_items_by_id=replied_items_by_id,
                     submit_item_ids=submit_item_ids,
                     inspect_parents=True,
+                    replied_by_doc_no=replied_by_doc_no,
+                    submit_doc_nos=submit_doc_nos,
                 )
             except Exception as exc:
                 print(f"[Drive Legacy Reclassify Warning] project={pid}: {exc}")

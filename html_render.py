@@ -16341,8 +16341,12 @@ function renderRows(){{
           }}else if(hasSubm){{
             const _isHseCo = isHseCloseoutTab();
             const isFlatDoc = Boolean(norm.is_flat_doc || (norm.submission && norm.submission.is_flat_doc));
+            const _hasStatusField = tabHasStatusField();
             if(_isHseCo){{
               box.appendChild(_chip(window.t('form.slot_subm_title'),'submission',norm.submission,'#2563eb','#eff6ff',window.t('form.slot_subm_title'),null));
+            }}else if(!_hasStatusField){{
+              const _fileLbl = window.t('drive.badge_file');
+              box.appendChild(_chip(_fileLbl,'submission',norm.submission,'#475569','#f1f5f9',_fileLbl,null));
             }}else if(_cyc && !isFlatDoc){{
               box.appendChild(_chip('Subm','submission',norm.submission,'#2563eb','#eff6ff',window.t('form.slot_subm_title'),null));
             }}else{{
@@ -18529,6 +18533,26 @@ function tabHasReplyCycle(){{
   const curT = String(curTab).trim().toUpperCase();
   const dtObj = (state.dtList || []).find(d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT) || {{}};
   return dtHasReplyCycle(dtObj, ws);
+}}
+function tabHasStatusField(dtObj, cols){{
+  const curTab = (typeof state !== 'undefined') ? state.tab : '';
+  const curT = String(curTab || '').trim().toUpperCase();
+  const dt = dtObj || ((typeof state !== 'undefined' && state.dtList || []).find(
+    d => String(d.id).trim().toUpperCase() === curT || String(d.code || '').trim().toUpperCase() === curT
+  ) || {{}});
+  if(Array.isArray(dt.fields) && dt.fields.length > 0){{
+    return dt.fields.some(f => {{
+      const fid = String((f && (f.id || f.col_key)) || '').trim().toLowerCase();
+      return fid === 'status' || fid.includes('status');
+    }});
+  }}
+  const colList = Array.isArray(cols)
+    ? cols
+    : ((typeof state !== 'undefined' && Array.isArray(state.cols) && state.cols.length > 0)
+        ? state.cols
+        : ((typeof state !== 'undefined' && Array.isArray(state.allTabCols)) ? state.allTabCols : []));
+  if(!colList.length) return true;
+  return colList.some(c => String((c && c.col_key) || '').trim().toLowerCase() === 'status' || isStatusLikeField(c));
 }}
 function isHseCloseoutTab(dtTab){{
   const ws = String(typeof WS_ID !== 'undefined' && WS_ID ? WS_ID : 'ENG').trim().toUpperCase();

@@ -1716,6 +1716,7 @@ TRANSLATIONS = {
         "drive.dv_high_fidelity": "🖥️ High-Fidelity",
         "drive.dv_office_rendering": "⏳ Rendering Office document inside DCR...",
         "drive.dv_office_err": "Could not render Office preview",
+        "drive.badge_file": "File",
 
         # ── Standalone Smart Project Digest (/magic/<pid>) ──
         "magic.title": "Smart Project Digest",
@@ -3409,6 +3410,7 @@ TRANSLATIONS = {
         "drive.dv_high_fidelity": "🖥️ دقة عالية",
         "drive.dv_office_rendering": "⏳ جاري عرض مستند Office داخل DCR...",
         "drive.dv_office_err": "تعذر عرض معاينة Office",
+        "drive.badge_file": "ملف",
 
         # ── Standalone Smart Project Digest (/magic/<pid>) ──
         "magic.title": "الملخص الذكي للمشروع",

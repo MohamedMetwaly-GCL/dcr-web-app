@@ -956,6 +956,12 @@ class TestI18nFix03CompactTopbar(unittest.TestCase):
                 self.assertIn('<span class="topbar-user"><span class="topbar-user-name">👤 <span class="bidi-ltr">admin</span></span>', dash_html)
                 self.assertIn('<span class="topbar-user-role"', dash_html)
 
+    def test_drive_badge_file_i18n_en_and_ar(self):
+        self.assertEqual(i18n.t("drive.badge_file", "en"), "File")
+        self.assertEqual(i18n.t("drive.badge_file", "ar"), "ملف")
+        self.assertEqual(i18n.get_client_dict("en")["drive.badge_file"], "File")
+        self.assertEqual(i18n.get_client_dict("ar")["drive.badge_file"], "ملف")
+
 
 if __name__ == "__main__":
     unittest.main()
