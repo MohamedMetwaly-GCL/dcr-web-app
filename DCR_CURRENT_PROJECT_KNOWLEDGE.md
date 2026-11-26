@@ -2,8 +2,19 @@
 
 **Repository:** `D:\DCR-dev` (synced with `D:\DCR` and `origin/main`)  
 **Active Local Branch:** `main`  
-**Latest Merged Milestone Commit:** `6e03a6a` (merged via `fix/restore-gcl-swirl-logo` into `main`)  
-**Release / Deployment Status:** `main` updated with GCL swirl logo restoration (`fix/restore-gcl-swirl-logo`, `6e03a6a`) and pushed to `origin/main` via `D:\DCR` for Railway Auto-Deploy (prior release `9069abe` verified live on `2026-11-24`).
+**Latest Merged Milestone Commit:** `a5dc4a4` (merged via `fix/drive-submit-reply-isolation` into `main`)  
+**Release / Deployment Status:** `main` updated with Zero-Touch Drive Overhaul (`a5dc4a4`, preserving GCL swirl logo `6c06c3d`) and pushed to `origin/main` via `D:\DCR` for Railway Auto-Deploy.
+
+---
+
+## Completed Milestone: Zero-Touch Google Drive Overhaul (`fix/drive-submit-reply-isolation`, `a5dc4a4`)
+- **Phases & Commits:**
+  - `DRIVE-FIX-01` (`c542841`): Isolated `Submit` and `Replied` attachment slots and scoped sync updates by project.
+  - `DRIVE-UX-02` (`a9db0e8`): Added real byte-level upload progress, transfer stages, and folder byte counters.
+  - `DRIVE-AUTO-03` (`4f2fe83`): Standardized `Submit`/`Replied` routing and auto-provisioned workspace/tab/subtab Drive folders.
+  - `DRIVE-ARCHIVE-04` (`f9522ea`): Added `_DCR_Deleted` archive folder and 3-mode attachment removal flow.
+  - `DRIVE-MASTER-ROOT-05` (`44a87d1`): Added global Master Drive Root (`GET/POST /api/admin/drive-master-root`, `POST /api/admin/init-all-drive-folders`) with zero-touch department and project folder provisioning, preserving legacy manual `drive_folder_id` projects.
+- **Independent Reviews:** `DRIVE-REV-01`, `DRIVE-REV-02`, and `DRIVE-REV-03` (all `PASS`).
 
 ---
 
