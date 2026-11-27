@@ -17,6 +17,7 @@ from flask import Blueprint, jsonify, request
 import db
 from auth import (
     current_user,
+    require_login,
     can_edit,
     can_view_project,
     get_allowed_project_ids,
@@ -606,6 +607,99 @@ def api_bulk_delete_records():
             detail=detail
         )
     return jsonify(ok=True, deleted=deleted)
+
+
+@records_bp.route("/api/records/<pid>/<dt_id>/bulk-subtab", methods=["POST"])
+@require_login
+def api_bulk_assign_subtab(pid, dt_id):
+    u = current_user()
+    proj = _resolve_project(pid)
+    if proj:
+        pid = proj["id"]
+    if not can_edit(pid, u):
+        try:
+            db.log_action(
+                u.get("username", ""),
+                "ACCESS DENIED",
+                project_id=pid,
+                dt_id=dt_id,
+                detail="Unauthorized bulk sub-tab assign attempt",
+            )
+        except Exception:
+            pass
+        return jsonify(error="Forbidden"), 403
+    if not can_access_doc_type(pid, dt_id, u):
+        return jsonify(error="Document type access denied"), 403
+
+    dt = db.get_doc_type(pid, dt_id)
+    if not dt:
+        return jsonify(error="Document type not found"), 404
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(ok=False, error="Invalid JSON payload"), 400
+
+    raw_ids = payload.get("record_ids")
+    if not isinstance(raw_ids, list):
+        return jsonify(ok=False, error="record_ids must be a non-empty list"), 400
+    clean_ids = list(dict.fromkeys(str(i).strip() for i in raw_ids if str(i).strip()))
+    if not clean_ids:
+        return jsonify(ok=False, error="record_ids must be a non-empty list"), 400
+
+    sub_cfg = db.get_doc_type_subtype_config(pid, dt_id)
+    if not sub_cfg or not sub_cfg.get("items"):
+        return jsonify(ok=False, error="No sub-tabs configured for this document type"), 400
+
+    raw_subtab = payload.get("subtab")
+    allow_clear = bool(payload.get("clear"))
+    if raw_subtab is None or not isinstance(raw_subtab, str):
+        return jsonify(ok=False, error="Invalid sub-tab"), 400
+
+    target_subtab = raw_subtab.strip()
+    if target_subtab == "":
+        if not allow_clear:
+            return jsonify(ok=False, error="Sub-tab is required"), 400
+        canonical_subtab = ""
+        is_clear = True
+    else:
+        matched = next(
+            (item for item in sub_cfg["items"] if str(item).strip().lower() == target_subtab.lower()),
+            None,
+        )
+        if not matched:
+            return jsonify(ok=False, error="Invalid sub-tab for this document type"), 400
+        canonical_subtab = matched
+        is_clear = False
+
+    col_key = sub_cfg["col_key"]
+    updated = db.bulk_assign_records_subtab(
+        pid,
+        dt_id,
+        clean_ids,
+        col_key,
+        canonical_subtab,
+        clear=is_clear,
+    )
+    try:
+        action_detail = (
+            f"Bulk cleared sub-tab on {updated} record(s)"
+            if is_clear
+            else f"Bulk assigned {updated} record(s) to sub-tab '{canonical_subtab}'"
+        )
+        db.log_action(
+            u.get("username", ""),
+            "BULK_SUBTAB",
+            pid,
+            dt_id,
+            None,
+            "",
+            field_name=col_key,
+            new_value=canonical_subtab,
+            detail=action_detail,
+        )
+    except Exception:
+        pass
+    return jsonify(ok=True, updated=updated, subtab=canonical_subtab, field=col_key)
 
 
 @records_bp.route("/api/pr_items/<record_id>")

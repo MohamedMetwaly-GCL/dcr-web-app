@@ -14490,6 +14490,7 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
   
   <div id="bulkbar">
   <span id="bulkcnt">{t("reg.bulk_selected", norm, count=0)}</span>
+  <button id="btn-bulk-subtab" class="btn btn-sm" style="display:none;background:#0d9488;color:#fff;border-color:#0f766e" onclick="openBulkSubtabModal()">{t("reg.bulk_assign_subtab", norm)}</button>
   <button class="btn btn-er btn-sm" onclick="bulkDel()">{t("reg.bulk_delete", norm)}</button>
   <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="clearSel()">{t("reg.bulk_cancel", norm)}</button>
 </div>
@@ -14755,6 +14756,27 @@ html[dir="rtl"] body.dark #regtbl tbody tr.row-selected td:first-child{{box-shad
     <div class="mfoot">
       <button class="btn btn-sc" onclick="closeM('add-subtype-modal')">{t("common.cancel", norm)}</button>
       <button class="btn btn-pr" id="add-subtype-save-btn" onclick="saveNewSubtype()">{t("common.add", norm)}</button>
+    </div>
+  </div>
+</div>
+
+<!-- BULK ASSIGN SUB-TAB MODAL -->
+<div class="overlay hidden" id="bulk-subtab-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="mhdr"><span id="bulk-subtab-title">{t("reg.bulk_subtab_modal_title", norm)}</span>
+      <button class="xbtn" onclick="closeM('bulk-subtab-modal')">✕</button></div>
+    <div class="mbody">
+      <p id="bulk-subtab-summary" style="font-size:12.5px;color:var(--mu);margin:0 0 12px"></p>
+      <div class="fgrid">
+        <div class="fg full">
+          <label for="bulk-subtab-select">{t("reg.bulk_subtab_label", norm)}</label>
+          <select id="bulk-subtab-select"></select>
+        </div>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-sc" onclick="closeM('bulk-subtab-modal')">{t("common.cancel", norm)}</button>
+      <button class="btn btn-pr" id="bulk-subtab-save-btn" onclick="submitBulkSubtab()">{t("reg.bulk_subtab_apply", norm)}</button>
     </div>
   </div>
 </div>
@@ -22516,6 +22538,12 @@ function updBulk(){{
   const checked=document.querySelectorAll('.chkcell input[data-id]:checked');
   document.getElementById('bulkcnt').textContent=window.t('reg.bulk_selected',{{count:checked.length}});
   document.getElementById('bulkbar').classList.toggle('show',checked.length>0);
+  const subBtn = document.getElementById('btn-bulk-subtab');
+  if(subBtn){{
+    const subCfg = typeof getActiveSubtypeConfig==='function' ? getActiveSubtypeConfig() : null;
+    const canBulkSubtab = Boolean(checked.length>0 && typeof CAN_EDIT!=='undefined' && CAN_EDIT && subCfg && Array.isArray(subCfg.items) && subCfg.items.length>0);
+    subBtn.style.display = canBulkSubtab ? 'inline-block' : 'none';
+  }}
   const dlBtn = document.getElementById('btn-bulk-dl');
   if(dlBtn) dlBtn.style.display = checked.length>0 ? 'inline-block' : 'none';
   syncFeiBatchInspectBtn();
@@ -22525,6 +22553,76 @@ function updBulk(){{
 }}
 function selAll(v){{document.querySelectorAll('.chkcell input[data-id]').forEach(cb=>cb.checked=v);updBulk();}}
 function clearSel(){{document.querySelectorAll('.chkcell input').forEach(cb=>cb.checked=false);updBulk();}}
+function openBulkSubtabModal(){{
+  const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id).filter(Boolean);
+  if(!ids.length)return;
+  if(typeof CAN_EDIT==='undefined'||!CAN_EDIT)return;
+  const cfg=typeof getActiveSubtypeConfig==='function'?getActiveSubtypeConfig():null;
+  if(!cfg||!Array.isArray(cfg.items)||!cfg.items.length)return;
+  const sel=document.getElementById('bulk-subtab-select');
+  const sum=document.getElementById('bulk-subtab-summary');
+  if(!sel)return;
+  sel.innerHTML='';
+  const ph=document.createElement('option');
+  ph.value='';
+  ph.textContent=window.t('reg.bulk_subtab_placeholder');
+  ph.disabled=true;
+  ph.selected=true;
+  sel.appendChild(ph);
+  cfg.items.forEach(sub=>{{
+    const opt=document.createElement('option');
+    opt.value=sub;
+    opt.textContent=cfg.isPtw&&typeof formatPtwSubTabLabel==='function'?formatPtwSubTabLabel(sub):sub;
+    sel.appendChild(opt);
+  }});
+  const clrOpt=document.createElement('option');
+  clrOpt.value='__CLEAR__';
+  clrOpt.textContent=window.t('reg.bulk_subtab_clear_opt');
+  sel.appendChild(clrOpt);
+  if(sum){{
+    sum.textContent=window.t('reg.bulk_subtab_summary',{{count:ids.length,dt:cfg.dtName||state.tab||''}});
+  }}
+  openM('bulk-subtab-modal');
+}}
+async function submitBulkSubtab(){{
+  const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id).filter(Boolean);
+  if(!ids.length){{closeM('bulk-subtab-modal');return;}}
+  const sel=document.getElementById('bulk-subtab-select');
+  const val=sel?String(sel.value||''):'';
+  if(!val){{toast(window.t('reg.bulk_subtab_select_req'),'wa');return;}}
+  const isClear=(val==='__CLEAR__');
+  const targetSubtab=isClear?'':val;
+  const confirmMsg=isClear
+    ? window.t('reg.bulk_subtab_confirm_clear',{{count:ids.length}})
+    : window.t('reg.bulk_subtab_confirm',{{count:ids.length,subtab:targetSubtab}});
+  if(!confirm(confirmMsg))return;
+  const btn=document.getElementById('bulk-subtab-save-btn');
+  if(btn)btn.disabled=true;
+  try{{
+    const url=`/api/records/${{encodeURIComponent(PID)}}/${{encodeURIComponent(state.tab)}}/bulk-subtab`;
+    const r=await apiFetch(url,{{
+      method:'POST',
+      body:JSON.stringify({{record_ids:ids,subtab:targetSubtab,clear:isClear}})
+    }});
+    if(r&&r.ok){{
+      closeM('bulk-subtab-modal');
+      clearSel();
+      await loadRecords();
+      await refreshCounts();
+      if(isClear){{
+        toast(window.t('reg.bulk_subtab_cleared',{{count:r.updated||0}}),'ok');
+      }}else{{
+        toast(window.t('reg.bulk_subtab_assigned',{{count:r.updated||0,subtab:r.subtab||targetSubtab}}),'ok');
+      }}
+    }}else if(r&&r.error){{
+      toast(r.error,'er');
+    }}
+  }}catch(err){{
+    toast(window.t('reg.bulk_subtab_err'),'er');
+  }}finally{{
+    if(btn)btn.disabled=false;
+  }}
+}}
 async function bulkDel(){{
   const ids=[...document.querySelectorAll('.chkcell input[data-id]:checked')].map(cb=>cb.dataset.id);
   if(!ids.length||!confirm(window.t('reg.bulk_confirm_del',{{count:ids.length}})))return;

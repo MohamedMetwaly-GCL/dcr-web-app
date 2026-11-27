@@ -2932,6 +2932,98 @@ def delete_records_bulk(record_ids):
         invalidate_dashboard_cache(pid)
     return rc
 
+
+def get_doc_type_subtype_config(pid, dt_id):
+    """Return subtype configuration ({col_key, list_name, items, is_ptw}) for (pid, dt_id), or None."""
+    pid_s = str(pid or "").strip()
+    dt_s = str(dt_id or "").strip()
+    if not pid_s or not dt_s:
+        return None
+    dt = get_doc_type(pid_s, dt_s)
+    if not dt:
+        return None
+    cols = get_columns(pid_s, dt_s, visible_only=False) or []
+    sub_col = None
+    for c in cols:
+        if not isinstance(c, dict):
+            continue
+        if c.get("col_type") != "dropdown":
+            continue
+        ln = str(c.get("list_name") or "").strip()
+        ck = str(c.get("col_key") or "").strip()
+        if not ln or not ck:
+            continue
+        if ck.lower() in ("legacysubtype", "subtype") or _is_subtype_list_name(ln):
+            sub_col = c
+            break
+    col_key = str(sub_col.get("col_key") or "").strip() if sub_col else "legacySubtype"
+    list_name = str(sub_col.get("list_name") or "").strip() if sub_col else ""
+
+    proj = get_project(pid_s) or {}
+    ws_low = re.sub(r"[^a-z0-9]+", "", str(proj.get("workspace_id") or "ENG").strip().lower()) or "eng"
+    dt_code = str(dt.get("code") or dt.get("id") or dt_s).strip()
+    code_low = re.sub(r"[^a-z0-9]+", "", dt_code.lower())
+    is_ptw = (ws_low == "hse" and code_low == "ptw")
+
+    lists = get_lists(pid_s) or {}
+    if not list_name:
+        if is_ptw:
+            list_name = "hse_ptw_subtype"
+        elif code_low:
+            for cand in (f"{ws_low}_{code_low}_subtype", f"hse_{code_low}_subtype", f"{code_low}_subtype"):
+                if cand in lists:
+                    list_name = cand
+                    break
+    if not list_name:
+        return None
+
+    items = [str(v).strip() for v in (lists.get(list_name) or []) if str(v).strip()]
+    if not items and is_ptw:
+        from hse_defaults import PTW_SUBTYPE_CODES
+        items = list(PTW_SUBTYPE_CODES.keys())
+    if not items:
+        return None
+    return {
+        "col_key": col_key,
+        "list_name": list_name,
+        "items": items,
+        "is_ptw": is_ptw,
+    }
+
+
+def bulk_assign_records_subtab(pid, dt_id, record_ids, col_key, subtab_value, clear=False):
+    """Atomically update ONLY the subtype JSONB key on matching records scoped to (project_id, dt_id).
+
+    Strictly preserves attachments, fileLocation, drive_link, status, dates, and all other keys in records.data.
+    """
+    pid_s = str(pid or "").strip()
+    dt_s = str(dt_id or "").strip()
+    ck = str(col_key or "").strip()
+    clean_ids = list(dict.fromkeys(str(r).strip() for r in (record_ids or []) if str(r).strip()))
+    if not pid_s or not dt_s or not ck or not clean_ids:
+        return 0
+    with DB() as cur:
+        if clear:
+            cur.execute(
+                """UPDATE records
+                   SET data = COALESCE(data, '{}'::jsonb) - %s,
+                       updated_at = NOW()
+                   WHERE project_id = %s AND dt_id = %s AND id = ANY(%s)""",
+                (ck, pid_s, dt_s, clean_ids),
+            )
+        else:
+            cur.execute(
+                """UPDATE records
+                   SET data = COALESCE(data, '{}'::jsonb) || jsonb_build_object(%s, to_jsonb(%s::text)),
+                       updated_at = NOW()
+                   WHERE project_id = %s AND dt_id = %s AND id = ANY(%s)""",
+                (ck, str(subtab_value), pid_s, dt_s, clean_ids),
+            )
+        updated = cur.rowcount or 0
+    if updated:
+        invalidate_dashboard_cache(pid_s)
+    return updated
+
 # ── PR Items ─────────────────────────────────────────────────
 def get_pr_items(record_id):
     return q("""SELECT id, record_id, row_type, item_name, unit, quantity, remarks, sort_order, po_ref, po_qty, delivered_qty
